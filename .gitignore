@@ -1,0 +1,16 @@
+# 构建产物
+/bin/
+/dist/
+
+# Go 测试与分析产物
+*.test
+*.out
+*.prof
+
+# 编辑器 / OS
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# 注意：Go fuzz 语料（internal/*/testdata/fuzz/）是回归资产，必须入库，不在此忽略。
