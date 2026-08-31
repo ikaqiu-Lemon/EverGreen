@@ -137,10 +137,29 @@ func ch13Table(t *testing.T) map[string]map[string]bool {
 	return table
 }
 
-// actualDeps 返回 go list -deps 结果里属于本仓 internal/ 的依赖包（排除 self 与脚手架 version）。
+// directDeps 返回该包 **直接 import** 的本仓 internal/ 包（§13 表格就是直接依赖表：
+// store → model mdfile git 指的是 store 自己 import 这三个）。
+func directDeps(t *testing.T, pkg string) (map[string]bool, bool) {
+	t.Helper()
+	return listDeps(t, pkg, `{{join .Imports "\n"}}`)
+}
+
+// actualDeps 返回 go list -deps 结果里属于本仓 internal/ 的依赖包（**传递闭包**，排除 self 与脚手架 version）。
 func actualDeps(t *testing.T, pkg string) (map[string]bool, bool) {
 	t.Helper()
-	cmd := exec.Command("go", "list", "-deps", "./internal/"+pkg)
+	return listDeps(t, pkg, "")
+}
+
+func listDeps(t *testing.T, pkg, format string) (map[string]bool, bool) {
+	t.Helper()
+	args := []string{"list"}
+	if format == "" {
+		args = append(args, "-deps")
+	} else {
+		args = append(args, "-f", format)
+	}
+	args = append(args, "./internal/"+pkg)
+	cmd := exec.Command("go", args...)
 	cmd.Dir = "../.."
 	out, err := cmd.Output()
 	if err != nil {
@@ -210,18 +229,55 @@ func TestDeclaredDepsEqualCh13Table(t *testing.T) {
 	}
 }
 
+// declaredClosure 返回允许依赖表的**传递闭包**：§13 是直接依赖表，
+// 「plan → store」自然连带 store 自己的允许依赖（model mdfile git）。
+// 闭包只沿允许边扩张，因此仍能抓出任何不在允许图上的间接依赖（例如 plan → report）。
+func declaredClosure(t *testing.T, pkg string, table map[string]map[string]bool) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	queue := sortedKeys(table[pkg])
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if cur == pkg || out[cur] {
+			continue
+		}
+		out[cur] = true
+		queue = append(queue, sortedKeys(table[cur])...)
+	}
+	return out
+}
+
 // TestActualDepsWithinDeclared 断言 ③ 实际依赖 ⊆ 允许依赖，且 model 零依赖。
+//
+// 分两层，两层都必须成立（比单层更严，不是放宽）：
+//   - **直接 import ⊆ 本包允许依赖**：§13 表格是直接依赖表，据此抓「plan 直连 mdfile」
+//     这类跨层直取（plan 只能经 store / query 拿文件结构口径）。
+//   - **传递依赖 ⊆ 允许依赖的传递闭包**：抓任何不在允许图上的间接依赖。
+//     不能拿本包允许集合直接比传递依赖：plan → store → mdfile 是 §13 明文允许的合法链路。
 func TestActualDepsWithinDeclared(t *testing.T) {
+	table := ch13Table(t)
 	for _, pkg := range ch13Packages {
 		_, declared := declaredDeps(t, pkg)
+		direct, ok := directDeps(t, pkg)
+		if !ok {
+			t.Skipf("go list 不可用，跳过实际依赖比对")
+		}
+		for dep := range direct {
+			if !declared[dep] {
+				t.Errorf("internal/%s 直接 import internal/%s，但允许依赖只有 %v（§13 依赖方向）",
+					pkg, dep, sortedKeys(declared))
+			}
+		}
 		actual, ok := actualDeps(t, pkg)
 		if !ok {
 			t.Skipf("go list 不可用，跳过实际依赖比对")
 		}
+		closure := declaredClosure(t, pkg, table)
 		for dep := range actual {
-			if !declared[dep] {
-				t.Errorf("internal/%s 实际依赖 internal/%s，但允许依赖只有 %v（§13 依赖方向）",
-					pkg, dep, sortedKeys(declared))
+			if !closure[dep] {
+				t.Errorf("internal/%s 传递依赖 internal/%s，不在允许依赖闭包 %v 内（§13 依赖方向）",
+					pkg, dep, sortedKeys(closure))
 			}
 		}
 		if pkg == "model" && len(actual) != 0 {

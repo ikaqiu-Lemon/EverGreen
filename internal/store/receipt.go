@@ -18,6 +18,20 @@ const (
 	SkipUserBlockUnsafe SkipReason = "user_block_unsafe"
 )
 
+// CauseFor 是 `skipped[].kind` → `skipped[].cause` 的**一一对应**表
+// （合同 `docs/specs/2026-09-08-changeplan-contract.md` §8，S1 全库唯一口径）。
+// S1 的 kind 恰两值，没有第三种；`stale` 一类同义词任何时候不得使用。
+func CauseFor(reason SkipReason) string {
+	switch reason {
+	case SkipFileChanged:
+		return "content_hash_mismatch"
+	case SkipUserBlockUnsafe:
+		return "user_block_not_preserved"
+	default:
+		return ""
+	}
+}
+
 // SkipError 是「必须跳过」的显式信号：调用方拿到它就必须把该文件计入报告 skipped[]，
 // 不得当成成功、也不得重试或强写（B2 / B3）。
 type SkipError struct {
