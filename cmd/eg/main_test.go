@@ -5,8 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"evergreen/internal/cli"
 	"evergreen/internal/version"
 )
+
+// run 是可测试入口：T-…-003 起真实分发在 internal/cli，本文件只验证入口接线。
+func run(args []string, stdout, stderr *bytes.Buffer) int {
+	return cli.New().Run(args, stdout, stderr)
+}
 
 func TestHelpExitsZero(t *testing.T) {
 	for _, arg := range []string{"--help", "-h", "help"} {
@@ -25,16 +31,16 @@ func TestHelpExitsZero(t *testing.T) {
 
 func TestVersionExitsZero(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := run([]string{"version"}, &out, &errOut); code != 0 {
-		t.Fatalf("eg version 退出码 = %d，期望 0", code)
+	if code := run([]string{"--version"}, &out, &errOut); code != 0 {
+		t.Fatalf("eg --version 退出码 = %d，期望 0", code)
 	}
 	if got := strings.TrimSpace(out.String()); got != version.String() {
-		t.Fatalf("eg version 输出 = %q，期望 %q", got, version.String())
+		t.Fatalf("eg --version 输出 = %q，期望 %q", got, version.String())
 	}
 }
 
 func TestUsageErrorExitsOne(t *testing.T) {
-	for _, args := range [][]string{{}, {"capture"}, {"--nope"}} {
+	for _, args := range [][]string{{}, {"capture"}, {"--nope"}, {"reconcile"}} {
 		var out, errOut bytes.Buffer
 		if code := run(args, &out, &errOut); code != 1 {
 			t.Fatalf("eg %v 退出码 = %d，期望 1", args, code)

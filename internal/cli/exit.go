@@ -1,0 +1,301 @@
+package cli
+
+// 退出码集中映射 + `--json` / 人类可读双渲染（合同 §3 / §4 / §5）。
+//
+// 硬约束：**业务层只返回带类型的错误，退出码只在本文件翻译一次**。
+// 各命令实现禁止调用 os.Exit（唯一允许处是 cmd/eg/main.go），
+// 也禁止自行拼装退出码——否则 §4 的五值封闭集合守不住。
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+)
+
+// S1 退出码恰五条（合同 §4）。5 属 S5、6 属 S2，S1 不实现、不出现。
+const (
+	// ExitOK 成功。
+	ExitOK = 0
+	// ExitUsage 用法 / 参数非法：零写入。
+	ExitUsage = 1
+	// ExitValidation 校验失败（仅 error 级）：零写入。
+	ExitValidation = 2
+	// ExitPartialWrite 部分写入被跳过：已完成写入保留并提交。
+	ExitPartialWrite = 3
+	// ExitCommitFailed Git 提交失败：磁盘保留当前状态，不做破坏性还原（B4）。
+	ExitCommitFailed = 4
+)
+
+// 信封 status 取值（由 exit_code 唯一派生，合同 §3）。
+const (
+	StatusCompleted = "completed"
+	StatusPartial   = "partial"
+	StatusFailed    = "failed"
+)
+
+// Diagnostic 是 error / warning / info 诊断条目（合同 §5）。
+// 每条都带 op 下标 + 字段路径，Agent 拿到即可定位并重投。
+type Diagnostic struct {
+	Code    string `json:"code"`
+	Level   string `json:"level"`
+	Path    string `json:"path"`
+	OpIndex int    `json:"op_index"`
+	Message string `json:"message"`
+	Target  string `json:"target,omitempty"`
+}
+
+// 诊断级别。
+const (
+	LevelError   = "error"
+	LevelWarning = "warning"
+	LevelInfo    = "info"
+)
+
+// NonOpDiagnostic 是非 op 级诊断的 op 下标占位值（合同 §5）。
+const NonOpDiagnostic = -1
+
+// —— 四类带类型错误：业务层只返回这些，退出码由 ExitCodeFor 统一翻译 ——
+
+// UsageError → 退出码 1（用法 / 参数非法，零写入）。
+type UsageError struct {
+	Msg   string
+	Diags []Diagnostic
+}
+
+func (e *UsageError) Error() string { return e.Msg }
+
+// Diagnostics 实现 diagnoser。
+func (e *UsageError) Diagnostics() []Diagnostic { return e.Diags }
+
+// ValidationError → 退出码 2（校验失败，仅 error 级，零写入）。
+type ValidationError struct {
+	Msg   string
+	Diags []Diagnostic
+}
+
+func (e *ValidationError) Error() string { return e.Msg }
+
+// Diagnostics 实现 diagnoser。
+func (e *ValidationError) Diagnostics() []Diagnostic { return e.Diags }
+
+// PartialWriteError → 退出码 3（部分写入被跳过；已写入部分保留并提交，链路继续）。
+type PartialWriteError struct {
+	Msg   string
+	Diags []Diagnostic
+}
+
+func (e *PartialWriteError) Error() string { return e.Msg }
+
+// Diagnostics 实现 diagnoser。
+func (e *PartialWriteError) Diagnostics() []Diagnostic { return e.Diags }
+
+// CommitFailedError → 退出码 4（Git 提交失败；磁盘保留现状，B4 禁止破坏性还原）。
+type CommitFailedError struct {
+	Msg   string
+	Diags []Diagnostic
+	Err   error
+}
+
+func (e *CommitFailedError) Error() string {
+	if e.Err == nil {
+		return e.Msg
+	}
+	return e.Msg + "：" + e.Err.Error()
+}
+
+// Unwrap 暴露底层 Git 错误。
+func (e *CommitFailedError) Unwrap() error { return e.Err }
+
+// Diagnostics 实现 diagnoser。
+func (e *CommitFailedError) Diagnostics() []Diagnostic { return e.Diags }
+
+// NotWiredError 是**骨架阶段专用**错误：命令已按合同注册，但业务实现尚未挂载
+// （由 T-…-008 / 009 / 010 / 015 / 016 分别 Wire 进来）。
+// 映射到退出码 1 并明确说明「实现未挂载」，绝不静默成功、绝不 panic、零写入。
+type NotWiredError struct {
+	Command string
+	Owner   string // 承担实现的 task 简写
+}
+
+func (e *NotWiredError) Error() string {
+	return fmt.Sprintf("eg %s 的业务实现尚未挂载（骨架阶段；实现见 %s）", e.Command, e.Owner)
+}
+
+type diagnoser interface{ Diagnostics() []Diagnostic }
+
+// ExitCodeFor 是**唯一**的退出码翻译点。
+//
+// 未分类错误不得凭空造出第六个码（5 属 S5、6 属 S2），统一按 1 处理并在文案里标注
+// 「未分类错误」——这是实现 bug 的信号，不是新的对外语义。
+func ExitCodeFor(err error) int {
+	if err == nil {
+		return ExitOK
+	}
+	var (
+		usage    *UsageError
+		notWired *NotWiredError
+		invalid  *ValidationError
+		partial  *PartialWriteError
+		commit   *CommitFailedError
+	)
+	switch {
+	case errors.As(err, &usage):
+		return ExitUsage
+	case errors.As(err, &notWired):
+		return ExitUsage
+	case errors.As(err, &invalid):
+		return ExitValidation
+	case errors.As(err, &partial):
+		return ExitPartialWrite
+	case errors.As(err, &commit):
+		return ExitCommitFailed
+	}
+	return ExitUsage
+}
+
+// StatusFor 由退出码唯一派生信封 status（合同 §3 派生表）。
+func StatusFor(code int) string {
+	switch code {
+	case ExitOK:
+		return StatusCompleted
+	case ExitPartialWrite, ExitCommitFailed:
+		return StatusPartial
+	default:
+		return StatusFailed
+	}
+}
+
+// Result 是命令的结果结构体：**人类可读与 --json 两套渲染的唯一数据源**。
+type Result struct {
+	// Data 是该命令的 data 载荷（合同 §1 逐命令定义）；nil 渲染成 {}。
+	Data map[string]interface{}
+	// Warnings 是 warning / info 级诊断。
+	Warnings []Diagnostic
+	// Errors 是 error 级诊断，渲染进 data.errors[]（合同 §3）。
+	Errors []Diagnostic
+	// Summary 是人类可读摘要行（事实必须能从 Data / Warnings 复述，不得引入新事实）。
+	Summary []string
+}
+
+// Envelope 是 --json 输出信封，键**恰五项**（合同 §3；字段只增不改）。
+type Envelope struct {
+	OK       bool                   `json:"ok"`
+	Data     map[string]interface{} `json:"data"`
+	Warnings []Diagnostic           `json:"warnings"`
+	ExitCode int                    `json:"exit_code"`
+	Status   string                 `json:"status"`
+}
+
+// EnvelopeKeys 是信封键的封闭集合（供测试与下游断言）。
+func EnvelopeKeys() []string {
+	return []string{"ok", "data", "warnings", "exit_code", "status"}
+}
+
+// NewEnvelope 把 Result + 退出码归一成信封。两套渲染都只吃它，保证事实同源。
+func NewEnvelope(res *Result, code int) Envelope {
+	env := Envelope{
+		OK:       code == ExitOK,
+		Data:     map[string]interface{}{},
+		Warnings: []Diagnostic{},
+		ExitCode: code,
+		Status:   StatusFor(code),
+	}
+	if res == nil {
+		return env
+	}
+	for k, v := range res.Data {
+		env.Data[k] = v
+	}
+	if len(res.Warnings) > 0 {
+		env.Warnings = append(env.Warnings, res.Warnings...)
+	}
+	if len(res.Errors) > 0 {
+		env.Data["errors"] = res.Errors
+	}
+	return env
+}
+
+// RenderJSON 输出信封（稳定顺序由结构体字段序保证；末尾带换行）。
+func RenderJSON(w io.Writer, env Envelope) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(env)
+}
+
+// RenderHuman 输出人类可读文本。**只从信封派生**，因此与 --json 事实一致：
+// 同一 Result 的两种渲染里，status / exit_code / 每个 data 键值 / 每条诊断都能互相对上。
+func RenderHuman(w io.Writer, env Envelope, summary []string) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "状态：%s（exit_code=%d，ok=%t）\n", env.Status, env.ExitCode, env.OK)
+	for _, line := range summary {
+		fmt.Fprintf(&b, "%s\n", line)
+	}
+	if len(env.Data) > 0 {
+		fmt.Fprintf(&b, "数据：\n")
+		for _, k := range sortedDataKeys(env.Data) {
+			fmt.Fprintf(&b, "  %s: %s\n", k, scalarString(env.Data[k]))
+		}
+	}
+	if len(env.Warnings) > 0 {
+		fmt.Fprintf(&b, "警告（%d 条）：\n", len(env.Warnings))
+		for _, d := range env.Warnings {
+			fmt.Fprintf(&b, "  %s\n", diagLine(d))
+		}
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+func sortedDataKeys(data map[string]interface{}) []string {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// scalarString 把 data 值渲染成单行文本。复合值用 JSON 编码（JSON 是 CLI 输出格式，
+// 与「写路径禁止 YAML 序列化」的硬约束无关：这里只写终端，不写产物文件）。
+func scalarString(v interface{}) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	case int:
+		return fmt.Sprintf("%d", x)
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(raw)
+}
+
+func diagLine(d Diagnostic) string {
+	var b strings.Builder
+	if d.Code != "" {
+		fmt.Fprintf(&b, "[%s] ", d.Code)
+	}
+	fmt.Fprintf(&b, "%s", d.Level)
+	if d.OpIndex >= 0 {
+		fmt.Fprintf(&b, " ops[%d]", d.OpIndex)
+	}
+	if d.Path != "" {
+		fmt.Fprintf(&b, " %s", d.Path)
+	}
+	fmt.Fprintf(&b, "：%s", d.Message)
+	if d.Target != "" {
+		fmt.Fprintf(&b, "（target=%s）", d.Target)
+	}
+	return b.String()
+}
