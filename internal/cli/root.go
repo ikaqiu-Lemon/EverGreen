@@ -105,14 +105,26 @@ type Root struct {
 	Getwd      func() (string, error)
 }
 
-// New 构造带九命令的命令树。
+// New 构造带九命令的命令树，并挂载**已实现**的命令。
+//
+// 已挂载：init / config get|set（T-…-008）。其余命令仍返回 NotWiredError（退 1、零写入），
+// 由各自的 task 挂载；占位命令永不挂载。
 func New() *Root {
-	return &Root{
+	r := &Root{
 		cmds:       commands(),
 		FindVault:  findVaultUpwards,
 		LoadConfig: loadConfigReadOnly,
 		Getwd:      os.Getwd,
 	}
+	r.wireImplemented()
+	return r
+}
+
+// wireImplemented 挂载本阶段已落地的业务实现。Wire 失败只可能是注册表与实现不一致
+// （编译期就该发现的 bug），因此直接 panic 会掩盖问题——这里选择保留 NotWired 行为。
+func (r *Root) wireImplemented() {
+	_ = r.Wire("init", r.runInit)
+	_ = r.Wire("config", r.runConfig)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

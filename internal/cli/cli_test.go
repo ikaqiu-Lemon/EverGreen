@@ -475,14 +475,15 @@ func TestDefaultDomainGuard(t *testing.T) {
 		t.Fatalf("stderr 缺配置提示：%q", errOut)
 	}
 
-	// init / config 不受该守卫影响（它们的错误只能是「实现未挂载」/ 参数错误）。
+	// init / config 不受该守卫影响（实现由 T-…-008 挂载后应正常执行，退 0）。
+	setGitIdentity(t)
 	for _, args := range [][]string{{"init"}, {"config", "get", "default_domain"}} {
 		code, _, errOut := runCLI(t, newTestRoot(t, dir), args...)
 		if strings.Contains(errOut, "未配置 default_domain") {
 			t.Fatalf("eg %v 不应被 default_domain 守卫拦截：%q", args, errOut)
 		}
-		if code != ExitUsage || !strings.Contains(errOut, "尚未挂载") {
-			t.Fatalf("eg %v 骨架阶段应返回「实现尚未挂载」，实际 code=%d stderr=%q", args, code, errOut)
+		if code != ExitOK {
+			t.Fatalf("eg %v 应正常执行（T-…-008 已挂载实现），实际 code=%d stderr=%q", args, code, errOut)
 		}
 	}
 

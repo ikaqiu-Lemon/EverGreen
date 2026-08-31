@@ -277,3 +277,28 @@ func splitZ(out []byte) []string {
 	}
 	return res
 }
+
+// 兜底提交身份：机器上没有可解析的 Git 身份时，为**本仓库**设置的确定性身份。
+// 只写 --local（不碰用户全局配置），且由上层出 warning 如实告知。
+const (
+	FallbackUserName  = "Evergreen"
+	FallbackUserEmail = "eg@localhost"
+)
+
+// EnsureIdentity 保证本仓库有可用的提交身份。
+//
+// git 已能解析出身份（全局 / 本地 / 环境变量任一）时什么都不做，返回 false；
+// 否则写入本仓库的兜底身份并返回 true，供上层出 warning。这样 `eg init` 在一台
+// 全新机器上也能确定性完成首个 commit，而不是以「提交失败」收场。
+func (r *Repo) EnsureIdentity() (bool, error) {
+	if _, _, err := r.run(r.root, "var", "GIT_COMMITTER_IDENT"); err == nil {
+		return false, nil
+	}
+	if _, stderr, err := r.run(r.root, "config", "--local", "user.name", FallbackUserName); err != nil {
+		return false, wrapGit("config user.name", stderr, err)
+	}
+	if _, stderr, err := r.run(r.root, "config", "--local", "user.email", FallbackUserEmail); err != nil {
+		return false, wrapGit("config user.email", stderr, err)
+	}
+	return true, nil
+}
