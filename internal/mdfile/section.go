@@ -18,6 +18,9 @@ import (
 	"evergreen/internal/model"
 )
 
+// ErrFMSeqBlockExists frontmatter 已有该键：块状序列只在键**缺失**时创建。
+var ErrFMSeqBlockExists = errors.New("frontmatter 已存在该键（块状序列只在键缺失时创建）")
+
 // ErrEntryNotFound 收件区没有该 source_id 的条目。
 var ErrEntryNotFound = errors.New("收件区无该 source_id 条目")
 
@@ -52,4 +55,30 @@ func (u *Unprocessed) Cut(id model.SourceID) ([]byte, error) {
 		return nil, fmt.Errorf("%w：%s 仍在收件区", ErrCutUnsafe, id)
 	}
 	return out, nil
+}
+
+// AppendFMSeqBlock 在 frontmatter **末尾**新建一个块状序列：`key:` 一行 + items 逐字插入。
+// 只在键缺失时可用（已存在同名键 → ErrFMSeqBlockExists；已存在序列请用 AppendFMSeqItem，
+// 沿用既有缩进）。items 由调用方自带缩进与 `- `，本包不改写其一个字节。
+//
+// 机制仍然只有一条：区间拼接 + 在 FMEnd 处插入。
+func (d *Doc) AppendFMSeqBlock(key string, items []byte) ([]byte, error) {
+	if !d.HasFM {
+		return nil, ErrNoFrontmatter
+	}
+	exists, err := d.HasFMKey(key)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("%w：%s", ErrFMSeqBlockExists, key)
+	}
+	if len(items) == 0 || items[len(items)-1] != '\n' {
+		return nil, ErrPayloadNotLineTerminated
+	}
+	payload := make([]byte, 0, len(key)+2+len(items))
+	payload = append(payload, key...)
+	payload = append(payload, ':', '\n')
+	payload = append(payload, items...)
+	return insert(d.Raw, d.FMEnd, payload), nil
 }

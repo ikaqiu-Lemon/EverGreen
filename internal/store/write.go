@@ -85,6 +85,12 @@ type FMSeqAppend struct {
 	Item []byte
 }
 
+// FMSeqBlock 是在 frontmatter 末尾**新建**一个块状序列（键缺失时用；键已存在请用 FMSeqAppend）。
+type FMSeqBlock struct {
+	Key   string
+	Items []byte // 调用方自带缩进与 `- `，逐字插入
+}
+
 // Edit 是一次守卫写入要施加的全部**追加**动作。没有「替换」「删除」形态——
 // 那是 S2 起的用户显式命令，自动路径拿不到（B1）。
 type Edit struct {
@@ -92,10 +98,12 @@ type Edit struct {
 	Sections   []SectionAppend
 	FMKeys     []FMKeyAppend
 	FMSeqItems []FMSeqAppend
+	FMSeqNew   []FMSeqBlock
 }
 
 func (e Edit) empty() bool {
-	return len(e.Sections) == 0 && len(e.FMKeys) == 0 && len(e.FMSeqItems) == 0
+	return len(e.Sections) == 0 && len(e.FMKeys) == 0 && len(e.FMSeqItems) == 0 &&
+		len(e.FMSeqNew) == 0
 }
 
 // WriteGuarded 是 S1 唯一的守卫写入口，固定次序（§16.4）：
@@ -183,6 +191,17 @@ func applyEdit(raw []byte, edit Edit) ([]byte, error) {
 		}
 		cur = out
 	}
+	for _, fb := range edit.FMSeqNew {
+		doc, err := mdfile.Parse(cur)
+		if err != nil {
+			return nil, err
+		}
+		out, err := doc.AppendFMSeqBlock(fb.Key, fb.Items)
+		if err != nil {
+			return nil, err
+		}
+		cur = out
+	}
 	for _, fs := range edit.FMSeqItems {
 		doc, err := mdfile.Parse(cur)
 		if err != nil {
@@ -217,6 +236,11 @@ func reviewAfterWrite(out []byte, edit Edit) []string {
 	for _, fs := range edit.FMSeqItems {
 		if _, ok := fm[fs.Key]; !ok {
 			warnings = append(warnings, "写后复核失败：序列键未生效："+fs.Key)
+		}
+	}
+	for _, fb := range edit.FMSeqNew {
+		if _, ok := fm[fb.Key]; !ok {
+			warnings = append(warnings, "写后复核失败：新建序列键未生效："+fb.Key)
 		}
 	}
 	return warnings
