@@ -44,7 +44,7 @@ var wantFlags = map[string][]string{
 	"apply":   {"plan", "dry-run"},
 	"search":  {"domain", "tag", "since", "until"},
 	"card":    {},
-	"rel":     {"reason"},
+	"rel":     {"reason", "to"},
 	"report":  {"last"},
 }
 
@@ -198,17 +198,19 @@ func TestEachCommandHelpExitsZeroAndPrintsToStdout(t *testing.T) {
 // —— ③ 占位调用形态：退 1、固定措辞、零副作用 ——
 //
 // M1 期是五条（search / card show / rel / rel add / rel remove）。M2 逐个落地后清单
-// **只减不增**：T-…-021 摘掉 search、T-…-022 摘 card show（本轮），T-…-023 摘 rel 读路径，
+// **只减不增**：T-…-021 摘掉 search、T-…-022 摘 card show、T-…-023 摘 rel 读路径（本轮），
 // 摘掉的形态各自有真实实现与用例接管，绝不是「不再检查」。
+// 余下两条是 rel 的写子命令：`add` 由 T-…-024 落地、`remove` 按 M-002-m2.md 的阶段裁决归
+// M3/S2，二者仍返回固定占位措辞、退 1、零副作用（措辞与 M1 逐字一致）。
 var placeholderInvocations = [][]string{
-	{"rel", "k-20260901-x"},
 	{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
 	{"rel", "remove", "k-20260901-a", "supports", "k-20260901-b"},
 }
 
 func TestPlaceholderCommandsExitOneWithFixedWording(t *testing.T) {
-	if len(placeholderInvocations) != 3 {
-		t.Fatalf("占位用例集合必须是三条（M2 已落地 search / card show），实际 %d", len(placeholderInvocations))
+	if len(placeholderInvocations) != 2 {
+		t.Fatalf("占位用例集合必须是两条（M2 已落地 search / card show / rel 读路径），实际 %d",
+			len(placeholderInvocations))
 	}
 	for _, args := range placeholderInvocations {
 		dir := t.TempDir()
@@ -235,7 +237,7 @@ func TestPlaceholderCommandsExitOneWithFixedWording(t *testing.T) {
 
 func TestPlaceholderJSONEnvelope(t *testing.T) {
 	r := newTestRoot(t, t.TempDir())
-	code, out, _ := runCLI(t, r, "--json", "rel", "k-20260901-x")
+	code, out, _ := runCLI(t, r, "--json", "rel", "remove", "k-20260901-a", "supports", "k-20260901-b")
 	if code != ExitUsage {
 		t.Fatalf("退出码 = %d，期望 1", code)
 	}
@@ -254,22 +256,38 @@ func TestPlaceholderJSONEnvelope(t *testing.T) {
 	}
 }
 
-func TestRelReadPathIsNotImplemented(t *testing.T) {
-	r := newTestRoot(t, t.TempDir())
-	_, out, errOut := runCLI(t, r, "rel", "k-20260901-x")
-	// 输出只含未实现文案，不含任何关系数据。
-	for _, leak := range []string{"derives", "supports", "limits", "opposing", "relations["} {
-		if strings.Contains(out+errOut, leak) {
-			t.Fatalf("eg rel 的占位输出泄漏了关系数据 %q：%q", leak, out+errOut)
+// TestRelQuerySubcommandsUnwired —— M2 起 `eg rel <k-id>` 是真实读路径（T-…-023），
+// 写子命令 `add`（T-…-024）/ `remove`（M3/S2 裁决）仍未实现：退 1、固定占位措辞、
+// **不落进读路径**（输出不含 relations_out）、零副作用。
+//
+// 本用例取代 M1 的「rel 读路径未实现」断言：那条断言与读路径落地必然自相矛盾，
+// 因此按 M2 口径改写而不是删除覆盖面（改动理由见 T-…-023 的 Activity Log）。
+func TestRelQuerySubcommandsUnwired(t *testing.T) {
+	for _, args := range [][]string{
+		{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
+		{"rel", "remove", "k-20260901-a", "supports", "k-20260901-b"},
+	} {
+		dir := t.TempDir()
+		before := snapshot(t, dir)
+		r := newTestRoot(t, dir)
+		code, out, errOut := runCLI(t, r, args...)
+		if code != ExitUsage {
+			t.Fatalf("eg %v 退出码 = %d，期望 1", args, code)
+		}
+		if !strings.Contains(errOut, PlaceholderNotice) {
+			t.Fatalf("eg %v 的 stderr 必须含固定文案 %q，实际 %q", args, PlaceholderNotice, errOut)
+		}
+		for _, leak := range []string{"relations_out", "relations_in", "scanned_files"} {
+			if strings.Contains(out+errOut, leak) {
+				t.Fatalf("eg %v 泄漏了读路径字段 %q：%q", args, leak, out+errOut)
+			}
+		}
+		if after := snapshot(t, dir); after != before {
+			t.Fatalf("eg %v 产生了文件变化：%q → %q", args, before, after)
 		}
 	}
 	relCmd := New().Lookup("rel")
-	for _, want := range []string{MilestoneTag, "add", "remove"} {
-		if !strings.Contains(relCmd.Usage, want) {
-			t.Fatalf("rel --help 缺 %q 标注", want)
-		}
-	}
-	// add|remove 行必须各自带 M2 标注。
+	// add|remove 行必须各自带 M2 标注（写路径仍在 M2 视野内，remove 的阶段裁决见 M-002-m2.md）。
 	for _, line := range strings.Split(relCmd.Usage, "\n") {
 		if strings.HasPrefix(line, "eg rel add") || strings.HasPrefix(line, "eg rel remove") {
 			if !strings.Contains(line, "M2") {
@@ -277,19 +295,22 @@ func TestRelReadPathIsNotImplemented(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(strings.SplitN(relCmd.Usage, "\n", 2)[0], "M2") {
-		t.Fatalf("rel 读路径行缺 M2 标注：%q", relCmd.Usage)
+	if relCmd.Placeholder {
+		t.Fatal("rel 读路径已落地，命令级 Placeholder 必须摘除（否则无法 Wire 实现）")
 	}
 }
 
 func TestPlaceholderCannotBeWired(t *testing.T) {
 	r := New()
-	for _, name := range []string{"rel"} {
-		if err := r.Wire(name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err == nil {
-			t.Fatalf("占位命令 %q 不得允许挂载实现", name)
+	for _, c := range r.Commands() {
+		if !c.Placeholder {
+			continue
+		}
+		if err := r.Wire(c.Name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err == nil {
+			t.Fatalf("占位命令 %q 不得允许挂载实现", c.Name)
 		}
 	}
-	for _, name := range []string{"context", "search", "card"} {
+	for _, name := range []string{"context", "search", "card", "rel"} {
 		if err := r.Wire(name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err != nil {
 			t.Fatalf("%s 应允许挂载实现（非占位命令）：%v", name, err)
 		}
@@ -648,21 +669,30 @@ func TestForbiddenWordingAbsent(t *testing.T) {
 	}
 }
 
-func TestRelFilesDoNotReferenceQueryPackage(t *testing.T) {
+// TestRelFilesDoNotReferenceWriteAPI —— P1-2 反证按 M2 口径改写（不是删除）：
+// M1 期禁的是「rel* 引用查询包」（因为读路径 M1 不实现）；T-…-023 落地读路径后，
+// 引用查询包成了正常取数方式，禁令收紧为**不得引用写入 API**——
+// internal/store / internal/plan / internal/git 与 Apply* / Write* / Commit 一律不得出现，
+// 保证 rel 读路径永远是只读的（合同 §6）。
+func TestRelFilesDoNotReferenceWriteAPI(t *testing.T) {
 	matches, err := filepath.Glob("rel*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(matches) == 0 {
-		t.Fatal("internal/cli 下应有 rel* 文件承载 rel 占位命令")
+		t.Fatal("internal/cli 下应有 rel* 文件承载 rel 命令")
 	}
+	banned := []string{`evergreen/internal/store"`, `evergreen/internal/plan"`,
+		`evergreen/internal/git"`, "ApplyPlan(", "WriteFile(", "Commit("}
 	for _, f := range matches {
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(raw), "internal/query") {
-			t.Fatalf("%s 不得引用查询包（P1-2 反证：rel 读路径在 M1 不实现）", f)
+		for _, b := range banned {
+			if strings.Contains(string(raw), b) {
+				t.Fatalf("%s 不得引用写入 API %q（P1-2 反证的 M2 口径：rel 读路径只读）", f, b)
+			}
 		}
 	}
 }
