@@ -326,19 +326,13 @@ func applyResult(rep report.Report, pres *plan.Result, planned []map[string]inte
 	}
 	res := &Result{Data: data, Warnings: toCLIReportDiags(rep.Warnings)}
 	res.Summary = rep.Lines()
-	return res
-}
-
-// convergenceData 原样回带 convergence[]（含每条的 relation），不重新判断收敛结论。
-func convergenceData(items []plan.Convergence) []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(items))
-	for _, c := range items {
-		out = append(out, map[string]interface{}{
-			"card": c.Card, "relation": c.Relation, "core_knowledge": c.Core,
-			"conditions": c.Conditions, "reuse_purpose": c.ReusePurpose, "note": c.Note,
-		})
+	// 报告体行之后追加逐卡收敛结论：渲染走 convergence.go 的唯一实现
+	// （`eg report --last` 回放时调的是同一个 convergenceLines，两条路径逐字相等）。
+	if pres != nil {
+		res.Summary = append(res.Summary,
+			convergenceLines(convergenceItemsFromPlan(pres.Convergence))...)
 	}
-	return out
+	return res
 }
 
 // skippedDiags 把跳过与失败转成退 3 的诊断载荷（调用方不得吞掉，B3）。

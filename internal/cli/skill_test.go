@@ -35,6 +35,7 @@ const (
 	changePlanSpec   = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-08-changeplan-contract.md"
 	egCLISpec        = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-01-eg-cli-contract.md"
 	techDesignSpec   = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md"
+	m2QuerySpec      = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-19-m2-query-contract.md"
 	skillRelationRow = `^\| ` + "`" + `([a-z_]+)` + "`" + ` \|`
 )
 
@@ -380,15 +381,101 @@ func TestSkillSpecCrossReferences(t *testing.T) {
 			t.Fatalf("CLI 合同里找不到命令 %s：口径已漂移", cmd)
 		}
 	}
-	if !strings.Contains(doc, "M1 未实现（S1 命令，M2 落地）") {
-		t.Fatal("SKILL.md 缺 M1 占位措辞「M1 未实现（S1 命令，M2 落地）」")
+	// M2 口径（T-…-026）：三条查询命令与 `rel add` 已真实可用，文档不得再写成未实现。
+	// 旧断言（M1 期）：`strings.Contains(doc, "M1 未实现（S1 命令，M2 落地）")` 必须命中——
+	// 021 ~ 024 落地后该措辞即为错误陈述，故改为「反向断言 + rel remove 阶段占位逐字一致」。
+	if strings.Contains(doc, "M1 未实现") {
+		t.Fatal("SKILL.md 仍把 S1 命令写成「M1 未实现」：M2 起九命令全部真实可用（rel remove 归 M3/S2）")
 	}
 	// 被禁措辞按运行期拼接，避免本文件自身被 TestForbiddenWordingAbsent 判为命中。
 	if banned := "S1 " + "未覆盖"; strings.Contains(doc, banned) {
-		t.Fatalf("SKILL.md 不得把 M1 占位写成 %q", banned)
+		t.Fatalf("SKILL.md 不得把命令状态写成 %q", banned)
 	}
 	// #dead 清单在技术方案里仍然存在（只读校验，防单侧漂移）。
 	if !strings.Contains(readSpec(t, techDesignSpec), `id="dead"`) {
 		t.Fatal("技术方案 #dead 锚点缺失：废弃项清单来源不可核对")
+	}
+}
+
+// TestSkillCommandStatusMatchesImplementation：§1 的九命令状态与实现逐字一致（T-…-026）。
+//
+// 只允许一处「未实现」——`eg rel remove`，且措辞必须与 internal/cli/rel.go 的
+// RemovePlaceholderNotice **逐字相等**（同一字符串双向比对，反证文档没有另造一套口径）。
+func TestSkillCommandStatusMatchesImplementation(t *testing.T) {
+	doc := skillText(t)
+
+	// ① 三条查询命令与 rel add 的用法行逐字取自 M2 查询合同 §1.1 / §2.1 / §3.1 / §4.1。
+	for _, usage := range []string{
+		"eg search <query> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--json]",
+		"eg card show <k-id> [--json]",
+		"eg rel <k-id> [--to <id>] [--json]",
+		"eg rel add <from> <type> <to> --reason <text> [--domain <d>] [--json]",
+		"eg rel remove <from> <type> <to>",
+	} {
+		if !strings.Contains(doc, usage) {
+			t.Fatalf("SKILL.md 缺命令用法行（须与合同逐字一致）：%s", usage)
+		}
+		if !strings.Contains(readSpec(t, m2QuerySpec), usage) {
+			t.Fatalf("M2 查询合同里找不到用法行 %q：口径已漂移", usage)
+		}
+	}
+
+	// ② 只读三命令的零副作用承诺在场；rel add 的 commit verb 在场。
+	for _, must := range []string{
+		"M2 起九个命令全部真实可用",
+		"零文件变化、零 commit，可任意次调用",
+		"verb = `relate`",
+	} {
+		if !strings.Contains(doc, must) {
+			t.Fatalf("SKILL.md 缺 M2 命令状态明文：%s", must)
+		}
+	}
+
+	// ③ rel remove 的阶段措辞与实现逐字相等（双向：文档含实现常量，且实现常量含 M3/S2）。
+	if !strings.Contains(doc, RemovePlaceholderNotice) {
+		t.Fatalf("SKILL.md 的 rel remove 阶段措辞必须与 rel.go 的 RemovePlaceholderNotice 逐字相等\n实现：%s",
+			RemovePlaceholderNotice)
+	}
+	if !strings.Contains(RemovePlaceholderNotice, "M3/S2 未实现") {
+		t.Fatal("RemovePlaceholderNotice 不再是 M3/S2 口径：阶段裁决被改动")
+	}
+	// 「未实现」在全文只允许出现在该占位文案里（其余命令一律真实可用）。
+	for i, line := range strings.Split(doc, "\n") {
+		if !strings.Contains(line, "未实现") {
+			continue
+		}
+		if !strings.Contains(line, RemovePlaceholderNotice) && !strings.Contains(line, "rel remove") {
+			t.Fatalf("第 %d 行出现「未实现」但不属 rel remove 的阶段说明：%s", i+1, line)
+		}
+	}
+}
+
+// TestSkillConvergencePresentationSection：§3.5「收敛结论怎么被呈现」在场且与实现一致（T-…-026）。
+func TestSkillConvergencePresentationSection(t *testing.T) {
+	doc := skillText(t)
+	if !strings.Contains(doc, "### 3.5 收敛结论怎么被呈现") {
+		t.Fatal("SKILL.md 缺 §3.5「收敛结论怎么被呈现」一节")
+	}
+	for _, must := range []string{
+		"data.convergence[]",
+		"逐卡收敛记录",
+		ConvergenceMissing,
+		"与该次 apply 的输出**逐字相等**",
+		"如实转述",
+		"不得改写、不得合并同类项",
+	} {
+		if !strings.Contains(doc, must) {
+			t.Fatalf("§3.5 缺明文：%s", must)
+		}
+	}
+	// data.convergence 每条的 6 键必须逐字登记（与 convergenceItem 的 json tag 同源）。
+	for _, key := range []string{"card", "relation", "core_knowledge", "conditions", "reuse_purpose", "note"} {
+		if !strings.Contains(doc, "`"+key+"`") {
+			t.Fatalf("§3.5 缺 data.convergence 键 %s", key)
+		}
+	}
+	// §7 自检清单必须收一条「收敛结论已如实转述」。
+	if !strings.Contains(doc, "- [ ] 逐卡收敛结论已被最终报告如实转述") {
+		t.Fatal("§7 自检清单缺「逐卡收敛结论已被最终报告如实转述」一条")
 	}
 }

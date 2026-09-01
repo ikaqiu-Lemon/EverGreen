@@ -104,6 +104,11 @@ func (r *Root) runReport(inv *Invocation) (*Result, error) {
 		"最近一次 apply：exit_code=%d，status=%s（只读复现，零写入零 commit）",
 		rec.ExitCode, rec.Status))
 	res.Summary = append(res.Summary, reportLines(rec.Data["report"])...)
+	// 逐卡收敛结论与 `eg apply` 共用 convergence.go 的 convergenceLines：
+	// 同一份落盘字节 → 同一个渲染函数 → 两条路径的收敛行块逐字相等
+	// （渲染字面量只允许出现在 convergence.go，故此处不复述该前缀）。
+	// 记录里没有该字段（M1 期旧记录）只陈述事实，照常退 0、不补算。
+	res.Summary = append(res.Summary, convergenceReplayLines(rec.Data["convergence"])...)
 	return res, nil
 }
 

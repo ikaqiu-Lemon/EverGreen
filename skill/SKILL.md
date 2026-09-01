@@ -16,8 +16,20 @@
 4. **`eg apply --plan` 是唯一程序化写入通道**：任何绕过它的文件改动都是违规（见 §5 B-01）。
 
 S1 命令恰九个：`init`、`config get|set`、`capture`、`context`、`apply`、`search`、`card show`、`rel`、
-`report --last`。其中 `search` / `card show` / `rel`（含 `rel add|remove`）在 M1 **只注册占位**，
-被调用即输出「M1 未实现（S1 命令，M2 落地）」并退 `1`，零副作用——不要把它们排进主链路。
+`report --last`。**M2 起九个命令全部真实可用**：
+
+| 命令 | M2 状态 | 副作用 |
+|-|-|-|
+| `eg init`、`eg config get`、`eg config set`、`eg capture`、`eg context`、`eg apply`、`eg report --last` | 可用 | 见 §2（`init` / `capture` / `config set` / `apply` 各产生恰一次 commit；`context` / `report --last` 只读） |
+| `eg search <query> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--json]` | 可用（只读查询） | 零文件变化、零 commit |
+| `eg card show <k-id> [--json]` | 可用（只读查询） | 零文件变化、零 commit |
+| `eg rel <k-id> [--to <id>] [--json]` | 可用（只读查询） | 零文件变化、零 commit |
+| `eg rel add <from> <type> <to> --reason <text> [--domain <d>] [--json]` | 可用（写入） | 走与 `eg apply` **同一条** ChangePlan 链路，产生恰一次 commit（verb = `relate`） |
+| `eg rel remove <from> <type> <to>` | **不可用** | 零写入、零 commit（见下） |
+
+唯一未落地的形态是 `eg rel remove`：被调用即输出
+「M3/S2 未实现（关系删除属 remove_relation op，阶段裁决见 M-002-m2.md：该 op 属 S2，命令与 op 一并归 M3/S2；M2 不做，本次调用零写入、零 commit）」
+并退 `1`，零副作用——不要把它排进主链路，也不要在报告里承诺「稍后删除」。
 
 ## 2. S1 调用顺序（0–5 步，逐步写明输入 / 输出 / 失败处置）
 
@@ -71,6 +83,26 @@ eg context (--source <s-id> | --note <n-id>) [--domain <d>] [--json]
 在这一步产出：材料笔记四类内容、知识卡（新建 / 复用 / 追加）、材料关系与论证关系、存疑条目、
 `convergence[]` 逐卡判定、`coverage_gaps` 自评。判据见 §3，落成 ChangePlan 的规则见 §4。
 **这一步不碰磁盘**：不要用编辑器 / shell 直接写 vault 里的任何文件。
+
+**判断收敛前可用三条只读查询命令复核**（M2 起全部真实可用；**零文件变化、零 commit，可任意次调用**，
+不需要也不允许把它们的结论当成写入）：
+
+```
+eg search <query> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--json]
+eg card show <k-id> [--json]
+eg rel <k-id> [--to <id>] [--json]
+```
+
+- `eg search`：`eg context` 的候选卡只覆盖同领域相似卡；怀疑漏了别的说法时按关键词再搜一遍，
+  确认「是不是已经有一张卡在讲同一件事」。失效卡也会出现在结果里并带 `[失效]` 标记。
+- `eg card show`：拿到候选卡的**五分区全文** + `sources[]` + 正反向关系，用来逐维度比对
+  §3.1 的三维度（只看标题下判断 = 判错）。
+- `eg rel`：查这张卡**已经**有哪些论证关系（正向 `relations[]` + 反向全库扫描），
+  避免把已存在的关系再写一遍（同对重复会记 W8），也便于判 `core_change` / `conflict_coexist`。
+- 三条命令都**不会**修改 vault：不产生 commit、不改任何文件，因此判不准就多查几次，不要靠猜。
+- 需要**新增**一条论证关系且不涉及卡内容改动时，可直接用
+  `eg rel add <from> <type> <to> --reason <text> [--domain <d>] [--json]`（写路径，产生一次
+  `relate` commit）；涉及卡正文的任何改动仍然只能走 `eg apply --plan`。
 
 ### 2.4 ④ `eg apply --plan`（唯一程序化写入通道）
 
@@ -162,6 +194,25 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 - [ ] `coverage_gaps` **只登记原文没有**的要点，**不得**用来掩盖 Agent 自己漏写的要点。
 - [ ] **无缺失时不写该字段**（缺字段或空数组 = 无缺失，CLI 不会自行推断、不会补全）。
 - [ ] 取值不在受控枚举内 → I1 info，原样透传进报告，不拦截；但仍属规程违规。
+
+### 3.5 收敛结论怎么被呈现（M2 起四个出口同源同事实）
+
+`convergence[]` 写进 plan 之后，CLI **原样回带**、不重新判断、不重排、不去重、不合并。它出现在
+四个出口上，四处内容同源（同一份数组 + 同一个渲染函数）：
+
+| 出口 | 位置 | 形态 |
+|-|-|-|
+| `eg apply --json` | `data.convergence[]`，每条恰 6 键：`card` / `relation` / `core_knowledge` / `conditions` / `reuse_purpose` / `note` | 结构化 |
+| `eg apply`（文本） | 报告体各行**之后**的「逐卡收敛记录」行块 | 人类可读 |
+| `eg report --last --json` | `data.convergence[]`（回放落盘字节，与该次 apply 逐字相同） | 结构化 |
+| `eg report --last`（文本） | 同一个「逐卡收敛记录」行块，与该次 apply 的输出**逐字相等** | 人类可读 |
+
+文本形态每张卡恰一段、每段恰 5 行（`<card> → <relation>` + 三维度 + 说明）；**字段缺失处打「未给出」**，
+CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段不出现（另见 W5：涉及已有卡却不给条目 = 规程违规）。
+
+- [ ] 最终报告（§2.5）必须**如实转述**逐卡收敛记录：卡 ID、处理关系、三维度结论、`note` 一一照搬。
+- [ ] **不得改写、不得合并同类项、不得省略「未给出」**，也不得把 CLI 没说的收敛理由补进报告。
+- [ ] 想复述「为什么这么收敛」就把 `note` 原文引出来；`note` 是空的就写「未给出」，不要临时编一个理由。
 
 ## 4. ChangePlan 填写规则
 
@@ -349,4 +400,5 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 - [ ] 每张候选卡在 `convergence[]` 里各一条，`relation` 取自 §3.2 七值且与三维度自洽。
 - [ ] op 组合与 §3.2 表格对得上；没有状态类 op、没有 S2+ op。
 - [ ] `coverage_gaps` 只登记原文没有的要点；无缺失时该字段不出现。
+- [ ] 逐卡收敛结论已被最终报告如实转述（卡 ID / 处理关系 / 三维度 / `note` 照搬，缺的写「未给出」，见 §3.5）。
 - [ ] 报告如实转述 `skipped[]` 与 `warnings[]`，退 `3` / `4` 时按 §2.6 处置，**没有**自行做 Git 操作。
