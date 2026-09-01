@@ -203,7 +203,8 @@ func (t *RelationType) UnmarshalJSON(b []byte) error {
 
 // —— commit verb 与领域 ——
 
-// Verb 是 Git 提交动词。S1 会产生的 verb 恰五个（合同 2026-09-01-eg-cli-contract.md §6）。
+// Verb 是 Git 提交动词。S1 会产生的 verb 恰六个（合同 2026-09-01-eg-cli-contract.md §6；
+// 第六个 `relate` 自 M2 的 `eg rel add` 起真实产生，见 M2 查询与关系写入合同 §4.4）。
 //
 // VerbReconcile 是 §7.1 `eg config get|set` 行的提交动词，**≠** S3 的 `eg reconcile`
 // 对账命令，也 **≠** §4.6 报告字段 `reconcile`——三者同名分属三层。
@@ -216,16 +217,18 @@ const (
 	VerbProcess   Verb = "process"
 	VerbReprocess Verb = "reprocess"
 
-	// VerbRelate 属 M2（`eg rel add|remove`），M1 不产生。
+	// VerbRelate 是 `eg rel add` 的提交动词（M2 查询与关系写入合同 §4.4：
+	// 一次 rel add = 一次 relate commit）。M1 期它被排除在 KnownVerbs 之外，
+	// T-…-024 起纳入，否则主题行会退化成 process(<domain>)。
 	VerbRelate Verb = "relate"
 )
 
-// KnownVerbs 返回 M1 会产生的 verb 集合（不含 M2 的 relate）。
+// KnownVerbs 返回 S1 会产生的 verb 集合（恰六个，含 M2 起产生的 relate）。
 func KnownVerbs() []Verb {
-	return []Verb{VerbInit, VerbReconcile, VerbCapture, VerbProcess, VerbReprocess}
+	return []Verb{VerbInit, VerbReconcile, VerbCapture, VerbProcess, VerbReprocess, VerbRelate}
 }
 
-// Known 报告 v 是否属 M1 已知 verb。
+// Known 报告 v 是否属已知 verb。
 func (v Verb) Known() bool {
 	for _, k := range KnownVerbs() {
 		if v == k {
@@ -238,7 +241,8 @@ func (v Verb) Known() bool {
 func (v Verb) String() string { return string(v) }
 
 // NormalizeVerb 把任意输入归一化为可提交的 verb：
-// 未知值（含空值与 M2 的 relate）**退化为 process** 并返回 false，供上层出 warning。
+// 未知值（含空值）**退化为 process** 并返回 false，供上层出 warning；
+// `relate` 自 M2 起属已知 verb，不再退化。
 // 语义出处：§4.5「verb 未知 → warning 并退化为 process」。
 func NormalizeVerb(raw string) (Verb, bool) {
 	v := Verb(raw)

@@ -336,17 +336,41 @@ func TestStatusAndDeletionAreOrthogonal(t *testing.T) {
 // —— commit verb ——
 
 func TestNormalizeVerbFallsBackToProcess(t *testing.T) {
-	if len(KnownVerbs()) != 5 {
-		t.Fatalf("M1 verb 恰五个，实际 %v", KnownVerbs())
+	// M2（T-…-024）起 relate 纳入 KnownVerbs：五个 → 六个。改动理由见该 task 的 Activity Log
+	// ——`eg rel add` 的 commit 主题必须是 `relate(<domain>): …`，relate 若仍属未知
+	// verb，Message.Build 会把它退化成 process 并报 warning，M2 完成判据 5 无法成立。
+	if len(KnownVerbs()) != 6 {
+		t.Fatalf("S1 verb 恰六个（M2 起含 relate），实际 %v", KnownVerbs())
 	}
 	if v, ok := NormalizeVerb("capture"); !ok || v != VerbCapture {
 		t.Fatalf("已知 verb 不应退化：%q %v", v, ok)
 	}
-	for _, unknown := range []string{"frobnicate", "", "relate"} {
+	for _, unknown := range []string{"frobnicate", ""} {
 		v, ok := NormalizeVerb(unknown)
 		if ok || v != VerbProcess {
 			t.Fatalf("未知 verb %q 应退化为 process 并报 false，实际 %q %v", unknown, v, ok)
 		}
+	}
+}
+
+// TestNormalizeVerbRelateIsKnown —— relate 不再退化（T-…-024 Acceptance）。
+func TestNormalizeVerbRelateIsKnown(t *testing.T) {
+	v, ok := NormalizeVerb("relate")
+	if !ok || v != VerbRelate {
+		t.Fatalf("NormalizeVerb(\"relate\") 应返回 (VerbRelate, true)，实际 (%q, %v)", v, ok)
+	}
+	if !VerbRelate.Known() {
+		t.Fatal("VerbRelate 必须属已知 verb，否则 relate commit 主题会写成 process(<domain>)")
+	}
+	seen := map[Verb]bool{}
+	for _, k := range KnownVerbs() {
+		if seen[k] {
+			t.Fatalf("KnownVerbs 出现重复项 %q", k)
+		}
+		seen[k] = true
+	}
+	if !seen[VerbRelate] || len(seen) != 6 {
+		t.Fatalf("KnownVerbs 必须恰六个且含 relate，实际 %v", KnownVerbs())
 	}
 }
 

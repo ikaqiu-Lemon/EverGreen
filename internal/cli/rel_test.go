@@ -314,8 +314,12 @@ func TestRelQueryDualRenderingSameFacts(t *testing.T) {
 	}
 }
 
-// TestRelQueryZeroSideEffect —— 合同 §6：四类调用（读 / 不存在的 id / add / remove）前后
-// git status --porcelain、git log 条数、vault 内文件字节与 mtime 逐一相等；退出码只 0 / 1。
+// TestRelQueryZeroSideEffect —— 合同 §6：三类**只读**调用（读 / 不存在的 id /
+// M3S2 占位的 remove）前后 git status --porcelain、git log 条数、vault 内文件字节与
+// mtime 逐一相等；退出码只 0 / 1。
+//
+// T-…-024 起 `rel add` 是真实写路径（verb=relate，一次 commit），因此从本清单移出，
+// 它的写入事实与退出码由 TestRelAdd* 与 test/e2e/m2_rel_add.sh 接管（覆盖面不减）。
 func TestRelQueryZeroSideEffect(t *testing.T) {
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
@@ -342,7 +346,6 @@ func TestRelQueryZeroSideEffect(t *testing.T) {
 	for _, args := range [][]string{
 		{"rel", "k-20260901-a"},
 		{"rel", "k-20260909-missing"},
-		{"rel", "add", "k-20260901-a", "supports", "k-20260902-b", "--reason", "r"},
 		{"rel", "remove", "k-20260901-a", "supports", "k-20260902-b"},
 	} {
 		rr := newTestRoot(t, dir)

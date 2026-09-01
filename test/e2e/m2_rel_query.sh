@@ -193,13 +193,14 @@ grep -Fq 'k-20260909-missing（目标不存在）' "${WORK}/out.txt" ||
 [ ! -e "${VAULT}/.index" ] || die "M2 不得生成 .index/（属 S4）"
 ok "Q1（坏文件路径）+ Q2（悬空目标 ID）+ Q3 汇总俱在；计数守恒；退出码仍 0；无 .index/"
 
-# ---------------------------------------------------------------- 7. 子命令仍未实现 + 退出码边界
-step "写子命令仍未实现且不落进读路径；错误路径一律退 1（无 2/3/4）"
-for sub in "rel add k-20260901-attention supports k-20260902-rnn --reason r" \
-  "rel remove k-20260901-attention supports k-20260902-rnn"; do
+# ---------------------------------------------------------------- 7. rel remove 仍未实现 + 退出码边界
+step "rel remove 仍未实现（M3/S2）且不落进读路径；读路径错误一律退 1（无 2/3/4）"
+# 说明（T-…-024）：`rel add` 已在 M2 落地为真实写路径，其端到端判据搬到 m2_rel_add.sh；
+# 本脚本是**只读**脚本（第 8 步要求零文件变化），故只保留 remove 这条未实现分支。
+for sub in "rel remove k-20260901-attention supports k-20260902-rnn"; do
   # shellcheck disable=SC2086
   [ "$(eg_code ${sub})" = "1" ] || die "eg ${sub} 应退 1（未实现）"
-  grep -Fq '未实现' "${WORK}/err.txt" || die "eg ${sub} 的 stderr 缺未实现文案"
+  grep -Fq 'M3/S2 未实现' "${WORK}/err.txt" || die "eg ${sub} 的 stderr 缺 M3/S2 未实现文案"
   if grep -Fq 'relations_out' "${WORK}/out.txt" "${WORK}/err.txt"; then
     die "eg ${sub} 泄漏了读路径字段（不得落进读路径）"
   fi
@@ -211,7 +212,7 @@ grep -Fq 'k-20260909-missing' "${WORK}/err.txt" || die "stderr 应给出可定�
 [ "$(eg_code rel)" = "1" ] || die "缺位置参数应退 1"
 [ "$(eg_code rel k-20260901-attention extra)" = "1" ] || die "多余位置参数应退 1"
 [ "$(eg_code rel k-20260901-attention --to not-an-id)" = "1" ] || die "--to 形态非法应退 1"
-ok "add / remove 仍未实现且不落读路径；七类错误路径一律退 1"
+ok "remove 仍未实现且不落读路径；七类错误路径一律退 1"
 
 # ---------------------------------------------------------------- 8. 零副作用复核
 step "只读零副作用复核：git status / git log / 文件字节与 mtime + sha256 逐一相等（合同 §6）"

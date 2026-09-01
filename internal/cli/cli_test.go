@@ -44,7 +44,7 @@ var wantFlags = map[string][]string{
 	"apply":   {"plan", "dry-run"},
 	"search":  {"domain", "tag", "since", "until"},
 	"card":    {},
-	"rel":     {"reason", "to"},
+	"rel":     {"reason", "to", "domain"},
 	"report":  {"last"},
 }
 
@@ -198,18 +198,19 @@ func TestEachCommandHelpExitsZeroAndPrintsToStdout(t *testing.T) {
 // —— ③ 占位调用形态：退 1、固定措辞、零副作用 ——
 //
 // M1 期是五条（search / card show / rel / rel add / rel remove）。M2 逐个落地后清单
-// **只减不增**：T-…-021 摘掉 search、T-…-022 摘 card show、T-…-023 摘 rel 读路径（本轮），
-// 摘掉的形态各自有真实实现与用例接管，绝不是「不再检查」。
-// 余下两条是 rel 的写子命令：`add` 由 T-…-024 落地、`remove` 按 M-002-m2.md 的阶段裁决归
-// M3/S2，二者仍返回固定占位措辞、退 1、零副作用（措辞与 M1 逐字一致）。
+// **只减不增**：T-…-021 摘掉 search、T-…-022 摘 card show、T-…-023 摘 rel 读路径、
+// T-…-024 摘 rel add（本轮，换成真实写入 + relate commit），摘掉的形态各自有真实实现
+// 与用例接管，绝不是「不再检查」。
+// 只剩 `rel remove` 一条：按 M-002-m2.md 与 M2 合同 §7 的阶段裁决归 **M3/S2**，
+// 措辞换成 RemovePlaceholderNotice（与 M1 的 PlaceholderNotice 刻意区分），
+// 仍是退 1、零写入、零 commit。
 var placeholderInvocations = [][]string{
-	{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
 	{"rel", "remove", "k-20260901-a", "supports", "k-20260901-b"},
 }
 
 func TestPlaceholderCommandsExitOneWithFixedWording(t *testing.T) {
-	if len(placeholderInvocations) != 2 {
-		t.Fatalf("占位用例集合必须是两条（M2 已落地 search / card show / rel 读路径），实际 %d",
+	if len(placeholderInvocations) != 1 {
+		t.Fatalf("占位用例集合必须是一条（rel remove，归 M3/S2），实际 %d",
 			len(placeholderInvocations))
 	}
 	for _, args := range placeholderInvocations {
@@ -220,8 +221,11 @@ func TestPlaceholderCommandsExitOneWithFixedWording(t *testing.T) {
 		if code != ExitUsage {
 			t.Fatalf("eg %v 退出码 = %d，期望 1", args, code)
 		}
-		if !strings.Contains(errOut, PlaceholderNotice) {
-			t.Fatalf("eg %v 的 stderr 必须含固定文案 %q，实际 %q", args, PlaceholderNotice, errOut)
+		if !strings.Contains(errOut, RemovePlaceholderNotice) {
+			t.Fatalf("eg %v 的 stderr 必须含固定文案 %q，实际 %q", args, RemovePlaceholderNotice, errOut)
+		}
+		if strings.Contains(errOut, MilestoneTag) {
+			t.Fatalf("eg %v 的占位文案不得再写成 %q（阶段裁决：M3/S2）", args, MilestoneTag)
 		}
 		if strings.Contains(errOut+out, forbiddenWording) {
 			t.Fatalf("eg %v 输出出现被禁措辞 %q", args, forbiddenWording)
@@ -251,20 +255,19 @@ func TestPlaceholderJSONEnvelope(t *testing.T) {
 	}
 	data, _ := env["data"].(map[string]interface{})
 	raw, _ := json.Marshal(data["errors"])
-	if !strings.Contains(string(raw), PlaceholderNotice) {
-		t.Fatalf("data.errors 缺占位文案：%s", raw)
+	if !strings.Contains(string(raw), RemovePlaceholderNotice) {
+		t.Fatalf("data.errors 缺 M3/S2 占位文案：%s", raw)
 	}
 }
 
-// TestRelQuerySubcommandsUnwired —— M2 起 `eg rel <k-id>` 是真实读路径（T-…-023），
-// 写子命令 `add`（T-…-024）/ `remove`（M3/S2 裁决）仍未实现：退 1、固定占位措辞、
-// **不落进读路径**（输出不含 relations_out）、零副作用。
+// TestRelQuerySubcommandsUnwired —— M2 起 `eg rel <k-id>` 是真实读路径（T-…-023）、
+// `rel add` 是真实写路径（T-…-024）；只剩 `rel remove` 按 M-002-m2.md 与合同 §7 的
+// 阶段裁决归 **M3/S2**：退 1、固定 M3/S2 文案、**不落进读路径**、零副作用。
 //
 // 本用例取代 M1 的「rel 读路径未实现」断言：那条断言与读路径落地必然自相矛盾，
-// 因此按 M2 口径改写而不是删除覆盖面（改动理由见 T-…-023 的 Activity Log）。
+// 因此按 M2 口径改写而不是删除覆盖面（改动理由见 T-…-023 / 024 的 Activity Log）。
 func TestRelQuerySubcommandsUnwired(t *testing.T) {
 	for _, args := range [][]string{
-		{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
 		{"rel", "remove", "k-20260901-a", "supports", "k-20260901-b"},
 	} {
 		dir := t.TempDir()
@@ -274,8 +277,8 @@ func TestRelQuerySubcommandsUnwired(t *testing.T) {
 		if code != ExitUsage {
 			t.Fatalf("eg %v 退出码 = %d，期望 1", args, code)
 		}
-		if !strings.Contains(errOut, PlaceholderNotice) {
-			t.Fatalf("eg %v 的 stderr 必须含固定文案 %q，实际 %q", args, PlaceholderNotice, errOut)
+		if !strings.Contains(errOut, RemovePlaceholderNotice) {
+			t.Fatalf("eg %v 的 stderr 必须含固定文案 %q，实际 %q", args, RemovePlaceholderNotice, errOut)
 		}
 		for _, leak := range []string{"relations_out", "relations_in", "scanned_files"} {
 			if strings.Contains(out+errOut, leak) {
@@ -287,13 +290,32 @@ func TestRelQuerySubcommandsUnwired(t *testing.T) {
 		}
 	}
 	relCmd := New().Lookup("rel")
-	// add|remove 行必须各自带 M2 标注（写路径仍在 M2 视野内，remove 的阶段裁决见 M-002-m2.md）。
+	// Usage 的两条写路径行按 T-…-024 拆成两条断言：
+	//   ① `add` 行不再带任何未实现 / 里程碑占位标注（它已经是真实实现）；
+	//   ② `remove` 行必须带 M3/S2 标注，且不得再出现 M1 的「M2 落地」口径。
+	var sawAdd, sawRemove bool
 	for _, line := range strings.Split(relCmd.Usage, "\n") {
-		if strings.HasPrefix(line, "eg rel add") || strings.HasPrefix(line, "eg rel remove") {
-			if !strings.Contains(line, "M2") {
-				t.Fatalf("rel 写路径行缺 M2 标注：%q", line)
+		switch {
+		case strings.HasPrefix(line, "eg rel add"):
+			sawAdd = true
+			if strings.Contains(line, MilestoneTag) || strings.Contains(line, PlaceholderNotice) {
+				t.Fatalf("rel add 行不得再带未实现标注：%q", line)
+			}
+			if !strings.Contains(line, "已实现") {
+				t.Fatalf("rel add 行应标注为已实现：%q", line)
+			}
+		case strings.HasPrefix(line, "eg rel remove"):
+			sawRemove = true
+			if !strings.Contains(line, "M3/S2") {
+				t.Fatalf("rel remove 行缺 M3/S2 标注：%q", line)
+			}
+			if strings.Contains(line, MilestoneTag) {
+				t.Fatalf("rel remove 行不得再写 %q（阶段裁决已改判 M3/S2）：%q", MilestoneTag, line)
 			}
 		}
+	}
+	if !sawAdd || !sawRemove {
+		t.Fatalf("rel --help 必须同时给出 add / remove 两行用法（add=%v remove=%v）", sawAdd, sawRemove)
 	}
 	if relCmd.Placeholder {
 		t.Fatal("rel 读路径已落地，命令级 Placeholder 必须摘除（否则无法 Wire 实现）")
@@ -669,11 +691,17 @@ func TestForbiddenWordingAbsent(t *testing.T) {
 	}
 }
 
-// TestRelFilesDoNotReferenceWriteAPI —— P1-2 反证按 M2 口径改写（不是删除）：
-// M1 期禁的是「rel* 引用查询包」（因为读路径 M1 不实现）；T-…-023 落地读路径后，
-// 引用查询包成了正常取数方式，禁令收紧为**不得引用写入 API**——
-// internal/store / internal/plan / internal/git 与 Apply* / Write* / Commit 一律不得出现，
-// 保证 rel 读路径永远是只读的（合同 §6）。
+// TestRelFilesDoNotReferenceWriteAPI —— P1-2 反证第三次按阶段口径改写（不是删除覆盖面）：
+//
+//	M1：禁「rel* 引用查询包」（读路径 M1 不实现）；
+//	T-…-023：读路径落地后收紧为「rel* 不得引用写入 API」；
+//	T-…-024：`rel add` 落地写路径，禁令**按文件分工**——
+//	  ① 全部 rel* 文件（含 rel_add.go）一律**不得 import internal/store**：
+//	     写盘只能经 ChangePlan → internal/plan → executor → store 写口，
+//	     禁止绕过 ChangePlan 直接调 store（合同 §4.2，本条即其机器反证）；
+//	  ② 读路径文件 rel.go 额外禁 internal/plan / internal/git 与 Apply* / Write* / Commit(，
+//	     保证 `eg rel <k-id>` 永远只读（合同 §6）；
+//	  ③ rel_add.go 必须**经 runPlan 复用** apply 的同一条链路（不得复制平行实现）。
 func TestRelFilesDoNotReferenceWriteAPI(t *testing.T) {
 	matches, err := filepath.Glob("rel*")
 	if err != nil {
@@ -682,18 +710,44 @@ func TestRelFilesDoNotReferenceWriteAPI(t *testing.T) {
 	if len(matches) == 0 {
 		t.Fatal("internal/cli 下应有 rel* 文件承载 rel 命令")
 	}
-	banned := []string{`evergreen/internal/store"`, `evergreen/internal/plan"`,
-		`evergreen/internal/git"`, "ApplyPlan(", "WriteFile(", "Commit("}
+	const storeImport = `evergreen/internal/store"`
+	readOnlyBanned := []string{`evergreen/internal/plan"`, `evergreen/internal/git"`,
+		"ApplyPlan(", "WriteFile(", "Commit("}
 	for _, f := range matches {
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, b := range banned {
-			if strings.Contains(string(raw), b) {
-				t.Fatalf("%s 不得引用写入 API %q（P1-2 反证的 M2 口径：rel 读路径只读）", f, b)
+		text := string(raw)
+		if strings.Contains(text, storeImport) {
+			t.Fatalf("%s 不得 import internal/store（禁止绕过 ChangePlan 直接调 store）", f)
+		}
+		if f == "rel_add.go" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		for _, b := range readOnlyBanned {
+			if strings.Contains(text, b) {
+				t.Fatalf("%s 不得引用写入 API %q（P1-2 反证：rel 读路径只读）", f, b)
 			}
 		}
+	}
+	// rel add 的写入链路反证：走 plan 包 + 复用 apply 的 runPlan，且 apply 里只有一份实现。
+	addSrc, err := os.ReadFile("rel_add.go")
+	if err != nil {
+		t.Fatalf("rel add 的实现文件缺失：%v", err)
+	}
+	if !strings.Contains(string(addSrc), `evergreen/internal/plan"`) {
+		t.Fatal("rel_add.go 必须经 internal/plan 组装并校验 ChangePlan")
+	}
+	if !strings.Contains(string(addSrc), "runPlan(r, inv, p)") {
+		t.Fatal("rel_add.go 必须调用 apply 的 runPlan（两条入口共用同一条执行链）")
+	}
+	applySrc, err := os.ReadFile("apply.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(applySrc), "func runPlan"); n != 1 {
+		t.Fatalf("apply.go 里 runPlan 的定义必须恰一处（无平行副本），实际 %d 处", n)
 	}
 }
 

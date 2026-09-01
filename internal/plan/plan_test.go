@@ -539,6 +539,22 @@ func TestVerbUnknownDegradesToProcess(t *testing.T) {
 	}
 }
 
+// TestRelAddVerbRelateIsKnownAndNotDegraded —— M2 起 `relate` 是已知 verb（T-…-024）：
+// 校验后 verb 原样保留，不退化为 process、不产出「未知 verb」未编号 warning。
+// 与上面的退化用例成对：证明「已知集合」的边界确实变了，而不是把警告静默了。
+func TestRelAddVerbRelateIsKnownAndNotDegraded(t *testing.T) {
+	env, _ := baseVault(t)
+	res := run(t, env, `{"plan_version":1,"verb":"relate","domain":"ai-infra","reason":"建立论证关系","ops":[]}`)
+	if res.Verb != string(model.VerbRelate) {
+		t.Fatalf("relate 必须原样保留，实际 %q", res.Verb)
+	}
+	for _, d := range res.Warnings {
+		if d.Code == Unnumbered && strings.Contains(d.Message, "verb") {
+			t.Fatalf("relate 不得再产出未知 verb 警告：%+v", d)
+		}
+	}
+}
+
 func TestUnknownFieldsAreInfoAndKeptForward(t *testing.T) {
 	env, _ := baseVault(t)
 	res := run(t, env, `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"r",

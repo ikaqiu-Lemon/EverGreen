@@ -50,14 +50,12 @@ var coverageGapNames = map[string]string{
 	"limitation":     "局限",
 }
 
-// runApply 实现 eg apply。
+// runApply 实现 eg apply：只负责「取字节 → 反序列化」，其余编排交给 runPlan。
 func (r *Root) runApply(inv *Invocation) (*Result, error) {
 	raw, err := r.planBytes(inv)
 	if err != nil {
 		return nil, err
 	}
-	root := inv.VaultRoot
-	st := store.New(root)
 
 	p, perr := plan.Parse(raw)
 	if perr != nil {
@@ -71,6 +69,22 @@ func (r *Root) runApply(inv *Invocation) (*Result, error) {
 			}},
 		}
 	}
+	return runPlan(r, inv, p)
+}
+
+// runPlan 是 ChangePlan 的**唯一**执行编排：`eg apply`（T-…-015）与 `eg rel add`
+// （T-…-024）共用这一份实现，绝不各留一份平行副本。
+//
+// 入参 p 是一份**已解析**的 plan：apply 由 `plan.Parse` 得到，rel add 在内存里组装
+// （不落临时文件）。两条入口自此往下逐字走同一条链路：
+//
+//	plan.Validate（E1–E6 / W1–W8 / I1）→ plan.Execute（executor → internal/store 写口）
+//	→ report 汇总 → internal/git 一次 commit（verb 取 plan.verb）
+//
+// 因此「B1–B4」「退出码 0–4」「一次命令 = 一次 commit」对两条入口是同一套代码事实。
+func runPlan(r *Root, inv *Invocation, p *plan.ChangePlan) (*Result, error) {
+	root := inv.VaultRoot
+	st := store.New(root)
 
 	env, err := plan.EnvFor(st, inv.Config.DefaultDomain)
 	if err != nil {
@@ -174,6 +188,37 @@ func (r *Root) runApply(inv *Invocation) (*Result, error) {
 	r.saveReport(root, res, ExitOK)
 	return res, nil
 }
+
+// planBase 按 `eg context` 的**同一口径**为若干 ID 计算 plan.base（id → content_hash）。
+//
+// B3 的版本依据只有一份实现——`store.ContentHash`；这里只是把它按 ID 取用，
+// 不另起第二套哈希算法（`eg context` 是 Agent 链路的取数口径，`eg rel add` 是单命令闭环，
+// 两者算出的 hash 必须逐字相同）。解析不到的 ID 原样跳过：它们由 plan 校验按 E2 处理。
+func planBase(root string, ids []string) (map[string]string, map[string]string, error) {
+	base, paths := map[string]string{}, map[string]string{}
+	st := store.New(root)
+	idx, err := st.ScanIDs()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, id := range ids {
+		rel, err := idx.Resolve(id)
+		if err != nil {
+			continue
+		}
+		paths[id] = rel
+		f, err := st.Read(rel)
+		if err != nil {
+			continue
+		}
+		base[rel] = store.ContentHash(f.Bytes)
+	}
+	return base, paths, nil
+}
+
+// domainOfPath 复用 store 的唯一实现，从 vault 内相对路径取领域（EG-DOM-01：
+// 领域由**目录**唯一决定，绝不从 frontmatter 猜）。
+func domainOfPath(rel string) string { return store.DomainOf(rel) }
 
 // applyDryRun 输出「将写入的文件与分区清单」，零写入零 commit（合同 §2）。
 func (r *Root) applyDryRun(rep report.Report, pres *plan.Result) *Result {

@@ -898,21 +898,24 @@ func TestM1CoverageGapAbsentRerun(t *testing.T) {
 func TestM1PlaceholderCommandsStayPlaceholders(t *testing.T) {
 	vault := newVault(t)
 	head := strings.TrimSpace(gitOut(t, vault, "rev-parse", "HEAD"))
-	// M2 起清单只减不增：search（T-…-021）、card show（T-…-022）与 rel 读路径（T-…-023）
-	// 已换成真实实现，分别由 test/e2e/m2_search.sh、m2_card_show.sh、m2_rel_query.sh 与
-	// internal/cli 的 TestSearch* / TestCardShow* / TestRelQuery* 接管，故从占位清单移出。
-	// 仍在清单里的是 rel 的写子命令：add 由 T-…-024 落地、remove 按 M-002-m2.md 的阶段裁决归
-	// M3/S2，二者措辞与 M1 逐字一致、退 1、零副作用。
+	// M2 起清单只减不增：search（T-…-021）、card show（T-…-022）、rel 读路径（T-…-023）与
+	// rel add（T-…-024）已换成真实实现，分别由 test/e2e/m2_*.sh 与 internal/cli 的
+	// TestSearch* / TestCardShow* / TestRelQuery* / TestRelAdd* 接管，故从占位清单移出。
+	// 清单里只剩 `rel remove`：按 M-002-m2.md 的阶段裁决它归 M3/S2（关系删除即 remove_relation
+	// op），因此措辞换成 M3/S2 口径——但「退 1 + 零副作用」这条 M1 底线一字不改。
 	for _, args := range [][]string{
-		{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
 		{"rel", "remove", "k-20260901-a", "supports", "k-20260901-b"},
 	} {
 		code, out, errOut := runEG(t, vault, args...)
 		if code != 1 {
 			t.Fatalf("eg %v 应退 1，实际 %d", args, code)
 		}
-		if !strings.Contains(out+errOut, "M1 未实现（S1 命令，M2 落地）") {
-			t.Fatalf("eg %v 的占位措辞不符：%s%s", args, out, errOut)
+		joined := out + errOut
+		if !strings.Contains(joined, "M3/S2 未实现") {
+			t.Fatalf("eg %v 的未实现措辞不符：%s", args, joined)
+		}
+		if strings.Contains(joined, "M2 落地") {
+			t.Fatalf("eg %v 不得再自称 M2 落地：%s", args, joined)
 		}
 	}
 	if s := strings.TrimSpace(gitOut(t, vault, "status", "--porcelain")); s != "" {
