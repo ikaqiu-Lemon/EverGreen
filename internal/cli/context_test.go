@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -220,4 +221,119 @@ func TestContextReportsUnparsableCardAsQ1(t *testing.T) {
 	if !strings.Contains(text, "broken.md") || !strings.Contains(text, "Q1") {
 		t.Errorf("纯文本输出未透出 Q1 诊断（同源同事实）：\n%s", text)
 	}
+}
+
+// —— ⑧ T-…-025：候选相似卡的人读渲染必须与 --json 同源同事实 ——
+
+// contextCandidateVault 在 contextVault 的基础上补三张可控卡：
+// 目标原文标题「注意力机制入门」，两张命中（其中一张同时命中 tags）、一张零命中。
+func contextCandidateVault(t *testing.T) (string, string) {
+	t.Helper()
+	dir, id := contextVault(t)
+	card := func(cid, title, tags string) string {
+		fm := "---\nid: " + cid + "\ntitle: " + title + "\nstatus: active\n" +
+			"created_at: '2026-09-01'\nupdated_at: '2026-09-01T10:00:00+08:00'\n"
+		if tags != "" {
+			fm += "tags:\n  - " + tags + "\n"
+		}
+		return fm + "---\n\n## 定义\n\n正文占位。\n"
+	}
+	writeVaultFile(t, dir, "domains/ai-infra/knowledge/k-20260901-a.md",
+		card("k-20260901-a", "注意力机制", ""))
+	writeVaultFile(t, dir, "domains/ai-infra/knowledge/k-20260901-b.md",
+		card("k-20260901-b", "机制入", "注意"))
+	writeVaultFile(t, dir, "domains/ai-infra/knowledge/k-20260901-z.md",
+		card("k-20260901-z", "磁盘调度", ""))
+	return dir, id
+}
+
+// candidateIDsFromJSON 取 --json 的 data.candidates[].id（保持数组原序）。
+func candidateIDsFromJSON(t *testing.T, env Envelope) []string {
+	t.Helper()
+	raw, err := json.Marshal(env.Data["candidates"])
+	if err != nil {
+		t.Fatalf("candidates 不可序列化：%v", err)
+	}
+	var cands []struct {
+		ID      string   `json:"id"`
+		Score   int      `json:"score"`
+		Reasons []string `json:"reasons"`
+	}
+	if err := json.Unmarshal(raw, &cands); err != nil {
+		t.Fatalf("candidates 不可解析：%v\n%s", err, raw)
+	}
+	out := []string{}
+	for _, c := range cands {
+		if len(c.Reasons) == 0 {
+			t.Fatalf("被推荐的卡必须带命中理由：%+v", c)
+		}
+		out = append(out, c.ID)
+	}
+	return out
+}
+
+// TestContextRenderSameFacts —— 文本模式的候选卡行数 == --json 的 candidates 长度，
+// 逐行 ID 顺序相同；文本里出现「得分」与理由前缀；且文本不引入 JSON 里没有的候选 ID。
+func TestContextRenderSameFacts(t *testing.T) {
+	dir, id := contextCandidateVault(t)
+
+	_, env, _ := runContextCLI(t, dir, "--source", id)
+	wantIDs := candidateIDsFromJSON(t, env)
+	if len(wantIDs) < 2 {
+		t.Fatalf("用例前提被打破：应至少两张候选卡，实际 %v", wantIDs)
+	}
+
+	code, out, errOut := runCLI(t, newTestRoot(t, dir),
+		"context", "--vault", dir, "--source", id)
+	if code != ExitOK {
+		t.Fatalf("人读模式退出码 = %d：%s", code, errOut)
+	}
+	var gotIDs []string
+	reasonLines := 0
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, candidateLinePrefix):
+			if !strings.Contains(line, "得分 ") {
+				t.Fatalf("候选卡行必须打印得分：%q", line)
+			}
+			rest := strings.TrimPrefix(line, candidateLinePrefix)
+			gotIDs = append(gotIDs, strings.SplitN(rest, "　", 2)[0])
+		case strings.HasPrefix(line, candidateReasonPrefix):
+			reasonLines++
+			if strings.TrimSpace(strings.TrimPrefix(line, candidateReasonPrefix)) == "" {
+				t.Fatalf("理由行不得为空：%q", line)
+			}
+		}
+	}
+	if strings.Join(gotIDs, ",") != strings.Join(wantIDs, ",") {
+		t.Fatalf("文本模式的候选卡行与 --json 不同源：\n文本 %v\nJSON %v", gotIDs, wantIDs)
+	}
+	if reasonLines < len(wantIDs) {
+		t.Fatalf("每张候选卡至少一条理由行，实际理由行 %d / 候选 %d", reasonLines, len(wantIDs))
+	}
+	// 文本里不得出现 JSON 中没有的候选 ID（例如零命中的 k-20260901-z）。
+	if strings.Contains(out, candidateLinePrefix+"k-20260901-z") {
+		t.Fatalf("零命中的卡不得出现在候选区：\n%s", out)
+	}
+	// 总数行仍在，且与逐张打印的条数一致（人读模式两处事实必须自洽）。
+	if !strings.Contains(out, "候选相似卡 "+itoaCLI(len(wantIDs))+" 张") {
+		t.Fatalf("总数行与逐张打印条数不一致：\n%s", out)
+	}
+}
+
+// TestContextCandidateRenderIsStable —— 人读模式连续两次输出逐字相等（确定性）。
+func TestContextCandidateRenderIsStable(t *testing.T) {
+	dir, id := contextCandidateVault(t)
+	_, first, _ := runCLI(t, newTestRoot(t, dir), "context", "--vault", dir, "--source", id)
+	_, second, _ := runCLI(t, newTestRoot(t, dir), "context", "--vault", dir, "--source", id)
+	if first != second {
+		t.Fatalf("人读模式两次输出不同：\n%s\n----\n%s", first, second)
+	}
+	if !strings.Contains(first, candidateReasonPrefix) {
+		t.Fatalf("人读模式必须打印命中理由：\n%s", first)
+	}
+}
+
+func itoaCLI(n int) string {
+	return strconv.Itoa(n)
 }

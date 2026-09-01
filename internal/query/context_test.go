@@ -351,3 +351,256 @@ func treeSnapshot(t *testing.T, root string) string {
 	}
 	return b.String()
 }
+
+// ================= T-…-025：候选相似卡打磨（排序全序 / 命中理由 / 确定性） =================
+//
+// 判据来源：T-…-025 Acceptance「排序唯一且可复现」「命中理由非空且可核对」「确定性反证」；
+// 技术方案 §8；M-002-m2.md 完成判据 3 / 7。打分口径本身沿用 M1（T-…-010），本组用例不推翻它，
+// 只钉死「同输入同输出、同分可比、理由能回答哪个词命中哪个字段」。
+
+// polishSource 是打磨用例的目标原文：标题「注意力机制入门」的二元词集合是
+// 注意 / 意力 / 力机 / 机制 / 制入 / 入门，下面每张卡的得分都由它算出来。
+const polishSource = `---
+id: s-20260901-polish
+url: https://example.com/polish
+title: 注意力机制入门
+saved_at: '2026-09-01T09:00:00+08:00'
+---
+
+# 注意力机制入门
+
+正文占位。
+`
+
+// polishCard 造一张可控标题与 tags 的 active 卡。
+func polishCard(id, title string, tags ...string) string {
+	fm := "---\nid: " + id + "\ntitle: " + title + "\nstatus: active\n" +
+		"created_at: '2026-09-01'\nupdated_at: '2026-09-01T10:00:00+08:00'\n"
+	if len(tags) > 0 {
+		fm += "tags:\n"
+		for _, tg := range tags {
+			fm += "  - " + tg + "\n"
+		}
+	}
+	return fm + "---\n\n## 定义\n\n正文占位。\n"
+}
+
+// polishVault 按 files（相对路径 → 内容）铺一个只含目标原文与若干卡的 vault。
+func polishVault(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	all := map[string]string{"sources/s-20260901-polish.md": polishSource}
+	for rel, body := range files {
+		all[rel] = body
+	}
+	for rel, body := range all {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func polishContext(t *testing.T, root string) *query.Context {
+	t.Helper()
+	ctx, err := query.Build(query.Request{
+		Root: root, Domain: "ai-infra", Source: "s-20260901-polish",
+	}, store.ContentHash)
+	if err != nil {
+		t.Fatalf("query.Build: %v", err)
+	}
+	return ctx
+}
+
+// candSig 把候选序列摊成「ID|得分|理由条数」，用于顺序与等价断言（不含 Path，
+// 因为「打乱输入」用例里两个 vault 的文件名不同，Path 本就应当不同）。
+func candSig(ctx *query.Context) []string {
+	out := make([]string, 0, len(ctx.Candidates))
+	for _, c := range ctx.Candidates {
+		out = append(out, c.ID+"|"+itoa(c.Score)+"|"+itoa(len(c.Reasons))+"|"+
+			strings.Join(c.Reasons, "；"))
+	}
+	return out
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(b)
+	}
+	return string(b)
+}
+
+// —— ① 三级全序：得分降序 → 理由条数降序 → ID 升序 ——
+
+func TestContextCandidateTotalOrder(t *testing.T) {
+	// 三张卡刻意做成同分 12：
+	//   k-…-a / k-…-b：标题「注意力机制」= 注意 / 意力 / 力机 / 机制 四个共同词 ×3 = 12，无 tags → 1 条理由
+	//   k-…-c：标题「机制入」= 机制 / 制入 两词 ×3 = 6，tags 命中 注意 / 意力 / 力机 三词 ×2 = 6 → 12，2 条理由
+	root := polishVault(t, map[string]string{
+		"domains/ai-infra/knowledge/k-20260901-b.md": polishCard("k-20260901-b", "注意力机制"),
+		"domains/ai-infra/knowledge/k-20260901-a.md": polishCard("k-20260901-a", "注意力机制"),
+		"domains/ai-infra/knowledge/k-20260901-c.md": polishCard("k-20260901-c", "机制入", "注意", "意力", "力机"),
+	})
+	ctx := polishContext(t, root)
+	if len(ctx.Candidates) != 3 {
+		t.Fatalf("三张卡都应命中，实际 %d：%+v", len(ctx.Candidates), ctx.Candidates)
+	}
+	for _, c := range ctx.Candidates {
+		if c.Score != 12 {
+			t.Fatalf("用例前提被打破：%s 的得分应为 12，实际 %d（%v）", c.ID, c.Score, c.Reasons)
+		}
+	}
+	// 同分：理由条数多者在前（c 有 tags + title 两条）。
+	if ctx.Candidates[0].ID != "k-20260901-c" {
+		t.Fatalf("同分应按命中理由条数降序，期望 k-20260901-c 在首位，实际 %v", candSig(ctx))
+	}
+	// 同分且同理由条数：按 ID 升序（a 在 b 前），与文件遍历顺序无关。
+	if ctx.Candidates[1].ID != "k-20260901-a" || ctx.Candidates[2].ID != "k-20260901-b" {
+		t.Fatalf("同分同理由条数应按 ID 升序，实际 %v", candSig(ctx))
+	}
+}
+
+// —— ② 打乱输入：文件名（即遍历顺序）变了，输出序列一字不变 ——
+
+func TestContextCandidateOrderIgnoresInputOrder(t *testing.T) {
+	cards := []struct{ id, title string }{
+		{"k-20260901-a", "注意力机制"},
+		{"k-20260901-b", "注意力机制"},
+		{"k-20260901-c", "机制入门"},
+		{"k-20260901-d", "入门指南"},
+	}
+	// 两个 vault 里同一张卡的**文件名**不同：一个按 01…04 递增，一个按 zz…ww 递减，
+	// 于是 WalkDir 的到达顺序完全相反；候选序列必须逐字相等。
+	asc := map[string]string{}
+	desc := map[string]string{}
+	names := []string{"01", "02", "03", "04"}
+	rev := []string{"zz", "yy", "xx", "ww"}
+	for i, c := range cards {
+		asc["domains/ai-infra/knowledge/"+names[i]+".md"] = polishCard(c.id, c.title)
+		desc["domains/ai-infra/knowledge/"+rev[i]+".md"] = polishCard(c.id, c.title)
+	}
+	first := candSig(polishContext(t, polishVault(t, asc)))
+	second := candSig(polishContext(t, polishVault(t, desc)))
+	if strings.Join(first, "\n") != strings.Join(second, "\n") {
+		t.Fatalf("打乱输入顺序后候选结果变了（排序不是全序）：\n%v\n----\n%v", first, second)
+	}
+	if len(first) == 0 {
+		t.Fatal("用例前提被打破：应有候选卡")
+	}
+	// 连跑十次仍然逐字相同：无随机、无时间因素、不吃 map 迭代顺序。
+	root := polishVault(t, asc)
+	want := strings.Join(candSig(polishContext(t, root)), "\n")
+	for i := 0; i < 10; i++ {
+		if got := strings.Join(candSig(polishContext(t, root)), "\n"); got != want {
+			t.Fatalf("第 %d 次执行结果与首次不同：\n%s\n----\n%s", i+2, want, got)
+		}
+	}
+}
+
+// —— ③ 命中理由：非空、逐条只描述一个来源字段、按字段名升序 ——
+
+func TestContextCandidateReasons(t *testing.T) {
+	root := polishVault(t, map[string]string{
+		// 只在标题命中。
+		"domains/ai-infra/knowledge/k-20260901-t.md": polishCard("k-20260901-t", "注意力机制"),
+		// 只在 tags 命中（标题与目标无共同词）。
+		"domains/ai-infra/knowledge/k-20260901-g.md": polishCard("k-20260901-g", "磁盘调度", "注意"),
+		// 标题与 tags 都命中。
+		"domains/ai-infra/knowledge/k-20260901-x.md": polishCard("k-20260901-x", "注意力机制", "机制"),
+	})
+	ctx := polishContext(t, root)
+	byID := map[string]query.Candidate{}
+	for _, c := range ctx.Candidates {
+		if len(c.Reasons) == 0 {
+			t.Fatalf("被推荐的卡必须给出命中理由：%+v", c)
+		}
+		byID[c.ID] = c
+	}
+	if len(byID) != 3 {
+		t.Fatalf("三张卡都应进候选，实际 %v", candSig(ctx))
+	}
+
+	title := byID["k-20260901-t"]
+	if len(title.Reasons) != 1 || !strings.HasPrefix(title.Reasons[0], "命中卡的 title 字段：") {
+		t.Fatalf("只在标题命中的卡应恰一条指向 title 的理由：%v", title.Reasons)
+	}
+	if !strings.Contains(title.Reasons[0], "注意") {
+		t.Fatalf("理由必须写明命中的词：%v", title.Reasons)
+	}
+
+	tags := byID["k-20260901-g"]
+	if len(tags.Reasons) != 1 || !strings.HasPrefix(tags.Reasons[0], "命中卡的 tags 字段：") {
+		t.Fatalf("只在 tags 命中的卡应恰一条指向 tags 的理由：%v", tags.Reasons)
+	}
+	if !strings.Contains(tags.Reasons[0], "注意") || !strings.Contains(tags.Reasons[0], "tags 值：注意") {
+		t.Fatalf("tags 理由必须写明「哪个词命中了哪个 tag 值」：%v", tags.Reasons)
+	}
+
+	both := byID["k-20260901-x"]
+	if len(both.Reasons) != 2 {
+		t.Fatalf("两处都命中应恰两条理由（不得合并成一句）：%v", both.Reasons)
+	}
+	if !strings.HasPrefix(both.Reasons[0], "命中卡的 tags 字段：") ||
+		!strings.HasPrefix(both.Reasons[1], "命中卡的 title 字段：") {
+		t.Fatalf("理由必须按来源字段名升序（tags → title）：%v", both.Reasons)
+	}
+	// 字段内按命中词升序：把理由里的词切出来逐对比较。
+	words := strings.Split(strings.TrimPrefix(both.Reasons[1], "命中卡的 title 字段："), "、")
+	for i := 1; i < len(words); i++ {
+		if words[i-1] >= words[i] {
+			t.Fatalf("同一条理由内的命中词必须升序：%v", words)
+		}
+	}
+}
+
+// —— ④ 失效卡不进推荐（M1 口径不回归）+ 零理由的卡不进输出 ——
+
+func TestContextDeprecatedNotRecommended(t *testing.T) {
+	dep := strings.Replace(polishCard("k-20260901-old", "注意力机制"),
+		"status: active", "status: deprecated", 1)
+	root := polishVault(t, map[string]string{
+		"domains/ai-infra/knowledge/k-20260901-old.md": dep,
+		"domains/ai-infra/knowledge/k-20260901-new.md": polishCard("k-20260901-new", "注意力机制"),
+		// 与目标标题零共同词：得分 0，既不进候选，也不该被凑出理由。
+		"domains/ai-infra/knowledge/k-20260901-far.md": polishCard("k-20260901-far", "磁盘调度"),
+	})
+	ctx := polishContext(t, root)
+	for _, c := range ctx.Candidates {
+		if c.ID == "k-20260901-old" {
+			t.Fatalf("deprecated 卡不得进候选：%+v", c)
+		}
+		if c.ID == "k-20260901-far" {
+			t.Fatalf("零命中的卡不得进候选：%+v", c)
+		}
+		if c.Score <= 0 || len(c.Reasons) == 0 {
+			t.Fatalf("候选必须同时有正得分与非空理由：%+v", c)
+		}
+	}
+	if len(ctx.Candidates) != 1 || ctx.Candidates[0].ID != "k-20260901-new" {
+		t.Fatalf("只应剩一张 active 且命中的卡，实际 %v", candSig(ctx))
+	}
+	// cards[] 的口径不变：active 卡照常在列，失效卡不在（M1 既有断言的同款事实）。
+	var ids []string
+	for _, c := range ctx.Cards {
+		ids = append(ids, c.ID)
+	}
+	if strings.Join(ids, ",") != "k-20260901-far,k-20260901-new" {
+		t.Fatalf("cards[] 应恰含两张 active 卡（按扫描口径），实际 %v", ids)
+	}
+}

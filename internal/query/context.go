@@ -272,8 +272,16 @@ func readSource(root, id string) (*SourceView, []Diagnostic, error) {
 //
 //	标题共同词 ×3 + 目标标题词命中卡 tags ×2
 //
-// 同分按 ID 升序，输出上限 CandidateLimit。无模型调用、无随机、无时间因素：
-// 同一输入连续两次执行输出逐字相同（含顺序与得分）。
+// 打分口径沿用 M1（T-…-010），**不推翻**；M2（T-…-025）只补两件事：
+//
+//  1. **全序**：得分降序 → 命中理由条数降序 → ID 升序。三键相同即同一张卡，
+//     因此对任意输入顺序，输出顺序唯一确定（打乱输入不改变结果）。
+//  2. **理由质量**：每条理由只描述**一个来源字段**（`tags` / `title`），
+//     逐条写明「哪个词命中了卡的哪个字段」，理由列表按来源字段名升序、
+//     字段内按命中词升序（见 reasonsFor）。
+//
+// 无模型调用、无随机、无时间因素、不读 map 迭代顺序：
+// 同一输入连续两次执行输出逐字相同（含顺序、得分与理由）。
 func candidates(title string, cards []CardEntry) []Candidate {
 	out := []Candidate{}
 	want := tokens(title)
@@ -285,49 +293,96 @@ func candidates(title string, cards []CardEntry) []Candidate {
 			continue
 		}
 		score, reasons := scoreCard(want, c)
-		if score <= 0 {
+		// 零理由的卡不进输出：推荐必须可解释（得分 > 0 与理由非空互为充要）。
+		if score <= 0 || len(reasons) == 0 {
 			continue
 		}
 		out = append(out, Candidate{
 			ID: c.ID, Path: c.Path, Title: c.Title, Score: score, Reasons: reasons,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
-		}
-		return out[i].ID < out[j].ID
-	})
+	sort.Slice(out, func(i, j int) bool { return lessCandidate(out[i], out[j]) })
 	if len(out) > CandidateLimit {
 		out = out[:CandidateLimit]
 	}
 	return out
 }
 
+// lessCandidate 是候选相似卡的**三级全序**比较键（T-…-025）：
+// 得分降序 → 命中理由条数降序 → ID 升序。ID 在库内唯一（冻结合同 F3），
+// 因此该序是全序：任意两张不同的卡都可比，排序结果与输入顺序无关。
+func lessCandidate(a, b Candidate) bool {
+	if a.Score != b.Score {
+		return a.Score > b.Score
+	}
+	if len(a.Reasons) != len(b.Reasons) {
+		return len(a.Reasons) > len(b.Reasons)
+	}
+	return a.ID < b.ID
+}
+
+// 命中理由的来源字段名（升序即理由列表的排列次序：tags < title）。
+const (
+	fieldTags  = "tags"
+	fieldTitle = "title"
+)
+
+// scoreCard 计分并生成命中理由。
+//
+// 计分沿用 M1：目标标题的每个词命中卡标题 +3；命中卡的任一 tag +2（同一个词只计一次）。
+// 遍历输入是 sortedKeys(want)（**已排序的切片**，不是 map 迭代），故结果与哈希顺序无关。
 func scoreCard(want map[string]bool, c CardEntry) (int, []string) {
 	score := 0
-	var titleHits, tagHits []string
+	cardTitleTokens := tokens(c.Title)
+	var titleHits []string
+	var tagHits []tagHit
 	for _, tok := range sortedKeys(want) {
-		if tokens(c.Title)[tok] {
+		if cardTitleTokens[tok] {
 			score += 3
 			titleHits = append(titleHits, tok)
 		}
 		for _, tag := range c.Tags {
 			if tokens(tag)[tok] {
 				score += 2
-				tagHits = append(tagHits, tag)
-				break
+				tagHits = append(tagHits, tagHit{Word: tok, Tag: tag})
+				break // 同一个词只计一次：多个 tag 命中同一词不重复加分
 			}
 		}
 	}
-	var reasons []string
-	if len(titleHits) > 0 {
-		reasons = append(reasons, "标题共同词："+strings.Join(titleHits, "、"))
-	}
+	return score, reasonsFor(titleHits, tagHits)
+}
+
+// tagHit 是一次 tags 命中：哪个词（Word）命中了哪个 tag 值（Tag）。
+type tagHit struct {
+	Word string
+	Tag  string
+}
+
+// reasonsFor 生成命中理由：**一条理由只描述一个来源字段**，不把两类来源合并成一句。
+//
+// 排列次序（确定性要求）：先按来源字段名升序（`tags` → `title`），
+// 字段内按命中词升序；命中词由 sortedKeys 产出，本身已升序且去重。
+// 文案保持人类可读，且逐条能回答「哪个词、命中了卡的哪个字段」。
+func reasonsFor(titleHits []string, tagHits []tagHit) []string {
+	reasons := []string{}
 	if len(tagHits) > 0 {
-		reasons = append(reasons, "命中 tags："+strings.Join(tagHits, "、"))
+		sort.Slice(tagHits, func(i, j int) bool {
+			if tagHits[i].Word != tagHits[j].Word {
+				return tagHits[i].Word < tagHits[j].Word
+			}
+			return tagHits[i].Tag < tagHits[j].Tag
+		})
+		items := make([]string, 0, len(tagHits))
+		for _, h := range tagHits {
+			items = append(items, fmt.Sprintf("%s（tags 值：%s）", h.Word, h.Tag))
+		}
+		reasons = append(reasons, "命中卡的 "+fieldTags+" 字段："+strings.Join(items, "、"))
 	}
-	return score, reasons
+	if len(titleHits) > 0 {
+		sort.Strings(titleHits)
+		reasons = append(reasons, "命中卡的 "+fieldTitle+" 字段："+strings.Join(titleHits, "、"))
+	}
+	return reasons
 }
 
 func sortedKeys(m map[string]bool) []string {

@@ -84,5 +84,31 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 	res.Summary = append(res.Summary, fmt.Sprintf(
 		"context：领域 %s，材料笔记 %d 篇，同领域 active 卡 %d 张，候选相似卡 %d 张，base %d 项（只读，零写入零 commit）",
 		ctx.Domain, len(ctx.Notes), len(ctx.Cards), len(ctx.Candidates), len(ctx.Base)))
+	res.Summary = append(res.Summary, candidateLines(ctx.Candidates)...)
 	return res, nil
 }
+
+// candidateLines 把候选相似卡逐张渲染成人类可读行（T-…-025）。
+//
+// 与 `--json` 的 `data.candidates` **同源同事实**：顺序逐字一致、
+// 得分与命中理由都取自同一份 query.Candidate，人读模式不再只打一个总数。
+// 每张卡一行「<k-id>　得分 <n>　<标题>」，其后每条命中理由缩进一行；
+// 理由为空的卡不会进 candidates（query 侧已保证推荐必可解释），
+// 这里不做任何补写、不引入 JSON 里没有的事实。
+func candidateLines(cands []query.Candidate) []string {
+	lines := make([]string, 0, len(cands)*2)
+	for _, c := range cands {
+		lines = append(lines, fmt.Sprintf("%s%s　得分 %d　%s",
+			candidateLinePrefix, c.ID, c.Score, c.Title))
+		for _, why := range c.Reasons {
+			lines = append(lines, candidateReasonPrefix+why)
+		}
+	}
+	return lines
+}
+
+// 候选卡行与理由行的固定前缀（供渲染与测试共用，不散落字面量）。
+const (
+	candidateLinePrefix   = "  候选 "
+	candidateReasonPrefix = "      · "
+)
