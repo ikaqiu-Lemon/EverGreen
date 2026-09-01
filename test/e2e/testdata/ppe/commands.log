@@ -1,0 +1,9 @@
+2026-09-01T10:55:25Z eg capture --url http://www.incompleteideas.net/IncIdeas/KeytoAI.html --title 'Verification, The Key to AI' --body-file article.txt --reason 'AIME PPE 端到端语料' --domain ai-infra --captured-at 2026-10-06T09:00:00+08:00 exit=0
+2026-09-01T10:55:26Z eg context --source s-20261006-verification-the-key-to-ai exit=0
+2026-09-01T10:55:26Z eg search 算力 exit=0
+2026-09-01T10:55:26Z eg card show k-20260918-scaling-compute exit=0
+2026-09-01T10:55:26Z eg rel k-20260918-scaling-compute exit=0
+2026-09-01T10:55:26Z eg apply --plan testdata/ppe/plan.json exit=0
+2026-09-01T10:55:26Z eg rel k-20261006-verification-first exit=0
+2026-09-01T10:55:26Z eg rel add k-20261006-verification-first limits k-20260918-scaling-compute --reason '可自验证是前提，不满足该前提时既有卡的结论受限' exit=0
+2026-09-01T10:55:26Z eg rel k-20261006-verification-first exit=0

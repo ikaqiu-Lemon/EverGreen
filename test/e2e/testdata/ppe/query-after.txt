@@ -1,0 +1,10 @@
+状态：completed（exit_code=0，ok=true）
+rel：k-20261006-verification-first 的正向 1 条 / 反向 0 条（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
+正向关系：k-20261006-verification-first --limits--> k-20260918-scaling-compute  理由：可自验证是前提，不满足该前提时既有卡的结论受限
+反向关系 relations_in[]：无
+数据：
+  id: k-20261006-verification-first
+  relations_out: [{"from":"k-20261006-verification-first","type":"limits","target":"k-20260918-scaling-compute","reason":"可自验证是前提，不满足该前提时既有卡的结论受限","path":"domains/ai-infra/knowledge/k-20261006-verification-first.md"}]
+  relations_in: []
+  scanned_files: 2
+  skipped_files: 0

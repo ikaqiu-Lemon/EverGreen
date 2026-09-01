@@ -1,0 +1,60 @@
+{
+  "plan_version": 1,
+  "verb": "process",
+  "domain": "ai-infra",
+  "reason": "把《Verification, The Key to AI》沉淀成一张可独立复用的知识卡，并逐卡登记与既有卡的收敛判断",
+  "requirement_ids": ["EG-KNW-04", "EG-CVG-01", "EG-EXT-02"],
+  "convergence": [
+    {
+      "card": "k-20260918-scaling-compute",
+      "relation": "independent_new",
+      "core_knowledge": "different",
+      "conditions": "different",
+      "reuse_purpose": "different",
+      "note": "既有卡的核心含义是「可随算力扩展的通用方法长期占优」；本文的核心含义是「方法必须能自验证，知识才能被算力放大」，是该结论成立的前提条件，不是同一条知识。另起新卡，并在两张卡之间建 limits 关系。"
+    }
+  ],
+  "base": {
+    "unprocessed.md": "sha256:6a89d8a26d9f395f2b564b76c49a086ebfacc7bd81dbcfee6c6dd229a1ebbb9c",
+    "domains/ai-infra/knowledge/k-20260918-scaling-compute.md": "sha256:b4c93070780b0f03ddcbbfd993dbe09c07d51cfd09d1476891432e186ada42ee"
+  },
+  "ops": [
+    {
+      "op": "write_note",
+      "source": "s-20261006-verification-the-key-to-ai",
+      "note_id": "n-20261006-verification-the-key-to-ai",
+      "title": "Verification, The Key to AI（Rich Sutton, 2001）",
+      "sections": {
+        "材料提炼": "- 原文主张：系统必须能自己判断自己是否工作正常（verification）。\n- 没有可自验证的信号，知识就无法随算力被放大。\n",
+        "Agent 分析": "- 与既有卡 k-20260918-scaling-compute 不是同一条知识：本文给出的是该结论成立的前提条件。\n- 处理关系：另起新卡 + 建 limits 关系（新卡限定既有卡的成立范围）。\n"
+      },
+      "output_cards": [{ "card": "k-20261006-verification-first", "mode": "新建" }],
+      "coverage_gaps": ["counterexample"]
+    },
+    {
+      "op": "create_card",
+      "card_id": "k-20261006-verification-first",
+      "title": "可自验证是知识被算力放大的前提",
+      "tags": ["ai", "method"],
+      "sources": [
+        {
+          "source": "s-20261006-verification-the-key-to-ai",
+          "note": "n-20261006-verification-the-key-to-ai",
+          "rel": "support",
+          "reason": "原文以「系统必须能自己验证自己是否工作正常」直接支撑该前提性结论"
+        }
+      ],
+      "sections": {
+        "知识内容": "只有当系统能自己验证结论是否正确时，知识才能随算力被有效放大。\n",
+        "解释与依据": "- 原文把可验证性当成 AI 系统能持续自我改进的关键环节。\n",
+        "条件与边界": "- 需要存在可自动判定的验证信号；只能由人事后评审的任务不满足该条件。\n",
+        "理解自检": "- 验证信号本身不可靠时，这条前提还成立吗？\n"
+      }
+    },
+    {
+      "op": "add_open_question",
+      "note": "n-20261006-verification-the-key-to-ai",
+      "question": "在验证信号只能由人给出的任务上，这条前提该如何落地？"
+    }
+  ]
+}
