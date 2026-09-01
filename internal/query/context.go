@@ -13,24 +13,23 @@ package query
 // EG-KNW-02 / EG-CHK-03 / EG-DOM-02：只输出 `status: active` 的卡，且**只扫描本领域目录**，
 // 他域产物在扫描阶段就进不来。
 //
-// S1 实现方式：**直接全库扫描 Markdown**，不依赖索引（`.index/` 属 S4）。
+// S1 实现方式：**直接扫描 Markdown**，不依赖索引目录（索引属 S4）。
+// M2（T-…-020）起，本文件的遍历与解析改为复用 scan.go 的 VaultScan / walkMarkdown 同一实现，
+// 不可解析文件不再静默跳过，一律产出 Q1 诊断并透出到 Context.Diagnostics。
 
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"evergreen/internal/mdfile"
-	"evergreen/internal/model"
 )
 
-// vault 布局常量（冻结合同 F1 的 [S1] 列）。口径与 internal/store/layout.go 同源；
-// §13 的依赖方向不允许 query 依赖 store，故这里各自持有同一份字面量。
+// vault 布局常量（冻结合同 F1 的 [S1] 列）。口径与 store 包的 layout.go 同源；
+// §13 的依赖方向不允许 query 依赖 store 包，故这里各自持有同一份字面量。
 const (
 	unprocessedFile = "unprocessed.md"
 	dirSources      = "sources"
@@ -109,32 +108,38 @@ type Context struct {
 	Candidates []Candidate       `json:"candidates"`
 	Base       map[string]string `json:"base"`
 	Warnings   []string          `json:"warnings"`
-}
 
-// scanned 是一次只读扫描的中间结果。
-type scanned struct {
-	rel   string
-	raw   []byte
-	title string
+	// Diagnostics 是本次组装的 Q 系列只读诊断（M2 合同 §5）。
+	// 一律 warning，不影响退出码；CLI 层原样透出到 --json 的 warnings[] 与纯文本输出。
+	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
 // Build 组装上下文。零写入、零 commit：只读盘。
+//
+// M2（T-…-020）起，材料笔记与知识卡的扫描统一走 scan.go 的 VaultScan：
+// 遍历口径与 search / card show / rel 完全同源，不可解析文件产出 Q1 诊断而**不再静默跳过**。
 func Build(req Request, hash Hasher) (*Context, error) {
 	if hash == nil {
 		return nil, ErrHasherRequired
 	}
 	ctx := &Context{
-		Domain: req.Domain,
-		Notes:  []NoteView{},
-		Cards:  []CardView{},
-		Base:   map[string]string{},
+		Domain:      req.Domain,
+		Notes:       []NoteView{},
+		Cards:       []CardView{},
+		Base:        map[string]string{},
+		Diagnostics: []Diagnostic{},
 	}
 
-	notes, err := scanNotes(req.Root, req.Domain)
+	// 只扫本领域目录（EG-DOM-02：他域产物在扫描阶段就进不来）。
+	scan, err := VaultScan(req.Root, ScanOptions{
+		Domains: []string{req.Domain}, IncludeNotes: true,
+	})
 	if err != nil {
 		return nil, err
 	}
-	target, err := resolveTarget(req, notes)
+	notes, cards := scan.Notes, scan.Cards
+
+	target, srcDiags, err := resolveTarget(req, notes)
 	if err != nil {
 		return nil, err
 	}
@@ -144,27 +149,21 @@ func Build(req Request, hash Hasher) (*Context, error) {
 
 	// ① 材料层：本领域内属于该原文的已有笔记。
 	for _, n := range notes {
-		if target != nil && n.note.Source != model.SourceID(target.ID) {
+		if target != nil && n.Source != target.ID {
 			continue
 		}
-		ctx.Notes = append(ctx.Notes, NoteView{
-			ID: string(n.note.ID), Path: n.rel, Source: string(n.note.Source),
-		})
-		ctx.Base[n.rel] = hash(n.raw)
+		ctx.Notes = append(ctx.Notes, NoteView{ID: n.ID, Path: n.Path, Source: n.Source})
+		ctx.Base[n.Path] = hash(n.Raw)
 	}
 
 	// ② 收敛输入：同领域 active 卡。打分输入集合只含 kind='card' 且 status: active，
 	//    上面的笔记集合在这一步之前已被排除（EG-NOTE-04）。
-	cards, err := scanCards(req.Root, req.Domain)
-	if err != nil {
-		return nil, err
-	}
 	for _, c := range cards {
-		if c.card.Status.Deprecated() {
+		if c.Deprecated {
 			continue
 		}
 		ctx.Cards = append(ctx.Cards, CardView{
-			ID: string(c.card.ID), Path: c.rel, Title: c.title, Tags: c.card.Tags,
+			ID: c.ID, Path: c.Path, Title: c.Title, Tags: c.Tags,
 		})
 	}
 
@@ -172,8 +171,8 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	ctx.Candidates = candidates(targetTitle(ctx), cards)
 	for _, cand := range ctx.Candidates {
 		for _, c := range cards {
-			if c.rel == cand.Path {
-				ctx.Base[c.rel] = hash(c.raw)
+			if c.Path == cand.Path {
+				ctx.Base[c.Path] = hash(c.Raw)
 			}
 		}
 	}
@@ -185,7 +184,24 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
+
+	// ⑤ 诚实诊断：扫描期的 Q1 与定位原文期的 Q1 汇总后重排（必要时补 Q3 汇总项）。
+	//    Q 类一律 warning，**不影响退出码**——eg context 仍退 0（合同 §5、§6）。
+	ctx.Diagnostics = finalizeDiagnostics(append(dropQ3(scan.Diagnostics), srcDiags...))
 	return ctx, nil
+}
+
+// dropQ3 去掉已有的 Q3 汇总项：多批诊断合并后要按合并结果**重新汇总恰一条**，
+// 否则会出现两条 Q3。
+func dropQ3(diags []Diagnostic) []Diagnostic {
+	out := make([]Diagnostic, 0, len(diags))
+	for _, d := range diags {
+		if d.Code == CodeQ3 {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // targetTitle 返回打分用的目标标题（原文标题；缺失时退化为空串 → 无候选）。
@@ -196,154 +212,60 @@ func targetTitle(ctx *Context) string {
 	return ctx.Source.Title
 }
 
-type notesEntry struct {
-	scanned
-	note model.Note
-}
-
-type cardEntry struct {
-	scanned
-	card model.Card
-}
-
 // resolveTarget 解析加工对象：--source 直接找原文；--note 先定位笔记再回到它的原文。
-func resolveTarget(req Request, notes []notesEntry) (*SourceView, error) {
+// 第二个返回值是定位过程中产生的 Q1 诊断（原文目录里的不可解析文件）。
+func resolveTarget(req Request, notes []NoteEntry) (*SourceView, []Diagnostic, error) {
 	id := req.Source
 	if id == "" {
 		found := false
 		for _, n := range notes {
-			if string(n.note.ID) == req.Note {
-				id, found = string(n.note.Source), true
+			if n.ID == req.Note {
+				id, found = n.Source, true
 				break
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("%w：材料笔记 %s（领域 %s）", ErrTargetNotFound, req.Note, req.Domain)
+			return nil, nil, fmt.Errorf("%w：材料笔记 %s（领域 %s）", ErrTargetNotFound, req.Note, req.Domain)
 		}
 	}
-	view, err := readSource(req.Root, id)
+	view, diags, err := readSource(req.Root, id)
 	if err != nil {
-		return nil, err
+		return nil, diags, err
 	}
-	return view, nil
+	return view, diags, nil
 }
 
 // readSource 只读取目标原文（`sources/` 不属于任何领域，所以不按领域过滤）。
-func readSource(root, id string) (*SourceView, error) {
+// 不可解析的原文**不再静默跳过**：记 Q1 并继续找下一个。
+func readSource(root, id string) (*SourceView, []Diagnostic, error) {
 	var out *SourceView
+	var diags []Diagnostic
 	err := walkMarkdown(filepath.Join(root, dirSources), root, func(rel string, raw []byte) error {
 		if out != nil {
+			// 已定位到目标：后续文件不再解析，因此也不产生 Diagnostic。
 			return nil
 		}
 		doc, src, err := mdfile.ParseSource(raw)
 		if err != nil {
-			return nil // 不可解析的文件不参与定位，由校验命令负责报告
+			diags = append(diags, newQ1(rel, "原文不可解析，已跳过：%v", err))
+			return nil // Q1 已记录，继续遍历（禁止静默跳过）
 		}
 		if string(src.ID) != id {
-			return nil
+			return nil // 可解析但不是目标：正常情况，无 Diagnostic
 		}
 		out = &SourceView{
 			ID: string(src.ID), Path: rel, Title: src.Title, URL: src.URL,
 			SavedAt: src.SavedAt.String(), Body: string(raw[doc.BodyFrom:]),
 		}
-		return nil
+		return nil // 已收下目标原文：无 Diagnostic
 	})
 	if err != nil {
-		return nil, err
+		return nil, diags, err
 	}
 	if out == nil {
-		return nil, fmt.Errorf("%w：原文 %s", ErrTargetNotFound, id)
+		return nil, diags, fmt.Errorf("%w：原文 %s", ErrTargetNotFound, id)
 	}
-	return out, nil
-}
-
-// scanNotes 扫描**本领域**的材料笔记（他域目录根本不进入遍历，EG-DOM-02）。
-func scanNotes(root, domain string) ([]notesEntry, error) {
-	var out []notesEntry
-	dir := filepath.Join(root, dirDomains, domain, dirNotes)
-	err := walkMarkdown(dir, root, func(rel string, raw []byte) error {
-		var note model.Note
-		doc, err := mdfile.Parse(raw)
-		if err != nil {
-			return nil
-		}
-		if err := doc.DecodeFM(&note); err != nil || note.ID == "" {
-			return nil
-		}
-		out = append(out, notesEntry{scanned: scanned{rel: rel, raw: raw}, note: note})
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].rel < out[j].rel })
-	return out, nil
-}
-
-// scanCards 扫描**本领域**的知识卡。
-func scanCards(root, domain string) ([]cardEntry, error) {
-	var out []cardEntry
-	dir := filepath.Join(root, dirDomains, domain, dirKnowledge)
-	err := walkMarkdown(dir, root, func(rel string, raw []byte) error {
-		var card model.Card
-		doc, err := mdfile.Parse(raw)
-		if err != nil {
-			return nil
-		}
-		if err := doc.DecodeFM(&card); err != nil || card.ID == "" {
-			return nil
-		}
-		out = append(out, cardEntry{
-			scanned: scanned{rel: rel, raw: raw, title: cardTitle(doc, card)}, card: card,
-		})
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].rel < out[j].rel })
-	return out, nil
-}
-
-// cardTitle 取卡片标题：frontmatter 的 title（可选键，落在 Extra），缺失时退化为 ID。
-func cardTitle(doc *mdfile.Doc, card model.Card) string {
-	if v, ok := card.Extra["title"]; ok {
-		if s, ok := v.(string); ok && s != "" {
-			return s
-		}
-	}
-	_ = doc
-	return string(card.ID)
-}
-
-// walkMarkdown 只读遍历目录下的 Markdown。目录不存在不是错误（骨架允许缺项）。
-func walkMarkdown(dir, root string, fn func(rel string, raw []byte) error) error {
-	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == ".index" {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if path.Ext(d.Name()) != ".md" {
-			return nil
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		return fn(filepath.ToSlash(rel), raw)
-	})
+	return out, diags, nil
 }
 
 // candidates 对同领域 active 卡做**确定性**打分：
@@ -352,14 +274,14 @@ func walkMarkdown(dir, root string, fn func(rel string, raw []byte) error) error
 //
 // 同分按 ID 升序，输出上限 CandidateLimit。无模型调用、无随机、无时间因素：
 // 同一输入连续两次执行输出逐字相同（含顺序与得分）。
-func candidates(title string, cards []cardEntry) []Candidate {
+func candidates(title string, cards []CardEntry) []Candidate {
 	out := []Candidate{}
 	want := tokens(title)
 	if len(want) == 0 {
 		return out
 	}
 	for _, c := range cards {
-		if c.card.Status.Deprecated() {
+		if c.Deprecated {
 			continue
 		}
 		score, reasons := scoreCard(want, c)
@@ -367,7 +289,7 @@ func candidates(title string, cards []cardEntry) []Candidate {
 			continue
 		}
 		out = append(out, Candidate{
-			ID: string(c.card.ID), Path: c.rel, Title: c.title, Score: score, Reasons: reasons,
+			ID: c.ID, Path: c.Path, Title: c.Title, Score: score, Reasons: reasons,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -382,15 +304,15 @@ func candidates(title string, cards []cardEntry) []Candidate {
 	return out
 }
 
-func scoreCard(want map[string]bool, c cardEntry) (int, []string) {
+func scoreCard(want map[string]bool, c CardEntry) (int, []string) {
 	score := 0
 	var titleHits, tagHits []string
 	for _, tok := range sortedKeys(want) {
-		if tokens(c.title)[tok] {
+		if tokens(c.Title)[tok] {
 			score += 3
 			titleHits = append(titleHits, tok)
 		}
-		for _, tag := range c.card.Tags {
+		for _, tag := range c.Tags {
 			if tokens(tag)[tok] {
 				score += 2
 				tagHits = append(tagHits, tag)

@@ -5,9 +5,23 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// writeVaultFile 往 vault 里放一个测试用文件（测试脚手架，不走产品写路径）。
+func writeVaultFile(t *testing.T, dir, rel, body string) {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("建目录失败：%v", err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatalf("写文件失败：%v", err)
+	}
+}
 
 // contextVault 建一个已收录 s-20260901-* 原文的 vault（复用 T-…-009 的收录路径）。
 func contextVault(t *testing.T) (string, string) {
@@ -167,5 +181,43 @@ func sortStrings(s []string) {
 				s[i], s[j] = s[j], s[i]
 			}
 		}
+	}
+}
+
+// —— ⑦ T-…-020：不可解析文件必须诚实上报（M-002 风险 R-1 的 CLI 侧关闭判据）——
+
+// TestContextReportsUnparsableCardAsQ1 断言坏卡产生 Q1 + Q3，且只读语义与退出码不变。
+func TestContextReportsUnparsableCardAsQ1(t *testing.T) {
+	dir, id := contextVault(t)
+	writeVaultFile(t, dir, "domains/ai-infra/knowledge/broken.md", "---\n- 1\n---\n\n# 坏卡\n")
+
+	code, env, errOut := runContextCLI(t, dir, "--source", id)
+	if code != ExitOK {
+		t.Fatalf("Q 类诊断不得改变退出码，实际 %d：%s", code, errOut)
+	}
+	var q1, q3 int
+	for _, w := range env.Warnings {
+		switch w.Code {
+		case "Q1":
+			q1++
+			if w.Path != "domains/ai-infra/knowledge/broken.md" || w.Message == "" {
+				t.Errorf("Q1 必须带文件路径与人类可读原因：%+v", w)
+			}
+			if w.Level != LevelWarning {
+				t.Errorf("Q 系列一律 warning，实际 %s", w.Level)
+			}
+		case "Q3":
+			q3++
+		}
+	}
+	if q1 != 1 || q3 != 1 {
+		t.Fatalf("期望恰 1 条 Q1 + 1 条 Q3，实际 Q1=%d Q3=%d（%+v）", q1, q3, env.Warnings)
+	}
+
+	// 同源同事实：纯文本输出里必须出现同一条路径，不能只在 --json 里说。
+	_, stdout, stderr := runCLI(t, newTestRoot(t, dir), "context", "--vault", dir, "--source", id)
+	text := stdout + stderr
+	if !strings.Contains(text, "broken.md") || !strings.Contains(text, "Q1") {
+		t.Errorf("纯文本输出未透出 Q1 诊断（同源同事实）：\n%s", text)
 	}
 }

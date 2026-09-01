@@ -72,6 +72,15 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 				"只供回读原始提炼，不参与知识收敛、不进候选相似卡（EG-NOTE-04）", domain, len(ctx.Notes)),
 		})
 	}
+	// Q 系列只读诊断（M2 合同 §5）：扫不动的文件、悬空引用与「结果不完整」汇总一律如实透出。
+	// 一律 warning、**不影响退出码**（context 仍退 0）；--json 的 warnings[] 与纯文本输出同源同事实，
+	// 缺失结果绝不能看起来像完整结果。
+	for _, d := range ctx.Diagnostics {
+		res.Warnings = append(res.Warnings, Diagnostic{
+			Code: d.Code, Level: LevelWarning, Path: d.Path, OpIndex: NonOpDiagnostic,
+			Message: d.Message,
+		})
+	}
 	res.Summary = append(res.Summary, fmt.Sprintf(
 		"context：领域 %s，材料笔记 %d 篇，同领域 active 卡 %d 张，候选相似卡 %d 张，base %d 项（只读，零写入零 commit）",
 		ctx.Domain, len(ctx.Notes), len(ctx.Cards), len(ctx.Candidates), len(ctx.Base)))
