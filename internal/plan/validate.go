@@ -358,7 +358,13 @@ func (v *validator) domainCheck(op *Op, field, rel string) {
 
 // baseCheck 判 W6：base 未覆盖该既有文件 → 跳过该文件（其余 op 照常执行）。
 // 覆盖时把 content_hash 带给 action，由 store 在写前做 B3 比对。
+//
+// 同一 plan 内**由前序 op 新建**的文件不在此列：它此刻还不存在，谈不上「自 eg context
+// 读取以来是否变化」，合同 §3 明文「新建文件可省或填 null」，因此既不判 W6 也不跳过。
 func (v *validator) baseCheck(op *Op, id, rel string, act *Action) {
+	if _, created := v.pending[id]; created {
+		return
+	}
 	if hash, ok := v.p.Base[id]; ok && hash != "" {
 		act.ExpectedHash = hash
 		return

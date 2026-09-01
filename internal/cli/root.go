@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"evergreen/internal/git"
 	"evergreen/internal/model"
 	"evergreen/internal/version"
 )
@@ -105,10 +106,13 @@ type Root struct {
 	LoadConfig func(root string) (model.Config, error)
 	Getwd      func() (string, error)
 
-	// In 是 --body-stdin 的正文来源（默认 os.Stdin）；Now 是本机时间来源
-	// （默认 time.Now）。两者可注入，使收录用例完全确定性（T-…-009）。
+	// In 是 --body-stdin 与 --plan - 的输入来源（默认 os.Stdin）；Now 是本机时间来源
+	// （默认 time.Now）。两者可注入，使收录 / 写入用例完全确定性（T-…-009 / 015）。
 	In  io.Reader
 	Now func() time.Time
+
+	// NewRepo 构造 vault 的 Git 仓（默认 git.New）。可注入以覆盖「提交失败」分支（B4）。
+	NewRepo func(root string) *git.Repo
 }
 
 // now 返回本机时间（可注入）。
@@ -144,6 +148,8 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("config", r.runConfig)
 	_ = r.Wire("capture", r.runCapture)
 	_ = r.Wire("context", r.runContext)
+	_ = r.Wire("apply", r.runApply)
+	_ = r.Wire("report", r.runReport)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

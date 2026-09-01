@@ -1,0 +1,120 @@
+package cli
+
+// eg report --last 的业务实现（合同 §1.9；技术方案 §4.6、§7.1）。
+//
+// **只读**：零文件变化、零 commit。它把最近一次 `eg apply` 的报告**原样复现**——
+// 从落盘记录里读出报告体字节直接回放，**不重新计算**、不重新扫描 vault，
+// 因此与该次 apply 的 `--json` 输出逐字一致（键顺序同源于 report.Report 的字段序）。
+//
+// EG-CFM-01：报告只陈述既成事实，**不请求确认**——S1 无审批闸门、卡创建即 active、
+// 无中间态，因此这里也不会出现「待确认 / 待入库」一类措辞。
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"evergreen/internal/report"
+)
+
+// lastReportRecord 是 `.eg/last-report.json` 的落盘形态。
+//
+// Data 的值用 json.RawMessage 承载：写入与回放都是**同一串字节**，
+// 保证 `eg report --last` 与该次 `eg apply` 的报告体逐字相同。
+type lastReportRecord struct {
+	ExitCode int                        `json:"exit_code"`
+	Status   string                     `json:"status"`
+	Data     map[string]json.RawMessage `json:"data"`
+	Warnings []Diagnostic               `json:"warnings"`
+}
+
+// writeLastReport 落盘最近一次报告（先建目录再原子替换；报告不是知识产物，不走 store 写口）。
+func writeLastReport(root string, res *Result, code int) error {
+	rec := lastReportRecord{
+		ExitCode: code,
+		Status:   StatusFor(code),
+		Data:     map[string]json.RawMessage{},
+		Warnings: res.Warnings,
+	}
+	if rec.Warnings == nil {
+		rec.Warnings = []Diagnostic{}
+	}
+	for k, v := range res.Data {
+		raw, err := marshalStable(v)
+		if err != nil {
+			return err
+		}
+		rec.Data[k] = raw
+	}
+	payload, err := marshalStable(rec)
+	if err != nil {
+		return err
+	}
+	abs := stateAbs(root, LastReportFile)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return err
+	}
+	tmp := abs + ".tmp"
+	if err := os.WriteFile(tmp, append(payload, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, abs)
+}
+
+// marshalStable 是本包唯一的 JSON 序列化口径：紧凑、不转义 HTML，与信封渲染一致。
+// （JSON 是 CLI 的输出格式与状态记录格式，与「写路径禁止 YAML 序列化」的硬约束无关：
+// vault 内的 Markdown 产物一律走 internal/store 的字节区间写口。）
+func marshalStable(v interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+// runReport 实现 eg report --last。
+func (r *Root) runReport(inv *Invocation) (*Result, error) {
+	abs := stateAbs(inv.VaultRoot, LastReportFile)
+	raw, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, &UsageError{Msg: fmt.Sprintf(
+			"无历史报告：%s 不存在（先执行一次 eg apply）", LastReportFile)}
+	}
+	var rec lastReportRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return nil, &UsageError{Msg: fmt.Sprintf("%s 不可解析：%v", LastReportFile, err)}
+	}
+
+	data := make(map[string]interface{}, len(rec.Data))
+	for k, v := range rec.Data {
+		data[k] = v
+	}
+	res := &Result{Data: data, Warnings: rec.Warnings}
+	res.Warnings = append(res.Warnings, Diagnostic{
+		Level: LevelInfo, Path: LastReportFile, OpIndex: NonOpDiagnostic,
+		Message: fmt.Sprintf(
+			"本报告复现自最近一次 eg apply（该次 exit_code=%d、status=%s），内容原样回放、未重新计算",
+			rec.ExitCode, rec.Status),
+	})
+	res.Summary = append(res.Summary, fmt.Sprintf(
+		"最近一次 apply：exit_code=%d，status=%s（只读复现，零写入零 commit）",
+		rec.ExitCode, rec.Status))
+	res.Summary = append(res.Summary, reportLines(rec.Data["report"])...)
+	return res, nil
+}
+
+// reportLines 把落盘的报告体还原成人类可读行；不可解析时只说明事实，不编造内容。
+func reportLines(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return []string{"报告体缺失：该记录未包含 report 字段"}
+	}
+	var rep report.Report
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		return []string{"报告体不可解析：" + err.Error()}
+	}
+	return rep.Lines()
+}

@@ -61,6 +61,36 @@ func Init(root string) (*Repo, error) {
 	return r, nil
 }
 
+// ExcludeRel 是仓库**本地**忽略清单的相对路径（不属工作区、永不进任何 commit）。
+const ExcludeRel = ".git/info/exclude"
+
+// Exclude 幂等地把一条 pattern 写进 `.git/info/exclude`。
+//
+// 用途：把 `eg` 的工程状态目录（如最近一次报告的落盘位置）挡在版本控制之外，
+// 同时**不改用户的 .gitignore**（用户文件逐字保留，B2 同源精神）。
+// 已存在同一行时零字节改动。
+func (r *Repo) Exclude(pattern string) error {
+	abs := filepath.Join(r.root, ".git", "info", "exclude")
+	raw, err := os.ReadFile(abs)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.TrimSpace(line) == pattern {
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return err
+	}
+	out := raw
+	if len(out) > 0 && out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, (pattern + "\n")...)
+	return os.WriteFile(abs, out, 0o644)
+}
+
 // Change 是工作区里的一处改动（porcelain 的 XY 状态码 + 路径）。
 type Change struct {
 	Code string
