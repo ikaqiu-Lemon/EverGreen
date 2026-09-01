@@ -99,6 +99,10 @@ esac
 grep -Fq '"verb":"relate"' "${WORK}/out.txt" || die "--json 回带的 plan 缺 verb=relate"
 grep -Fq '"op":"add_relation"' "${WORK}/out.txt" || die "--json 回带的 plan 缺 add_relation op"
 grep -Fq '"exit_code":0' "${WORK}/out.txt" || die "信封 exit_code 应为 0"
+! grep -Fq '"code":"W5"' "${WORK}/out.txt" ||
+  die "专用 rel add 计划不应因空 convergence[] 产生 W5"
+! grep -Fq 'convergence[] 缺条目' "${WORK}/out.txt" ||
+  die "专用 rel add 计划不应报告 convergence[] 缺条目"
 [ -z "$(gitv status --porcelain)" ] || die "commit 后工作区应干净（写入已入库）"
 ok "退 0；commit +1；主题 ${SUBJECT}"
 

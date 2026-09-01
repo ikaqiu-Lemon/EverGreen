@@ -202,7 +202,7 @@ func (v *validator) planLevel() {
 // convergence 校验收敛条目（异常一律并入 W5，不拦截、不新增编号）。
 func (v *validator) convergence() {
 	if len(v.p.Convergence) == 0 {
-		if v.touchesExistingCard() {
+		if v.touchesExistingCard() && !v.isDedicatedRelationPlan() {
 			v.add(warnAt(W5, NonOp, "convergence",
 				"convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系"))
 		}
@@ -235,6 +235,16 @@ func (v *validator) convergence() {
 			v.add(d)
 		}
 	}
+}
+
+// isDedicatedRelationPlan identifies the narrow plan shape synthesized by
+// `eg rel add`. It records an explicit relation command, not a semantic
+// convergence decision, so an empty convergence list is intentional.
+func (v *validator) isDedicatedRelationPlan() bool {
+	return v.res.Verb == string(model.VerbRelate) &&
+		len(v.p.Ops) == 1 &&
+		v.p.Ops[0] != nil &&
+		v.p.Ops[0].Name == OpAddRelation
 }
 
 func (v *validator) dimsConflict(base string, c Convergence, dims rules.Dims) Diagnostic {

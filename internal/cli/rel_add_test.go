@@ -108,6 +108,10 @@ func TestRelAddProducesSingleRelateCommit(t *testing.T) {
 	if strings.Contains(relAddWarningCodes(env), "已退化为 process") {
 		t.Fatalf("warnings[] 不得含 verb 退化提示：%s", relAddWarningCodes(env))
 	}
+	if strings.Contains(relAddWarningCodes(env), "W5:") ||
+		strings.Contains(relAddWarningCodes(env), "convergence[] 缺条目") {
+		t.Fatalf("专用 rel add 计划不应因空 convergence[] 产生 W5：%s", relAddWarningCodes(env))
+	}
 	// 报告体：关系条数与 commit sha 如实可核对（合同 §4.4）。
 	rep := applyReport(t, env)
 	if len(rep.Relations.Knowledge) != 1 {

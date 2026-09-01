@@ -66,7 +66,8 @@ func (r *Root) runRelAdd(inv *Invocation) (*Result, error) {
 //
 // base 由 CLI 自己算（`store.ContentHash` 唯一口径，见 apply.go 的 planBase）：
 // `rel add` 是单命令闭环，不要求用户先跑 `eg context`；B3 不因此放宽——
-// 写前重算不一致仍然跳过并进 `skipped[]`（合同 §4.2）。
+// 写前重算不一致仍然跳过并进 `skipped[]`（合同 §4.2）。该专用 `relate` 单关系
+// plan 的空 `convergence[]` 是有意形态；plan 校验不得为此伪造三维度或产生 W5。
 func (r *Root) buildRelationPlan(inv *Invocation, from, relType, to, reason string) (
 	*plan.ChangePlan, relPlanJSON, error) {
 	base, paths, err := planBase(inv.VaultRoot, []string{from, to})

@@ -431,6 +431,52 @@ func TestW5ConvergenceRelation(t *testing.T) {
 	}
 }
 
+func TestW5ConvergenceDedicatedRelationPlanException(t *testing.T) {
+	env, _ := baseVault(t)
+	relationOp := `{"op":"add_relation","from":"k-20260901-attention","type":"limits",
+ "target":"k-20260815-rnn","reason":"限定适用范围"}`
+
+	t.Run("relate_single_add_relation", func(t *testing.T) {
+		res := run(t, env, `{"plan_version":1,"verb":"relate","domain":"ai-infra","reason":"建立关系",
+ "requirement_ids":[],"convergence":[],"base":{"k-20260901-attention":"sha256:x",
+ "k-20260815-rnn":"sha256:y"},"ops":[`+relationOp+`]}`)
+		if d, ok := find(res.Warnings, W5); ok {
+			t.Fatalf("专用 relate 单关系计划不应因空 convergence[] 产生 W5：%+v", d)
+		}
+	})
+
+	t.Run("process_still_requires_convergence", func(t *testing.T) {
+		res := run(t, env, `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"建立关系",
+ "requirement_ids":[],"convergence":[],"base":{"k-20260901-attention":"sha256:x",
+ "k-20260815-rnn":"sha256:y"},"ops":[`+relationOp+`]}`)
+		d := requireWarning(t, res, W5)
+		if d.Path != "convergence" {
+			t.Fatalf("普通 process 计划仍应在 convergence 路径产生 W5：%+v", d)
+		}
+	})
+
+	t.Run("relate_multiple_ops_still_requires_convergence", func(t *testing.T) {
+		res := run(t, env, `{"plan_version":1,"verb":"relate","domain":"ai-infra","reason":"批量建立关系",
+ "requirement_ids":[],"convergence":[],"base":{"k-20260901-attention":"sha256:x",
+ "k-20260815-rnn":"sha256:y"},"ops":[`+relationOp+`,`+relationOp+`]}`)
+		d := requireWarning(t, res, W5)
+		if d.Path != "convergence" {
+			t.Fatalf("多 op 的 relate 计划仍应在 convergence 路径产生 W5：%+v", d)
+		}
+	})
+
+	t.Run("explicit_invalid_entry_still_warns", func(t *testing.T) {
+		res := run(t, env, `{"plan_version":1,"verb":"relate","domain":"ai-infra","reason":"建立关系",
+ "requirement_ids":[],"convergence":[{"card":"k-20260901-attention","relation":"core_change",
+ "core_knowledge":"same","conditions":"same","reuse_purpose":"same"}],
+ "base":{"k-20260901-attention":"sha256:x","k-20260815-rnn":"sha256:y"},"ops":[`+relationOp+`]}`)
+		d := requireWarning(t, res, W5)
+		if d.Path != "convergence[0].relation" {
+			t.Fatalf("显式矛盾 convergence 仍应产生 W5：%+v", d)
+		}
+	})
+}
+
 func TestW6BaseNotCoveringSkipsOnlyThatFile(t *testing.T) {
 	env, _ := baseVault(t)
 	res := run(t, env, `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"两处改动",
