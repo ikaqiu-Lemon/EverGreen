@@ -1,0 +1,28 @@
+状态：completed（exit_code=0，ok=true）
+材料笔记：n-20260901-verification-the-key-to-ai（领域 ai-infra，domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md，重新加工 false）
+知识卡：新建 1 张（k-20260901-verification-principle），复用 0 张，补充 0 张
+关系：材料 1 条，论证 0 条
+未决问题：n-20260901-verification-the-key-to-ai ← 当验证信号本身有偏、延迟或不可得时（例如涉及价值判断或长期后果的知识），验证原则应如何适用？原文未讨论这一情形。
+写入文件 3 个：domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md、unprocessed.md、domains/ai-infra/knowledge/k-20260901-verification-principle.md
+commit：9e82cb3f25dfdef2101c91bebf01fc3cef4c9a1b
+显著变更：new_core_card（k-20260901-verification-principle）新建知识卡：承载本次加工的新核心含义
+· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
+· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：limitation（局限），已原样透传进报告
+· [I1] info ops[2] ops[2]：sources[] 已有完全相同的条目（s-20260901-verification-the-key-to-ai / support）：幂等去重，不追加第二条
+· warning ops[3] ops[3]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md）
+逐卡收敛记录（1 条，顺序同 ChangePlan 的 convergence[]，未重排未合并）
+收敛：k-20260918-scaling-compute → independent_new
+  核心知识：different
+  成立条件：different
+  独立复用用途：different
+  说明：既有卡的核心驱动量是「算力成本持续下降 + 方法可随算力扩展」，结论是通用方法长期优于人工注入领域知识；本篇原文的核心驱动量是「知识能否被系统自身验证」，结论是 AI 能创建与维护的知识以其可自行验证的程度为上限，全篇未提算力或算力扩展，故 core_knowledge=different。成立条件上，既有卡要求算力可持续增长，原文的约束是知识须可被系统自身验证、且对专家系统 / CYC / 机器人等任意知识系统成立而不依赖算力前提，故 conditions=different。独立复用用途上，既有卡用于在算力趋势下做长期技术路线选择，本卡用作「系统能否自行验证该知识」这一架构可行性判据、在算力固定时同样可用，故 reuse_purpose=different。三维度全 different，按 SKILL.md §3.1「任一维度 different 即拆两张卡」拆新卡；两者在「早期规则灌入型象棋程序脆弱并输给暴力搜索」这一历史例证上有交叠，但共享例证不构成同一核心主张。二者的论证关系另以 eg rel add 单独登记（limits），不在本 plan 内改动既有卡正文。
+数据：
+  convergence: [{"card":"k-20260918-scaling-compute","conditions":"different","core_knowledge":"different","note":"既有卡的核心驱动量是「算力成本持续下降 + 方法可随算力扩展」，结论是通用方法长期优于人工注入领域知识；本篇原文的核心驱动量是「知识能否被系统自身验证」，结论是 AI 能创建与维护的知识以其可自行验证的程度为上限，全篇未提算力或算力扩展，故 core_knowledge=different。成立条件上，既有卡要求算力可持续增长，原文的约束是知识须可被系统自身验证、且对专家系统 / CYC / 机器人等任意知识系统成立而不依赖算力前提，故 conditions=different。独立复用用途上，既有卡用于在算力趋势下做长期技术路线选择，本卡用作「系统能否自行验证该知识」这一架构可行性判据、在算力固定时同样可用，故 reuse_purpose=different。三维度全 different，按 SKILL.md §3.1「任一维度 different 即拆两张卡」拆新卡；两者在「早期规则灌入型象棋程序脆弱并输给暴力搜索」这一历史例证上有交叠，但共享例证不构成同一核心主张。二者的论证关系另以 eg rel add 单独登记（limits），不在本 plan 内改动既有卡正文。","relation":"independent_new","reuse_purpose":"different"}]
+  domain: ai-infra
+  report: {"source":{"id":"","path":""},"note":{"id":"n-20260901-verification-the-key-to-ai","domain":"ai-infra","path":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","reprocessed":false},"cards":{"created":["k-20260901-verification-principle"],"reused":[],"updated":[]},"relations":{"material":[{"card":"k-20260901-verification-principle","source":"s-20260901-verification-the-key-to-ai","note":"n-20260901-verification-the-key-to-ai","rel":"support","reason":"原文提出并论证验证原则本身，是本卡结论的直接来源：以 Deep Blue 的搜索树验证、早期规则灌入型象棋程序变脆弱、TD-Gammon 自行评估并改进打分函数、CYC 类知识库无法验证自身断言四组例证支撑该主张"}],"knowledge":[]},"open_questions":[{"note":"n-20260901-verification-the-key-to-ai","question":"当验证信号本身有偏、延迟或不可得时（例如涉及价值判断或长期后果的知识），验证原则应如何适用？原文未讨论这一情形。"}],"links":["domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","unprocessed.md","domains/ai-infra/knowledge/k-20260901-verification-principle.md"],"git":{"commit":"9e82cb3f25dfdef2101c91bebf01fc3cef4c9a1b"},"skipped":[],"default_domain_fallback":{"used":false,"reason":""},"high_impact":[{"kind":"new_core_card","target":"k-20260901-verification-principle","detail":"新建知识卡：承载本次加工的新核心含义"}],"warnings":[{"code":"I1","level":"info","path":"ops[0].coverage_gaps","op_index":0,"message":"提炼覆盖项缺失：counterexample（反例），已原样透传进报告"},{"code":"I1","level":"info","path":"ops[0].coverage_gaps","op_index":0,"message":"提炼覆盖项缺失：limitation（局限），已原样透传进报告"},{"code":"I1","level":"info","path":"ops[2]","op_index":2,"message":"sources[] 已有完全相同的条目（s-20260901-verification-the-key-to-ai / support）：幂等去重，不追加第二条"},{"code":"","level":"warning","path":"ops[3]","op_index":3,"message":"updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳","target":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md"}],"proposals":[],"deprecated_new_support":[],"support_check":null,"affected":null,"reconcile":{"ran":false}}
+警告（4 条）：
+  [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
+  [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：limitation（局限），已原样透传进报告
+  [I1] info ops[2] ops[2]：sources[] 已有完全相同的条目（s-20260901-verification-the-key-to-ai / support）：幂等去重，不追加第二条
+  warning ops[3] ops[3]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md）
+[rc=0]

@@ -21,12 +21,12 @@ import (
 
 const (
 	ppeDir        = "testdata/ppe"
-	ppeSrcID      = "s-20261006-verification-the-key-to-ai"
-	ppeNewCard    = "k-20261006-verification-first"
+	ppeSrcID      = "s-20260901-verification-the-key-to-ai"
+	ppeNewCard    = "k-20260901-verification-principle"
 	ppeOldCard    = "k-20260918-scaling-compute"
 	ppeRelType    = "limits"
-	ppeRelReason  = "可自验证是前提，不满足该前提时既有卡的结论受限"
-	ppeCapturedAt = "2026-10-06T09:00:00+08:00"
+	ppeRelReason  = "验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长"
+	ppeCapturedAt = "2026-09-01T23:08:01+08:00"
 	ppeEvidence   = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/" +
 		"2026-10-06-m2-ppe-agent-e2e-evidence.md"
 	// ppeNotRunMarker 是「真实 AIME PPE 会话未执行」的唯一登记串（诚实出口）。
@@ -183,8 +183,8 @@ func TestPPEQueryAfterContainsNewRelation(t *testing.T) {
 	if strings.Contains(before, line) {
 		t.Fatalf("query-before.txt 不应含目标关系：%s", line)
 	}
-	if !strings.Contains(before, "正向关系 relations_out[]：无") {
-		t.Fatalf("query-before.txt 应显示正向关系为空：\n%s", before)
+	if !strings.Contains(before, "反向关系 relations_in[]：无") {
+		t.Fatalf("query-before.txt 应显示反向关系为空：\n%s", before)
 	}
 	if !strings.Contains(after, line) {
 		t.Fatalf("query-after.txt 应含目标关系 %s：\n%s", line, after)
@@ -236,20 +236,29 @@ func ppeReplay(t *testing.T) string {
 	// —— ① 收录 ——
 	if code, out, errOut := runEG(t, vault, "capture", "--url", url2, "--title", title2,
 		"--body-file", testdata(t, "verification-key-to-ai.txt"),
-		"--reason", "AIME PPE 端到端语料", "--domain", domain,
+		"--reason", "Evergreen M2 端到端验证：收录 Rich Sutton 2001 年《Verification, The Key to AI》原文，用于与既有卡 k-20260918-scaling-compute 做收敛判断",
+		"--tag", "ai", "--tag", "method",
 		"--captured-at", ppeCapturedAt); code != 0 {
 		t.Fatalf("eg capture 退出码 %d\n%s%s", code, out, errOut)
 	}
 	// —— ② 查询（base / 候选卡 / 既有卡 / 既有关系）——
 	for _, args := range [][]string{
 		{"context", "--source", ppeSrcID},
+		{"search", "自验证"},
 		{"search", "算力"},
 		{"card", "show", ppeOldCard},
-		{"rel", ppeOldCard},
 	} {
 		if code, out, errOut := runEG(t, vault, args...); code != 0 {
 			t.Fatalf("eg %v 退出码 %d\n%s%s", args, code, out, errOut)
 		}
+	}
+	// —— 写入前查询 ——
+	code, before, errOut := runEG(t, vault, "rel", ppeOldCard)
+	if code != 0 {
+		t.Fatalf("写入前 eg rel 退出码 %d\n%s", code, errOut)
+	}
+	if strings.Contains(before, ppeRelType+"--> "+ppeOldCard) {
+		t.Fatalf("写入前不应已存在目标关系：\n%s", before)
 	}
 	// —— ③ + ④ 判断结论落盘 + 写入（plan 逐字取自留痕目录）——
 	planPath, err := filepath.Abs(filepath.Join(ppeDir, "plan.json"))
@@ -259,20 +268,12 @@ func ppeReplay(t *testing.T) string {
 	if code, out, errOut := runEG(t, vault, "apply", "--plan", planPath); code != 0 {
 		t.Fatalf("eg apply 退出码 %d\n%s%s", code, out, errOut)
 	}
-	// —— 写入前查询 ——
-	code, before, errOut := runEG(t, vault, "rel", ppeNewCard)
-	if code != 0 {
-		t.Fatalf("写入前 eg rel 退出码 %d\n%s", code, errOut)
-	}
-	if strings.Contains(before, ppeRelType+"--> "+ppeOldCard) {
-		t.Fatalf("写入前不应已存在目标关系：\n%s", before)
-	}
 	// —— ⑤ 写入关系 + 再查询验证 ——
 	if code, out, errOut := runEG(t, vault, "rel", "add", ppeNewCard, ppeRelType, ppeOldCard,
 		"--reason", ppeRelReason); code != 0 {
 		t.Fatalf("eg rel add 退出码 %d\n%s%s", code, out, errOut)
 	}
-	code, after, errOut := runEG(t, vault, "rel", ppeNewCard)
+	code, after, errOut := runEG(t, vault, "rel", ppeOldCard)
 	if code != 0 {
 		t.Fatalf("写入后 eg rel 退出码 %d\n%s", code, errOut)
 	}

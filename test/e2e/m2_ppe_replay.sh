@@ -46,11 +46,11 @@ die()  { printf '  [FAIL] %s\n' "$1" >&2; exit 1; }
 BEFORE_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 
 # 会话里出现的三个 ID（与 plan.json / 留痕文件同源）。
-SRC_ID="s-20261006-verification-the-key-to-ai"
-NEW_CARD="k-20261006-verification-first"
+SRC_ID="s-20260901-verification-the-key-to-ai"
+NEW_CARD="k-20260901-verification-principle"
 OLD_CARD="k-20260918-scaling-compute"
 REL_TYPE="limits"
-REL_REASON="可自验证是前提，不满足该前提时既有卡的结论受限"
+REL_REASON="验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长"
 
 # ---------------------------------------------------------------- 0. 构建
 step "构建 eg（CGO_ENABLED=0，与发布口径一致）"
@@ -137,20 +137,20 @@ replay() {
   # —— 第 1 步：收录 ——
   run capture capture --url http://www.incompleteideas.net/IncIdeas/KeytoAI.html \
     --title "Verification, The Key to AI" --body-file "${ARTICLE}" \
-    --reason "AIME PPE 端到端语料" --domain ai-infra --captured-at 2026-10-06T09:00:00+08:00
+    --reason "Evergreen M2 端到端验证：收录 Rich Sutton 2001 年《Verification, The Key to AI》原文，用于与既有卡 k-20260918-scaling-compute 做收敛判断" \
+    --tag ai --tag method --captured-at 2026-09-01T23:08:01+08:00
   # —— 第 2 步：查询（取 base 与候选卡，并复核既有卡与既有关系）——
   run context context --source "${SRC_ID}"
+  run search search 自验证
   run search search 算力
   run card_show card show "${OLD_CARD}"
   run rel rel "${OLD_CARD}"
+  cp "${out}/last.out" "${out}/query-before.txt"
   # —— 第 3 / 4 步：判断结论落盘 + 写入（计划来自留痕目录，逐字使用）——
   run apply apply --plan "${PPE_DIR}/plan.json"
-  # —— 写入前查询（同一条查询命令、同一渲染模式）——
-  run rel rel "${NEW_CARD}"
-  cp "${out}/last.out" "${out}/query-before.txt"
   # —— 第 5 步：写入关系 + 再查询验证 ——
   run rel_add rel add "${NEW_CARD}" "${REL_TYPE}" "${OLD_CARD}" --reason "${REL_REASON}"
-  run rel rel "${NEW_CARD}"
+  run rel rel "${OLD_CARD}"
   cp "${out}/last.out" "${out}/query-after.txt"
 
   git -C "${vault}" log --oneline >"${out}/git-log.txt"
@@ -165,7 +165,10 @@ ok "五步全部退 0（含 eg apply --plan testdata/ppe/plan.json）"
 step "动词序列：git log 恰 3 条，逐字为 capture( → process( → relate("
 [ "$(wc -l <"${WORK}/r1/git-log.txt" | tr -d ' ')" = "3" ] ||
   { cat "${WORK}/r1/git-log.txt"; die "git log 条数必须恰为 3"; }
-mapfile -t SUBJ <"${WORK}/r1/subjects.txt"
+SUBJ=()
+while IFS= read -r subject; do
+  SUBJ[${#SUBJ[@]}]="${subject}"
+done <"${WORK}/r1/subjects.txt"
 EXPECT_PREFIX=("capture(" "process(" "relate(")
 for i in 0 1 2; do
   case "${SUBJ[$i]}" in
@@ -181,8 +184,8 @@ REL_LINE_RE="${NEW_CARD} --${REL_TYPE}--> ${OLD_CARD}"
 if grep -Fq "${REL_LINE_RE}" "${WORK}/r1/query-before.txt"; then
   die "写入前的查询输出不应含目标关系"
 fi
-grep -Fq "正向关系 relations_out[]：无" "${WORK}/r1/query-before.txt" ||
-  { cat "${WORK}/r1/query-before.txt"; die "写入前应显示正向关系为空"; }
+grep -Fq "反向关系 relations_in[]：无" "${WORK}/r1/query-before.txt" ||
+  { cat "${WORK}/r1/query-before.txt"; die "写入前应显示反向关系为空"; }
 grep -Fq "${REL_LINE_RE}" "${WORK}/r1/query-after.txt" ||
   { cat "${WORK}/r1/query-after.txt"; die "写入后的查询输出应含目标关系"; }
 ok "反正断言成立：写入前无 ${REL_TYPE} 关系、写入后有 ${REL_LINE_RE}"
@@ -193,7 +196,8 @@ diff -u "${PPE_DIR}/query-before.txt" "${WORK}/r1/query-before.txt" ||
 diff -u "${PPE_DIR}/query-after.txt" "${WORK}/r1/query-after.txt" ||
   die "留痕 query-after.txt 与回放输出不一致"
 [ "$(wc -l <"${PPE_DIR}/git-log.txt" | tr -d ' ')" = "3" ] || die "留痕 git-log.txt 应为 3 行"
-sed -E 's/^[0-9a-f]+ //; s/\(.*//' "${PPE_DIR}/git-log.txt" | tac >"${WORK}/log-verbs.txt"
+sed -E 's/^[0-9a-f]+ //; s/\(.*//' "${PPE_DIR}/git-log.txt" |
+  awk '{ line[NR] = $0 } END { for (i = NR; i >= 1; i--) print line[i] }' >"${WORK}/log-verbs.txt"
 printf 'capture\nprocess\nrelate\n' >"${WORK}/want-verbs.txt"
 diff -u "${WORK}/want-verbs.txt" "${WORK}/log-verbs.txt" ||
   die "留痕 git-log.txt 的动词序列不是 capture → process → relate"

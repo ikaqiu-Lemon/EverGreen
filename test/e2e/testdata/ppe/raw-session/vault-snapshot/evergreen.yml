@@ -1,0 +1,5 @@
+# Evergreen 工程配置（不是知识产物，不属于任何领域；领域由目录唯一决定）
+version: 1
+domains:
+  - ai-infra
+default_domain: ai-infra
