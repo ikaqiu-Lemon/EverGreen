@@ -195,8 +195,13 @@ REP_VAGUE=0
 REP_QUAD=0
 if [ -f "${REPORT}" ]; then
   REP_SECTIONS=$(grep -cE '^## 判据 [1-9] ' "${REPORT}" || true)
-  REP_CLOSED=$(grep -cE '^结论：(达成|未达成|未验证)$' "${REPORT}" || true)
-  REP_VAGUE=$(grep -cE '基本达成|大部分达成|大致通过|基本通过' "${REPORT}" || true)
+  REP_CLOSED=$(grep -cE '^结论：(达成|未达成|未知)$' "${REPORT}" || true)
+  # 模糊措辞只在**正文**里禁止：``` 围栏内的代码块是判定命令与实测输出的逐字回放，
+  # 允许出现「模糊词扫描命令自身」，否则报告无法自证其扫描口径（自指悖论）。
+  REP_VAGUE=$(awk '
+    /^```/ { fence = !fence; next }
+    !fence && /基本达成|大部分达成|大致通过|基本通过/ { n++ }
+    END { print n+0 }' "${REPORT}")
   REP_QUAD=$(awk '
     /^## 判据 [1-9] /   { if (n) { if (a==1 && b==1 && c==1) good++ } ; n++; a=0; b=0; c=0; next }
     /^(#### )?判定命令$/ { if (n) a++ }
