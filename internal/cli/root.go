@@ -88,7 +88,7 @@ type Command struct {
 
 	ReadOnly       bool // 只读命令：零文件变化、零 commit
 	SkipVaultGuard bool // init / config 不受 default_domain 守卫约束
-	Placeholder    bool // M1 占位（search / card show / rel）
+	Placeholder    bool // 占位命令（M1 期为 search / card show / rel；M2 起逐个摘除）
 	Owner          string
 
 	Flags    func(*flagSet)
@@ -125,7 +125,8 @@ func (r *Root) now() time.Time {
 
 // New 构造带九命令的命令树，并挂载**已实现**的命令。
 //
-// 已挂载：init / config get|set（T-…-008）、capture（T-…-009）。
+// 已挂载：init / config get|set（T-…-008）、capture（T-…-009）、context（T-…-010）、
+// apply（T-…-015）、report（T-…-016）、search（T-…-021）。
 // 其余命令仍返回 NotWiredError（退 1、零写入），
 // 由各自的 task 挂载；占位命令永不挂载。
 func New() *Root {
@@ -150,6 +151,7 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("context", r.runContext)
 	_ = r.Wire("apply", r.runApply)
 	_ = r.Wire("report", r.runReport)
+	_ = r.Wire("search", r.runSearch)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

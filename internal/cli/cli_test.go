@@ -22,6 +22,13 @@ import (
 const contractDoc = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/" +
 	"2026-09-01-eg-cli-contract.md"
 
+// m2ContractDoc 是 M2 查询与关系写入合同：M2 落地的 search / card show / rel 的参数表
+// 在这里（`--tag` / `--since` / `--until` / `--to`），M1 的 CLI 合同 §1.6–§1.8 只登记了
+// 占位形态。参数表比对因此对两份合同取**并集**——实现仍不得自行发明参数，
+// 只是「合同」这一侧从一份扩成两份（M2 合同 §8.2 覆盖了 §1.6 / §1.7 的旧标注）。
+const m2ContractDoc = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/" +
+	"2026-09-19-m2-query-contract.md"
+
 // 九命令的展示名（合同 §1 表格行序）。
 var wantCommands = []string{
 	"init", "config get|set", "capture", "context", "apply",
@@ -35,7 +42,7 @@ var wantFlags = map[string][]string{
 	"capture": {"url", "title", "body-stdin", "body-file", "reason", "domain", "tag", "captured-at", "reprocess"},
 	"context": {"source", "note", "domain"},
 	"apply":   {"plan", "dry-run"},
-	"search":  {"domain"},
+	"search":  {"domain", "tag", "since", "until"},
 	"card":    {},
 	"rel":     {"reason"},
 	"report":  {"last"},
@@ -127,6 +134,11 @@ func TestCommandFlagsMatchContract(t *testing.T) {
 	if readErr != nil {
 		t.Logf("合同文档不可读（要求 teamwork/ 与 evergreen/ 同级）：%v；仅做本地表比对", readErr)
 	}
+	if m2, err := os.ReadFile(m2ContractDoc); err == nil {
+		contract = append(contract, m2...)
+	} else {
+		t.Logf("M2 查询合同不可读：%v；仅做本地表比对", err)
+	}
 	for _, c := range New().Commands() {
 		fs := flag.NewFlagSet("eg "+c.Name, flag.ContinueOnError)
 		fs.SetOutput(&bytes.Buffer{})
@@ -183,10 +195,12 @@ func TestEachCommandHelpExitsZeroAndPrintsToStdout(t *testing.T) {
 	}
 }
 
-// —— ③ 占位命令五条：退 1、固定措辞、零副作用 ——
-
+// —— ③ 占位调用形态：退 1、固定措辞、零副作用 ——
+//
+// M1 期是五条（search / card show / rel / rel add / rel remove）。M2 逐个落地后清单
+// **只减不增**：T-…-021 摘掉 search（本轮），T-…-022 摘 card show，T-…-023 摘 rel 读路径，
+// 摘掉的形态各自有真实实现与用例接管，绝不是「不再检查」。
 var placeholderInvocations = [][]string{
-	{"search", "rag"},
 	{"card", "show", "k-20260901-x"},
 	{"rel", "k-20260901-x"},
 	{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
@@ -194,8 +208,8 @@ var placeholderInvocations = [][]string{
 }
 
 func TestPlaceholderCommandsExitOneWithFixedWording(t *testing.T) {
-	if len(placeholderInvocations) != 5 {
-		t.Fatalf("占位用例集合必须是五条，实际 %d", len(placeholderInvocations))
+	if len(placeholderInvocations) != 4 {
+		t.Fatalf("占位用例集合必须是四条（M2 已落地 search），实际 %d", len(placeholderInvocations))
 	}
 	for _, args := range placeholderInvocations {
 		dir := t.TempDir()
@@ -271,13 +285,15 @@ func TestRelReadPathIsNotImplemented(t *testing.T) {
 
 func TestPlaceholderCannotBeWired(t *testing.T) {
 	r := New()
-	for _, name := range []string{"search", "card", "rel"} {
+	for _, name := range []string{"card", "rel"} {
 		if err := r.Wire(name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err == nil {
 			t.Fatalf("占位命令 %q 不得允许挂载实现", name)
 		}
 	}
-	if err := r.Wire("context", func(*Invocation) (*Result, error) { return &Result{}, nil }); err != nil {
-		t.Fatalf("context 应允许挂载实现：%v", err)
+	for _, name := range []string{"context", "search"} {
+		if err := r.Wire(name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err != nil {
+			t.Fatalf("%s 应允许挂载实现（非占位命令）：%v", name, err)
+		}
 	}
 }
 

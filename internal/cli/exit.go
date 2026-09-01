@@ -7,6 +7,7 @@ package cli
 // 也禁止自行拼装退出码——否则 §4 的五值封闭集合守不住。
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,6 +173,10 @@ func StatusFor(code int) string {
 type Result struct {
 	// Data 是该命令的 data 载荷（合同 §1 逐命令定义）；nil 渲染成 {}。
 	Data map[string]interface{}
+	// DataOrder 声明 Data 键的输出次序：M2 查询合同把 `search` / `card show` / `rel` 的
+	// data 键序定死为「键序即表次序」（§1.2 / §2.2 / §3.1），因此渲染不能退化成字典序。
+	// 留空即沿用 M1 口径（按键名字典序），未列出的键按字典序追加在已声明键之后。
+	DataOrder []string
 	// Warnings 是 warning / info 级诊断。
 	Warnings []Diagnostic
 	// Errors 是 error 级诊断，渲染进 data.errors[]（合同 §3）。
@@ -187,6 +192,9 @@ type Envelope struct {
 	Warnings []Diagnostic           `json:"warnings"`
 	ExitCode int                    `json:"exit_code"`
 	Status   string                 `json:"status"`
+
+	// dataOrder 是 data 键的声明次序（不导出、不参与 JSON 键集合：信封仍是五键）。
+	dataOrder []string
 }
 
 // EnvelopeKeys 是信封键的封闭集合（供测试与下游断言）。
@@ -206,6 +214,7 @@ func NewEnvelope(res *Result, code int) Envelope {
 	if res == nil {
 		return env
 	}
+	env.dataOrder = res.DataOrder
 	for k, v := range res.Data {
 		env.Data[k] = v
 	}
@@ -216,6 +225,98 @@ func NewEnvelope(res *Result, code int) Envelope {
 		env.Data["errors"] = res.Errors
 	}
 	return env
+}
+
+// MarshalJSON 输出信封五键（次序 = EnvelopeKeys()），并按 dataOrder 输出 data 的键序。
+//
+// 只做「键序」这一件事：键集合、键名、取值与 encoding/json 的默认结果逐字相同，
+// 信封仍是五键、data 仍是各命令合同定义的那几个键（字段只增不改）。
+func (e Envelope) MarshalJSON() ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("{")
+	for i, k := range EnvelopeKeys() {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, "%q:", k)
+		var (
+			raw []byte
+			err error
+		)
+		switch k {
+		case "ok":
+			raw, err = marshalJSONValue(e.OK)
+		case "data":
+			raw, err = marshalOrderedMap(e.Data, e.dataOrder)
+		case "warnings":
+			raw, err = marshalJSONValue(e.Warnings)
+		case "exit_code":
+			raw, err = marshalJSONValue(e.ExitCode)
+		case "status":
+			raw, err = marshalJSONValue(e.Status)
+		}
+		if err != nil {
+			return nil, err
+		}
+		b.Write(raw)
+	}
+	b.WriteString("}")
+	return []byte(b.String()), nil
+}
+
+// marshalOrderedMap 按 order 给出的键序序列化 map；order 未覆盖的键按字典序追加。
+func marshalOrderedMap(data map[string]interface{}, order []string) ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("{")
+	first := true
+	emit := func(k string) error {
+		v, ok := data[k]
+		if !ok {
+			return nil
+		}
+		if !first {
+			b.WriteString(",")
+		}
+		first = false
+		fmt.Fprintf(&b, "%q:", k)
+		raw, err := marshalJSONValue(v)
+		if err != nil {
+			return err
+		}
+		b.Write(raw)
+		return nil
+	}
+	declared := map[string]bool{}
+	for _, k := range order {
+		if declared[k] {
+			continue
+		}
+		declared[k] = true
+		if err := emit(k); err != nil {
+			return nil, err
+		}
+	}
+	for _, k := range sortedDataKeys(data) {
+		if declared[k] {
+			continue
+		}
+		if err := emit(k); err != nil {
+			return nil, err
+		}
+	}
+	b.WriteString("}")
+	return []byte(b.String()), nil
+}
+
+// marshalJSONValue 编码单个值：与 RenderJSON 同款设置（不转义 HTML、无尾换行）。
+func marshalJSONValue(v interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
 // RenderJSON 输出信封（稳定顺序由结构体字段序保证；末尾带换行）。
@@ -235,7 +336,7 @@ func RenderHuman(w io.Writer, env Envelope, summary []string) error {
 	}
 	if len(env.Data) > 0 {
 		fmt.Fprintf(&b, "数据：\n")
-		for _, k := range sortedDataKeys(env.Data) {
+		for _, k := range envelopeDataKeys(env) {
 			fmt.Fprintf(&b, "  %s: %s\n", k, scalarString(env.Data[k]))
 		}
 	}
@@ -247,6 +348,28 @@ func RenderHuman(w io.Writer, env Envelope, summary []string) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// envelopeDataKeys 返回 data 键的渲染次序：声明序优先（M2 合同「键序即表次序」），
+// 未声明的键按字典序追加。人类可读与 --json 用同一函数取序，两套渲染因此逐键对得上。
+func envelopeDataKeys(env Envelope) []string {
+	out := make([]string, 0, len(env.Data))
+	seen := map[string]bool{}
+	for _, k := range env.dataOrder {
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		if _, ok := env.Data[k]; ok {
+			out = append(out, k)
+		}
+	}
+	for _, k := range sortedDataKeys(env.Data) {
+		if !seen[k] {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 func sortedDataKeys(data map[string]interface{}) []string {

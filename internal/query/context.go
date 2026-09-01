@@ -340,10 +340,12 @@ func sortedKeys(m map[string]bool) []string {
 }
 
 // tokens 把标题切成确定性的词集合：
+//   - 全角 ASCII（U+FF01–U+FF5E）先折半角，全角与半角写法命中同一个词（M2 合同 §1.3 归一口径）；
 //   - ASCII 字母数字连续段折成小写作为一个词；
 //   - 非 ASCII（如中文）按**相邻两字**切二元组，避免整串比对导致零召回。
 //
-// 只用于**只读**打分，不参与任何落盘字节。
+// 只用于**只读**打分，不参与任何落盘字节。**全包唯一一套切词口径**：
+// context 候选与 search 匹配分（合同 §1.3）共用它，不另起一套。
 func tokens(s string) map[string]bool {
 	out := map[string]bool{}
 	runes := []rune(s)
@@ -365,6 +367,7 @@ func tokens(s string) map[string]bool {
 		cjk = cjk[:0]
 	}
 	for _, r := range runes {
+		r = foldWidth(r)
 		switch {
 		case r < 128 && (r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'):
 			flushCJK()
@@ -380,4 +383,13 @@ func tokens(s string) map[string]bool {
 	flush()
 	flushCJK()
 	return out
+}
+
+// foldWidth 把全角 ASCII（U+FF01–U+FF5E）折成对应半角（M2 合同 §1.3 第 1 条），
+// 其余码位原样返回。只读归一：不影响任何落盘字节。
+func foldWidth(r rune) rune {
+	if r >= 0xFF01 && r <= 0xFF5E {
+		return r - 0xFEE0
+	}
+	return r
 }

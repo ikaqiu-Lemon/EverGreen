@@ -1,34 +1,16 @@
 package cli
 
-// M1 占位命令：`search` / `card show`（`rel` 见 rel.go）。
+// 尚未落地命令的占位：`card show`（`rel` 的子命令占位见 rel.go）。
 //
-// 三者都是技术方案 §7.1 的 **S1 命令**，只是按 §16.1 划归 **M2 实现**，
-// 因此文案一律写「M1 未实现（S1 命令，M2 落地）」，
+// 它们都是技术方案 §7.1 的 **S1 命令**，只是按 §16.1 划归 **M2 实现**，
+// 因此文案一律沿用 root.go 的 PlaceholderNotice，
 // **禁止改写成任何暗示它们不属于 S1 的口径**（门禁对该措辞做 grep 反证）。
 // 占位分支只写 stderr：不碰文件、不产生 commit（只读命令零副作用保证同样覆盖它们）。
+//
+// M2 进度（T-…-021）：`eg search` 已换成真实实现，命令定义与业务实现搬到 search.go，
+// 本文件不再承载它——占位清单因此从三条收缩为「card show + rel 的写子命令」。
 
 import "fmt"
-
-func searchCommand() *Command {
-	return &Command{
-		Name:        "search",
-		Display:     "search",
-		Summary:     "按关键词检索知识卡",
-		ReadOnly:    true,
-		Placeholder: true,
-		Usage: `eg search <query> [--domain <d>]
-
-参数（合同 §1.6，按 §7.1 登记，供 M2 直接落地）：
-  <query>        是；检索词
-  --domain <d>   否；限定领域
-
-M1 状态：` + PlaceholderNotice + `。被调用即输出该文案并退 1，零副作用。
-`,
-		Flags: func(fs *flagSet) {
-			fs.String("domain", "", "限定领域")
-		},
-	}
-}
 
 func cardCommand() *Command {
 	return &Command{
