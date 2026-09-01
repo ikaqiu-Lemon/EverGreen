@@ -126,7 +126,7 @@ func (r *Root) now() time.Time {
 // New 构造带九命令的命令树，并挂载**已实现**的命令。
 //
 // 已挂载：init / config get|set（T-…-008）、capture（T-…-009）、context（T-…-010）、
-// apply（T-…-015）、report（T-…-016）、search（T-…-021）。
+// apply（T-…-015）、report（T-…-016）、search（T-…-021）、card show（T-…-022）。
 // 其余命令仍返回 NotWiredError（退 1、零写入），
 // 由各自的 task 挂载；占位命令永不挂载。
 func New() *Root {
@@ -152,6 +152,7 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("apply", r.runApply)
 	_ = r.Wire("report", r.runReport)
 	_ = r.Wire("search", r.runSearch)
+	_ = r.Wire("card", r.runCardShow)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

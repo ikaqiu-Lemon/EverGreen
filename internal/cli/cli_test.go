@@ -198,18 +198,17 @@ func TestEachCommandHelpExitsZeroAndPrintsToStdout(t *testing.T) {
 // —— ③ 占位调用形态：退 1、固定措辞、零副作用 ——
 //
 // M1 期是五条（search / card show / rel / rel add / rel remove）。M2 逐个落地后清单
-// **只减不增**：T-…-021 摘掉 search（本轮），T-…-022 摘 card show，T-…-023 摘 rel 读路径，
+// **只减不增**：T-…-021 摘掉 search、T-…-022 摘 card show（本轮），T-…-023 摘 rel 读路径，
 // 摘掉的形态各自有真实实现与用例接管，绝不是「不再检查」。
 var placeholderInvocations = [][]string{
-	{"card", "show", "k-20260901-x"},
 	{"rel", "k-20260901-x"},
 	{"rel", "add", "k-20260901-a", "supports", "k-20260901-b", "--reason", "r"},
 	{"rel", "remove", "k-20260901-a", "supports", "k-20260901-b"},
 }
 
 func TestPlaceholderCommandsExitOneWithFixedWording(t *testing.T) {
-	if len(placeholderInvocations) != 4 {
-		t.Fatalf("占位用例集合必须是四条（M2 已落地 search），实际 %d", len(placeholderInvocations))
+	if len(placeholderInvocations) != 3 {
+		t.Fatalf("占位用例集合必须是三条（M2 已落地 search / card show），实际 %d", len(placeholderInvocations))
 	}
 	for _, args := range placeholderInvocations {
 		dir := t.TempDir()
@@ -285,12 +284,12 @@ func TestRelReadPathIsNotImplemented(t *testing.T) {
 
 func TestPlaceholderCannotBeWired(t *testing.T) {
 	r := New()
-	for _, name := range []string{"card", "rel"} {
+	for _, name := range []string{"rel"} {
 		if err := r.Wire(name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err == nil {
 			t.Fatalf("占位命令 %q 不得允许挂载实现", name)
 		}
 	}
-	for _, name := range []string{"context", "search"} {
+	for _, name := range []string{"context", "search", "card"} {
 		if err := r.Wire(name, func(*Invocation) (*Result, error) { return &Result{}, nil }); err != nil {
 			t.Fatalf("%s 应允许挂载实现（非占位命令）：%v", name, err)
 		}

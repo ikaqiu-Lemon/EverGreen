@@ -120,8 +120,9 @@ func searchHitLine(h query.SearchHit) string {
 }
 
 // MarkerDeprecated 是 M2 唯一的显著标记（合同 §1.5 / §2.2）：失效卡前缀。
+// 取值与 internal/query 同源，避免两处各写一份字面量。
 // `[已删除]` / `[未过目]` / `[材料支持不足]` 属 S2 / S3，M2 **不输出**。
-const MarkerDeprecated = "[失效]"
+const MarkerDeprecated = query.MarkerDeprecated
 
 // queryDiagnostics 把 internal/query 的 Q 系列诊断原样翻译成 CLI 诊断条目
 // （合同 §5：code 填 Q1 / Q2 / Q3，level 一律 warning，op_index 填 -1）。

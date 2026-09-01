@@ -898,9 +898,10 @@ func TestM1CoverageGapAbsentRerun(t *testing.T) {
 func TestM1PlaceholderCommandsStayPlaceholders(t *testing.T) {
 	vault := newVault(t)
 	head := strings.TrimSpace(gitOut(t, vault, "rev-parse", "HEAD"))
-	// M2 起清单只减不增：search（T-…-021）已换成真实实现并由 test/e2e/m2_search.sh
-	// 与 internal/cli 的 TestSearch* 接管，故从占位清单移出；card show / rel 仍在。
-	for _, args := range [][]string{{"card", "show", "k-1"}, {"rel", "k-1"}} {
+	// M2 起清单只减不增：search（T-…-021）与 card show（T-…-022）已换成真实实现，
+	// 分别由 test/e2e/m2_search.sh、test/e2e/m2_card_show.sh 与 internal/cli 的
+	// TestSearch* / TestCardShow* 接管，故从占位清单移出；rel 仍在。
+	for _, args := range [][]string{{"rel", "k-1"}} {
 		code, out, errOut := runEG(t, vault, args...)
 		if code != 1 {
 			t.Fatalf("eg %v 应退 1，实际 %d", args, code)
