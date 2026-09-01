@@ -2,14 +2,16 @@
 
 Evergreen 的**确定性本地 CLI**（单二进制 `eg`）代码仓。`eg` 只做本地确定性的数据面工作：**不调用任何模型、不做任何网络请求**；抓网页、清洗正文、生成 ChangePlan 全部在 Agent 侧。
 
-> **当前状态：脚手架阶段。** 只实现 `eg --help` 与 `eg version`；S1 的九个命令尚未实现（见下文「与 teamwork 的关系」）。
+> **当前状态：S1 里程碑 M2。** 九个命令（`init` / `config get|set` / `capture` / `context` / `apply` / `search` / `card show` / `rel` / `report --last`）均已有真实实现；唯一例外是 `eg rel remove`，它按阶段裁决归 **M3/S2**，被调用即输出「M3/S2 未实现…」并退 `1`，零写入、零 commit。
+
+安装与首次上手请读 **[INSTALL.md](INSTALL.md)**（本文件不重复安装步骤，单一出处）；版本号与发布口径见 [`2026-10-03-m2-release-and-version.md`](../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-10-03-m2-release-and-version.md)。
 
 ## 快速开始
 
 ```bash
 make build          # 编译到 bin/eg
 ./bin/eg --help
-./bin/eg version
+./bin/eg --version  # 打印版本后退 0（注意：没有 version 子命令，只有这个全局 flag）
 make test           # go test ./...
 make lint           # gofmt -l . + go vet ./... + 写路径守卫
 make fmt            # gofmt -w .
@@ -27,6 +29,23 @@ go vet ./...
 go run ./cmd/eg --help
 ```
 
+## 命令清单（S1 九命令，M2 实况）
+
+| 命令 | 用途 | 副作用 |
+|-|-|-|
+| `eg init` | 初始化 vault（写 `evergreen.yml` / `SKILL.md` / `unprocessed.md` 等） | 一次 commit（verb=`init`） |
+| `eg config get` / `eg config set` | 读写 `default_domain` / `domains` | `set` 产生一次 commit（verb=`reconcile`） |
+| `eg capture` | 收录原文并登记收件区 | 一次 commit（verb=`capture`） |
+| `eg context` | 只读输出加工上下文（候选卡 + `base` 的 id→content_hash） | 只读 |
+| `eg apply --plan` | 按 ChangePlan 写入并提交（S1 唯一程序化写入通道） | 一次 commit（verb 取自 `plan.verb`） |
+| `eg search` | 按关键词检索知识卡（失效卡同等可见并标 `[失效]`） | 只读 |
+| `eg card show` | 单卡视图（五分区 + `sources[]` + 正反向关系） | 只读 |
+| `eg rel` / `eg rel add` | 读论证关系 / 写一条论证关系 | 读只读；`add` 一次 commit（verb=`relate`） |
+| `eg rel remove` | **M3/S2 未实现** | 零写入、零 commit，退 `1` |
+| `eg report --last` | 只读复现最近一次 `apply` / `capture` 的最终报告 | 只读 |
+
+Agent 侧的操作规程（判据、边界、样例）在 [`skill/SKILL.md`](skill/SKILL.md)，随二进制内嵌发布并由 `eg init` 逐字写入 vault 根。
+
 ## 工程基线
 
 | 项 | 值 |
@@ -34,15 +53,16 @@ go run ./cmd/eg --help
 | 语言 | **Go**（唯一实现语言，2026-08-31 选型决策结论） |
 | 模块名 | `evergreen`（import 形如 `evergreen/internal/version`） |
 | `go.mod` 的 `go` 指令 | `1.22`（任务基线下限；本地实测工具链 `go1.24.13 linux/amd64`） |
-| 外部依赖 | 脚手架阶段**零依赖**（仅 stdlib）。S1 唯一允许的外部依赖是 `gopkg.in/yaml.v3`，且**只读用途** |
-| 主分支 | `master`，**未配置远端** |
-| 退出码 | `0` 成功；`1` 用法 / 参数非法（零写入）。`2`/`3`/`4` 由后续命令任务引入 |
+| 版本号 | `0.2.0-m2`（`Makefile` 的 `VERSION ?=` 缺省值、`internal/version.DefaultVersion`、版本决策文档三处同源） |
+| 外部依赖 | **零依赖**（仅 stdlib）。S1 唯一允许的外部依赖是 `gopkg.in/yaml.v3`，且**只读用途** |
+| 主分支 | `master`，**未配置远端**（`git remote -v` 实测输出为空，见版本决策文档「远端状态」） |
+| 退出码 | `0` 成功；`1` 用法 / 参数非法（零写入）；`2` 校验失败（零写入）；`3` 部分写入被跳过；`4` Git 提交失败（磁盘保留现状，不做破坏性还原） |
 
 ## 目录结构
 
 ```text
-cmd/eg/            单二进制 eg 的唯一入口（当前仅 --help / version）
-internal/version/  版本信息（-ldflags 注入）
+cmd/eg/            单二进制 eg 的唯一入口（全局 flag / 命令分发 / 退出码）
+internal/version/  版本信息（默认值 + -ldflags 注入）
 internal/model/    产物结构体、ID、枚举、时间格式          [S1] 零依赖
 internal/mdfile/   frontmatter 只读解析、分区/块切分        [S1] → model
 internal/store/    读盘、写盘（tmp+fsync+rename）、hash 比对 [S1] → model mdfile git
@@ -52,8 +72,8 @@ internal/report/   最终报告 schema 与渲染                   [S1] → mode
 internal/cli/      命令定义、参数、退出码、--json           [S1] → 以上全部
 internal/query/    检索与关系正反查（S1 扫描版）            [S1] → model
 internal/rules/    opposing 规范化、收敛判据                [S1] → model query
-skill/             SKILL.md（随二进制发布，由后续任务填写）
-test/e2e/          端到端语料与脚本（由后续任务填写）
+skill/             SKILL.md（随二进制内嵌发布，eg init 逐字落盘）
+test/e2e/          端到端语料与脚本（m1_real_article.sh、m2_*.sh）
 bin/ dist/         构建 / 发布产物（已 gitignore）
 ```
 
@@ -81,8 +101,8 @@ Markdown 与 frontmatter 是**唯一真相**，用户手写内容不可再生，
 
 - 施工基线（唯一可执行基线）：`../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md`
   - 工程基线：`#eng-baseline`　｜　写路径硬约束：`#write-path`　｜　下一阶段对齐清单：`#next-align`
-- 语言选型决策（结论 Go）：`../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-language-selection.md`
-- 选型后复审：`../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-post-selection-review.md`
-- 任务清单：`../teamwork/projects/evergreen/s1_main_flow/tasks/`（18 个 Task，其 `verify.*` 命令形如 `cd evergreen && go test ./...`，**CWD 是本仓与 `teamwork/` 的公共父目录**）
+- 冻结合同：`2026-09-01-eg-cli-contract.md`（命令 / 退出码 / 信封）、`2026-09-08-changeplan-contract.md`（ChangePlan 字段 / 校验分级）、`2026-09-19-m2-query-contract.md`（M2 查询与关系写入）
+- 版本与发布口径：`2026-10-03-m2-release-and-version.md`
+- 任务清单：`../teamwork/projects/evergreen/s1_main_flow/tasks/`（其 `verify.*` 命令形如 `cd evergreen && go test ./...`，**CWD 是本仓与 `teamwork/` 的公共父目录**）
 
-未知事项（不猜测）：本仓最终托管地址 / 远端、CI 形态、`gopkg.in/yaml.v3` 在当前环境能否下载入库，均**未验证**。
+未知事项（不猜测）：本仓最终托管地址 / 远端、CI 形态、是否创建与推送发布 tag，均**未知 / 待确认**（本地 `git remote -v` 与 `git tag` 实测均为空输出）；`darwin/amd64` 与 `darwin/arm64` 产物**仅交叉编译、未经真机运行验证**（见 [INSTALL.md](INSTALL.md) 的「已知限制」）。

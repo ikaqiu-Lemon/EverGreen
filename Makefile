@@ -5,7 +5,11 @@
 
 BIN        := bin/eg
 PKG        := ./cmd/eg
-VERSION    ?= 0.0.0-dev
+# VERSION 口径（唯一决策文档：
+# ../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-10-03-m2-release-and-version.md）：
+# 本行的缺省值与 internal/version/version.go 的 Version 默认字面量、决策文档声明的版本号
+# **三处同源同值**；正式产物由下面的 -ldflags 注入同一个值（`make release VERSION=x.y.z` 可覆盖）。
+VERSION    ?= 0.2.0-m2
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE       ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X evergreen/internal/version.Version=$(VERSION) -X evergreen/internal/version.Commit=$(COMMIT) -X evergreen/internal/version.Date=$(DATE)
