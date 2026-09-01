@@ -210,7 +210,7 @@ func (e *executor) sourceNew(a Action) {
 		return
 	}
 	e.out.Source = SourceRecord{ID: a.ID, Path: a.Path}
-	e.inbox(a, out.Inbox, out.InboxSkip, "收件区条目未登记")
+	e.inbox(a, a.ID, out.Inbox, out.InboxSkip, "收件区条目未登记")
 }
 
 func (e *executor) noteNew(a Action) {
@@ -232,7 +232,7 @@ func (e *executor) noteNew(a Action) {
 	}
 	e.out.Note = NoteRecord{ID: a.ID, Domain: a.Domain, Path: a.Path, Reused: out.Reused}
 	// EG-SRC-02：条目未成功移出必须显式上报，绝不静默。
-	e.inbox(a, out.Inbox, out.InboxSkip, "收件区条目未移出")
+	e.inbox(a, op.Source, out.Inbox, out.InboxSkip, "收件区条目未移出")
 }
 
 func (e *executor) noteAppend(a Action) {
@@ -397,9 +397,14 @@ func (e *executor) record(a Action, res store.Result, err error) bool {
 }
 
 // inbox 汇总收件区条目的登记 / 移出结果：未成功即显式上报（EG-SRC-02）。
-func (e *executor) inbox(a Action, res store.Result, skip *store.SkipError, what string) {
+// inbox 汇报收件区条目的登记 / 移出结果。
+//
+// EG-SRC-02：条目未成功登记或未成功移出**必须显式上报**（target 取 source_id，
+// 让用户一眼看出是哪一篇原文的条目留在了收件区），绝不静默。
+func (e *executor) inbox(a Action, sourceID string, res store.Result, skip *store.SkipError, what string) {
 	if skip != nil {
-		e.skip(a.OpIndex, skip.Reason, a.ID, skip.Path, what+"："+skip.Detail)
+		e.skip(a.OpIndex, skip.Reason, sourceID, skip.Path,
+			fmt.Sprintf("%s（source_id=%s）：%s", what, sourceID, skip.Detail))
 		return
 	}
 	if res.Written {

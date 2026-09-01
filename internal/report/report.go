@@ -238,7 +238,7 @@ func (r Report) JSON() ([]byte, error) {
 }
 
 // Lines 渲染人类可读报告：事实与 JSON 同源，只换表达形式，不引入 JSON 里没有的事实。
-// 措辞里**不出现**「待确认」「待批准」这类中间态（EG-CFM-01）。
+// 措辞里**不出现**任何审批 / 中间态字样（EG-CFM-01：S1 无闸门，卡创建即 active）。
 func (r Report) Lines() []string {
 	var out []string
 	if r.Source.ID != "" {

@@ -353,14 +353,7 @@ func TestApplyCommitFailureKeepsWrittenBytes(t *testing.T) {
 	before := gitLogCount(t, dir)
 
 	r := newTestRoot(t, dir)
-	r.NewRepo = func(root string) *git.Repo {
-		return git.NewWithRunner(root, func(d string, args ...string) ([]byte, []byte, error) {
-			if len(args) > 0 && args[0] == "commit" {
-				return nil, []byte("注入的提交失败"), errFakeCommit
-			}
-			return realGit(d, args...)
-		})
-	}
+	r.NewRepo = failingCommitRepo()
 	code, env, _ := runApplyPlanWith(t, r, dir, notePlan())
 	if code != ExitCommitFailed {
 		t.Fatalf("退出码 = %d，期望 4", code)
@@ -557,6 +550,19 @@ func TestApplySkippedNamingIsClosed(t *testing.T) {
 // —— 测试脚手架：注入一个只在 commit 步骤失败的 Git Runner ——
 
 var errFakeCommit = errors.New("注入的提交失败")
+
+// failingCommitRepo 返回一个「只有 commit 这一步失败」的仓构造器：
+// add / status 等仍走真实 git，因此磁盘与索引状态是真的，B4 断言才有意义。
+func failingCommitRepo() func(root string) *git.Repo {
+	return func(root string) *git.Repo {
+		return git.NewWithRunner(root, func(d string, args ...string) ([]byte, []byte, error) {
+			if len(args) > 0 && args[0] == "commit" {
+				return nil, []byte(errFakeCommit.Error()), errFakeCommit
+			}
+			return realGit(d, args...)
+		})
+	}
+}
 
 func realGit(dir string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.Command("git", args...)
