@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"evergreen/internal/model"
 	"evergreen/internal/version"
@@ -103,11 +104,25 @@ type Root struct {
 	FindVault  func(start string) (string, error)
 	LoadConfig func(root string) (model.Config, error)
 	Getwd      func() (string, error)
+
+	// In 是 --body-stdin 的正文来源（默认 os.Stdin）；Now 是本机时间来源
+	// （默认 time.Now）。两者可注入，使收录用例完全确定性（T-…-009）。
+	In  io.Reader
+	Now func() time.Time
+}
+
+// now 返回本机时间（可注入）。
+func (r *Root) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 // New 构造带九命令的命令树，并挂载**已实现**的命令。
 //
-// 已挂载：init / config get|set（T-…-008）。其余命令仍返回 NotWiredError（退 1、零写入），
+// 已挂载：init / config get|set（T-…-008）、capture（T-…-009）。
+// 其余命令仍返回 NotWiredError（退 1、零写入），
 // 由各自的 task 挂载；占位命令永不挂载。
 func New() *Root {
 	r := &Root{
@@ -115,6 +130,8 @@ func New() *Root {
 		FindVault:  findVaultUpwards,
 		LoadConfig: loadConfigReadOnly,
 		Getwd:      os.Getwd,
+		In:         os.Stdin,
+		Now:        time.Now,
 	}
 	r.wireImplemented()
 	return r
@@ -125,6 +142,7 @@ func New() *Root {
 func (r *Root) wireImplemented() {
 	_ = r.Wire("init", r.runInit)
 	_ = r.Wire("config", r.runConfig)
+	_ = r.Wire("capture", r.runCapture)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。
@@ -286,7 +304,7 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 	if cmd.Flags != nil {
 		cmd.Flags(fs)
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		msg := strings.TrimSpace(buf.String())
 		if errors.Is(err, flag.ErrHelp) {
 			*helpFlag = true
@@ -330,6 +348,44 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 	}
 	res, err := cmd.Handler(inv)
 	return inv.JSON, res, err
+}
+
+// reorderArgs 把位置参数挪到 flag 之后再交给 FlagSet。
+//
+// 标准库 flag 遇到**首个非 flag 参数即停止解析**，因此 `eg config set k v --vault X`
+// 里的 --vault 会被当成位置参数。合同 §1 的用法示例（如 §1.2）把位置参数写在前、
+// 全局 flag 写在后，故这里做一次**只重排、不增删**的参数置换：
+// 参数个数与取值逐字不变，`--` 之后的一切原样视为位置参数。
+func reorderArgs(fs *flag.FlagSet, args []string) []string {
+	var flags, positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			positional = append(positional, args[i+1:]...)
+			break
+		}
+		if len(a) > 1 && a[0] == '-' {
+			flags = append(flags, a)
+			name := strings.TrimLeft(a, "-")
+			if strings.Contains(name, "=") {
+				continue
+			}
+			f := fs.Lookup(name)
+			if f == nil {
+				continue
+			}
+			if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+				continue
+			}
+			if i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+			continue
+		}
+		positional = append(positional, a)
+	}
+	return append(flags, positional...)
 }
 
 // errHelpRequested 表示「已打印用法，退 0」，不是错误对外语义。
