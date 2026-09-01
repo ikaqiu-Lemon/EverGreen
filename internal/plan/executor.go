@@ -133,6 +133,14 @@ type executor struct {
 	s   *store.Store
 	opt ExecOptions
 	out *ExecResult
+	// fresh 记本次 plan 内**自己**写出的文件的最新 content_hash（rel → hash）。
+	//
+	// B3 防的是「自 eg context 读取以来**外部**改动」；同一个 plan 里前序 op 刚写过的
+	// 文件不属于外部改动。合同 §2.1 的 non_core_supplement 行本就要求
+	// `append_card` + `add_material_rel` 落在同一张卡上，若第二个 op 仍拿 plan.base 的
+	// 旧 hash 去比对，必然自撞 B3 —— 这里改用前序写入后的真实 hash，B3 对外部改动的
+	// 拦截强度不变（外部一改，fresh 与磁盘同样对不上）。
+	fresh map[string]string
 }
 
 // Execute 按 `ops[]` 声明顺序逐个执行 Action。
@@ -140,7 +148,7 @@ type executor struct {
 // **调用前提**：res.Failed() 为假（有 error 级诊断时调用方必须零写入）。
 // 任何单个 op 的跳过或失败都不中断后续 op：S1 明确接受部分成功，前提是如实上报。
 func Execute(s *store.Store, res *Result, opt ExecOptions) *ExecResult {
-	e := &executor{s: s, opt: opt, out: &ExecResult{}}
+	e := &executor{s: s, opt: opt, out: &ExecResult{}, fresh: map[string]string{}}
 	for i := range res.Actions {
 		e.run(res.Actions[i])
 	}
@@ -236,7 +244,7 @@ func (e *executor) noteNew(a Action) {
 }
 
 func (e *executor) noteAppend(a Action) {
-	res, err := e.s.WriteGuarded(a.Path, a.ExpectedHash, store.Edit{
+	res, err := e.s.WriteGuarded(a.Path, e.expect(a), store.Edit{
 		Kind:     store.KindNote,
 		Sections: sectionAppends(a.Sections),
 	})
@@ -263,7 +271,7 @@ func (e *executor) cardNew(a Action) {
 	}
 	e.out.CardsCreated = append(e.out.CardsCreated, a.ID)
 	for _, ref := range op.Sources {
-		e.out.Material = append(e.out.Material, MaterialRecord{
+		e.addMaterial(MaterialRecord{
 			Card: a.ID, Source: ref.Source, Note: ref.Note, Rel: ref.Rel, Reason: ref.Reason,
 		})
 	}
@@ -273,7 +281,7 @@ func (e *executor) cardNew(a Action) {
 func (e *executor) cardAppend(a Action) {
 	res, err := e.s.ApplyCardAppend(store.CardAppendSpec{
 		Rel:          a.Path,
-		ExpectedHash: a.ExpectedHash,
+		ExpectedHash: e.expect(a),
 		Stamp:        e.opt.Stamp,
 		Sections:     sectionAppends(a.Sections),
 	})
@@ -292,7 +300,7 @@ func (e *executor) materialRelWrite(a Action) {
 	}
 	res, err := e.s.ApplyMaterialRel(store.MaterialRelSpec{
 		Rel:          a.Path,
-		ExpectedHash: a.ExpectedHash,
+		ExpectedHash: e.expect(a),
 		Stamp:        e.opt.Stamp,
 		Ref: model.SourceRef{
 			Source: model.SourceID(ref.Source),
@@ -304,7 +312,7 @@ func (e *executor) materialRelWrite(a Action) {
 	if !e.record(a, res, err) {
 		return
 	}
-	e.out.Material = append(e.out.Material, MaterialRecord{
+	e.addMaterial(MaterialRecord{
 		Card: a.ID, Source: ref.Source, Note: ref.Note, Rel: ref.Rel, Reason: ref.Reason,
 	})
 }
@@ -322,7 +330,7 @@ func (e *executor) relationWrite(a Action) {
 	}
 	res, err := e.s.ApplyRelation(store.RelationSpec{
 		Rel:          a.Path,
-		ExpectedHash: a.ExpectedHash,
+		ExpectedHash: e.expect(a),
 		Stamp:        e.opt.Stamp,
 		From:         model.CardID(a.ID),
 		Relation: model.Relation{
@@ -348,7 +356,7 @@ func (e *executor) openQuestionWrite(a Action) {
 	op := a.Op
 	res, err := e.s.ApplyOpenQuestion(store.OpenQuestionSpec{
 		Rel:          a.Path,
-		ExpectedHash: a.ExpectedHash,
+		ExpectedHash: e.expect(a),
 		Stamp:        e.opt.Stamp,
 		Question:     lineTerminated([]byte(op.Question)),
 	})
@@ -388,6 +396,7 @@ func (e *executor) record(a Action, res store.Result, err error) bool {
 	}
 	if res.Written {
 		e.link(path)
+		e.noteFresh(path, res.Hash)
 		return true
 	}
 	if res.Detail != "" {
@@ -409,6 +418,7 @@ func (e *executor) inbox(a Action, sourceID string, res store.Result, skip *stor
 	}
 	if res.Written {
 		e.link(res.Path)
+		e.noteFresh(res.Path, res.Hash)
 	}
 }
 
@@ -438,12 +448,46 @@ func (e *executor) link(path string) {
 	e.out.Written = append(e.out.Written, path)
 }
 
+// addMaterial 登记一条材料关系事实。四要素逐字相同的重复条目在卡上被 store 幂等去重
+// （sources[] 只会有一条），报告同样只登记一条 —— 报告必须与磁盘一致。
+func (e *executor) addMaterial(rec MaterialRecord) {
+	for _, exist := range e.out.Material {
+		if exist == rec {
+			return
+		}
+	}
+	e.out.Material = append(e.out.Material, rec)
+}
+
 func (e *executor) impact(kind, target string, opIndex int, detail string) {
 	e.out.HighImpact = append(e.out.HighImpact,
 		ImpactItem{Kind: kind, Target: target, Detail: detail, OpIndex: opIndex})
 }
 
-func (e *executor) baseHash(key string) string { return e.opt.Base[key] }
+// baseHash 取某个文件在本次写入前应有的 content_hash：本 plan 已写过就用写后的真值，
+// 否则用 plan.base 里 Agent 逐字抄来的值。
+func (e *executor) baseHash(key string) string {
+	if h, ok := e.fresh[key]; ok {
+		return h
+	}
+	return e.opt.Base[key]
+}
+
+// expect 返回 action 应带的 expectedHash（同上口径，作用于 Action.Path）。
+func (e *executor) expect(a Action) string {
+	if h, ok := e.fresh[a.Path]; ok {
+		return h
+	}
+	return a.ExpectedHash
+}
+
+// noteFresh 登记「本 plan 刚把该文件写成这个样子」。
+func (e *executor) noteFresh(path, hash string) {
+	if path == "" || hash == "" {
+		return
+	}
+	e.fresh[path] = hash
+}
 
 func (e *executor) stampOf(savedAt string) model.Stamp {
 	if savedAt != "" {

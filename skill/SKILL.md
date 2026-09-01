@@ -110,7 +110,10 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 - [ ] **独立复用用途**（`reuse_purpose`）是否相同？`same` / `different`
 - [ ] **任一维度 `different` → 拆两张卡**（宁拆勿并）
 - [ ] **判不出（拿不准 / 信息不足）也拆两张卡**，并在 `convergence[].note` 写明为什么判不出
-- [ ] 三维度**全 `same`** 才允许复用已有卡（`same_semantics` 或 `non_core_supplement`）
+- [ ] 三维度**全 `same`** → 只能填 `same_semantics`（复用同一张卡，不新建）
+- [ ] 复用已有卡做**非核心补充**时，被补充的那个维度就是 `different`（例如补了一条成立条件
+      → `conditions: "different"`）：`relation` 只有 `same_semantics` 允许三维度全 `same`，
+      其余六值必须**至少一个维度 `different`**，否则记 W5
 - [ ] 每张被比较的候选卡在 `convergence[]` 里**各写一条**，含 `card` + `relation` + 三维度结论 + `note`
 
 ### 3.2 七种处理关系 → 产物结果对照表（恰 7 行，判完三维度按表选 op，不要自由发挥）
@@ -125,7 +128,8 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 | `uncertain` | 存疑 | `add_open_question` 写入材料笔记「存疑与待验证」分区；不建卡 |
 | `deprecated` | 失效 | **S1/M1 不可用**：只由用户提出（S2），Agent **不得**生成任何状态类 op |
 
-`relation` 必须与三维度结论自洽（三维度全 `same` 只能填 `same_semantics` 或 `non_core_supplement`）。
+`relation` 必须与三维度结论自洽：**三维度全 `same` ⟺ `same_semantics`**，其余六值必须至少一个维度
+`different`（CLI 的一致性判据逐字如此）。
 不自洽或缺失只会得到 **W5 warning**（不拦截），但**属于规程违规**，不得当作默认写法。
 
 ### 3.3 知识卡粒度、材料笔记、关系、自检
@@ -214,6 +218,10 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 
 ### 6.1 样例 ①：新建卡 + 材料关系（`independent_new`，带 `coverage_gaps`）
 
+> 样例 ① 同时给出 `create_card.sources[]` 与 `add_material_rel`（§3.2 `independent_new` 行的 op 组合）：
+> 新卡的材料关系随建卡一并落盘，随后那条**四要素逐字相同**的 `add_material_rel` 会被 CLI 幂等去重，
+> 卡上不会出现第二条。四要素只要有一个字不同，就是另一条关系，会照写。
+
 <!-- e2e-sample: 1 -->
 ```json
 {
@@ -265,7 +273,7 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
       "source": "s-20260917-the-bitter-lesson",
       "note": "n-20260917-the-bitter-lesson",
       "rel": "support",
-      "reason": "原文第 2–5 段的四个领域案例是该卡结论的直接材料依据"
+      "reason": "原文用国际象棋 / 围棋 / 语音 / 视觉四个领域的历史给出该结论的直接依据"
     },
     {
       "op": "add_open_question",
@@ -291,9 +299,9 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
       "card": "k-20260917-bitter-lesson",
       "relation": "non_core_supplement",
       "core_knowledge": "same",
-      "conditions": "same",
+      "conditions": "different",
       "reuse_purpose": "same",
-      "note": "两篇都在讲「可随算力扩展的通用方法」，第二篇补的是该方法成立所需的自验证前提，核心知识与成立条件未变，不拆新卡"
+      "note": "两篇都在讲「可随算力扩展的通用方法」，核心知识与独立复用用途相同；第二篇补了一条成立条件（知识须能被系统自验证），故 conditions=different，按非核心补充追加到已有卡，不拆新卡"
     }
   ],
   "base": {

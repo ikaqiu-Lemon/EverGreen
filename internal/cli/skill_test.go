@@ -361,21 +361,11 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 	}
 }
 
-// SkillSamples 按 `<!-- e2e-sample: N -->` 标记抽出 SKILL.md 里的 ChangePlan 样例。
-// 导出供 test/e2e 复用：e2e 直接拿这两份样例跑 `eg apply --dry-run`，保证「文档样例即用例」。
+// SkillSamples 取 SKILL.md 里的 ChangePlan 样例；解析器落在 skill 包，
+// 供 test/e2e 复用同一份实现（e2e 直接拿这两份样例跑 `eg apply`，保证「文档样例即用例」）。
 func SkillSamples(t *testing.T) []string {
 	t.Helper()
-	return ParseSkillSamples(string(skill.Content()))
-}
-
-// ParseSkillSamples 从 SKILL.md 文本里抽出被 `<!-- e2e-sample: N -->` 标注的 ```json 代码块。
-func ParseSkillSamples(doc string) []string {
-	re := regexp.MustCompile("(?s)<!-- e2e-sample: \\d+ -->\\s*```json\\n(.*?)\\n```")
-	var out []string
-	for _, m := range re.FindAllStringSubmatch(doc, -1) {
-		out = append(out, m[1])
-	}
-	return out
+	return skill.Samples()
 }
 
 // TestSkillSpecCrossReferences：文档描述的命令 / 退出码集合与两份合同一致（防照抄早期草稿）。
