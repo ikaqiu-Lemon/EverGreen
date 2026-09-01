@@ -487,10 +487,11 @@ func TestDefaultDomainGuard(t *testing.T) {
 		}
 	}
 
-	// 已配置 default_domain：守卫放行，落到「实现尚未挂载」。
+	// 已配置 default_domain：守卫放行，落到 context 自身的校验
+	// （T-…-010 挂载后：库里没有该原文 → 退 2「对象不存在」，而不是被守卫拦在 1）。
 	ok := configuredVault(t)
 	code, _, errOut = runCLI(t, newTestRoot(t, ok), "context", "--source", "s-20260901-a")
-	if code != ExitUsage || !strings.Contains(errOut, "尚未挂载") {
+	if code != ExitValidation || strings.Contains(errOut, "default_domain") {
 		t.Fatalf("守卫应放行，实际 code=%d stderr=%q", code, errOut)
 	}
 	// 找不到 vault：退 1 并提示 evergreen.yml。

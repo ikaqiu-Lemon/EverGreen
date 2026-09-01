@@ -143,6 +143,7 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("init", r.runInit)
 	_ = r.Wire("config", r.runConfig)
 	_ = r.Wire("capture", r.runCapture)
+	_ = r.Wire("context", r.runContext)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

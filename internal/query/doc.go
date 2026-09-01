@@ -3,5 +3,5 @@
 // 允许依赖：model（S1 直连 mdfile）。
 // 首次落地：S1（施工索引 §13）。
 // 依赖禁令：rules / query/rank / query/review 不得导入 query/filter。
-// 本阶段为占位空包，业务实现见 T-evergreen.s1_main_flow-158614-010。
+// S1 业务实现：context.go（eg context 的白名单上下文组装 + 候选相似卡 + 逐文件 content_hash）。
 package query
