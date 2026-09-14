@@ -1,0 +1,69 @@
+=== 会话开始 2026-09-03T23:12:47Z ===
+eg 0.3.0-m3 (commit unknown, built unknown, go1.24.13 X:cacheprog,testenhance)
+S01 init                         exit=0 want=0 :: eg init --domain ai-infra
+S02 config-set                   exit=0 want=0 :: eg config set domains ai-infra
+S03 capture                      exit=0 want=0 :: eg capture --url https://arxiv.org/abs/2005.11401 --title Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks --body-file /tmp/m3sess/run/article.txt --reason M3 验收会话语料：外部知识库需要失效与替代机制 --domain ai-infra --captured-at 2026-11-09T09:00:00+08:00 --json
+     · source_id=s-20261109-retrieval-augmented-generation-for-knowledge-int
+S04 context                      exit=0 want=0 :: eg context --source s-20261109-retrieval-augmented-generation-for-knowledge-int --json
+     · base[unprocessed.md]=sha256:52d5c7d8190c4b5…
+S05 apply-ingest                 exit=0 want=0 :: eg apply --plan /tmp/m3sess/run/plan-ingest.json --json
+S06 proposal-new                 exit=0 want=0 :: eg proposal new --type logical_delete --target k-20261109-retriever-recall-bound --reason 该卡结论已被 k-20261109-rag-hybrid-memory 覆盖，建议逻辑删除 --json
+     · proposal_id=p-20260904-001
+S07 proposal-list                exit=0 want=0 :: eg proposal list --json
+S08 proposal-show                exit=0 want=0 :: eg proposal show p-20260904-001 --json
+S09 approve-noconfirm            exit=6 want=6 :: eg proposal approve p-20260904-001 --user-request --json
+     · 退 6：全库 .md sha256 清单逐行相等（9 个文件），diff 为空
+     · 退 6 前后 git 顶端 commit：747635d proposal(proposals): 新建提案 p-20260904-001（k-20261109-retriever-recall-bound） → 747635d proposal(proposals): 新建提案 p-20260904-001（k-20261109-retriever-recall-bound）
+     · 退 6 后 git status --porcelain 行数：0
+S10 approve                      exit=0 want=0 :: eg proposal approve p-20260904-001 --confirm --user-request --json
+"status":"approved"
+"status":"not_started"
+"status":"completed"
+     · 提案 frontmatter status：status: 'approved'
+S11 rel-add                      exit=0 want=0 :: eg rel add k-20261109-rag-hybrid-memory supports k-20261109-nonparametric-memory --reason 组合方案的事实层由非参数化记忆承载 --json
+S12 rel-remove                   exit=0 want=0 :: eg rel remove k-20261109-rag-hybrid-memory supports k-20261109-nonparametric-memory --reason 关系方向记错，先移除 --json
+     · relations 条目：add 后含 target 行 1 → remove 后匹配 k-20261109-nonparametric-memory 的行 0；.md 文件数 9 → 9
+     · 无墓碑字样（A-24 物理移除成立）
+S13 rel-add-2                    exit=0 want=0 :: eg rel add k-20261109-rag-hybrid-memory supports k-20261109-nonparametric-memory --reason 重新按正确方向建立支持关系 --json
+S14 edit-knowledge               exit=0 want=0 :: eg edit --target k-20261109-rag-hybrid-memory --section 知识内容 --content 在知识密集型任务上，可检索外部文档库 + 预训练权重的组合，优于单纯扩大参数化记忆；事实层因此可被独立订正。 --user-request --json
+     · edit 后 status/deleted_at/reviewed_at 三维逐字不变：「status: 'active'」
+     · 新正文逐字生效
+S15 edit-user-append             exit=2 want=2 :: eg edit --target k-20261109-rag-hybrid-memory --section 用户补充 --content 任何内容 --user-request --json
+     · 「用户补充」被拒且零写入
+"code":"E6"
+S16 deprecate                    exit=0 want=0 :: eg deprecate --target k-20261109-stale-corpus-risk --reason 结论需按新证据重述 --json
+     · deprecate 后 status：status: deprecated；删除/过目维度：|
+S17 restore                      exit=0 want=0 :: eg restore --target k-20261109-stale-corpus-risk --reason 失效判断有误，恢复 --json
+     · restore 后 status：status: active
+     · deprecate/restore 全程未碰删除与过目维度
+S18 deprecate-kc                 exit=0 want=0 :: eg deprecate --target k-20261109-retriever-recall-bound --reason 结论已被 k-20261109-rag-hybrid-memory 覆盖 --json
+S19 replaced-by                  exit=0 want=0 :: eg replaced-by --target k-20261109-retriever-recall-bound --to k-20261109-rag-hybrid-memory --reason k-20261109-rag-hybrid-memory 覆盖了该卡结论 --json
+     · replaced-by 单向：被指向卡 k-20261109-rag-hybrid-memory 字节不变
+replaced_by: {target: k-20261109-rag-hybrid-memory, reason: "k-20261109-rag-hybrid-memory 覆盖了该卡结论"}
+---
+
+S20 delete                       exit=0 want=0 :: eg delete --target k-20261109-retriever-recall-bound --reason 结论重复且已有替代卡 --proposal p-20260904-001 --confirm --user-request --json
+     · delete 后 commits 13 → 14；脏变更行数 1： M proposals/p-20260904-001.md;
+     · 脏 diff 变更键（六键核对）：attempted_at git_commit status written_paths 
+     · 脏 diff 统计：5 4 proposals/p-20260904-001.md；变更文件数 1
+     · KC 删除维度：deleted_at: "2026-09-04T07:12:47+08:00" / deleted_reason: "结论重复且已有替代卡"；status：status: deprecated
+S21 search-default               exit=0 want=0 :: eg search 召回 --json
+S22 search-include               exit=0 want=0 :: eg search 召回 --include-deleted --json
+     · 默认搜索命中 k-20261109-retriever-recall-bound 次数：0；--include-deleted：2
+S23 undelete                     exit=0 want=0 :: eg undelete --target k-20261109-retriever-recall-bound --reason 删除决策撤回 --json
+     · undelete 后 KC status：status: deprecated；deleted_at：（空即已清）
+     · delete/undelete 全程关系条目数不变（1）
+S24 unreviewed-before            exit=0 want=0 :: eg unreviewed --json
+S25 mark-reviewed                exit=0 want=0 :: eg mark-reviewed --target k-20261109-nonparametric-memory --json
+     · KB reviewed_at：reviewed_at: "2026-09-04T07:12:48+08:00"
+S26 unreviewed-after             exit=0 want=0 :: eg unreviewed --json
+     · unreviewed 命中 k-20261109-nonparametric-memory：before=2 after=0
+S27 apply-m3-ops                 exit=0 want=0 :: eg apply --plan /tmp/m3sess/run/m3-ops-plan.json --json --user-request
+     · M3 op plan 执行后 commits 17（执行前 16）
+     · KD status：status: deprecated；KA 关系条目 target 行数：0
+S28 report-last                  exit=0 want=0 :: eg report --last --json
+     · 信封顶层键： ['data', 'exit_code', 'ok', 'status', 'warnings']
+     · ok=True exit_code=0 status=completed
+     · data 键： ['convergence', 'domain', 'report']
+=== 会话结束；未达预期项： ===
+commits=17 dirty=0

@@ -1,0 +1,14 @@
+状态：completed（exit_code=0，ok=true）
+rel：k-20260918-scaling-compute 的正向 0 条 / 反向 1 条（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
+正向关系 relations_out[]：无
+反向关系：k-20260901-verification-principle --limits--> k-20260918-scaling-compute  理由：验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长（来源卡：domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+分页：--limit=50 --offset=0，本页 关系条目 1 条 / 共 1 条（截断=false；limit 是本次返回条数的全局上限）
+数据：
+  id: k-20260918-scaling-compute
+  relations_out: []
+  relations_in: [{"from":"k-20260901-verification-principle","type":"limits","target":"k-20260918-scaling-compute","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长","path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md"}]
+  scanned_files: 2
+  skipped_files: 0
+警告（2 条）：
+  [W23] warning (汇总)：索引不可用（db_file_missing）：本次 rel 已降级为全量 Markdown 扫描，结果与索引在位时等价；索引文件 <VAULT>/.index/eg.db 不存在
+  [Q5] warning (汇总)：本次 rel 已降级为全量 Markdown 扫描（原因：index_unusable）；结果以权威 Markdown 为准、与索引在位时一致，但**不是**索引路径给出的结果 —— 详见同时给出的索引诊断

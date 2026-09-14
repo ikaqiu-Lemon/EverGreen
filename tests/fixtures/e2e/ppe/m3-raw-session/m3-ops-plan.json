@@ -1,0 +1,17 @@
+{
+  "plan_version": 1,
+  "verb": "process",
+  "domain": "ai-infra",
+  "reason": "按用户显式请求：失效一张过时卡、移除一条方向记错的关系、标记一张卡已过目",
+  "requirement_ids": ["EG-EDIT-04", "EG-KNW-07"],
+  "base": {
+    "domains/ai-infra/knowledge/k-20261109-stale-corpus-risk.md": "sha256:d66bad614bafb050e83f1b6ce3d17a96f9d4421e34cc844c2fb5a6200a11d878",
+    "domains/ai-infra/knowledge/k-20261109-rag-hybrid-memory.md": "sha256:070a79d7b61f72cb6b618604793e046d006b516a4d208e802ed17ac56a756d9a"
+  },
+  "ops": [
+    { "op": "deprecate", "target": "k-20261109-stale-corpus-risk", "reason": "陈旧语料风险已并入 k-20261109-rag-hybrid-memory", "initiator": "user" },
+    { "op": "remove_relation", "from": "k-20261109-rag-hybrid-memory", "type": "supports", "target": "k-20261109-nonparametric-memory",
+      "reason": "该支持关系应挂在材料层，不应卡到卡", "initiator": "user" },
+    { "op": "mark_reviewed", "target": "k-20261109-rag-hybrid-memory", "reason": "本轮复核完成", "initiator": "user" }
+  ]
+}

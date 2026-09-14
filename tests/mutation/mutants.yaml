@@ -1,0 +1,233 @@
+# 变异体清单（system_assurance · T-…-005 · 合同 D5 `mutation` profile）
+#
+# 这张表回答一个问题：**判据本身还活着吗？**
+#
+# 门禁跑绿只能证明"跑过了"，不能证明"还在检查"。把断言注释掉、把期望常量改软、
+# 把封闭集合写成子集包含 —— 这些退化不会让门禁变红，靠跑门禁自己发现不了。
+# 变异测试专治这一层：**故意把系统改坏，然后要求对应判据必须变红**。存活即失败。
+#
+# 与 4 个历史 harness 的关系（迁移表 legacy_gate_disposition.tsv 可核对）
+# --------------------------------------------------------------------
+# `mutation_test.py` / `m4_` / `m5_` / `m6_mutation_test.py` 的**机制**照抄过来：
+#   写入 → 跑裁决者 → 判定「是否转红」→ 还原 → 校验真实仓零副作用（四拍）。
+# **靶子不照抄**：那 4 个 harness 打的是 teamwork 规划产物（task 正文、排期、里程碑文档）
+# 与历史门禁脚本的期望值，裁决者是 `validate_m*_tasks.py` / `m*_final_gate.py`。
+# 那些资产按 D9 原地归档、原文不改，重跑它们属于**治理动作**，不是产品测试
+# （disposition=archive-in-place / defer-005 的 rationale 已逐条登记）。
+# 因此本表把同样的算子族**重新指向当前系统的判据**：产品代码、测试资产、清单、门禁脚本。
+#
+# 字段
+#   id            稳定编号，报告与 Activity Log 按此引用
+#   family        算子族。承接历史 harness 的三族：
+#                   expectation-weakening  期望值 / 计数 / 封闭集合 / curated 判据被改松
+#                   assertion-removal      断言或对外承诺被删除、被改写
+#                   violation-injection    注入真实违规，看判据能否检出
+#   target        被变异的文件（沙箱内相对路径）
+#   op            变异算子：replace（首处替换）/ append（追加）/ create（新建）/
+#                 delete-line（删含锚点的行）/ delete（删文件）
+#   find/replace  op=replace 的锚点与替换内容；锚点必须唯一，或首处即意图处
+#   payload       op=append/create 时写入的内容
+#   judge         裁决命令（在沙箱根执行）。**必须因本变异转非零**，否则该变异存活
+#   why           这条变异想守住的判据是什么；存活意味着什么退化
+#
+# 硬约束
+#   · 变异只发生在沙箱副本；真实仓在 run_mutation.py 收尾时逐文件 sha256 + git status 双验。
+#   · 每个 judge 先在**未变异**沙箱跑一次基线，必须绿；基线红 = 判据本身坏了，直接失败，
+#     不允许用"反正它红了"冒充杀死。
+#   · 不做"放宽型"变异（把 == 改成 >=）：按判定规则它必然存活，只会制造无法归零的噪声。
+#     防放宽由 code review + 双侧反证门禁承担（hygiene ⑨ / assertion_presence ⑥ 等）。
+
+mutants:
+  # ---------------------------------------------------------------- 产品代码侧
+  - id: MUT-EXIT5-REMOVE
+    family: assertion-removal
+    target: internal/cli/exitcode.go
+    op: replace
+    # 锚点带尾换行：文件上方注释里也出现了同样的字面量（反引号包裹），
+    # 带 \n 才能精确命中常量定义行本身。
+    find: "ExitPrecheckOrLock = 5\n"
+    replace: "ExitPrecheckOrLock = 4\n"
+    judge: bash tests/contract/static-boundaries/exit_codes_and_diagnostics.sh
+    why: >-
+      退出码 5 是 M6 合同的对外承诺（写前校验 / 锁冲突）。把 5 改成 4 后若门禁仍绿，
+      说明它没在核对"5 唯一且专属"，只是在数出现次数。
+    core: true
+
+  - id: MUT-DEPDIR-IMPORT
+    family: violation-injection
+    target: internal/query/context.go
+    op: replace
+    find: "import ("
+    replace: "import (\n\t_ \"github.com/ikaqiu-Lemon/EverGreen/internal/query/filter\"\n"
+    judge: bash tests/contract/dep-direction/dep_direction_gate.sh
+    why: >-
+      依赖方向合同要求 internal/query 不得反向依赖 query/filter。注入这条 import 后
+      依赖方向门禁必须红；若绿则它查的是文字而不是依赖闭包。
+    core: true
+
+  - id: MUT-PRODTREE-TEST
+    family: violation-injection
+    target: internal/index/injected_probe_test.go
+    op: create
+    payload: |
+      package index
+
+      import "testing"
+
+      // 变异体注入：产品树里出现 _test.go，白盒测试物理外置的前提即被破坏。
+      func TestInjectedProbe(t *testing.T) { t.Log("injected") }
+    judge: bash tests/contract/arch-boundary/product_tree_selfcontained.sh
+    why: >-
+      白盒测试外置的机械前提是产品树零 _test.go。若注入后仍绿，
+      说明"零 _test.go"这条判据没在真的遍历产品树。
+    core: true
+
+  # ---------------------------------------------------------------- 测试资产侧
+  - id: MUT-E2E-STAGE-PREFIX
+    family: violation-injection
+    target: tests/e2e/lifecycle/m4_injected_stage.sh
+    op: create
+    payload: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+      # 变异体注入：阶段前缀脚本重新成为执行入口（T-…-004 A1 禁止）。
+      printf 'injected stage-prefixed entry\n'
+    judge: bash tests/contract/e2e-hygiene/hygiene.sh
+    why: >-
+      能力化重组的判据是"无 m1…m6 前缀作为执行入口"。注入后仍绿说明 H1 只看了注释，
+      没看真实文件名。
+    core: true
+
+  - id: MUT-E2E-SWALLOW
+    family: violation-injection
+    target: tests/e2e/card-query/search.sh
+    op: append
+    payload: |
+      "${EG}" search injected-swallow-probe >/dev/null || true
+    judge: bash tests/contract/static-boundaries/assertion_presence.sh
+    why: >-
+      被测命令的退出码被 `|| true` 吞掉是最廉价的"假绿"手法。注入后仍绿说明
+      吞失败判据被归一化削平了（这正是它自带⑥双侧反证的原因）。
+    core: true
+
+  - id: MUT-INVENTORY-DROP
+    family: expectation-weakening
+    target: tests/manifest/inventory.tsv
+    op: delete-line
+    find: "tests/e2e/authorization/authorization.sh"
+    judge: python3 tests/tools/inventory.py --check
+    why: >-
+      清单是 runner 的执行计划真源。删掉一行后若 --check 仍绿，
+      说明它只在单向核对（清单→磁盘），漏跑会被静默吞掉。
+    core: true
+
+  - id: MUT-RUNTIMEMAP-GHOST
+    family: violation-injection
+    target: tests/manifest/runtime_map.tsv
+    op: append
+    # 列序与表头一致：repo_path / runtime_path / root / layer / kind
+    payload: "tests/_staged/internal/ghost/ghost_test.go\tinternal/ghost/ghost_test.go\tevergreen\tunit\tgo\n"
+    judge: python3 tests/runner/materialize.py --json
+    why: >-
+      runtime_map 幽灵条目（登记了但源文件不在盘）必须让物化自检 D3.4-2 非零。
+      存活意味着物化会静默少回填文件，测试少跑而没人知道。
+    core: true
+
+  - id: MUT-CONTRACT-SNAPSHOT
+    family: violation-injection
+    target: tests/fixtures/contracts/SHA256SUMS
+    op: replace
+    # 破坏首条记录的校验和（只动 16 个十六进制字符，行形态不变），
+    # 逼判据真的去算文件哈希，而不是"文件在就算过"。
+    find: "246837805ebe64b4"
+    replace: "0000000000000000"
+    judge: python3 tests/runner/materialize.py --json
+    why: >-
+      合同快照校验和是 D8 单仓自足的根据。哈希被改坏后物化必须红（FAIL 而非 NOT_RUN），
+      否则"快照即真源"是句空话。
+    core: true
+
+  # ---------------------------------------------------------------- curated 判据侧（元变异）
+  - id: MUT-BASELINE-GHOST
+    family: expectation-weakening
+    target: tests/manifest/baseline_assets.tsv
+    op: append
+    payload: "test/e2e/ghost_injected.sh\ta2069db\n"
+    judge: python3 tests/tools/check_migration.py
+    why: >-
+      C1 基线覆盖的意义在于"基线里的每个测试资产都必须有决策行"。往基线里塞一个
+      未登记资产后若仍绿，说明 C1 只做了「清单→基线」单向核对，真实遗漏查不出来。
+    core: true
+
+  - id: MUT-MIGRATION-1TON-SHAPE
+    family: expectation-weakening
+    target: tests/manifest/migration.tsv
+    op: replace
+    find: "symbol_locality.sh\tmerge"
+    replace: "symbol_locality.sh\tkeep"
+    judge: python3 tests/tools/check_migration.py
+    why: >-
+      C1c 只允许 1→N 以「原文归档 + 有效断言并入」展开。把一条 merge 改成 keep 后
+      同一旧资产就出现了 1→1 决策与多行共存；仍绿说明形状约束形同虚设。
+    core: false
+
+  - id: MUT-DISPOSITION-DOWNGRADE
+    family: expectation-weakening
+    target: tests/manifest/legacy_gate_disposition.tsv
+    op: replace
+    find: "defer-005"
+    replace: "archive-in-place"
+    judge: python3 tests/tools/legacy_gates.py --check
+    why: >-
+      机器判据为 mutation-harness 的历史资产只能 defer-005。把它改成 archive-in-place
+      等于"把变异 harness 当治理材料原地封存"从而绕过 T-…-005；仍绿说明
+      klass↔disposition 的交叉约束没在执行。
+    core: false
+
+  - id: MUT-TRACE-ROW-DROP
+    family: expectation-weakening
+    target: tests/manifest/traceability.tsv
+    op: delete-line
+    find: "CMD-bench\t"
+    judge: python3 tests/tools/traceability.py --check
+    why: >-
+      追溯表的用处是"22 条命令 + F1–F6 一条不漏地被指名覆盖"。删掉一行后仍绿，
+      说明 --check 只在校验格式，没有把快照与现场派生逐行比对，漏覆盖会被静默接受。
+    core: false
+
+# ---------------------------------------------------------------------------
+# 4 个历史 mutation harness 的变异点族 → 当前变异体（A2「迁移表可核对」的可核对面）
+#
+# 读法：`families` 是那个 harness 实际施加的变异**形态**（读原文得来，不是猜的）；
+# `covered_by` 是当前清单里承接同一形态的变异体。**不是**一对一复刻 —— 历史靶子是
+# teamwork 规划产物（task 正文的 Acceptance / DoR 条目、frontmatter 键值、里程碑 id、
+# 校验器里的键序常量），那些资产按 D9 原地封存、原文不改，重放属治理动作而非产品测试。
+# 因此这里继承的是**形态与判定规则**，靶子换成当前系统的判据。
+#
+# run_mutation.py 会机器校验四件事（清单说了不算，得能核对）：
+#   ① 这里列的 4 个脚本 = legacy_gate_disposition.tsv 里 disposition=defer-005 的全集；
+#   ② covered_by 里的每个 id 都真实存在于上面的 mutants；
+#   ③ 每个 harness 的每个 family 都至少被一个同 family 的变异体承接；
+#   ④ 没有孤儿变异体（每个 mutant 至少被一条 mapping 引用）。
+# ---------------------------------------------------------------------------
+legacy_mapping:
+  - script: mutation_test.py
+    scope: Round 5 + M2 扩展：task 正文断言条目删改 + 门禁期望值改写
+    families: [assertion-removal, expectation-weakening]
+    covered_by: [MUT-EXIT5-REMOVE, MUT-INVENTORY-DROP, MUT-TRACE-ROW-DROP]
+
+  - script: m4_mutation_test.py
+    scope: M4：Acceptance / DoR 条目删除 + frontmatter 键值改写，看 validate/gate 是否变红
+    families: [assertion-removal, expectation-weakening, violation-injection]
+    covered_by: [MUT-EXIT5-REMOVE, MUT-BASELINE-GHOST, MUT-MIGRATION-1TON-SHAPE,
+                 MUT-E2E-STAGE-PREFIX]
+
+  - script: m5_mutation_test.py
+    scope: M5：改校验器 / 门禁自身的期望常量（frontmatter 键序、里程碑 id），元变异
+    families: [expectation-weakening]
+    covered_by: [MUT-DISPOSITION-DOWNGRADE, MUT-CONTRACT-SNAPSHOT, MUT-RUNTIMEMAP-GHOST]
+
+  - script: m6_mutation_test.py
+    scope: M6：同 M5 形态，靶子是退出码 5 合同 / 依赖方向 / 产品树纯净这三类硬约束的判据
+    families: [assertion-removal, violation-injection]
+    covered_by: [MUT-EXIT5-REMOVE, MUT-DEPDIR-IMPORT, MUT-PRODTREE-TEST, MUT-E2E-SWALLOW]

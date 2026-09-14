@@ -1,0 +1,9 @@
+1cbdeae659ba00283154f4d132befb454ca158123aa3bab24fa2c0712ec4aa42  ./sources/s-20261109-retrieval-augmented-generation-for-knowledge-int.md
+30d7e721636f1ac812580c5588ea653039319c999ad9340fc708703325b48835  ./proposals/p-20260904-001.md
+401d923fe54c8baacc20e3455ca481accc1fc38dc1f47407728849a8d7a01b52  ./unprocessed.md
+8ba6c2e001a98d74518626540ca4050f910260374d63a17cbc392643847329fa  ./domains/ai-infra/knowledge/k-20261109-stale-corpus-risk.md
+99c1c0cdb6ed922d0114bae5655f84a4f7b6a5bc449fc159499d57c827c09ec6  ./SKILL.md
+9c8b8e30167907b7441705098d6f1842aea2e7df99bf4ff77b9561a4ece8e190  ./domains/ai-infra/knowledge/k-20261109-retriever-recall-bound.md
+ba4978999220bdef9a54744d83261eb102481f4d10f979473c924e017f609974  ./domains/ai-infra/knowledge/k-20261109-rag-hybrid-memory.md
+d7efe5e4e44a3a5c6e15286df566f68ff29909b90ad13361d3ccdd6240a38d73  ./domains/ai-infra/notes/n-20261109-rag.md
+d9cf29846e4cd37a63b8feecd8830478fbc6d984432456325fae40aaa6612f64  ./domains/ai-infra/knowledge/k-20261109-nonparametric-memory.md

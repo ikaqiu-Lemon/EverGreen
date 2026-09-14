@@ -1,0 +1,21 @@
+diff --git a/proposals/p-20260904-001.md b/proposals/p-20260904-001.md
+index 6dd9f8c..277b2dd 100644
+--- a/proposals/p-20260904-001.md
++++ b/proposals/p-20260904-001.md
+@@ -17,11 +17,12 @@ decision:
+   reason:
+   superseded_by:
+ execution:
+-  status: 'not_started'
+-  attempted_at:
++  status: 'succeeded'
++  attempted_at: '2026-09-04T07:12:47+08:00'
+   reason:
+-  git_commit:
+-  written_paths: []
++  git_commit: '51c150931ef50704e14469b2d70dd7481ace9e0f'
++  written_paths:
++    - 'domains/ai-infra/knowledge/k-20261109-retriever-recall-bound.md'
+   unwritten_paths: []
+ ---
+ 

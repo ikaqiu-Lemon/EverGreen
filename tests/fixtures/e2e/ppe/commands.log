@@ -1,0 +1,9 @@
+2026-09-01T15:08:01Z eg capture --url http://www.incompleteideas.net/IncIdeas/KeytoAI.html --title 'Verification, The Key to AI' --body-file body.txt --reason 'Evergreen M2 端到端验证：收录真实文章' --tag ai --tag method exit=0
+2026-09-01T15:08:15Z eg context --source s-20260901-verification-the-key-to-ai --json exit=0
+2026-09-01T15:08:30Z eg search 自验证 exit=0
+2026-09-01T15:08:30Z eg search 算力 exit=0
+2026-09-01T15:08:39Z eg card show k-20260918-scaling-compute exit=0
+2026-09-01T15:08:39Z eg rel k-20260918-scaling-compute exit=0
+2026-09-01T15:13:54Z eg apply --plan plan.json exit=0
+2026-09-01T15:14:07Z eg rel add k-20260901-verification-principle limits k-20260918-scaling-compute --reason '验证原则限定既有卡结论的适用前提' exit=0
+2026-09-01T15:14:33Z eg rel k-20260918-scaling-compute exit=0

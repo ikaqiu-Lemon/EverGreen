@@ -1,0 +1,701 @@
+=== EVERGREEN M2 CAPABILITY PROBE ===
+PROBE_START_UTC=2026-09-01T14:58:28Z
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:58:28Z] STEP: shell + OS identity
+$ uname -a
+Linux cube-062add50e88046cb92b2e7f9a623003c-sts-0 5.4.143.bsk.8-amd64 #5.4.143.bsk.8 SMP Debian 5.4.143.bsk.8 Wed Jul 20 08:43:36 UTC  x86_64 GNU/Linux
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:58:28Z] STEP: bash version
+$ bash --version | head -1
+GNU bash, version 5.2.15(1)-release (x86_64-pc-linux-gnu)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:58:28Z] STEP: go availability
+$ go version
+go version go1.24.13 linux/amd64
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:58:28Z] STEP: go env core vars
+$ go env GOPATH GOPROXY GOTOOLCHAIN
+/root/go
+https://goproxy.byted.org|direct
+local
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:58:29Z] STEP: git availability
+$ git --version
+git version 2.39.5
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:58:29Z] STEP: fetch target article via proxy
+$ curl -sS -L --proxy "$http_proxy" --max-time 60 -o /workspace/agent-e2e-evidence/raw/keytoai.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://www.incompleteideas.net/IncIdeas/KeytoAI.html
+curl: (56) Recv failure: Connection reset by peer
+HTTP:000 bytes:0
+EXIT_CODE=56
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:03Z] STEP: primary expected source path /workspace/evergreen
+$ ls -la /workspace/evergreen
+ls: cannot access '/workspace/evergreen': No such file or directory
+EXIT_CODE=2
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:03Z] STEP: search filesystem for INSTALL.md (Evergreen build entrypoint)
+$ find / -name INSTALL.md -not -path "/proc/*" 2>/dev/null | head; echo "(no output above == none found)"
+(no output above == none found)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:04Z] STEP: search filesystem for any evergreen directory
+$ find / -maxdepth 6 -type d -iname "*evergreen*" -not -path "/proc/*" 2>/dev/null | head; echo "(no output above == none found)"
+/tmp/eg_probe/evergreen_aggregator
+/.pv_rootfs/fs/tmp/eg_probe/evergreen_aggregator
+(no output above == none found)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:04Z] STEP: search for a prebuilt eg binary on PATH
+$ command -v eg; echo "command -v eg rc=$?"
+command -v eg rc=1
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:05Z] STEP: search for Evergreen SKILL.md (the operating procedure to follow)
+$ find / -name SKILL.md -not -path "/proc/*" 2>/dev/null | xargs -r grep -ril "changeplan\|eg vault\|eg capture" 2>/dev/null | head; echo "(no output above == no Evergreen SKILL.md found)"
+(no output above == no Evergreen SKILL.md found)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:06Z] STEP: confirm candidate Codebase repo mengyantong/evergreen is unrelated
+$ ls -R /tmp/eg_probe | head -20
+/tmp/eg_probe:
+evergreen_aggregator
+
+/tmp/eg_probe/evergreen_aggregator:
+aggregator
+build.sh
+conf
+config
+evergreen_consume.py
+go.mod
+go.sum
+kafka.token
+main.go
+requirement.txt
+run_consume.sh
+utils
+
+/tmp/eg_probe/evergreen_aggregator/aggregator:
+aggregator.go
+
+EXIT_CODE=0
+-----------------------------------------------------------------
+PROBE_END_UTC=2026-09-01T14:59:06Z
+-----------------------------------------------------------------
+[UTC 2026-09-01T14:59:18Z] STEP: RETRY 1 of article fetch (previous attempt rc=56, transient proxy reset)
+$ curl -sS -L --proxy $http_proxy --max-time 60 -o raw/keytoai.html -w ... http://www.incompleteideas.net/IncIdeas/KeytoAI.html
+HTTP:200 bytes:5482
+EXIT_CODE=0
+
+=================================================================
+=== PHASE 2: 人工干预后续跑 (HUMAN INTERVENTION #1) ===
+HUMAN_INTERVENTION_1:
+  时间(UTC): 2026-09-01T15:0x:xxZ (见下方首条命令时间戳)
+  形式: 用户提供源码包下载地址 + SHA-256 校验值
+  提供内容: source/ (Evergreen源码), SKILL.md (同版本规程),
+            seed-k-20260918-scaling-compute.md (会话前既有卡), article.txt (文章正文备用副本)
+  明确未提供: plan.json / ChangePlan 模板 / op 组合 / 参数修正 / 命令行修正
+  性质判定: 仅补充缺失资源，不含任何计划或参数指导。ChangePlan 仍须由 agent 独立生成。
+=================================================================
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:03:44Z] STEP: 下载源码包
+$ curl -sS -L --proxy "$http_proxy" --max-time 300 -o input.tar.gz -w ... <url>
+HTTP:200 bytes:305482
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:03:51Z] STEP: SHA-256 校验 (期望 448a8a8156002e1a7d2ff26c129728b61caf775be362c374a49ff7672b0ee735)
+$ echo "448a...735  input.tar.gz" | sha256sum -c -
+input.tar.gz: OK
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:04:00Z] STEP: 解压
+$ tar -xzf input.tar.gz -C input
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.quarantine'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.quarantine'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:04:39Z] STEP: 源码就位 /workspace/evergreen (已清除 macOS ._ 元数据文件)
+$ cp -r source /workspace/evergreen && find -name "._*" -delete
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:04:47Z] STEP: make build (INSTALL.md 第1节)
+$ cd /workspace/evergreen && make build
+CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Version=0.2.0-m2 -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Commit=unknown -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Date=2026-09-01T15:04:47Z' -o bin/eg ./cmd/eg
+go: downloading gopkg.in/yaml.v3 v3.0.1
+testcache: [GOCACHER] 347 gets (334 hits, 13 misses, 0 errors, avg time 2.492502ms, avg size 173200); 13 puts (0 errors, avg time 298.298µs, avg size 1919);
+[bits_ut_info] progcache: gets=347 (hits=334, misses=13, err=0, time=990.300674ms, slow=0, slow_size=0, slow_time=0s); puts=13 (time=5.254219ms, slow=0, slow_size=0, slow_time=0s); cmdWait=1.030053ms (slow=0); cmdSend=3.974302ms (slow=0)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:04:48Z] STEP: eg --version
+$ ./bin/eg --version
+eg 0.2.0-m2 (commit unknown, built 2026-09-01T15:04:47Z, go1.24.13 X:cacheprog,testenhance)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:04:58Z] STEP: make test (INSTALL.md 自检)
+$ make test
+go test ./...
+ok  	evergreen/cmd/eg	0.003s
+--- FAIL: TestSkillRelationTableMatchesContract (0.00s)
+    skill_test.go:123: 读不到 ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-08-changeplan-contract.md：open ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-08-changeplan-contract.md: no such file or directory
+--- FAIL: TestSkillCoverageGapsMatchesContract (0.00s)
+    skill_test.go:153: 读不到 ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-08-changeplan-contract.md：open ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-08-changeplan-contract.md: no such file or directory
+--- FAIL: TestSkillSpecCrossReferences (0.00s)
+    skill_test.go:375: 读不到 ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-01-eg-cli-contract.md：open ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-01-eg-cli-contract.md: no such file or directory
+--- FAIL: TestSkillCommandStatusMatchesImplementation (0.00s)
+    skill_test.go:418: 读不到 ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-19-m2-query-contract.md：open ../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-09-19-m2-query-contract.md: no such file or directory
+FAIL
+FAIL	github.com/ikaqiu-Lemon/EverGreen/internal/cli	9.644s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/git	0.327s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/mdfile	0.004s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/model	0.004s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/plan	0.012s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/query	0.071s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/report	0.004s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/rules	0.004s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/store	0.421s
+ok  	github.com/ikaqiu-Lemon/EverGreen/internal/version	0.004s
+?   	evergreen/skill	[no test files]
+FAIL
+testcache: [GOCACHER] 1071 gets (993 hits, 78 misses, 0 errors, avg time 1.734655ms, avg size 107329); 180 puts (0 errors, avg time 367.75µs, avg size 94108);
+[bits_ut_info] progcache: gets=1071 (hits=993, misses=78, err=0, time=2.75147066s, slow=0, slow_size=0, slow_time=0s); puts=180 (time=92.548232ms, slow=0, slow_size=0, slow_time=0s); cmdWait=7.453091ms (slow=0); cmdSend=15.936709ms (slow=0)
+make: *** [Makefile:32: test] Error 1
+EXIT_CODE=2
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:05:09Z] STEP: make lint (INSTALL.md 自检)
+$ make lint
+gofmt -l . : 无输出，通过
+go vet ./...
+testcache: [GOCACHER] 1052 gets (1025 hits, 27 misses, 0 errors, avg time 885.019µs, avg size 107890); 35 puts (0 errors, avg time 352.247µs, avg size 14645);
+[bits_ut_info] progcache: gets=1052 (hits=1025, misses=27, err=0, time=1.47037353s, slow=0, slow_size=0, slow_time=0s); puts=35 (time=17.227966ms, slow=0, slow_size=0, slow_time=0s); cmdWait=5.613674ms (slow=0); cmdSend=11.345799ms (slow=0)
+guard: 写路径无 yaml.Marshal / yaml.NewEncoder，通过
+EXIT_CODE=0
+-----------------------------------------------------------------
+=== 预置卡写入方式的决策记录（非人工干预，属环境初始状态构造）===
+事实1: internal/store/layout.go → 卡片路径为 domains/<d>/knowledge/<k-id>.md
+       (包内 vault/domains/ai-infra/cards/ 为错误路径，未采用)
+事实2: internal/plan/validate.go:580 → create_card 强制非空 sources[]，
+       缺失即 E5 退2。既有卡 frontmatter 为 sources: []，
+       结构上不可能由 eg 的写入通道产生 → 证明其为「会话前既有状态」。
+决策: 若用 ChangePlan 造该卡，必须虚构 source/note，违反 SKILL.md B-13。
+      故按「会话前既有状态」放置文件，且放在 eg init 之前，
+      由 eg init 的 git add -A 收入首个 commit。
+      => Agent 全程未自行 git commit(遵守 B-01)，
+         知识加工阶段的一切写入仍只走 eg apply。
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:07:12Z] 预置卡已放入 /workspace/eg-vault-m2/domains/ai-infra/knowledge/k-20260918-scaling-compute.md (eg init 之前)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:07:19Z] STEP: eg init 全新隔离 vault (预置卡已在位)
+$ eg --vault /workspace/eg-vault-m2 init --domain ai-infra
+状态：completed（exit_code=0，ok=true）
+vault：/workspace/eg-vault-m2
+新建 5 项，已存在 0 项
+commit：init(ai-infra): 初始化 vault 骨架
+数据：
+  already_exists: null
+  commit: {"created":true,"files":[".gitignore","SKILL.md","domains/ai-infra/knowledge/k-20260918-scaling-compute.md","evergreen.yml","unprocessed.md"],"sha":"aaef5162a70e5b2a377b8c6e8b1a0419fe58920d","subject":"init(ai-infra): 初始化 vault 骨架"}
+  created: ["evergreen.yml","SKILL.md","unprocessed.md","sources/","domains/ai-infra/notes/"]
+  default_domain: ai-infra
+  domains: ["ai-infra"]
+  vault: /workspace/eg-vault-m2
+警告（1 条）：
+  warning git.commit：plan.requirement_ids 缺失，正文无 Requirement: 行
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:07:31Z] STEP: 校验 vault SKILL.md 与源码 skill/SKILL.md 字节相同
+$ bash -c sha256sum /workspace/eg-vault-m2/SKILL.md /workspace/evergreen/skill/SKILL.md; cmp /workspace/eg-vault-m2/SKILL.md /workspace/evergreen/skill/SKILL.md && echo "BYTE-IDENTICAL"
+8c2c9e49cb1cc0cc732ac60a21c75aa0eea0f0c51edf03606513ad20b99edd4d  /workspace/eg-vault-m2/SKILL.md
+8c2c9e49cb1cc0cc732ac60a21c75aa0eea0f0c51edf03606513ad20b99edd4d  /workspace/evergreen/skill/SKILL.md
+BYTE-IDENTICAL
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:07:32Z] STEP: eg config get default_domain
+$ eg --vault /workspace/eg-vault-m2 config get default_domain
+状态：completed（exit_code=0，ok=true）
+ai-infra
+数据：
+  configured: true
+  key: default_domain
+  value: ai-infra
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:08:01Z] STEP: eg capture 收录真实文章(正文为 agent 自行抓取清洗的 body.txt)
+$ eg --vault /workspace/eg-vault-m2 capture --url http://www.incompleteideas.net/IncIdeas/KeytoAI.html --title Verification, The Key to AI --body-file /workspace/agent-e2e-evidence/body.txt --reason Evergreen M2 端到端验证：收录 Rich Sutton 2001 年《Verification, The Key to AI》原文，用于与既有卡 k-20260918-scaling-compute 做收敛判断 --tag ai --tag method --json
+{"ok":true,"data":{"commit":{"created":true,"files":["sources/s-20260901-verification-the-key-to-ai.md","unprocessed.md"],"sha":"92de348f35cea39181f26eb5932fa454572ace96","subject":"capture(ai-infra): 收录 s-20260901-verification-the-key-to-ai"},"deduped":false,"has_note":false,"note_id":"","path":"sources/s-20260901-verification-the-key-to-ai.md","source_id":"s-20260901-verification-the-key-to-ai","warnings":["未给 --domain：按 evergreen.yml 的 default_domain 落位 ai-infra（default_domain_fallback）","plan.requirement_ids 缺失，正文无 Requirement: 行"]},"warnings":[{"code":"","level":"warning","path":"evergreen.yml","op_index":-1,"message":"未给 --domain：按 evergreen.yml 的 default_domain 落位 ai-infra（default_domain_fallback）"},{"code":"","level":"warning","path":"git.commit","op_index":-1,"message":"plan.requirement_ids 缺失，正文无 Requirement: 行"}],"exit_code":0,"status":"completed"}
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:08:15Z] STEP: eg context --source (取候选卡与 base)
+$ eg --vault /workspace/eg-vault-m2 context --source s-20260901-verification-the-key-to-ai --json
+{"ok":true,"data":{"base":{"domains/ai-infra/knowledge/k-20260918-scaling-compute.md":"sha256:b4c93070780b0f03ddcbbfd993dbe09c07d51cfd09d1476891432e186ada42ee","unprocessed.md":"sha256:c326eb23a65184c02f657417ea0357131ee927b8411a0424d0df2de2944ced20"},"candidates":[{"id":"k-20260918-scaling-compute","path":"domains/ai-infra/knowledge/k-20260918-scaling-compute.md","title":"可随算力扩展的通用方法长期占优","score":2,"reasons":["命中卡的 tags 字段：ai（tags 值：ai）"]}],"cards":[{"id":"k-20260918-scaling-compute","path":"domains/ai-infra/knowledge/k-20260918-scaling-compute.md","title":"可随算力扩展的通用方法长期占优","tags":["ai","method"]}],"default_domain":"ai-infra","default_domain_fallback":true,"domain":"ai-infra","notes":[],"source":{"id":"s-20260901-verification-the-key-to-ai","path":"sources/s-20260901-verification-the-key-to-ai.md","title":"Verification, The Key to AI","url":"http://www.incompleteideas.net/IncIdeas/KeytoAI.html","saved_at":"2026-09-01T23:08:01+08:00","body":"\nVerification, The Key to AI\n\nby Rich Sutton\n\nNovember 15, 2001\n\nIt is a bit unseemly for an AI researcher to claim to have a\nspecial insight or plan for how his field should proceed. If he\nhas such, why doesn't he just pursue it and, if he is right,\nexhibit its special fruits? Without denying that, there is still\na role for assessing and analyzing the field as a whole, for\ndiagnosing the ills that repeatedly plague it, and to suggest\ngeneral solutions.\n\nThe insight that I would claim to have is that the key to a\nsuccessful AI is that it can tell for itself whether or not it\nis working correctly. At one level this is a pragmatic issue. If\nthe AI can't tell for itself whether it is working properly,\nthen some person has to make that assessment and make any\nnecessary modifications. An AI that can assess itself may be\nable to make the modifications itself.\n\nThe Verification Principle:\n\nAn AI system can create and maintain knowledge only to the\nextent that it can verify that knowledge itself.\nSuccessful verification occurs in all search-based AI systems,\nsuch as planners, game-players, even genetic algorithms. Deep\nBlue, for example, produces a score for each of its possible\nmoves through an extensive search. Its belief that a particular\nmove is a good one is verified by the search tree that shows its\ninevitable production of a good position. These systems don't\nhave to be told what choices to make; they can tell for\nthemselves. Image trying to program a chess machine by telling\nit what kinds of moves to make in each kind of position. Many\nearly chess programs were constructed in this way. The problem,\nof course, was that there were many different kinds of chess\npositions. And the more advice and rules for move selection\ngiven by programmers, the more complex the system became and the\nmore unexpected interactions there were between rules. The\nprograms became brittle and unreliable, requiring constant\nmaintainence, and before long this whole approach lost out to\nthe \"brute force\" searchers.\n\nAlthough search-based planners verify at the move selection\nlevel, they typically cannot verify at other levels. For\nexample, they often take their state-evaluation scoring function\nas given. Even Deep Blue cannot search to the end of the game\nand relies on a human-tuned position-scoring function that it\ndoes not assess on its own. A major strength of the champion\nbackgammon program, TD-Gammon, is that it does assess and\nimprove its own scoring function.\n\nAnother important level at which search-based planners are\nalmost never subject to verification is that which specifies the\noutcomes of the moves, actions, or operators. In games such as\nchess with a limited number of legal moves we can easily imagine\nprogramming in the consequences of all of them accurately. But\nif we imagine planning in a broader AI context, then many of the\nallowed actions will not have their outcomes completely known.\nIf I take the bagel to Leslie's office, will she be there? How\nlong will it take to drive to work? Will I finish this report\ntoday? So many of the decisions we take every day have uncertain\nand changing effects. Nevertheless, modern AI systems almost\nnever take this into account. They assume that all the action\nmodels will be entered accurately by hand, even though these may\nbe most of the knowledge in or ever produced by the system.\n\nFinally, let us make the same point about knowledge in general.\nConsider any AI system and the knowledge that it has. It may be\nan expert system or a large database like CYC. Or it may be a\nrobot with knowledge of a building's layout, or knowledge about\nhow to react in various situations. In all these cases we can\nask if the AI system can verify its own knowledge, or whether it\nrequires people to intervene to detect errors and unforeseen\ninteractions, and make corrections. As long as the latter is the\ncase we will never be able to build really large knowledge\nsystems. They will always be brittle and unreliable, and limited\nin size to what people can monitor and understand themselves.\n\n\"Never program anything bigger than your head\"\nAnd yet it is overwhelmingly the case that today's AI systems\nare not able to verify their own knowledge. Large\nontologies and knowledge bases are built that are totally\nreliant on human construction and maintenance. \"Birds have\nwings\" they say, but of course they have no way of verifying\nthis.\n"}},"warnings":[{"code":"","level":"warning","path":"evergreen.yml","op_index":-1,"message":"未给 --domain：按 evergreen.yml 的 default_domain 取 ai-infra（default_domain_fallback）"}],"exit_code":0,"status":"completed"}
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:08:30Z] STEP: [写入前基线] eg search 自验证
+$ eg --vault /workspace/eg-vault-m2 search 自验证
+状态：completed（exit_code=0，ok=true）
+search：query="自验证"，命中 0 张卡（扫描 1 个 .md，跳过 0 个；只读，零写入零 commit）
+无匹配：hits 为空、total = 0（零知识结果合法，仍退 0）
+数据：
+  hits: []
+  total: 0
+  scanned_files: 1
+  skipped_files: 0
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:08:30Z] STEP: [写入前基线] eg search 算力
+$ eg --vault /workspace/eg-vault-m2 search 算力
+状态：completed（exit_code=0，ok=true）
+search：query="算力"，命中 1 张卡（扫描 1 个 .md，跳过 0 个；只读，零写入零 commit）
+k-20260918-scaling-compute  可随算力扩展的通用方法长期占优  [ai-infra] ai,method  2026-09-18T10:00:00+08:00
+数据：
+  hits: [{"id":"k-20260918-scaling-compute","title":"可随算力扩展的通用方法长期占优","domain":"ai-infra","tags":["ai","method"],"status":"active","deprecated":false,"updated_at":"2026-09-18T10:00:00+08:00","created_at":"2026-09-18","path":"domains/ai-infra/knowledge/k-20260918-scaling-compute.md","matched_fields":["title","body"],"score":4}]
+  total: 1
+  scanned_files: 1
+  skipped_files: 0
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:08:39Z] STEP: eg card show k-20260918-scaling-compute (取五分区全文,逐维度比对)
+$ eg --vault /workspace/eg-vault-m2 card show k-20260918-scaling-compute
+状态：completed（exit_code=0，ok=true）
+k-20260918-scaling-compute  可随算力扩展的通用方法长期占优  [ai-infra] ai,method
+状态：active（deprecated=false）  created_at=2026-09-18  updated_at=2026-09-18T10:00:00+08:00  路径：domains/ai-infra/knowledge/k-20260918-scaling-compute.md
+分区 知识内容：在算力成本持续下降的前提下，可随算力扩展的通用方法长期优于人工注入领域知识。
+分区 解释与依据：- 会话开始前 vault 里就存在的既有卡：用来让 Agent 有「既有知识」可查、可判断、可建关系。
+分区 条件与边界：- 前提是算力可持续增长。
+分区 用户补充：（本分区缺失）
+分区 理解自检：（本分区缺失）
+材料出处 sources[]：无
+正向关系 relations_out[]：无
+反向关系 relations_in[]：无
+card show：扫描 1 个 .md，跳过 0 个（只读，零写入零 commit）
+数据：
+  id: k-20260918-scaling-compute
+  title: 可随算力扩展的通用方法长期占优
+  domain: ai-infra
+  status: active
+  deprecated: false
+  created_at: 2026-09-18
+  updated_at: 2026-09-18T10:00:00+08:00
+  path: domains/ai-infra/knowledge/k-20260918-scaling-compute.md
+  tags: ["ai","method"]
+  markers: []
+  sections: {"知识内容":"在算力成本持续下降的前提下，可随算力扩展的通用方法长期优于人工注入领域知识。","解释与依据":"- 会话开始前 vault 里就存在的既有卡：用来让 Agent 有「既有知识」可查、可判断、可建关系。","条件与边界":"- 前提是算力可持续增长。","用户补充":"","理解自检":""}
+  sources: []
+  relations_out: []
+  relations_in: []
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:08:39Z] STEP: [写入前基线] eg rel k-20260918-scaling-compute (查既有论证关系)
+$ eg --vault /workspace/eg-vault-m2 rel k-20260918-scaling-compute
+状态：completed（exit_code=0，ok=true）
+rel：k-20260918-scaling-compute 的正向 0 条 / 反向 0 条（扫描 1 个 .md，跳过 0 个；只读，零写入零 commit）
+正向关系 relations_out[]：无
+反向关系 relations_in[]：无
+数据：
+  id: k-20260918-scaling-compute
+  relations_out: []
+  relations_in: []
+  scanned_files: 1
+  skipped_files: 0
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:13:38Z] STEP: eg apply --dry-run (校验+展开,零写入)
+$ eg --vault /workspace/eg-vault-m2 apply --plan /workspace/agent-e2e-evidence/plan.json --dry-run
+状态：completed（exit_code=0，ok=true）
+--dry-run：零写入、零 commit，以下是将写入的清单
+知识卡：新建 0 张，复用 0 张，补充 0 张
+关系：材料 0 条，论证 0 条
+写入文件 2 个：domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md、domains/ai-infra/knowledge/k-20260901-verification-principle.md
+commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
+· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
+· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：limitation（局限），已原样透传进报告
+· [I1] info cards：本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败
+逐卡收敛记录（1 条，顺序同 ChangePlan 的 convergence[]，未重排未合并）
+收敛：k-20260918-scaling-compute → independent_new
+  核心知识：different
+  成立条件：different
+  独立复用用途：different
+  说明：既有卡的核心驱动量是「算力成本持续下降 + 方法可随算力扩展」，结论是通用方法长期优于人工注入领域知识；本篇原文的核心驱动量是「知识能否被系统自身验证」，结论是 AI 能创建与维护的知识以其可自行验证的程度为上限，全篇未提算力或算力扩展，故 core_knowledge=different。成立条件上，既有卡要求算力可持续增长，原文的约束是知识须可被系统自身验证、且对专家系统 / CYC / 机器人等任意知识系统成立而不依赖算力前提，故 conditions=different。独立复用用途上，既有卡用于在算力趋势下做长期技术路线选择，本卡用作「系统能否自行验证该知识」这一架构可行性判据、在算力固定时同样可用，故 reuse_purpose=different。三维度全 different，按 SKILL.md §3.1「任一维度 different 即拆两张卡」拆新卡；两者在「早期规则灌入型象棋程序脆弱并输给暴力搜索」这一历史例证上有交叠，但共享例证不构成同一核心主张。二者的论证关系另以 eg rel add 单独登记（limits），不在本 plan 内改动既有卡正文。
+数据：
+  convergence: [{"card":"k-20260918-scaling-compute","conditions":"different","core_knowledge":"different","note":"既有卡的核心驱动量是「算力成本持续下降 + 方法可随算力扩展」，结论是通用方法长期优于人工注入领域知识；本篇原文的核心驱动量是「知识能否被系统自身验证」，结论是 AI 能创建与维护的知识以其可自行验证的程度为上限，全篇未提算力或算力扩展，故 core_knowledge=different。成立条件上，既有卡要求算力可持续增长，原文的约束是知识须可被系统自身验证、且对专家系统 / CYC / 机器人等任意知识系统成立而不依赖算力前提，故 conditions=different。独立复用用途上，既有卡用于在算力趋势下做长期技术路线选择，本卡用作「系统能否自行验证该知识」这一架构可行性判据、在算力固定时同样可用，故 reuse_purpose=different。三维度全 different，按 SKILL.md §3.1「任一维度 different 即拆两张卡」拆新卡；两者在「早期规则灌入型象棋程序脆弱并输给暴力搜索」这一历史例证上有交叠，但共享例证不构成同一核心主张。二者的论证关系另以 eg rel add 单独登记（limits），不在本 plan 内改动既有卡正文。","relation":"independent_new","reuse_purpose":"different"}]
+  domain: ai-infra
+  planned: [{"op_index":0,"path":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","section":"材料提炼"},{"op_index":0,"path":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","section":"Agent 分析"},{"op_index":1,"path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","section":"知识内容"},{"op_index":1,"path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","section":"解释与依据"},{"op_index":1,"path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","section":"条件与边界"},{"op_index":1,"path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","section":"理解自检"},{"op_index":2,"path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","section":""},{"op_index":3,"path":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","section":""}]
+  report: {"source":{"id":"","path":""},"note":{"id":"","domain":"","path":"","reprocessed":false},"cards":{"created":[],"reused":[],"updated":[]},"relations":{"material":[],"knowledge":[]},"open_questions":[],"links":["domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","domains/ai-infra/knowledge/k-20260901-verification-principle.md"],"git":{"commit":null},"skipped":[],"default_domain_fallback":{"used":false,"reason":""},"high_impact":[],"warnings":[{"code":"I1","level":"info","path":"ops[0].coverage_gaps","op_index":0,"message":"提炼覆盖项缺失：counterexample（反例），已原样透传进报告"},{"code":"I1","level":"info","path":"ops[0].coverage_gaps","op_index":0,"message":"提炼覆盖项缺失：limitation（局限），已原样透传进报告"},{"code":"I1","level":"info","path":"cards","op_index":-1,"message":"本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败"}],"proposals":[],"deprecated_new_support":[],"support_check":null,"affected":null,"reconcile":{"ran":false}}
+警告（3 条）：
+  [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
+  [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：limitation（局限），已原样透传进报告
+  [I1] info cards：本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:13:54Z] STEP: eg apply --plan (正式写入,唯一程序化写入通道)
+$ eg --vault /workspace/eg-vault-m2 apply --plan /workspace/agent-e2e-evidence/plan.json
+状态：completed（exit_code=0，ok=true）
+材料笔记：n-20260901-verification-the-key-to-ai（领域 ai-infra，domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md，重新加工 false）
+知识卡：新建 1 张（k-20260901-verification-principle），复用 0 张，补充 0 张
+关系：材料 1 条，论证 0 条
+未决问题：n-20260901-verification-the-key-to-ai ← 当验证信号本身有偏、延迟或不可得时（例如涉及价值判断或长期后果的知识），验证原则应如何适用？原文未讨论这一情形。
+写入文件 3 个：domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md、unprocessed.md、domains/ai-infra/knowledge/k-20260901-verification-principle.md
+commit：9e82cb3f25dfdef2101c91bebf01fc3cef4c9a1b
+显著变更：new_core_card（k-20260901-verification-principle）新建知识卡：承载本次加工的新核心含义
+· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
+· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：limitation（局限），已原样透传进报告
+· [I1] info ops[2] ops[2]：sources[] 已有完全相同的条目（s-20260901-verification-the-key-to-ai / support）：幂等去重，不追加第二条
+· warning ops[3] ops[3]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md）
+逐卡收敛记录（1 条，顺序同 ChangePlan 的 convergence[]，未重排未合并）
+收敛：k-20260918-scaling-compute → independent_new
+  核心知识：different
+  成立条件：different
+  独立复用用途：different
+  说明：既有卡的核心驱动量是「算力成本持续下降 + 方法可随算力扩展」，结论是通用方法长期优于人工注入领域知识；本篇原文的核心驱动量是「知识能否被系统自身验证」，结论是 AI 能创建与维护的知识以其可自行验证的程度为上限，全篇未提算力或算力扩展，故 core_knowledge=different。成立条件上，既有卡要求算力可持续增长，原文的约束是知识须可被系统自身验证、且对专家系统 / CYC / 机器人等任意知识系统成立而不依赖算力前提，故 conditions=different。独立复用用途上，既有卡用于在算力趋势下做长期技术路线选择，本卡用作「系统能否自行验证该知识」这一架构可行性判据、在算力固定时同样可用，故 reuse_purpose=different。三维度全 different，按 SKILL.md §3.1「任一维度 different 即拆两张卡」拆新卡；两者在「早期规则灌入型象棋程序脆弱并输给暴力搜索」这一历史例证上有交叠，但共享例证不构成同一核心主张。二者的论证关系另以 eg rel add 单独登记（limits），不在本 plan 内改动既有卡正文。
+数据：
+  convergence: [{"card":"k-20260918-scaling-compute","conditions":"different","core_knowledge":"different","note":"既有卡的核心驱动量是「算力成本持续下降 + 方法可随算力扩展」，结论是通用方法长期优于人工注入领域知识；本篇原文的核心驱动量是「知识能否被系统自身验证」，结论是 AI 能创建与维护的知识以其可自行验证的程度为上限，全篇未提算力或算力扩展，故 core_knowledge=different。成立条件上，既有卡要求算力可持续增长，原文的约束是知识须可被系统自身验证、且对专家系统 / CYC / 机器人等任意知识系统成立而不依赖算力前提，故 conditions=different。独立复用用途上，既有卡用于在算力趋势下做长期技术路线选择，本卡用作「系统能否自行验证该知识」这一架构可行性判据、在算力固定时同样可用，故 reuse_purpose=different。三维度全 different，按 SKILL.md §3.1「任一维度 different 即拆两张卡」拆新卡；两者在「早期规则灌入型象棋程序脆弱并输给暴力搜索」这一历史例证上有交叠，但共享例证不构成同一核心主张。二者的论证关系另以 eg rel add 单独登记（limits），不在本 plan 内改动既有卡正文。","relation":"independent_new","reuse_purpose":"different"}]
+  domain: ai-infra
+  report: {"source":{"id":"","path":""},"note":{"id":"n-20260901-verification-the-key-to-ai","domain":"ai-infra","path":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","reprocessed":false},"cards":{"created":["k-20260901-verification-principle"],"reused":[],"updated":[]},"relations":{"material":[{"card":"k-20260901-verification-principle","source":"s-20260901-verification-the-key-to-ai","note":"n-20260901-verification-the-key-to-ai","rel":"support","reason":"原文提出并论证验证原则本身，是本卡结论的直接来源：以 Deep Blue 的搜索树验证、早期规则灌入型象棋程序变脆弱、TD-Gammon 自行评估并改进打分函数、CYC 类知识库无法验证自身断言四组例证支撑该主张"}],"knowledge":[]},"open_questions":[{"note":"n-20260901-verification-the-key-to-ai","question":"当验证信号本身有偏、延迟或不可得时（例如涉及价值判断或长期后果的知识），验证原则应如何适用？原文未讨论这一情形。"}],"links":["domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md","unprocessed.md","domains/ai-infra/knowledge/k-20260901-verification-principle.md"],"git":{"commit":"9e82cb3f25dfdef2101c91bebf01fc3cef4c9a1b"},"skipped":[],"default_domain_fallback":{"used":false,"reason":""},"high_impact":[{"kind":"new_core_card","target":"k-20260901-verification-principle","detail":"新建知识卡：承载本次加工的新核心含义"}],"warnings":[{"code":"I1","level":"info","path":"ops[0].coverage_gaps","op_index":0,"message":"提炼覆盖项缺失：counterexample（反例），已原样透传进报告"},{"code":"I1","level":"info","path":"ops[0].coverage_gaps","op_index":0,"message":"提炼覆盖项缺失：limitation（局限），已原样透传进报告"},{"code":"I1","level":"info","path":"ops[2]","op_index":2,"message":"sources[] 已有完全相同的条目（s-20260901-verification-the-key-to-ai / support）：幂等去重，不追加第二条"},{"code":"","level":"warning","path":"ops[3]","op_index":3,"message":"updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳","target":"domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md"}],"proposals":[],"deprecated_new_support":[],"support_check":null,"affected":null,"reconcile":{"ran":false}}
+警告（4 条）：
+  [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
+  [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：limitation（局限），已原样透传进报告
+  [I1] info ops[2] ops[2]：sources[] 已有完全相同的条目（s-20260901-verification-the-key-to-ai / support）：幂等去重，不追加第二条
+  warning ops[3] ops[3]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md）
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:07Z] STEP: eg rel add (按语义判断新增论证关系 limits: 新卡 -> 既有卡)
+$ eg --vault /workspace/eg-vault-m2 rel add k-20260901-verification-principle limits k-20260918-scaling-compute --reason 验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长
+状态：completed（exit_code=0，ok=true）
+rel add：k-20260901-verification-principle --limits--> k-20260918-scaling-compute（verb=relate，单条 add_relation op，走 ChangePlan → plan → store → 一次 commit）
+知识卡：新建 0 张，复用 0 张，补充 0 张
+关系：材料 0 条，论证 1 条
+写入文件 1 个：domains/ai-infra/knowledge/k-20260901-verification-principle.md
+commit：cdd3081beaac7543070a7944dd0cdeb12f4c8ee1
+显著变更：relation（k-20260901-verification-principle）建立论证关系 limits → k-20260918-scaling-compute
+· [I1] info requirement_ids：requirement_ids 缺失：commit 正文不输出 Requirement: 行
+· [W5] warning convergence：convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系
+· warning ops[0] ops[0]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+· warning git.commit：plan.requirement_ids 缺失，正文无 Requirement: 行
+· [I1] info cards：本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败
+数据：
+  convergence: []
+  domain: ai-infra
+  plan: {"plan_version":1,"verb":"relate","domain":"ai-infra","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长","requirement_ids":[],"convergence":[],"base":{"domains/ai-infra/knowledge/k-20260901-verification-principle.md":"sha256:d43eeda78ffe49316aeb08e175ffc62b8bd9e2e9ac09ed66607a9212d295b849","domains/ai-infra/knowledge/k-20260918-scaling-compute.md":"sha256:b4c93070780b0f03ddcbbfd993dbe09c07d51cfd09d1476891432e186ada42ee"},"ops":[{"from":"k-20260901-verification-principle","op":"add_relation","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长","target":"k-20260918-scaling-compute","type":"limits"}]}
+  report: {"source":{"id":"","path":""},"note":{"id":"","domain":"","path":"","reprocessed":false},"cards":{"created":[],"reused":[],"updated":[]},"relations":{"material":[],"knowledge":[{"from":"k-20260901-verification-principle","type":"limits","target":"k-20260918-scaling-compute","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长"}]},"open_questions":[],"links":["domains/ai-infra/knowledge/k-20260901-verification-principle.md"],"git":{"commit":"cdd3081beaac7543070a7944dd0cdeb12f4c8ee1"},"skipped":[],"default_domain_fallback":{"used":false,"reason":""},"high_impact":[{"kind":"relation","target":"k-20260901-verification-principle","detail":"建立论证关系 limits → k-20260918-scaling-compute"}],"warnings":[{"code":"I1","level":"info","path":"requirement_ids","op_index":-1,"message":"requirement_ids 缺失：commit 正文不输出 Requirement: 行"},{"code":"W5","level":"warning","path":"convergence","op_index":-1,"message":"convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系"},{"code":"","level":"warning","path":"ops[0]","op_index":0,"message":"updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳","target":"domains/ai-infra/knowledge/k-20260901-verification-principle.md"},{"code":"","level":"warning","path":"git.commit","op_index":-1,"message":"plan.requirement_ids 缺失，正文无 Requirement: 行"},{"code":"I1","level":"info","path":"cards","op_index":-1,"message":"本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败"}],"proposals":[],"deprecated_new_support":[],"support_check":null,"affected":null,"reconcile":{"ran":false}}
+警告（5 条）：
+  [I1] info requirement_ids：requirement_ids 缺失：commit 正文不输出 Requirement: 行
+  [W5] warning convergence：convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系
+  warning ops[0] ops[0]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+  warning git.commit：plan.requirement_ids 缺失，正文无 Requirement: 行
+  [I1] info cards：本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:23Z] STEP: [写入后] eg search 自验证 (与写入前同一查询)
+$ eg --vault /workspace/eg-vault-m2 search 自验证
+状态：completed（exit_code=0，ok=true）
+search：query="自验证"，命中 1 张卡（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
+k-20260901-verification-principle  AI 系统只能创建与维护它能自行验证的知识  [ai-infra] ai,method  2026-09-01T23:13:54+08:00
+数据：
+  hits: [{"id":"k-20260901-verification-principle","title":"AI 系统只能创建与维护它能自行验证的知识","domain":"ai-infra","tags":["ai","method"],"status":"active","deprecated":false,"updated_at":"2026-09-01T23:13:54+08:00","created_at":"2026-09-01","path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","matched_fields":["title","body"],"score":5}]
+  total: 1
+  scanned_files: 2
+  skipped_files: 0
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:23Z] STEP: [写入后] eg search 算力 (与写入前同一查询)
+$ eg --vault /workspace/eg-vault-m2 search 算力
+状态：completed（exit_code=0，ok=true）
+search：query="算力"，命中 1 张卡（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
+k-20260918-scaling-compute  可随算力扩展的通用方法长期占优  [ai-infra] ai,method  2026-09-18T10:00:00+08:00
+数据：
+  hits: [{"id":"k-20260918-scaling-compute","title":"可随算力扩展的通用方法长期占优","domain":"ai-infra","tags":["ai","method"],"status":"active","deprecated":false,"updated_at":"2026-09-18T10:00:00+08:00","created_at":"2026-09-18","path":"domains/ai-infra/knowledge/k-20260918-scaling-compute.md","matched_fields":["title","body"],"score":4}]
+  total: 1
+  scanned_files: 2
+  skipped_files: 0
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:33Z] STEP: [写入后] eg rel k-20260918-scaling-compute (与写入前同一查询,验反向关系)
+$ eg --vault /workspace/eg-vault-m2 rel k-20260918-scaling-compute
+状态：completed（exit_code=0，ok=true）
+rel：k-20260918-scaling-compute 的正向 0 条 / 反向 1 条（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
+正向关系 relations_out[]：无
+反向关系：k-20260901-verification-principle --limits--> k-20260918-scaling-compute  理由：验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长（来源卡：domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+数据：
+  id: k-20260918-scaling-compute
+  relations_out: []
+  relations_in: [{"from":"k-20260901-verification-principle","type":"limits","target":"k-20260918-scaling-compute","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长","path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md"}]
+  scanned_files: 2
+  skipped_files: 0
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:33Z] STEP: [写入后] eg card show k-20260901-verification-principle (新卡五分区+关系)
+$ eg --vault /workspace/eg-vault-m2 card show k-20260901-verification-principle
+状态：completed（exit_code=0，ok=true）
+k-20260901-verification-principle  AI 系统只能创建与维护它能自行验证的知识  [ai-infra] ai,method
+状态：active（deprecated=false）  created_at=2026-09-01  updated_at=2026-09-01T23:13:54+08:00  路径：domains/ai-infra/knowledge/k-20260901-verification-principle.md
+分区 知识内容：AI 系统能够创建和维护的知识，以它能够自行验证这些知识的程度为上限（验证原则）。当知识中的错误只能由人来发现和纠正时，知识系统的规模就被限制在人所能监控和理解的范围内，并因此长期是脆弱和不可靠的。
+分区 解释与依据：- 依据原文：基于搜索的系统在走法选择层面发生了成功的验证——Deep Blue 用大规模搜索为每个候选走法产生分数，「该走法好」这一信念由搜索树给出验证，系统不需要被告知该做什么选择。
+分区 条件与边界：- 原文按层级区分验证是否发生：走法选择层通常已被验证；状态评估打分函数层常被当作给定而不自评；动作 / 算子后果层几乎从不被验证。
+分区 用户补充：（本分区缺失）
+分区 理解自检：- 如果一个系统能自行验证的只是代理指标而非真实目标，验证原则还成立吗？
+材料出处：s-20260901-verification-the-key-to-ai / n-20260901-verification-the-key-to-ai  rel=support  理由：原文提出并论证验证原则本身，是本卡结论的直接来源：以 Deep Blue 的搜索树验证、早期规则灌入型象棋程序变脆弱、TD-Gammon 自行评估并改进打分函数、CYC 类知识库无法验证自身断言四组例证支撑该主张
+正向关系：k-20260901-verification-principle --limits--> k-20260918-scaling-compute  理由：验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长
+反向关系 relations_in[]：无
+card show：扫描 2 个 .md，跳过 0 个（只读，零写入零 commit）
+数据：
+  id: k-20260901-verification-principle
+  title: AI 系统只能创建与维护它能自行验证的知识
+  domain: ai-infra
+  status: active
+  deprecated: false
+  created_at: 2026-09-01
+  updated_at: 2026-09-01T23:13:54+08:00
+  path: domains/ai-infra/knowledge/k-20260901-verification-principle.md
+  tags: ["ai","method"]
+  markers: []
+  sections: {"知识内容":"AI 系统能够创建和维护的知识，以它能够自行验证这些知识的程度为上限（验证原则）。当知识中的错误只能由人来发现和纠正时，知识系统的规模就被限制在人所能监控和理解的范围内，并因此长期是脆弱和不可靠的。","解释与依据":"- 依据原文：基于搜索的系统在走法选择层面发生了成功的验证——Deep Blue 用大规模搜索为每个候选走法产生分数，「该走法好」这一信念由搜索树给出验证，系统不需要被告知该做什么选择。\n- 依据原文的反面例证：早期国际象棋程序由程序员按局面类型灌入走法规则，规则越多、规则间意外交互越多，程序越脆弱、越不可靠、越需要持续维护，最终输给了暴力搜索路线。\n- 依据原文的对照：TD-Gammon 会评估并改进自己的打分函数，而 Deep Blue 依赖一个人工调参、自己不做评估的局面打分函数。\n- 依据原文：CYC 一类完全依赖人工构建与维护的大型本体与知识库无法验证自身的断言（原文举例：它们说「鸟有翅膀」，却无法验证这一点）。","条件与边界":"- 原文按层级区分验证是否发生：走法选择层通常已被验证；状态评估打分函数层常被当作给定而不自评；动作 / 算子后果层几乎从不被验证。\n- 原文指出，像国际象棋这样合法动作有限的博弈可以想象把后果准确写入，但更广义的场景中许多动作后果本身不确定且会变化。\n- 原文把结论表述为「以其能自行验证的程度为限」，是程度性约束，而非可验证与不可验证的非黑即白。","用户补充":"","理解自检":"- 如果一个系统能自行验证的只是代理指标而非真实目标，验证原则还成立吗？\n- 在动作后果本身不确定的任务上，「自行验证」应当以什么作为判据？\n- 人工维护的知识与可自验证的知识，能否在同一系统内分层共存？"}
+  sources: [{"source":"s-20260901-verification-the-key-to-ai","note":"n-20260901-verification-the-key-to-ai","rel":"support","reason":"原文提出并论证验证原则本身，是本卡结论的直接来源：以 Deep Blue 的搜索树验证、早期规则灌入型象棋程序变脆弱、TD-Gammon 自行评估并改进打分函数、CYC 类知识库无法验证自身断言四组例证支撑该主张"}]
+  relations_out: [{"from":"k-20260901-verification-principle","type":"limits","target":"k-20260918-scaling-compute","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长","path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md"}]
+  relations_in: []
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:45Z] STEP: eg report --last (只读复现最近一次 apply)
+$ eg --vault /workspace/eg-vault-m2 report --last
+状态：completed（exit_code=0，ok=true）
+最近一次 apply：exit_code=0，status=completed（只读复现，零写入零 commit）
+知识卡：新建 0 张，复用 0 张，补充 0 张
+关系：材料 0 条，论证 1 条
+写入文件 1 个：domains/ai-infra/knowledge/k-20260901-verification-principle.md
+commit：cdd3081beaac7543070a7944dd0cdeb12f4c8ee1
+显著变更：relation（k-20260901-verification-principle）建立论证关系 limits → k-20260918-scaling-compute
+· [I1] info requirement_ids：requirement_ids 缺失：commit 正文不输出 Requirement: 行
+· [W5] warning convergence：convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系
+· warning ops[0] ops[0]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+· warning git.commit：plan.requirement_ids 缺失，正文无 Requirement: 行
+· [I1] info cards：本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败
+数据：
+  convergence: []
+  domain: "ai-infra"
+  report: {"source":{"id":"","path":""},"note":{"id":"","domain":"","path":"","reprocessed":false},"cards":{"created":[],"reused":[],"updated":[]},"relations":{"material":[],"knowledge":[{"from":"k-20260901-verification-principle","type":"limits","target":"k-20260918-scaling-compute","reason":"验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长"}]},"open_questions":[],"links":["domains/ai-infra/knowledge/k-20260901-verification-principle.md"],"git":{"commit":"cdd3081beaac7543070a7944dd0cdeb12f4c8ee1"},"skipped":[],"default_domain_fallback":{"used":false,"reason":""},"high_impact":[{"kind":"relation","target":"k-20260901-verification-principle","detail":"建立论证关系 limits → k-20260918-scaling-compute"}],"warnings":[{"code":"I1","level":"info","path":"requirement_ids","op_index":-1,"message":"requirement_ids 缺失：commit 正文不输出 Requirement: 行"},{"code":"W5","level":"warning","path":"convergence","op_index":-1,"message":"convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系"},{"code":"","level":"warning","path":"ops[0]","op_index":0,"message":"updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳","target":"domains/ai-infra/knowledge/k-20260901-verification-principle.md"},{"code":"","level":"warning","path":"git.commit","op_index":-1,"message":"plan.requirement_ids 缺失，正文无 Requirement: 行"},{"code":"I1","level":"info","path":"cards","op_index":-1,"message":"本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败"}],"proposals":[],"deprecated_new_support":[],"support_check":null,"affected":null,"reconcile":{"ran":false}}
+警告（6 条）：
+  [I1] info requirement_ids：requirement_ids 缺失：commit 正文不输出 Requirement: 行
+  [W5] warning convergence：convergence[] 缺条目：涉及已有卡的加工应逐卡给出三维度结论与处理关系
+  warning ops[0] ops[0]：updated_at 已存在：S1 只追加不改写既有键（键替换属 S2），本次未刷新时间戳（target=domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+  warning git.commit：plan.requirement_ids 缺失，正文无 Requirement: 行
+  [I1] info cards：本次未产生知识卡：本次只产出材料层内容或关系，属合法结果，未判失败
+  info .eg/last-report.json：本报告复现自最近一次 eg apply（该次 exit_code=0、status=completed），内容原样回放、未重新计算
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:14:46Z] STEP: git log --oneline (vault 完整提交历史)
+$ git -C /workspace/eg-vault-m2 log --oneline --stat
+cdd3081 relate(ai-infra): 写入 1 个文件（新建卡 0、补充卡 0、关系 1、未决问题 0）
+ domains/ai-infra/knowledge/k-20260901-verification-principle.md | 4 ++++
+ 1 file changed, 4 insertions(+)
+9e82cb3 process(ai-infra): 写入 3 个文件（新建卡 1、补充卡 0、关系 1、未决问题 1）
+ .../knowledge/k-20260901-verification-principle.md | 41 ++++++++++++++++++++++
+ .../notes/n-20260901-verification-the-key-to-ai.md | 40 +++++++++++++++++++++
+ unprocessed.md                                     |  5 ---
+ 3 files changed, 81 insertions(+), 5 deletions(-)
+92de348 capture(ai-infra): 收录 s-20260901-verification-the-key-to-ai
+ sources/s-20260901-verification-the-key-to-ai.md | 99 ++++++++++++++++++++++++
+ unprocessed.md                                   |  5 ++
+ 2 files changed, 104 insertions(+)
+aaef516 init(ai-infra): 初始化 vault 骨架
+ .gitignore                                         |   1 +
+ SKILL.md                                           | 404 +++++++++++++++++++++
+ .../knowledge/k-20260918-scaling-compute.md        |  21 ++
+ evergreen.yml                                      |   5 +
+ unprocessed.md                                     |   3 +
+ 5 files changed, 434 insertions(+)
+EXIT_CODE=0
+-----------------------------------------------------------------
+[UTC 2026-09-01T15:15:01Z] STEP: 完整性校验: 既有卡是否被改动 + 工作区是否干净 + .eg/ 是否被忽略
+$ bash -c
+V=/workspace/eg-vault-m2
+echo "--- 既有卡在 init 之后是否被任何 commit 改动 ---"
+git -C "$V" log --oneline -- domains/ai-infra/knowledge/k-20260918-scaling-compute.md
+echo "--- 既有卡当前内容 vs 包内原始 seed 文件 逐字节比对 ---"
+cmp "$V/domains/ai-infra/knowledge/k-20260918-scaling-compute.md" /workspace/agent-e2e-evidence/input/evergreen-agent-e2e-input/seed-k-20260918-scaling-compute.md && echo "BYTE-IDENTICAL: 既有卡全程零改动"
+echo "--- 工作区状态 ---"
+git -C "$V" status --porcelain; echo "(空=干净)"
+echo "--- .eg/ 是否存在且被忽略 ---"
+ls -d "$V/.eg" 2>/dev/null && git -C "$V" check-ignore -v .eg/last-report.json
+echo "--- commit 作者(确认非我手工 commit) ---"
+git -C "$V" log --format="%h %an <%ae> | %s"
+echo "--- vault 产物清单 ---"
+find "$V" -name "*.md" -not -path "*/.git/*" | sort
+--- 既有卡在 init 之后是否被任何 commit 改动 ---
+aaef516 init(ai-infra): 初始化 vault 骨架
+--- 既有卡当前内容 vs 包内原始 seed 文件 逐字节比对 ---
+BYTE-IDENTICAL: 既有卡全程零改动
+--- 工作区状态 ---
+(空=干净)
+--- .eg/ 是否存在且被忽略 ---
+/workspace/eg-vault-m2/.eg
+.git/info/exclude:7:.eg/	.eg/last-report.json
+--- commit 作者(确认非我手工 commit) ---
+cdd3081 maintainer <maintainer@example.com> | relate(ai-infra): 写入 1 个文件（新建卡 0、补充卡 0、关系 1、未决问题 0）
+9e82cb3 maintainer <maintainer@example.com> | process(ai-infra): 写入 3 个文件（新建卡 1、补充卡 0、关系 1、未决问题 1）
+92de348 maintainer <maintainer@example.com> | capture(ai-infra): 收录 s-20260901-verification-the-key-to-ai
+aaef516 maintainer <maintainer@example.com> | init(ai-infra): 初始化 vault 骨架
+--- vault 产物清单 ---
+/workspace/eg-vault-m2/domains/ai-infra/knowledge/k-20260901-verification-principle.md
+/workspace/eg-vault-m2/domains/ai-infra/knowledge/k-20260918-scaling-compute.md
+/workspace/eg-vault-m2/domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md
+/workspace/eg-vault-m2/SKILL.md
+/workspace/eg-vault-m2/sources/s-20260901-verification-the-key-to-ai.md
+/workspace/eg-vault-m2/unprocessed.md
+EXIT_CODE=0
+PHASE2_END_UTC=2026-09-01T15:15:41Z
+=================================================================
+=== 补记：Phase 1 早期两次抓取尝试（发生在本日志文件建立之前，事后如实补录）===
+[UTC ~2026-09-01T14:55:0xZ] $ curl -s --max-time 25 http://www.incompleteideas.net/IncIdeas/KeytoAI.html
+    → EXIT_CODE=28 (超时；未显式传 --proxy)
+[UTC ~2026-09-01T14:56:1xZ] $ curl -sS -L --max-time 60 https://www.incompleteideas.net/IncIdeas/KeytoAI.html
+    → EXIT_CODE=60 (SSL self-signed certificate；该站点仅 http 可用)
+[UTC 2026-09-01T14:56:2xZ]  $ curl -sS -L --proxy "$http_proxy" ... http://...  → EXIT_CODE=0 (HTTP 200, 5482 bytes)
+说明：上述三条为 Phase 1 排障过程，结论已写入 BLOCKER_REPORT.md 的重试表。
+=================================================================

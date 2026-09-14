@@ -1,0 +1,290 @@
+old_path	new_path	decision	layer	capability	kind	suite_id	stage_origin	reason
+test/e2e/m2_acceptance.sh	tests/archive/history/stage-acceptance/m2_acceptance.sh	archive	archive	arch-boundary	shell	-	m2	阶段清单计数 / m*_ 递归委派 / 里程碑判据簿记属历史治理材料（非产品测试）：递归委派违反 D5、清单计数指向已退役的 test/e2e 布局；阶段冻结算术等式未迁移，登记为 I-…-009
+test/e2e/m3_acceptance.sh	tests/archive/history/stage-acceptance/m3_acceptance.sh	archive	archive	arch-boundary	shell	-	m3	阶段清单计数 / m*_ 递归委派 / 里程碑判据簿记属历史治理材料（非产品测试）：递归委派违反 D5、清单计数指向已退役的 test/e2e 布局；阶段冻结算术等式未迁移，登记为 I-…-009
+test/e2e/m4_acceptance.sh	tests/archive/history/stage-acceptance/m4_acceptance.sh	archive	archive	arch-boundary	shell	-	m4	阶段清单计数 / m*_ 递归委派 / 里程碑判据簿记属历史治理材料（非产品测试）：递归委派违反 D5、清单计数指向已退役的 test/e2e 布局；阶段冻结算术等式未迁移，登记为 I-…-009
+test/e2e/m5_acceptance.sh	tests/archive/history/stage-acceptance/m5_acceptance.sh	archive	archive	arch-boundary	shell	-	m5	阶段清单计数 / m*_ 递归委派 / 里程碑判据簿记属历史治理材料（非产品测试）：递归委派违反 D5、清单计数指向已退役的 test/e2e 布局；阶段冻结算术等式未迁移，登记为 I-…-009
+test/e2e/m6_acceptance.sh	tests/archive/history/stage-acceptance/m6_acceptance.sh	archive	archive	arch-boundary	shell	-	m6	阶段清单计数 / m*_ 递归委派 / 里程碑判据簿记属历史治理材料（非产品测试）：递归委派违反 D5、清单计数指向已退役的 test/e2e 布局；阶段冻结算术等式未迁移，登记为 I-…-009
+test/ci/dep_direction_gate.sh	tests/contract/dep-direction/dep_direction_gate.sh	keep	contract	arch-boundary	shell	contract.dep-direction	m6	§13 依赖方向硬门禁本体，被 Makefile dep-gate 与双侧脚本共同消费
+test/e2e/m2_acceptance.sh	tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m2	并入占位标记门禁：非测试源 `Placeholder: true` == 0、`PlaceholderNotice` 落点 ⊆ {root,placeholder,rel}.go（源 m2_acceptance.sh L147-155）
+test/e2e/m2_acceptance.sh	tests/contract/static-boundaries/symbol_locality.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m2	并入 internal/query 内 `.index` 非测试落点集合封闭 == {backend,index_backed,scan}.go + scan.go walker 排除分支在场（源 L172-181）
+test/e2e/m2_acceptance.sh	tests/contract/static-boundaries/assertion_presence.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m2	并入断言在场反证：只读脚本含 `status --porcelain`、查询脚本含诚实诊断码、PPE 留痕文件齐备（源 L265-285）
+test/e2e/m3_acceptance.sh	tests/contract/static-boundaries/symbol_locality.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m3	并入 reconcile 命令注册与用法行落点封闭性（`Name: "reconcile"` 恰 1 且落点唯一、`r.Wire` 落点唯一、`eg reconcile` 用法行落点集合 == {reconcile,check,commands}.go；源 L245-272 / L380-395）
+test/e2e/m4_acceptance.sh	tests/contract/static-boundaries/symbol_locality.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m4	并入 internal/reconcile 零索引符号（FTS5|sqlite|.index/ == 0）+ internal/cli 非对账族零 `internal/reconcile` 代码级引用（源 L161 / L190-196）
+test/e2e/m4_acceptance.sh	tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m4	并入 `os.Exit(5)` 字面量 == 0（源 L184）
+test/e2e/m5_acceptance.sh	tests/contract/static-boundaries/symbol_locality.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m5	并入 flock|txn/|run.lock 授权本位封闭 + 授权内 ≥1（源 L134-178）
+test/e2e/m5_acceptance.sh	tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m5	并入退出码全集 {0..6} + 取值 5 常量唯一 + 无 W21（源 L134-178）
+test/e2e/m6_acceptance.sh	tests/contract/static-boundaries/symbol_locality.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m6	并入 flock|run.lock|/txn/ 授权本位（internal/txn、index_lock.go、recover_hook.go、internal/index）授权外 == 0（源 L96-104，最严版本作为规范实现）
+test/e2e/m6_acceptance.sh	tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	merge	contract	arch-boundary	shell	contract.static-boundaries	m6	并入退出码全集逐字 {0 1 2 3 4 5 6}、取值 5 常量恰 1 且名 ExitPrecheckOrLock、os.Exit(5) == 0、新增诊断码恰 E15/E16/W26/W27/W28 在册、"W21" == 0（源 L105-125，最严版本作为规范实现）
+test/e2e/m6_ci_dep_gate.sh	tests/contract/dep-direction/dep_gate_double_sided.sh	keep	contract	arch-boundary	shell	contract.dep-direction-double-sided	m6	门禁本体的双侧验证（真绿 + 三条禁令能红），保留全部注入反例
+test/e2e/m1_real_article.sh	tests/e2e/capture-ingest/real_article.sh	keep	e2e	capture-ingest	shell	e2e.capture-ingest.real_article	m1	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_acceptance.sh	tests/e2e/index-search/rel_index_equivalence.sh	merge	e2e	index-search	shell	e2e.index-search.rel_index_equivalence	m2	并入判据 4 实跑等价性：无索引 / 索引在位 / 删索引三态 rel --json data 段逐字节相等 + 降级留痕恰 W23→Q5（源 L183-260）
+test/e2e/m2_card_show.sh	tests/e2e/card-query/card_show.sh	keep	e2e	card-query	shell	e2e.card-query.card_show	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_context_polish.sh	tests/e2e/card-query/context_polish.sh	keep	e2e	card-query	shell	e2e.card-query.context_polish	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_convergence.sh	tests/e2e/capture-ingest/convergence.sh	keep	e2e	capture-ingest	shell	e2e.capture-ingest.convergence	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_docs_commands.sh	tests/e2e/docs-cli/docs_cli_contract_and_exitcodes.sh	keep	e2e	docs-cli	shell	e2e.docs-cli.docs_cli_contract_and_exitcodes	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_ppe_replay.sh	tests/e2e/capture-ingest/ppe_replay.sh	keep	e2e	capture-ingest	shell	e2e.capture-ingest.ppe_replay	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_rel_add.sh	tests/e2e/relation/rel_add.sh	keep	e2e	relation	shell	e2e.relation.rel_add	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_rel_query.sh	tests/e2e/relation/rel_query.sh	keep	e2e	relation	shell	e2e.relation.rel_query	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m2_search.sh	tests/e2e/card-query/search.sh	keep	e2e	card-query	shell	e2e.card-query.search	m2	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_authorization.sh	tests/e2e/authorization/authorization.sh	keep	e2e	authorization	shell	e2e.authorization.authorization	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_docs_commands.sh	tests/e2e/docs-cli/docs_cli_authorization_and_limits.sh	keep	e2e	docs-cli	shell	e2e.docs-cli.docs_cli_authorization_and_limits	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_edit.sh	tests/e2e/edit/edit.sh	keep	e2e	edit	shell	e2e.edit.edit	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_execution_failed.sh	tests/e2e/ops-diagnostics/execution_failed.sh	keep	e2e	ops-diagnostics	shell	e2e.ops-diagnostics.execution_failed	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_lifecycle_state.sh	tests/e2e/lifecycle/lifecycle_state.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.lifecycle_state	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_logical_delete.sh	tests/e2e/lifecycle/logical_delete.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.logical_delete	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_markers.sh	tests/e2e/lifecycle/markers.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.markers	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_ops_diagnostics.sh	tests/e2e/ops-diagnostics/ops_diagnostics.sh	keep	e2e	ops-diagnostics	shell	e2e.ops-diagnostics.ops_diagnostics	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_proposal_cli.sh	tests/e2e/proposal/proposal_cli.sh	keep	e2e	proposal	shell	e2e.proposal.proposal_cli	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_proposal_layout.sh	tests/e2e/proposal/proposal_layout.sh	keep	e2e	proposal	shell	e2e.proposal.proposal_layout	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_proposal_state.sh	tests/e2e/proposal/proposal_state.sh	keep	e2e	proposal	shell	e2e.proposal.proposal_state	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_rel_remove.sh	tests/e2e/relation/rel_remove.sh	keep	e2e	relation	shell	e2e.relation.rel_remove	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_reviewed.sh	tests/e2e/lifecycle/reviewed.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.reviewed	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m3_superseded.sh	tests/e2e/lifecycle/superseded.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.superseded	m3	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_cmd_check.sh	tests/e2e/ops-diagnostics/cmd_check.sh	keep	e2e	ops-diagnostics	shell	e2e.ops-diagnostics.cmd_check	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_cmd_reconcile.sh	tests/e2e/reconcile-takeover/cmd_reconcile.sh	keep	e2e	reconcile-takeover	shell	e2e.reconcile-takeover.cmd_reconcile	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_docs_commands.sh	tests/e2e/docs-cli/docs_cli_roster_and_dist_provenance.sh	keep	e2e	docs-cli	shell	e2e.docs-cli.docs_cli_roster_and_dist_provenance	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_k041_proposal_clean.sh	tests/e2e/proposal/proposal_clean_k041.sh	keep	e2e	proposal	shell	e2e.proposal.proposal_clean_k041	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r1_takeover.sh	tests/e2e/reconcile-takeover/takeover.sh	keep	e2e	reconcile-takeover	shell	e2e.reconcile-takeover.takeover	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r2_reviewed_backfill.sh	tests/e2e/lifecycle/reviewed_backfill.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.reviewed_backfill	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r3_relation.sh	tests/e2e/relation/relation_reconcile.sh	keep	e2e	relation	shell	e2e.relation.relation_reconcile	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r4_structure.sh	tests/e2e/reconcile-takeover/structure.sh	keep	e2e	reconcile-takeover	shell	e2e.reconcile-takeover.structure	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r5_domain_moved.sh	tests/e2e/reconcile-takeover/domain_moved.sh	keep	e2e	reconcile-takeover	shell	e2e.reconcile-takeover.domain_moved	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r6_recap_stale.sh	tests/e2e/lifecycle/recap_stale.sh	keep	e2e	lifecycle	shell	e2e.lifecycle.recap_stale	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_r7_support.sh	tests/e2e/reconcile-takeover/support_material.sh	keep	e2e	reconcile-takeover	shell	e2e.reconcile-takeover.support_material	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_report_reconcile.sh	tests/e2e/ops-diagnostics/report_reconcile.sh	keep	e2e	ops-diagnostics	shell	e2e.ops-diagnostics.report_reconcile	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m4_visibility_matrix.sh	tests/e2e/reconcile-takeover/visibility_matrix.sh	keep	e2e	reconcile-takeover	shell	e2e.reconcile-takeover.visibility_matrix	m4	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_degrade_fallback.sh	tests/e2e/index-search/degrade_fallback.sh	keep	e2e	index-search	shell	e2e.index-search.degrade_fallback	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_docs_commands.sh	tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	keep	e2e	docs-cli	shell	e2e.docs-cli.docs_cli_roster_and_embedded_skill	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_index_build.sh	tests/e2e/index-search/index_build.sh	keep	e2e	index-search	shell	e2e.index-search.index_build	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_index_consistency.sh	tests/e2e/index-search/index_consistency.sh	keep	e2e	index-search	shell	e2e.index-search.index_consistency	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_index_corrupt_rebuild.sh	tests/e2e/index-search/index_corrupt_rebuild.sh	keep	e2e	index-search	shell	e2e.index-search.index_corrupt_rebuild	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_index_incremental.sh	tests/e2e/index-search/index_incremental.sh	keep	e2e	index-search	shell	e2e.index-search.index_incremental	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_read_path_index.sh	tests/e2e/index-search/read_path_index.sh	keep	e2e	index-search	shell	e2e.index-search.read_path_index	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_replaced_by_reverse.sh	tests/e2e/index-search/replaced_by_reverse.sh	keep	e2e	index-search	shell	e2e.index-search.replaced_by_reverse	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m5_sort_page.sh	tests/e2e/index-search/sort_page.sh	keep	e2e	index-search	shell	e2e.index-search.sort_page	m5	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_atomic_multifile.sh	tests/e2e/txn-atomicity/atomic_multifile.sh	keep	e2e	txn-atomicity	shell	e2e.txn-atomicity.atomic_multifile	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_block_merge.sh	tests/e2e/edit/block_merge.sh	keep	e2e	edit	shell	e2e.edit.block_merge	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_concurrent_conflict.sh	tests/e2e/txn-atomicity/concurrent_conflict.sh	keep	e2e	txn-atomicity	shell	e2e.txn-atomicity.concurrent_conflict	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_crash_recovery.sh	tests/e2e/txn-atomicity/crash_recovery.sh	keep	e2e	txn-atomicity	shell	e2e.txn-atomicity.crash_recovery	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_docs_commands.sh	tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	keep	e2e	docs-cli	shell	e2e.docs-cli.docs_cli_current_state_and_limits	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_precheck_exit5.sh	tests/e2e/txn-atomicity/precheck_exit5.sh	keep	e2e	txn-atomicity	shell	e2e.txn-atomicity.precheck_exit5	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_run_lock.sh	tests/e2e/txn-atomicity/run_lock.sh	keep	e2e	txn-atomicity	shell	e2e.txn-atomicity.run_lock	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_strict_check.sh	tests/e2e/ops-diagnostics/strict_check.sh	keep	e2e	ops-diagnostics	shell	e2e.ops-diagnostics.strict_check	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/m6_txn_journal.sh	tests/e2e/txn-atomicity/txn_journal.sh	keep	e2e	txn-atomicity	shell	e2e.txn-atomicity.txn_journal	m6	场景脚本按系统能力重组，去阶段号入口
+test/e2e/testdata/bitter-lesson.txt	tests/fixtures/e2e/bitter-lesson.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/commands.log	tests/fixtures/e2e/ppe/commands.log	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/git-log.txt	tests/fixtures/e2e/ppe/git-log.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/apply-m3-ops-output.json	tests/fixtures/e2e/ppe/m3-raw-session/apply-m3-ops-output.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/approve-noconfirm-exit6-output.json	tests/fixtures/e2e/ppe/m3-raw-session/approve-noconfirm-exit6-output.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/commands.log	tests/fixtures/e2e/ppe/m3-raw-session/commands.log	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/delete-output.json	tests/fixtures/e2e/ppe/m3-raw-session/delete-output.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/git-log.txt	tests/fixtures/e2e/ppe/m3-raw-session/git-log.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/k-041-01-diff.txt	tests/fixtures/e2e/ppe/m3-raw-session/k-041-01-diff.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/k-041-01-porcelain.txt	tests/fixtures/e2e/ppe/m3-raw-session/k-041-01-porcelain.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/m3-ops-plan.json	tests/fixtures/e2e/ppe/m3-raw-session/m3-ops-plan.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/plan-ingest.json	tests/fixtures/e2e/ppe/m3-raw-session/plan-ingest.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/report-last-output.json	tests/fixtures/e2e/ppe/m3-raw-session/report-last-output.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/session-command-sequence.sh	tests/fixtures/e2e/ppe/m3-raw-session/session-command-sequence.sh	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/session.md	tests/fixtures/e2e/ppe/m3-raw-session/session.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/sha256-after-exit6.txt	tests/fixtures/e2e/ppe/m3-raw-session/sha256-after-exit6.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/m3-raw-session/sha256-before-exit6.txt	tests/fixtures/e2e/ppe/m3-raw-session/sha256-before-exit6.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/plan.json	tests/fixtures/e2e/ppe/plan.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/query-after.txt	tests/fixtures/e2e/ppe/query-after.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/query-before.txt	tests/fixtures/e2e/ppe/query-before.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/agent-detailed-report.md	tests/fixtures/e2e/ppe/raw-session/agent-detailed-report.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/agent-evidence-report.md	tests/fixtures/e2e/ppe/raw-session/agent-evidence-report.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/apply-output.txt	tests/fixtures/e2e/ppe/raw-session/apply-output.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/command-log-full.txt	tests/fixtures/e2e/ppe/raw-session/command-log-full.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/context-output.json	tests/fixtures/e2e/ppe/raw-session/context-output.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/query-after-search-compute.txt	tests/fixtures/e2e/ppe/raw-session/query-after-search-compute.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/query-after-search-self-verification.txt	tests/fixtures/e2e/ppe/raw-session/query-after-search-self-verification.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/query-before-search-compute.txt	tests/fixtures/e2e/ppe/raw-session/query-before-search-compute.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/query-before-search-self-verification.txt	tests/fixtures/e2e/ppe/raw-session/query-before-search-self-verification.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/rel-add-output.txt	tests/fixtures/e2e/ppe/raw-session/rel-add-output.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/domains/ai-infra/knowledge/k-20260901-verification-principle.md	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/domains/ai-infra/knowledge/k-20260901-verification-principle.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/domains/ai-infra/knowledge/k-20260918-scaling-compute.md	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/domains/ai-infra/knowledge/k-20260918-scaling-compute.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/domains/ai-infra/notes/n-20260901-verification-the-key-to-ai.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/evergreen.yml	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/evergreen.yml	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/last-report.json	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/last-report.json	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/sources/s-20260901-verification-the-key-to-ai.md	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/sources/s-20260901-verification-the-key-to-ai.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/raw-session/vault-snapshot/unprocessed.md	tests/fixtures/e2e/ppe/raw-session/vault-snapshot/unprocessed.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/seed-k-20260918-scaling-compute.md	tests/fixtures/e2e/ppe/seed-k-20260918-scaling-compute.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/ppe/session.md	tests/fixtures/e2e/ppe/session.md	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/testdata/verification-key-to-ai.txt	tests/fixtures/e2e/verification-key-to-ai.txt	keep	fixtures	capture-ingest	data	-	m1-m4	语料/PPE 会话快照/vault 快照；运行期回填 test/e2e/testdata/ 保持相对路径
+test/e2e/m1_test.go	tests/_staged/test/e2e/m1_test.go	keep	integration	capture-ingest	go	integration.e2e-go	m1	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m2_acceptance_test.go	tests/_staged/test/e2e/m2_acceptance_test.go	keep	integration	arch-boundary	go	integration.e2e-go	m2	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m3_acceptance_test.go	tests/_staged/test/e2e/m3_acceptance_test.go	keep	integration	arch-boundary	go	integration.e2e-go	m3	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r1_takeover_test.go	tests/_staged/test/e2e/m4_r1_takeover_test.go	keep	integration	reconcile-takeover	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r2_reviewed_test.go	tests/_staged/test/e2e/m4_r2_reviewed_test.go	keep	integration	lifecycle	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r3_relation_test.go	tests/_staged/test/e2e/m4_r3_relation_test.go	keep	integration	relation	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r4_structure_test.go	tests/_staged/test/e2e/m4_r4_structure_test.go	keep	integration	reconcile-takeover	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r5_domain_moved_test.go	tests/_staged/test/e2e/m4_r5_domain_moved_test.go	keep	integration	reconcile-takeover	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r6_recap_stale_test.go	tests/_staged/test/e2e/m4_r6_recap_stale_test.go	keep	integration	lifecycle	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_r7_support_test.go	tests/_staged/test/e2e/m4_r7_support_test.go	keep	integration	reconcile-takeover	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/m4_report_reconcile_test.go	tests/_staged/test/e2e/m4_report_reconcile_test.go	keep	integration	ops-diagnostics	go	integration.e2e-go	m4	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/e2e/ppe_test.go	tests/_staged/test/e2e/ppe_test.go	keep	integration	capture-ingest	go	integration.e2e-go	ppe	二进制级黑盒 Go 测试；依赖 testdata/ 与 ../../ 仓库相对路径，运行期布局不变
+test/txnctl/main_test.go	tests/_staged/test/txnctl/main_test.go	keep	integration	txn-atomicity	go	integration.txnctl	m6	事务控制辅助工具的自测
+test/txnctl/commit.go	tests/lib/txnctl/commit.go	keep	lib	txn-atomicity	go	integration.txnctl	m6	测试专用 helper 源码（非产品代码），运行期回填 test/txnctl/
+test/txnctl/main.go	tests/lib/txnctl/main.go	keep	lib	txn-atomicity	go	integration.txnctl	m6	测试专用 helper 源码（非产品代码），运行期回填 test/txnctl/
+test/e2e/m5_bench_p95.sh	tests/perf/bench_p95.sh	keep	perf	perf	shell	perf.bench-p95	m5	P95 性能门槛，重型 profile，不进 core/full
+test/perf/corpus_gen.go	tests/perf/corpus_gen.go	keep	perf	perf	go	perf.bench-p95	m5	性能语料生成器（build tag 隔离，不参与产品构建）
+test/perf/queryset/queryset.go	internal/query/queryset/queryset.go	relocate-product	product	perf	go	perf.bench-p95	m5	被 internal/cli/bench.go import，属产品代码；归位 internal/query 名下数据子包，不新增 §13 包（I-evergreen.system_assurance-158614-001）
+cmd/eg/arch_test.go	tests/_staged/cmd/eg/arch_test.go	keep	unit	cli-core	go	unit.cmd.eg	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+cmd/eg/main_test.go	tests/_staged/cmd/eg/main_test.go	keep	unit	cli-core	go	unit.cmd.eg	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/apply_inplan_test.go	tests/_staged/internal/cli/apply_inplan_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/apply_test.go	tests/_staged/internal/cli/apply_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/bench_test.go	tests/_staged/internal/cli/bench_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/capture_test.go	tests/_staged/internal/cli/capture_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/capture_transaction_test.go	tests/_staged/internal/cli/capture_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/card_test.go	tests/_staged/internal/cli/card_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/check_test.go	tests/_staged/internal/cli/check_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/cli_test.go	tests/_staged/internal/cli/cli_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/context_test.go	tests/_staged/internal/cli/context_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/contract_static_test.go	tests/_staged/internal/cli/contract_static_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/convergence_test.go	tests/_staged/internal/cli/convergence_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/delete_release_order_test.go	tests/_staged/internal/cli/delete_release_order_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/delete_test.go	tests/_staged/internal/cli/delete_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/delete_transaction_test.go	tests/_staged/internal/cli/delete_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/deprecate_test.go	tests/_staged/internal/cli/deprecate_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/docs_test.go	tests/_staged/internal/cli/docs_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/edit_test.go	tests/_staged/internal/cli/edit_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/exit5_classify_test.go	tests/_staged/internal/cli/exit5_classify_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/exit5_test.go	tests/_staged/internal/cli/exit5_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/exitcode_test.go	tests/_staged/internal/cli/exitcode_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_after_write_capture_test.go	tests/_staged/internal/cli/index_after_write_capture_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_after_write_delete_test.go	tests/_staged/internal/cli/index_after_write_delete_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_after_write_mark_reviewed_test.go	tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_after_write_proposal_test.go	tests/_staged/internal/cli/index_after_write_proposal_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_after_write_undelete_test.go	tests/_staged/internal/cli/index_after_write_undelete_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_lock_test.go	tests/_staged/internal/cli/index_lock_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_reserved_read_test.go	tests/_staged/internal/cli/index_reserved_read_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/index_test.go	tests/_staged/internal/cli/index_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/initconfig_test.go	tests/_staged/internal/cli/initconfig_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/mark_reviewed_transaction_test.go	tests/_staged/internal/cli/mark_reviewed_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/markers_test.go	tests/_staged/internal/cli/markers_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/page_test.go	tests/_staged/internal/cli/page_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/precheck_wire_test.go	tests/_staged/internal/cli/precheck_wire_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_approve_test.go	tests/_staged/internal/cli/proposal_approve_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_approve_transaction_test.go	tests/_staged/internal/cli/proposal_approve_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_cmd_test.go	tests/_staged/internal/cli/proposal_cmd_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_execution_test.go	tests/_staged/internal/cli/proposal_execution_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_new_transaction_test.go	tests/_staged/internal/cli/proposal_new_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_reject_transaction_test.go	tests/_staged/internal/cli/proposal_reject_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/proposal_test.go	tests/_staged/internal/cli/proposal_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reconcile_commit_test.go	tests/_staged/internal/cli/reconcile_commit_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reconcile_repair_reviewed_test.go	tests/_staged/internal/cli/reconcile_repair_reviewed_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reconcile_repair_stale_test.go	tests/_staged/internal/cli/reconcile_repair_stale_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reconcile_report_field_test.go	tests/_staged/internal/cli/reconcile_report_field_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reconcile_test.go	tests/_staged/internal/cli/reconcile_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reconcile_transaction_test.go	tests/_staged/internal/cli/reconcile_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/recover_barrier_exit5_test.go	tests/_staged/internal/cli/recover_barrier_exit5_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/recover_hook_test.go	tests/_staged/internal/cli/recover_hook_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/rel_add_test.go	tests/_staged/internal/cli/rel_add_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/rel_remove_test.go	tests/_staged/internal/cli/rel_remove_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/rel_test.go	tests/_staged/internal/cli/rel_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/report_test.go	tests/_staged/internal/cli/report_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reserved_runtime_exit5_test.go	tests/_staged/internal/cli/reserved_runtime_exit5_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/reviewed_test.go	tests/_staged/internal/cli/reviewed_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/search_test.go	tests/_staged/internal/cli/search_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/skill_test.go	tests/_staged/internal/cli/skill_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/t061_final_review_test.go	tests/_staged/internal/cli/t061_final_review_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/undelete_test.go	tests/_staged/internal/cli/undelete_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/undelete_transaction_test.go	tests/_staged/internal/cli/undelete_transaction_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/userrequest_test.go	tests/_staged/internal/cli/userrequest_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/cli/visibility_matrix_test.go	tests/_staged/internal/cli/visibility_matrix_test.go	keep	unit	cli-core	go	unit.internal.cli	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/git/exitcode_test.go	tests/_staged/internal/git/exitcode_test.go	keep	unit	git-integrity	go	unit.internal.git	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/git/git_test.go	tests/_staged/internal/git/git_test.go	keep	unit	git-integrity	go	unit.internal.git	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/git/log_test.go	tests/_staged/internal/git/log_test.go	keep	unit	git-integrity	go	unit.internal.git	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/build_test.go	tests/_staged/internal/index/build_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/consistency_test.go	tests/_staged/internal/index/consistency_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/corrupt_test.go	tests/_staged/internal/index/corrupt_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/incremental_test.go	tests/_staged/internal/index/incremental_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/purge_test.go	tests/_staged/internal/index/purge_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/rebuild_test.go	tests/_staged/internal/index/rebuild_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/reserved_test.go	tests/_staged/internal/index/reserved_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/schema_test.go	tests/_staged/internal/index/schema_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/scratch_test.go	tests/_staged/internal/index/scratch_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/index/watermark_test.go	tests/_staged/internal/index/watermark_test.go	keep	unit	index-search	go	unit.internal.index	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/mdfile/block_merge_test.go	tests/_staged/internal/mdfile/block_merge_test.go	keep	unit	storage-markdown	go	unit.internal.mdfile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/mdfile/fuzz_test.go	tests/_staged/internal/mdfile/fuzz_test.go	keep	unit	storage-markdown	go	unit.internal.mdfile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/mdfile/mdfile_test.go	tests/_staged/internal/mdfile/mdfile_test.go	keep	unit	storage-markdown	go	unit.internal.mdfile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/model/frontmatter_test.go	tests/_staged/internal/model/frontmatter_test.go	keep	unit	storage-markdown	go	unit.internal.model	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/model/model_test.go	tests/_staged/internal/model/model_test.go	keep	unit	storage-markdown	go	unit.internal.model	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/model/stale_test.go	tests/_staged/internal/model/stale_test.go	keep	unit	storage-markdown	go	unit.internal.model	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/model/status_values_test.go	tests/_staged/internal/model/status_values_test.go	keep	unit	storage-markdown	go	unit.internal.model	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/atomic_finalizer_test.go	tests/_staged/internal/plan/atomic_finalizer_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/atomic_test.go	tests/_staged/internal/plan/atomic_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/authorize_test.go	tests/_staged/internal/plan/authorize_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/m3_test.go	tests/_staged/internal/plan/m3_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/mark_reviewed_w7_test.go	tests/_staged/internal/plan/mark_reviewed_w7_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/matrix_contract_test.go	tests/_staged/internal/plan/matrix_contract_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/matrix_test.go	tests/_staged/internal/plan/matrix_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/plan_test.go	tests/_staged/internal/plan/plan_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/precheck_test.go	tests/_staged/internal/plan/precheck_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/remove_relation_idempotent_test.go	tests/_staged/internal/plan/remove_relation_idempotent_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/set_stale_test.go	tests/_staged/internal/plan/set_stale_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/plan/state_write_m3_test.go	tests/_staged/internal/plan/state_write_m3_test.go	keep	unit	proposal	go	unit.internal.plan	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/execution_test.go	tests/_staged/internal/proposal/execution_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/id_test.go	tests/_staged/internal/proposal/id_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/impact_test.go	tests/_staged/internal/proposal/impact_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/reachability_test.go	tests/_staged/internal/proposal/reachability_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/schema_test.go	tests/_staged/internal/proposal/schema_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/state_test.go	tests/_staged/internal/proposal/state_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/store_test.go	tests/_staged/internal/proposal/store_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/proposal/superseded_test.go	tests/_staged/internal/proposal/superseded_test.go	keep	unit	proposal	go	unit.internal.proposal	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/adr20_isolation_test.go	tests/_staged/internal/query/adr20_isolation_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/backend_test.go	tests/_staged/internal/query/backend_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/card_test.go	tests/_staged/internal/query/card_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/context_test.go	tests/_staged/internal/query/context_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/diagnostic_placement_test.go	tests/_staged/internal/query/diagnostic_placement_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/filter/unreviewed_test.go	tests/_staged/internal/query/filter/unreviewed_test.go	keep	unit	card-query	go	unit.internal.query.filter	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/markers_test.go	tests/_staged/internal/query/markers_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/page_test.go	tests/_staged/internal/query/page_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/proposal_test.go	tests/_staged/internal/query/proposal_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/rank_test.go	tests/_staged/internal/query/rank_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/relation_test.go	tests/_staged/internal/query/relation_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/reverse_test.go	tests/_staged/internal/query/reverse_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/scan_test.go	tests/_staged/internal/query/scan_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/search_test.go	tests/_staged/internal/query/search_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/query/visibility_test.go	tests/_staged/internal/query/visibility_test.go	keep	unit	card-query	go	unit.internal.query	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/check_test.go	tests/_staged/internal/reconcile/check_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/finding_test.go	tests/_staged/internal/reconcile/finding_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r1_git_test.go	tests/_staged/internal/reconcile/r1_git_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r2_reviewed_test.go	tests/_staged/internal/reconcile/r2_reviewed_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r3_relation_test.go	tests/_staged/internal/reconcile/r3_relation_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r4_structure_test.go	tests/_staged/internal/reconcile/r4_structure_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r5_domain_test.go	tests/_staged/internal/reconcile/r5_domain_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r6_recap_test.go	tests/_staged/internal/reconcile/r6_recap_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/r7_support_test.go	tests/_staged/internal/reconcile/r7_support_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/reconcile/strict_test.go	tests/_staged/internal/reconcile/strict_test.go	keep	unit	reconcile-takeover	go	unit.internal.reconcile	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/report/reconcile_test.go	tests/_staged/internal/report/reconcile_test.go	keep	unit	ops-diagnostics	go	unit.internal.report	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/report/report_m3_test.go	tests/_staged/internal/report/report_m3_test.go	keep	unit	ops-diagnostics	go	unit.internal.report	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/report/report_test.go	tests/_staged/internal/report/report_test.go	keep	unit	ops-diagnostics	go	unit.internal.report	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/report/support_check_test.go	tests/_staged/internal/report/support_check_test.go	keep	unit	ops-diagnostics	go	unit.internal.report	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/rules/rules_test.go	tests/_staged/internal/rules/rules_test.go	keep	unit	capture-ingest	go	unit.internal.rules	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/atomic_test.go	tests/_staged/internal/store/atomic_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/b3_authorization_test.go	tests/_staged/internal/store/b3_authorization_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/merge_test.go	tests/_staged/internal/store/merge_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/proposal_test.go	tests/_staged/internal/store/proposal_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/receipt_test.go	tests/_staged/internal/store/receipt_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/relations_test.go	tests/_staged/internal/store/relations_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/remove_relation_test.go	tests/_staged/internal/store/remove_relation_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/section_write_test.go	tests/_staged/internal/store/section_write_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/source_test.go	tests/_staged/internal/store/source_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/state_write_deleted_test.go	tests/_staged/internal/store/state_write_deleted_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/state_write_stale_test.go	tests/_staged/internal/store/state_write_stale_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/state_write_test.go	tests/_staged/internal/store/state_write_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/store_test.go	tests/_staged/internal/store/store_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/store/writers_test.go	tests/_staged/internal/store/writers_test.go	keep	unit	storage-markdown	go	unit.internal.store	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/commit_test.go	tests/_staged/internal/txn/commit_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/concurrent_conflict_test.go	tests/_staged/internal/txn/concurrent_conflict_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/helpers_test.go	tests/_staged/internal/txn/helpers_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/id_test.go	tests/_staged/internal/txn/id_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/journal_strict_test.go	tests/_staged/internal/txn/journal_strict_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/journal_test.go	tests/_staged/internal/txn/journal_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/lock_test.go	tests/_staged/internal/txn/lock_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/marker_strict_test.go	tests/_staged/internal/txn/marker_strict_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/recover_test.go	tests/_staged/internal/txn/recover_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/txn/safedir_test.go	tests/_staged/internal/txn/safedir_test.go	keep	unit	txn-atomicity	go	unit.internal.txn	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+internal/version/version_test.go	tests/_staged/internal/version/version_test.go	keep	unit	dist-install	go	unit.internal.version	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录
+skill/skill_test.go	tests/_staged/skill/skill_test.go	keep	unit	docs-cli	go	unit.skill	m1-m6	白盒同包测试；私有符号断言原样保留，运行期由 materializer 回填包目录

@@ -1,0 +1,97 @@
+package index
+
+// 读路径取数 API（M5 索引架构合同 §7.4 / §8.4；T-…-067）。
+//
+// 本文件是**只读**的：`mode=ro` 打开，零 DDL、零写入、零 PRAGMA 变更。它只把
+// `cards` / `relations` 两张表如实读回成 build.go 已定义的中性 DTO，**不做任何解释**
+// （不判可见性、不打分、不排序成业务序、不产诊断码）——那些都归查询层的既有单点。
+//
+// 为什么读 API 落在 index 包而不是查询层自己开库：
+//   - SQLite 的驱动名、DSN、只读模式、表名与列序是 index 包的**私有实现细节**
+//     （schema.go 是建表 DDL 的唯一落点）。查询层若自己 `sql.Open`，就出现了第二处
+//     索引物理布局知识，schema 一改两处漂移。
+//   - 合同 §13 的依赖方向是 `query → index`（S4 读路径），不是反向：index 仍然
+//     不解析 Markdown、不算 hash、不碰权威文件。
+//
+// **不含正文**：`cards_fts` 的 `body` 列不在本文件的返回值里。读路径要正文（五分区、
+// 匹配打分）时一律回权威 Markdown 逐字取字节 —— 索引里的正文副本只服务 FTS 召回，
+// 绝不作为「正文是什么」的答案（合同 §1.1 P-2：Markdown 是唯一权威来源）。
+
+import (
+	"database/sql"
+)
+
+// ReadCards 读回 `cards` 表全部行，按 `id` 升序（与 build.go 的写入序同口径，
+// 因此同一个库两次读回逐字相同）。
+//
+// 返回的 Card 里 `Body` 恒为空串（见本文件顶部「不含正文」），其余列逐字带出：
+// 调用方据此判可见性（`deprecated` / `deleted`）、做 `replaced_by` 反查、拿到 `path`
+// 之后再决定要不要回 Markdown 解析那一个文件。
+func ReadCards(dir string) ([]Card, error) {
+	db, err := openDB(dbPathIn(dir), true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.Query(`SELECT id, path, domain, title, status, deprecated, deleted,
+  replaced_by, content_hash, mtime_unix FROM ` + TableCards + ` ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []Card{}
+	for rows.Next() {
+		var (
+			c                 Card
+			deprecated, delet int
+		)
+		if err := rows.Scan(&c.ID, &c.Path, &c.Domain, &c.Title, &c.Status,
+			&deprecated, &delet, &c.ReplacedBy, &c.ContentHash, &c.MTimeUnix); err != nil {
+			return nil, err
+		}
+		c.Deprecated = deprecated != 0
+		c.Deleted = delet != 0
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReadRelations 读回 `relations` 表全部正向边，按 `(src_id, verb, dst_id)` 升序。
+//
+// 表里**只有正向边**（合同 §4.1）：反向视图由调用方按 `dst_id` 反查得到，
+// 本函数不补对称条目、不去重合并（`opposing` 单向存储口径 EG-CVG-05 不因索引而变）。
+//
+// `Reason` 不在返回值里（`relations` 表没有这一列）：关系理由的权威载体是卡片
+// frontmatter，调用方拿到 `SrcPath` 后回 Markdown 取逐字原值。
+func ReadRelations(dir string) ([]Relation, error) {
+	db, err := openDB(dbPathIn(dir), true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = db.Close() }()
+	return readRelationsFrom(db)
+}
+
+func readRelationsFrom(db *sql.DB) ([]Relation, error) {
+	rows, err := db.Query(`SELECT src_id, verb, dst_id, src_path, line FROM ` +
+		TableRelations + ` ORDER BY src_id, verb, dst_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []Relation{}
+	for rows.Next() {
+		var r Relation
+		if err := rows.Scan(&r.SrcID, &r.Verb, &r.DstID, &r.SrcPath, &r.Line); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

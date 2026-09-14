@@ -1,0 +1,32 @@
+# 构建产物
+/bin/
+/dist/
+
+# Go 测试与分析产物
+*.test
+*.out
+*.prof
+
+# 编辑器 / OS
+.DS_Store
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+!.env.example
+
+# 注意：Go fuzz 语料（internal/*/testdata/fuzz/）是回归资产，必须入库，不在此忽略。
+
+# 测试体系运行期产物（tests/runner）：staging 独立副本与报告，均为可重建物
+/.tests-staging/
+/tests/_report/
+
+# Python 缓存
+.venv/
+__pycache__/
+*.pyc
+
+# 覆盖率与临时输出
+coverage.out
+coverage.html

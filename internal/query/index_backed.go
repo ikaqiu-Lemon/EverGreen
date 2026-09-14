@@ -1,0 +1,431 @@
+package query
+
+// [S4] 索引后端：**候选集召回 + 按需解析**（M5 索引架构合同 §5.1 / §7.4；T-…-067）。
+//
+// 本文件只做两件事，且都不产生新的业务口径：
+//
+//	① 探测（probeIndex）：索引现在能不能用、是不是落后于权威 —— 结论一律来自
+//	   internal/index 的既有单点（Inspect / ReadFiles / QuickUnchanged），
+//	   本文件不写第二套健康判定，也不写 W22/W23/W24 的字面量；
+//	② 取数（indexVault）：用索引给出的**候选集**决定「该解析哪些权威文件」，
+//	   把结果折成与 VaultScan **同构**的 ScanResult 交给下游。
+//
+// 下游一个函数都不用改口径：可见性过滤（VisibleEndpoints）、`[失效]` 标记（markers.go）、
+// 正反向关系（RelationsOut / RelationsIn / SortEdges）、悬空与重复诊断
+// （danglingDiagnostics / duplicateIDDiagnostics）、Q1–Q4 组装（diagnostic.go）
+// **一律复用既有实现**，本文件不重新实现其中任何一个（风险 R-25）。
+//
+// 计数单源（I-…-002「计数双源」教训）：`ScannedFiles` / `SkippedFiles` 的口径与扫描
+// 后端**同一个定义** —— ScannedFiles = 本次扫描面上的 `.md` 文件总数、
+// SkippedFiles = 其中解析不了的个数，且守恒式 `Scanned == len(Cards)+len(Notes)+Skipped`
+// 在两条后端上都成立（TestIndexBackendCountsConserved）。索引侧**不自造**第二套计数：
+// 索引的 `files` 表只用来判「有没有变」，绝不用来回答「扫了几个文件」。
+//
+// 陈旧判定（A-44，逐字遵守，无本地变体）：水位线 = `(head, files_hash)`，
+// `files_hash` 由**每文件 content_hash** 聚合；`(size, mtime)` 只作**快路径过滤**
+// （命中 ⇒ 允许沿用索引里的 content_hash），三者任一不一致就**回权威重算 content_hash
+// 再判定** —— 因此「摸了一下 mtime 但内容没变」必须仍判新鲜，`mtime` 不作最终结论。
+//
+// 判定实现**不在本文件**：三态结论一律来自 `index.Check`，与 `eg index status`（默认
+// 快路径）**同一个函数**，故「什么算陈旧」在读路径与体检命令两处不可能分叉。本文件只
+// 负责把「权威现态」按同一口径组装出来（currentWatermarkInput）。
+//
+// `content_hash` 与 `head` 这两处口径分别属 `internal/store`（B3）与 `internal/git`，
+// 查询层依施工索引 §13 一个都不能 import ⇒ 由命令层**注入**（backend.go 的 IndexDeps）。
+// 没注入就证不出新鲜度，**证不出就不用索引**（走扫描，且不算降级：见
+// ReasonFreshnessUnverifiable）。宁可多扫一遍，绝不拿证不出新鲜的索引出结果。
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/ikaqiu-Lemon/EverGreen/internal/index"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
+)
+
+// errIndexBehindAuthority 是「索引落后于权威」的哨兵：indexVault 在按需解析时认出
+// 「权威库有、索引 files 表没有」的卡即 wrap 它，调用方（degrade.go 的 loadVault）
+// 据此把本次读整体退回扫描后端并留痕 W22（陈旧），**不**把它变成命令失败。
+var errIndexBehindAuthority = errors.New("索引落后于权威 Markdown")
+
+// indexProbe 是一次读路径索引探测的结果（只读，零副作用）。
+type indexProbe struct {
+	// dir 是 `.index/` 绝对路径；root 是 vault 根。
+	dir  string
+	root string
+	// diag 是 internal/index 的只读体检结论（healthy / missing / corrupt）。
+	diag index.Diagnosis
+	// present 是**现态**扫描面上的 .md 文件（stat 走查，不读字节），按 path 升序。
+	present []index.File
+	// indexed 是索引 `files` 表的记录（按 path 索引）。它与 `cards` 表**不是同一个集合**：
+	// 构建侧的快照来自扫描结果，故同 ID 重复的两份文件都在 `files` 里，`cards` 因主键
+	// 只留一份 —— 「present 里有、files 里没有」才是「索引没见过这个文件」。
+	indexed map[string]index.File
+	// con 是 `index.Check` 给出的完整一致性结论（仅在新鲜度**判得出来**时有意义，
+	// 即 diag.Usable() 且 !unverifiable）。stale / staleReason / staleDetail 是它的
+	// 三格投影，供 SelectBackend 直接取用 —— 不是第二套判定。
+	con         index.Consistency
+	stale       bool
+	staleReason string
+	staleDetail string
+	// unverifiable 为真 = 本次读**证不出**索引的新鲜度（未注入 A-44 口径，或权威
+	// Markdown 读不动）；unverifiableWhy 是逐字原因。此时 con 为零值。
+	unverifiable    bool
+	unverifiableWhy string
+}
+
+// freshnessUnknown 是「新鲜度未判定」的内部取值（空串）。
+//
+// 刻意**不**复用 index 的三态：Freshnesses() 是索引面的封闭集合，三值各自是一项事实
+// 断言（跟得上 / 落后了 / 库不可用），而「本次读证不出来」不是关于索引的事实，是关于
+// 本次调用的事实。硬塞进三态里会让某一个码变成含义模糊的兜底值。
+// 它只出现在包内探测结论里，不进任何 CLI 输出。
+const freshnessUnknown = index.Freshness("")
+
+// freshness 把探测结论折成合同 §5.2 的三态（取值一律来自 internal/index 的封闭集合）。
+func (p indexProbe) freshness() index.Freshness {
+	switch {
+	case !p.diag.Usable():
+		return index.FreshnessUnusable
+	case p.unverifiable:
+		return freshnessUnknown // 未判定：既不宣称新鲜，也不诬告陈旧
+	case p.stale:
+		return index.FreshnessStale
+	default:
+		return index.FreshnessFresh
+	}
+}
+
+// probeIndex 探测索引可用性与新鲜度。**永不返回 error**：索引异常是诊断不是失败
+// （合同 §6.1），走查权威目录失败时也只保守判为「不可用于本次读」。
+func probeIndex(root string, deps IndexDeps) indexProbe {
+	p := indexProbe{root: root, dir: index.DirPath(root)}
+	p.diag = index.Inspect(p.dir)
+	present, err := statCardFiles(root)
+	if err != nil {
+		// 连扫描面都走查不动：这次读证不出索引新鲜（扫描后端会在读字节时把同一个错误如实上抛）。
+		return p.unverifiableBecause(fmt.Sprintf("权威目录走查失败：%v", err))
+	}
+	p.present = present
+	if !p.diag.Usable() {
+		return p // 库不可用时无从比对新鲜度（Freshness 由 diag 决定为 unusable）。
+	}
+	indexed, err := index.ReadFiles(p.dir)
+	if err != nil {
+		return p.unverifiableBecause(fmt.Sprintf("索引 files 表读不出来：%v", err))
+	}
+	p.indexed = make(map[string]index.File, len(indexed))
+	for _, f := range indexed {
+		p.indexed[f.Path] = f
+	}
+	if !deps.complete() {
+		return p.unverifiableBecause("本次调用未注入 A-44 水位线口径" +
+			"（B3 content_hash 与 Git HEAD 由命令层注入，见 IndexDeps）")
+	}
+	files, err := currentWatermarkInput(root, deps, p.indexed, present)
+	if err != nil {
+		return p.unverifiableBecause(fmt.Sprintf("权威 Markdown 读不动，无法算现态水位线：%v", err))
+	}
+	// 三态结论**只从这一处来**：与 `eg index status`（默认快路径）同一个 index.Check。
+	p.con = index.Check(p.dir, index.Current{Head: deps.Head(), Files: files})
+	p.stale = p.con.Stale()
+	p.staleReason, p.staleDetail = p.con.Reason, p.con.Message
+	return p
+}
+
+// unverifiableBecause 把探测结论标成「新鲜度证不出来」并附逐字原因。
+//
+// 刻意**不**标成陈旧：陈旧是对索引的一项事实断言（「它落后了」），而这里的事实是
+// 「本次读没法证明它跟得上」——两者不是同一件事，混用会让 W22 变成一个含义模糊的码。
+func (p indexProbe) unverifiableBecause(why string) indexProbe {
+	p.unverifiable, p.unverifiableWhy = true, why
+	return p
+}
+
+// currentWatermarkInput 组装 `index.Check` 需要的**权威现态**（合同 §5.1 / A-44）。
+//
+// 口径与 `eg index status`（默认快路径）**逐格相同**，因此「什么算陈旧」在读路径与
+// 体检命令两处不可能分叉：
+//
+//	① 只有**解析得动的知识卡**进水位线：解析不了的文件在 `eg index status` 那边也不在
+//	   `scan.Cards` 里（Q1 已经如实登记过），它们不算陈旧、也不算新鲜；
+//	② `(path, size, mtime)` 与 `files` 表逐格一致 ⇒ 沿用索引里的 `content_hash`
+//	   （A-44 允许且指定的快路径，省掉一次全库读盘）；
+//	③ 三者任一不一致 ⇒ **回权威重算** `content_hash` 再判定 —— A-44 逐字禁止
+//	   「以 mtime 作最终结论」，因此「摸了一下 mtime 但内容没变」必须仍判 fresh。
+//
+// `content_hash` 由注入的 B3 口径（store.ContentHash）计算：查询层不自造第二套 hash。
+// 返回 error 只有一种情形：**权威 Markdown 读不动**（磁盘 / 权限）——那与索引无关，
+// 调用方据此判为「新鲜度证不出来」并走扫描，由扫描后端把同一个错误如实上抛。
+func currentWatermarkInput(root string, deps IndexDeps, indexed map[string]index.File,
+	present []index.File) ([]index.File, error) {
+	files := make([]index.File, 0, len(present))
+	for _, cur := range present {
+		if prev, ok := indexed[cur.Path]; ok && index.QuickUnchanged(prev, cur) {
+			files = append(files, index.File{Path: cur.Path, ContentHash: prev.ContentHash,
+				Size: cur.Size, MTimeUnix: cur.MTimeUnix})
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(cur.Path)))
+		if err != nil {
+			return nil, err
+		}
+		if _, _, ok := CardEntryFrom(cur.Path, domainOfPath(cur.Path), raw); !ok {
+			continue // 解析不动 ⇒ 不进水位线（与 status 侧的 scan.Cards 口径一致）
+		}
+		files = append(files, index.File{Path: cur.Path, ContentHash: deps.Hash(raw),
+			Size: cur.Size, MTimeUnix: cur.MTimeUnix})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
+}
+
+// statCardFiles 走查**知识卡扫描面**上的全部 `.md`（只 stat 不读字节），按 path 升序。
+//
+// 扫描面与 VaultScan 的卡面逐字相同（`domains/<d>/knowledge/**`，跳 `.git` / `.index` /
+// `proposals`）：两者共用 resolveDomains + walkMarkdownPaths 这一处遍历实现，
+// 因此「哪些文件算在内」不可能在两条后端上分叉。
+func statCardFiles(root string) ([]index.File, error) {
+	domains, err := resolveDomains(root, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := []index.File{}
+	for _, d := range domains {
+		dir := filepath.Join(root, dirDomains, d, dirKnowledge)
+		err := walkMarkdownPaths(dir, root, func(rel, full string) error {
+			st, err := os.Stat(full)
+			if err != nil {
+				return err
+			}
+			out = append(out, index.File{
+				Path: rel, Size: st.Size(), MTimeUnix: st.ModTime().Unix(),
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
+// parsePlan 是「这次索引读要回权威解析哪些文件」的完整计划（由 Need 派生，见 planFor）。
+type parsePlan struct {
+	// focus 是焦点卡 ID（`card show` / `rel`）；search 无焦点即空串。
+	focus string
+	// all 为真 = 候选集取**全集**并逐个解析（search：需要 tags / updated_at / 正文原值）。
+	all bool
+	// domains 限定扫描面（空 = 全库），口径与 ScanOptions.Domains 逐字相同。
+	domains []string
+}
+
+// planFor 把 Need 与本次扫描面折成解析计划：**唯一**的 Need → plan 映射。
+func planFor(need Need, opt ScanOptions) parsePlan {
+	return parsePlan{focus: need.Focus, all: need.FullCardFields, domains: opt.Domains}
+}
+
+// indexVault 用索引后端组装一份与 VaultScan **同构**的 ScanResult。
+//
+// 候选集与「必须回权威解析的文件集」按 plan 决定，两种形态：
+//
+//	① plan.all（`eg search`）：候选集 = 扫描面上的**全部** `.md`，逐个回权威解析。
+//	   保守到底、零窄化 ⇒ 结果集与全量扫描**构造性等价**（同一批文件、同一个
+//	   CardEntryFrom），假阴性在原理上不可能出现。索引在这条路径上提供的事实是
+//	   「在册卡集合」与「哪些文件索引里没有」，不提供也不假装提供 tags / updated_at。
+//	② plan.focus（`eg card show` / `eg rel`）：只解析
+//
+//	   {焦点卡自身} ∪ {relations.dst_id = focus 的来源卡} ∪ {索引未收录的文件}
+//
+// 三段的必要性与充分性（等价性证明，逐条对应下游消费者）：
+//
+//	① 焦点卡：五分区正文 / tags / 时间戳 / sources[] / 正向 relations[] 全部只在它自己的
+//	   文件里 ⇒ 解析它一个文件即可，且必须解析（索引不存正文与 reason）；
+//	② 反向来源卡：`relations` 表存**全部**正向边，按 `dst_id` 反查即得「谁指向了 focus」的
+//	   精确集合（无假阴性）；每条边的 `reason` 回源文件取逐字原值 ⇒ 必须解析这几个文件；
+//	③ 索引未收录的文件：`files` / `cards` 只收**解析得动**的卡（构建侧的快照就是扫描结果，
+//	   见 internal/cli 的 indexSnapshotWith），故「现态走查到但索引 cards 里没有」的文件恰是
+//	   「解析不了的（Q1 / skipped）」「同 ID 重复被主键收掉的第二份」与「索引建好之后**新增**
+//	   的卡」三类 ⇒ 解析它们才能如实复现 Q1 与 SkippedFiles 计数、「同 ID 重复」诊断
+//	   （按路径字典序取小者的定位口径），以及把新增卡**如实纳入结果**而不是漏掉。
+//
+// 其余卡只需要 `id / path / domain / title / status / deprecated / deleted` 与**正向边**
+// 这几项事实（可见性过滤、悬空判定、反向来源定位都只用到它们），全部在索引里，
+// 因此以**摘要条目**（stub）进入 Cards：不读它们的字节，也不假装读过。
+//
+// 摘要条目的边界（写死在类型里而不是靠自律）：stub 的 Raw / Doc 恒为 nil、
+// Tags / Sources 恒为空、时间戳恒为空串 —— 任何需要这些字段的读路径都不可能只拿 stub
+// 就产出结果：`card show` / `rel` 只对**焦点卡与反向来源卡**取这些字段（都已解析），
+// 而 `eg search` 走 plan.all，一条 stub 都不会留到结果里（TestIndexBackendNoStubLeaks）。
+func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) {
+	cards, err := index.ReadCards(p.dir)
+	if err != nil {
+		return nil, err
+	}
+	rels, err := index.ReadRelations(p.dir)
+	if err != nil {
+		return nil, err
+	}
+	// 扫描面收窄到 plan.domains（口径与 VaultScan 的 ScanOptions.Domains 逐字相同：
+	// 领域是**目录事实**，`domains/<d>/knowledge/**` 前缀命中即在面内）。
+	present := filterByDomains(p.present, plan.domains)
+
+	// ① 摘要条目：每张索引在册（且在扫描面内）的卡一条，正向边由 relations 表按 src_id 归并。
+	relBySrc := map[string][]model.Relation{}
+	for _, r := range rels {
+		relBySrc[r.SrcID] = append(relBySrc[r.SrcID], model.Relation{
+			Type: model.RelationType(r.Verb), Target: model.CardID(r.DstID),
+		})
+	}
+	indexedPaths := make(map[string]bool, len(cards))
+	entries := make([]CardEntry, 0, len(cards))
+	for _, c := range cards {
+		if !inDomains(c.Path, plan.domains) {
+			continue
+		}
+		indexedPaths[c.Path] = true
+		entries = append(entries, CardEntry{
+			ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title,
+			Status: c.Status, Deprecated: c.Deprecated, Deleted: c.Deleted,
+			Relations: relBySrc[c.ID],
+		})
+	}
+
+	// ② 必须解析的权威文件：索引未收录者（Q1 / 重复 / 新增）+ 焦点卡 + 反向来源卡；
+	//    plan.all 时是扫描面上的全部文件。
+	res := &ScanResult{Cards: []CardEntry{}, Notes: []NoteEntry{}, Diagnostics: []Diagnostic{}}
+	res.ScannedFiles = len(present)
+	parsed := map[string]CardEntry{}
+	// unparsable 是本次已判 Q1 的文件：它们**不是**索引的问题（`files` 表天生不收
+	// 解析不了的文件），因此既不重复解析，也绝不升级成「索引落后于权威」。
+	unparsable := map[string]bool{}
+	for _, f := range present {
+		if indexedPaths[f.Path] {
+			continue
+		}
+		entry, bad, ok := parseCardAt(root, f.Path)
+		if !ok {
+			res.skip(bad) // Q1 与 SkippedFiles 同时发生（口径同扫描后端）
+			unparsable[f.Path] = true
+			continue
+		}
+		if _, known := p.indexed[f.Path]; !known {
+			// 解析得动、却连 `files` 表都没有它 ⇒ 索引建好之后新增的卡 ⇒ 索引确实陈旧。
+			// 不在这里「顺手带上」：读路径的降级语义是**整体**退回扫描（合同 §5.2），
+			// 半索引半扫描的混合态既说不清也没法复算。
+			return nil, fmt.Errorf("%w：%s 在权威库里存在且可解析，索引 files 表里没有",
+				errIndexBehindAuthority, f.Path)
+		}
+		parsed[f.Path] = entry
+		entries = append(entries, entry)
+	}
+	need := map[string]bool{}
+	if plan.all {
+		for _, f := range present {
+			if unparsable[f.Path] {
+				continue // 已记 Q1、已计入跳过：口径与扫描后端逐字相同
+			}
+			need[f.Path] = true
+		}
+	}
+	if plan.focus != "" {
+		for _, e := range entries {
+			if e.ID == plan.focus {
+				need[e.Path] = true
+			}
+		}
+		for _, r := range rels {
+			if r.DstID == plan.focus && inDomains(r.SrcPath, plan.domains) {
+				need[r.SrcPath] = true
+			}
+		}
+	}
+	for rel := range need {
+		if _, done := parsed[rel]; done {
+			continue
+		}
+		entry, _, ok := parseCardAt(root, rel)
+		if !ok {
+			// 索引说这里有一张可解析的卡，现在解析不了 ⇒ 索引与权威已经不一致。
+			// 这不是「静默跳过」：调用方（degrade.go 的 loadVault）会据此把本次读整体
+			// 退回扫描后端，由权威 Markdown 给出唯一答案，并如实留痕 W22 + Q5。
+			return nil, fmt.Errorf("索引记录的卡文件 %s 现在解析不了", rel)
+		}
+		parsed[rel] = entry
+	}
+	// 用解析结果覆盖同路径的摘要条目：同一路径只留一条，且优先留「真读过字节」的那条。
+	for i := range entries {
+		if full, ok := parsed[entries[i].Path]; ok {
+			entries[i] = full
+		}
+	}
+
+	// ③ 归一化：与 VaultScan 逐字同序（按 path 升序稳定排序），再走同一套诊断组装。
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	res.Cards = entries
+	res.Diagnostics = append(res.Diagnostics, duplicateIDDiagnostics(res.Cards)...)
+	if len(plan.domains) == 0 {
+		// 悬空引用（Q2）只在**全库**面上判定：与 VaultScan 逐字同一条件
+		// （受限扫描面看不见他域的卡，在那里判 Q2 会把「没扫到」误报成「不存在」）。
+		res.Diagnostics = append(res.Diagnostics, danglingDiagnostics(res.Cards)...)
+	}
+	res.Diagnostics = finalizeDiagnostics(res.Diagnostics)
+	return res, nil
+}
+
+// filterByDomains 把走查到的文件收窄到指定领域（空 = 全库，原样返回）。
+func filterByDomains(files []index.File, domains []string) []index.File {
+	if len(domains) == 0 {
+		return files
+	}
+	out := make([]index.File, 0, len(files))
+	for _, f := range files {
+		if inDomains(f.Path, domains) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// inDomains 判一个 vault 内相对路径是否落在指定领域内（空集合 = 全库，恒真）。
+func inDomains(rel string, domains []string) bool {
+	if len(domains) == 0 {
+		return true
+	}
+	d := domainOfPath(rel)
+	for _, want := range domains {
+		if d == want {
+			return true
+		}
+	}
+	return false
+}
+
+// parseCardAt 读一个卡文件并折成 CardEntry（领域名由 vault 内相对路径推出）。
+//
+// 字节 → 条目的映射复用 CardEntryFrom（全包唯一实现），因此 Q1 文案与字段口径
+// 与扫描后端逐字相同。读不动文件时也走 Q1（与 walkMarkdown 的错误面不同：那里
+// 读失败是整次扫描的 error，这里是单文件降级，故如实记 Q1 而不是中断整次读）。
+func parseCardAt(root, rel string) (CardEntry, Diagnostic, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return CardEntry{}, newQ1(rel, "知识卡不可解析，已跳过：%v", err), false
+	}
+	return CardEntryFrom(rel, domainOfPath(rel), raw)
+}
+
+// domainOfPath 从 `domains/<d>/knowledge/<file>.md` 取领域名（取不到即空串）。
+// 口径与扫描后端一致：领域是**目录事实**，不从 frontmatter 猜。
+func domainOfPath(rel string) string {
+	parts := strings.Split(path.Clean(rel), "/")
+	if len(parts) >= 2 && parts[0] == dirDomains {
+		return parts[1]
+	}
+	return ""
+}

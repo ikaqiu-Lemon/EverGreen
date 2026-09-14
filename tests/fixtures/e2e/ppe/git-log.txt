@@ -1,0 +1,3 @@
+cdd3081 relate(ai-infra): 写入 1 个文件（新建卡 0、补充卡 0、关系 1、未决问题 0）
+9e82cb3 process(ai-infra): 写入 3 个文件（新建卡 1、补充卡 0、关系 1、未决问题 1）
+92de348 capture(ai-infra): 收录 s-20260901-verification-the-key-to-ai

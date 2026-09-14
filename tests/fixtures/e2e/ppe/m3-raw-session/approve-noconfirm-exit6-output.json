@@ -1,0 +1,1 @@
+{"ok":false,"data":{"errors":[{"code":"","level":"error","path":"proposals/p-20260904-001.md","op_index":-1,"message":"eg proposal approve 需要用户二次确认：请重跑并加 --confirm（本次零写入、零 commit，权威 Markdown 完全不变）","target":"p-20260904-001"}]},"warnings":[],"exit_code":6,"status":"failed"}

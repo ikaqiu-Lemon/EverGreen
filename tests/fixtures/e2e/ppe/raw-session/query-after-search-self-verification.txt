@@ -1,0 +1,9 @@
+状态：completed（exit_code=0，ok=true）
+search：query="自验证"，命中 1 张卡（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
+k-20260901-verification-principle  AI 系统只能创建与维护它能自行验证的知识  [ai-infra] ai,method  2026-09-01T23:13:54+08:00
+数据：
+  hits: [{"id":"k-20260901-verification-principle","title":"AI 系统只能创建与维护它能自行验证的知识","domain":"ai-infra","tags":["ai","method"],"status":"active","deprecated":false,"updated_at":"2026-09-01T23:13:54+08:00","created_at":"2026-09-01","path":"domains/ai-infra/knowledge/k-20260901-verification-principle.md","matched_fields":["title","body"],"score":5}]
+  total: 1
+  scanned_files: 2
+  skipped_files: 0
+[rc=0]

@@ -1,0 +1,17 @@
+92cbd15 process(ai-infra): 写入 2 个文件（新建卡 0、补充卡 2、关系 0、未决问题 0）
+ec32ac9 process(ai-infra): 标记 k-20261109-nonparametric-memory 已过目（mark-reviewed）
+706ffcc process(ai-infra): 清空 k-20261109-retriever-recall-bound 的删除标记（undelete）
+51c1509 delete(ai-infra): 逻辑删除 k-20261109-retriever-recall-bound（提案 p-20260904-001）
+f76e7e5 process(ai-infra): 写入 1 个文件（新建卡 0、补充卡 1、关系 0、未决问题 0）
+4101bf2 process(ai-infra): 写入 1 个文件（新建卡 0、补充卡 1、关系 0、未决问题 0）
+9739024 process(ai-infra): 写入 1 个文件（新建卡 0、补充卡 1、关系 0、未决问题 0）
+58ba834 process(ai-infra): 写入 1 个文件（新建卡 0、补充卡 1、关系 0、未决问题 0）
+1745b49 process(ai-infra): 写入 1 个文件（新建卡 0、补充卡 1、关系 0、未决问题 0）
+2fa79a1 relate(ai-infra): 写入 1 个文件（新建卡 0、补充卡 0、关系 1、未决问题 0）
+65a5d76 relate(ai-infra): 写入 1 个文件（新建卡 0、补充卡 1、关系 0、未决问题 0）
+3e5177d relate(ai-infra): 写入 1 个文件（新建卡 0、补充卡 0、关系 1、未决问题 0）
+541be8e proposal(proposals): 批准提案 p-20260904-001
+747635d proposal(proposals): 新建提案 p-20260904-001（k-20261109-retriever-recall-bound）
+e20c7d6 process(ai-infra): 写入 6 个文件（新建卡 4、补充卡 0、关系 4、未决问题 1）
+1aa2b0b capture(ai-infra): 收录 s-20261109-retrieval-augmented-generation-for-knowledge-int
+67c19db init(ai-infra): 初始化 vault 骨架

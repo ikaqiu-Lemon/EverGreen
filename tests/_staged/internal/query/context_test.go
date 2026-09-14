@@ -1,0 +1,606 @@
+package query_test
+
+// T-…-010 的 internal/query 侧验收：白名单组装、他域隔离、失效卡排除、
+// EG-NOTE-04 字段级断言、content_hash 与 store 重算交叉一致、打分确定性、只读零副作用。
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
+)
+
+// —— 夹具：一个手写的最小 vault（字节直写，不经写口，保证用例与写路径解耦）——
+
+const srcDemo = `---
+id: s-20260412-demo
+url: https://example.com/attention
+title: 注意力机制入门
+saved_at: '2026-04-12T09:00:00+08:00'
+---
+
+# 注意力机制入门
+
+正文：Attention 把查询与键值配对。
+`
+
+const noteDemo = `---
+id: n-20260412-demo
+source: s-20260412-demo
+created_at: '2026-04-12'
+updated_at: '2026-04-12T09:30:00+08:00'
+---
+
+## 原文提炼
+
+- 注意力机制入门的要点
+`
+
+const cardAttention = `---
+id: c-20260412-attention
+title: 注意力机制
+status: active
+created_at: '2026-04-12'
+updated_at: '2026-04-12T10:00:00+08:00'
+tags:
+  - 注意力
+  - transformer
+---
+
+## 定义
+`
+
+const cardOther = `---
+id: c-20260412-unrelated
+title: 磁盘调度
+status: active
+created_at: '2026-04-12'
+updated_at: '2026-04-12T10:00:00+08:00'
+---
+
+## 定义
+`
+
+const cardDeprecated = `---
+id: c-20260412-old
+title: 注意力机制旧版
+status: deprecated
+created_at: '2026-04-12'
+updated_at: '2026-04-12T10:00:00+08:00'
+---
+
+## 定义
+`
+
+// 他域同标题卡：领域由目录决定，绝不能出现在 ai-infra 的上下文里（EG-DOM-02 / EG-CHK-03）。
+const cardCrossDomain = `---
+id: c-20260412-crossdomain
+title: 注意力机制
+status: active
+created_at: '2026-04-12'
+updated_at: '2026-04-12T10:00:00+08:00'
+---
+
+## 定义
+`
+
+func fixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	files := map[string]string{
+		"unprocessed.md":                                     "# 未处理\n\n- source_id: s-20260412-demo\n",
+		"sources/s-20260412-demo.md":                         srcDemo,
+		"domains/ai-infra/notes/n-20260412-demo.md":          noteDemo,
+		"domains/ai-infra/knowledge/c-20260412-attention.md": cardAttention,
+		"domains/ai-infra/knowledge/c-20260412-unrelated.md": cardOther,
+		"domains/ai-infra/knowledge/c-20260412-old.md":       cardDeprecated,
+		"domains/infra/knowledge/c-20260412-crossdomain.md":  cardCrossDomain,
+	}
+	for rel, content := range files {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func build(t *testing.T, root string, req query.Request) *query.Context {
+	t.Helper()
+	req.Root = root
+	if req.Domain == "" {
+		req.Domain = "ai-infra"
+	}
+	ctx, err := query.Build(req, store.ContentHash)
+	if err != nil {
+		t.Fatalf("query.Build: %v", err)
+	}
+	return ctx
+}
+
+// —— ① 白名单：只有原文、本领域已有笔记、同领域 active 卡、候选相似卡 ——
+
+func TestContextWhitelistShape(t *testing.T) {
+	root := fixture(t)
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+
+	if ctx.Source == nil || ctx.Source.ID != "s-20260412-demo" {
+		t.Fatalf("目标原文缺失：%+v", ctx.Source)
+	}
+	if !strings.Contains(ctx.Source.Body, "Attention 把查询与键值配对") {
+		t.Fatalf("原文正文未原样交出：%q", ctx.Source.Body)
+	}
+	if len(ctx.Notes) != 1 || ctx.Notes[0].ID != "n-20260412-demo" {
+		t.Fatalf("材料笔记 = %+v，期望恰 1 篇 n-20260412-demo", ctx.Notes)
+	}
+	// 同领域 active 卡恰两张：deprecated 卡与他域卡都不在。
+	var cardIDs []string
+	for _, c := range ctx.Cards {
+		cardIDs = append(cardIDs, c.ID)
+	}
+	want := []string{"c-20260412-attention", "c-20260412-unrelated"}
+	if !reflect.DeepEqual(cardIDs, want) {
+		t.Fatalf("同领域 active 卡 = %v，期望 %v", cardIDs, want)
+	}
+	if len(ctx.Candidates) != 1 || ctx.Candidates[0].ID != "c-20260412-attention" {
+		t.Fatalf("候选相似卡 = %+v，期望恰命中 c-20260412-attention", ctx.Candidates)
+	}
+	if len(ctx.Candidates[0].Reasons) == 0 || ctx.Candidates[0].Score <= 0 {
+		t.Fatalf("候选卡必须带得分与命中理由：%+v", ctx.Candidates[0])
+	}
+}
+
+// —— ② 他域隔离反例：他域同标题卡零出现（ID 与路径都不出现在任何字段）——
+
+func TestContextExcludesOtherDomains(t *testing.T) {
+	root := fixture(t)
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+	blob := dump(ctx)
+	for _, needle := range []string{"c-20260412-crossdomain", "domains/infra/"} {
+		if strings.Contains(blob, needle) {
+			t.Fatalf("输出泄漏他域产物 %q：\n%s", needle, blob)
+		}
+	}
+}
+
+// —— ③ 失效卡排除：deprecated 既不进同领域卡列表，也不进候选 ——
+
+func TestContextExcludesDeprecatedCard(t *testing.T) {
+	root := fixture(t)
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+	if strings.Contains(dump(ctx), "c-20260412-old") {
+		t.Fatalf("deprecated 卡不应出现在任何字段：\n%s", dump(ctx))
+	}
+}
+
+// —— ④ EG-NOTE-04 字段级断言 ——
+//
+// 与目标原文高度相似的材料笔记：其 n-… ID 只出现在**材料层字段** Notes，
+// 不出现在候选相似卡、不出现在收敛输入字段（Cards）。
+// base 是「可能被本次加工修改的文件」的并发保护映射（§4.5），不是收敛输入：
+// 笔记按**路径键**入 base 是 Scope 的明确要求，故此处断言 base 中不得出现裸 ID 键。
+func TestContextNoteStaysMaterialLayer(t *testing.T) {
+	root := fixture(t)
+	// 让笔记标题与原文标题完全一致，制造「高度相似」。
+	p := filepath.Join(root, "domains/ai-infra/notes/n-20260412-demo.md")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, append(raw, []byte("\n# 注意力机制入门\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+
+	const noteID = "n-20260412-demo"
+	var where []string
+	for _, n := range ctx.Notes {
+		if n.ID == noteID {
+			where = append(where, "notes[].id")
+		}
+	}
+	for _, c := range ctx.Cards {
+		if strings.Contains(c.ID+c.Path+c.Title+strings.Join(c.Tags, ","), noteID) {
+			where = append(where, "cards[]")
+		}
+	}
+	for _, c := range ctx.Candidates {
+		if strings.Contains(c.ID+c.Path+c.Title+strings.Join(c.Reasons, ","), noteID) {
+			where = append(where, "candidates[]")
+		}
+	}
+	if !reflect.DeepEqual(where, []string{"notes[].id"}) {
+		t.Fatalf("笔记 ID 的出现位置集合 = %v，期望恰为材料层字段 [notes[].id]", where)
+	}
+	if _, ok := ctx.Base[noteID]; ok {
+		t.Fatalf("base 应以路径为键收录笔记（并发保护），不得出现裸 ID 键")
+	}
+	if _, ok := ctx.Base["domains/ai-infra/notes/"+noteID+".md"]; !ok {
+		t.Fatalf("base 缺已有笔记的 content_hash：%v", ctx.Base)
+	}
+}
+
+// —— ⑤ base 的每个 content_hash 与随后 store 重算完全一致 ——
+
+func TestContextBaseHashMatchesStoreRecompute(t *testing.T) {
+	root := fixture(t)
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+	if len(ctx.Base) == 0 {
+		t.Fatal("base 为空")
+	}
+	st := store.New(root)
+	for rel, hash := range ctx.Base {
+		f, err := st.Read(rel)
+		if err != nil {
+			t.Fatalf("store.Read(%s): %v", rel, err)
+		}
+		if got := store.ContentHash(f.Bytes); got != hash {
+			t.Fatalf("%s 的 content_hash 与 store 重算不一致：context=%s store=%s", rel, hash, got)
+		}
+		if !strings.HasPrefix(hash, "sha256:") {
+			t.Fatalf("%s 的 content_hash 前缀不对：%s", rel, hash)
+		}
+	}
+	// 收件区属「可能被本次加工修改」的文件，必须在 base 里。
+	if _, ok := ctx.Base["unprocessed.md"]; !ok {
+		t.Fatalf("base 缺 unprocessed.md：%v", ctx.Base)
+	}
+}
+
+// —— ⑥ 打分确定性 + 只读零副作用 ——
+
+func TestContextIsDeterministicAndReadOnly(t *testing.T) {
+	root := fixture(t)
+	before := treeSnapshot(t, root)
+	first := dump(build(t, root, query.Request{Source: "s-20260412-demo"}))
+	second := dump(build(t, root, query.Request{Source: "s-20260412-demo"}))
+	if first != second {
+		t.Fatalf("同一输入两次执行输出不同：\n%s\n----\n%s", first, second)
+	}
+	if after := treeSnapshot(t, root); after != before {
+		t.Fatalf("eg context 必须零写入：\n前=%s\n后=%s", before, after)
+	}
+}
+
+// —— ⑦ --note 入口：从笔记回到它的原文；不存在的目标报 ErrTargetNotFound ——
+
+func TestContextResolvesTargetByNote(t *testing.T) {
+	root := fixture(t)
+	ctx := build(t, root, query.Request{Note: "n-20260412-demo"})
+	if ctx.Source == nil || ctx.Source.ID != "s-20260412-demo" {
+		t.Fatalf("--note 未回溯到原文：%+v", ctx.Source)
+	}
+	for _, req := range []query.Request{{Source: "s-19700101-nope"}, {Note: "n-19700101-nope"}} {
+		req.Root, req.Domain = root, "ai-infra"
+		if _, err := query.Build(req, store.ContentHash); err == nil ||
+			!strings.Contains(err.Error(), "目标对象不存在") {
+			t.Fatalf("%+v 期望 ErrTargetNotFound，实际 %v", req, err)
+		}
+	}
+	if _, err := query.Build(query.Request{Root: root, Domain: "ai-infra", Source: "s-20260412-demo"}, nil); err == nil {
+		t.Fatal("未注入 Hasher 应报错（content_hash 口径必须由 store 注入）")
+	}
+}
+
+// —— 辅助 ——
+
+// dump 把上下文摊平成可断言的文本（用于「零出现」类断言）。
+func dump(ctx *query.Context) string {
+	var b strings.Builder
+	b.WriteString("domain=" + ctx.Domain + "\n")
+	if ctx.Source != nil {
+		b.WriteString("source=" + ctx.Source.ID + " " + ctx.Source.Path + " " + ctx.Source.Title + "\n")
+		b.WriteString("body=" + ctx.Source.Body + "\n")
+	}
+	for _, n := range ctx.Notes {
+		b.WriteString("note=" + n.ID + " " + n.Path + " " + n.Source + "\n")
+	}
+	for _, c := range ctx.Cards {
+		b.WriteString("card=" + c.ID + " " + c.Path + " " + c.Title + " " + strings.Join(c.Tags, ",") + "\n")
+	}
+	for _, c := range ctx.Candidates {
+		b.WriteString("cand=" + c.ID + " " + c.Path + " " + c.Title + " " + strings.Join(c.Reasons, ",") + "\n")
+	}
+	for _, k := range sortedBaseKeys(ctx.Base) {
+		b.WriteString("base=" + k + " " + ctx.Base[k] + "\n")
+	}
+	return b.String()
+}
+
+func sortedBaseKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[j] < keys[i] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
+}
+
+// treeSnapshot 采集路径 + 字节 + mtime，用于「文件一个字节都没动」的断言。
+func treeSnapshot(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		b.WriteString(filepath.ToSlash(rel) + " " + store.ContentHash(raw) + " " +
+			info.ModTime().UTC().Format("2006-01-02T15:04:05.000000000") + "\n")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// ================= T-…-025：候选相似卡打磨（排序全序 / 命中理由 / 确定性） =================
+//
+// 判据来源：T-…-025 Acceptance「排序唯一且可复现」「命中理由非空且可核对」「确定性反证」；
+// 技术方案 §8；M-002-m2.md 完成判据 3 / 7。打分口径本身沿用 M1（T-…-010），本组用例不推翻它，
+// 只钉死「同输入同输出、同分可比、理由能回答哪个词命中哪个字段」。
+
+// polishSource 是打磨用例的目标原文：标题「注意力机制入门」的二元词集合是
+// 注意 / 意力 / 力机 / 机制 / 制入 / 入门，下面每张卡的得分都由它算出来。
+const polishSource = `---
+id: s-20260901-polish
+url: https://example.com/polish
+title: 注意力机制入门
+saved_at: '2026-09-01T09:00:00+08:00'
+---
+
+# 注意力机制入门
+
+正文占位。
+`
+
+// polishCard 造一张可控标题与 tags 的 active 卡。
+func polishCard(id, title string, tags ...string) string {
+	fm := "---\nid: " + id + "\ntitle: " + title + "\nstatus: active\n" +
+		"created_at: '2026-09-01'\nupdated_at: '2026-09-01T10:00:00+08:00'\n"
+	if len(tags) > 0 {
+		fm += "tags:\n"
+		for _, tg := range tags {
+			fm += "  - " + tg + "\n"
+		}
+	}
+	return fm + "---\n\n## 定义\n\n正文占位。\n"
+}
+
+// polishVault 按 files（相对路径 → 内容）铺一个只含目标原文与若干卡的 vault。
+func polishVault(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	all := map[string]string{"sources/s-20260901-polish.md": polishSource}
+	for rel, body := range files {
+		all[rel] = body
+	}
+	for rel, body := range all {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func polishContext(t *testing.T, root string) *query.Context {
+	t.Helper()
+	ctx, err := query.Build(query.Request{
+		Root: root, Domain: "ai-infra", Source: "s-20260901-polish",
+	}, store.ContentHash)
+	if err != nil {
+		t.Fatalf("query.Build: %v", err)
+	}
+	return ctx
+}
+
+// candSig 把候选序列摊成「ID|得分|理由条数」，用于顺序与等价断言（不含 Path，
+// 因为「打乱输入」用例里两个 vault 的文件名不同，Path 本就应当不同）。
+func candSig(ctx *query.Context) []string {
+	out := make([]string, 0, len(ctx.Candidates))
+	for _, c := range ctx.Candidates {
+		out = append(out, c.ID+"|"+itoa(c.Score)+"|"+itoa(len(c.Reasons))+"|"+
+			strings.Join(c.Reasons, "；"))
+	}
+	return out
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(b)
+	}
+	return string(b)
+}
+
+// —— ① 三级全序：得分降序 → 理由条数降序 → ID 升序 ——
+
+func TestContextCandidateTotalOrder(t *testing.T) {
+	// 三张卡刻意做成同分 12：
+	//   k-…-a / k-…-b：标题「注意力机制」= 注意 / 意力 / 力机 / 机制 四个共同词 ×3 = 12，无 tags → 1 条理由
+	//   k-…-c：标题「机制入」= 机制 / 制入 两词 ×3 = 6，tags 命中 注意 / 意力 / 力机 三词 ×2 = 6 → 12，2 条理由
+	root := polishVault(t, map[string]string{
+		"domains/ai-infra/knowledge/k-20260901-b.md": polishCard("k-20260901-b", "注意力机制"),
+		"domains/ai-infra/knowledge/k-20260901-a.md": polishCard("k-20260901-a", "注意力机制"),
+		"domains/ai-infra/knowledge/k-20260901-c.md": polishCard("k-20260901-c", "机制入", "注意", "意力", "力机"),
+	})
+	ctx := polishContext(t, root)
+	if len(ctx.Candidates) != 3 {
+		t.Fatalf("三张卡都应命中，实际 %d：%+v", len(ctx.Candidates), ctx.Candidates)
+	}
+	for _, c := range ctx.Candidates {
+		if c.Score != 12 {
+			t.Fatalf("用例前提被打破：%s 的得分应为 12，实际 %d（%v）", c.ID, c.Score, c.Reasons)
+		}
+	}
+	// 同分：理由条数多者在前（c 有 tags + title 两条）。
+	if ctx.Candidates[0].ID != "k-20260901-c" {
+		t.Fatalf("同分应按命中理由条数降序，期望 k-20260901-c 在首位，实际 %v", candSig(ctx))
+	}
+	// 同分且同理由条数：按 ID 升序（a 在 b 前），与文件遍历顺序无关。
+	if ctx.Candidates[1].ID != "k-20260901-a" || ctx.Candidates[2].ID != "k-20260901-b" {
+		t.Fatalf("同分同理由条数应按 ID 升序，实际 %v", candSig(ctx))
+	}
+}
+
+// —— ② 打乱输入：文件名（即遍历顺序）变了，输出序列一字不变 ——
+
+func TestContextCandidateOrderIgnoresInputOrder(t *testing.T) {
+	cards := []struct{ id, title string }{
+		{"k-20260901-a", "注意力机制"},
+		{"k-20260901-b", "注意力机制"},
+		{"k-20260901-c", "机制入门"},
+		{"k-20260901-d", "入门指南"},
+	}
+	// 两个 vault 里同一张卡的**文件名**不同：一个按 01…04 递增，一个按 zz…ww 递减，
+	// 于是 WalkDir 的到达顺序完全相反；候选序列必须逐字相等。
+	asc := map[string]string{}
+	desc := map[string]string{}
+	names := []string{"01", "02", "03", "04"}
+	rev := []string{"zz", "yy", "xx", "ww"}
+	for i, c := range cards {
+		asc["domains/ai-infra/knowledge/"+names[i]+".md"] = polishCard(c.id, c.title)
+		desc["domains/ai-infra/knowledge/"+rev[i]+".md"] = polishCard(c.id, c.title)
+	}
+	first := candSig(polishContext(t, polishVault(t, asc)))
+	second := candSig(polishContext(t, polishVault(t, desc)))
+	if strings.Join(first, "\n") != strings.Join(second, "\n") {
+		t.Fatalf("打乱输入顺序后候选结果变了（排序不是全序）：\n%v\n----\n%v", first, second)
+	}
+	if len(first) == 0 {
+		t.Fatal("用例前提被打破：应有候选卡")
+	}
+	// 连跑十次仍然逐字相同：无随机、无时间因素、不吃 map 迭代顺序。
+	root := polishVault(t, asc)
+	want := strings.Join(candSig(polishContext(t, root)), "\n")
+	for i := 0; i < 10; i++ {
+		if got := strings.Join(candSig(polishContext(t, root)), "\n"); got != want {
+			t.Fatalf("第 %d 次执行结果与首次不同：\n%s\n----\n%s", i+2, want, got)
+		}
+	}
+}
+
+// —— ③ 命中理由：非空、逐条只描述一个来源字段、按字段名升序 ——
+
+func TestContextCandidateReasons(t *testing.T) {
+	root := polishVault(t, map[string]string{
+		// 只在标题命中。
+		"domains/ai-infra/knowledge/k-20260901-t.md": polishCard("k-20260901-t", "注意力机制"),
+		// 只在 tags 命中（标题与目标无共同词）。
+		"domains/ai-infra/knowledge/k-20260901-g.md": polishCard("k-20260901-g", "磁盘调度", "注意"),
+		// 标题与 tags 都命中。
+		"domains/ai-infra/knowledge/k-20260901-x.md": polishCard("k-20260901-x", "注意力机制", "机制"),
+	})
+	ctx := polishContext(t, root)
+	byID := map[string]query.Candidate{}
+	for _, c := range ctx.Candidates {
+		if len(c.Reasons) == 0 {
+			t.Fatalf("被推荐的卡必须给出命中理由：%+v", c)
+		}
+		byID[c.ID] = c
+	}
+	if len(byID) != 3 {
+		t.Fatalf("三张卡都应进候选，实际 %v", candSig(ctx))
+	}
+
+	title := byID["k-20260901-t"]
+	if len(title.Reasons) != 1 || !strings.HasPrefix(title.Reasons[0], "命中卡的 title 字段：") {
+		t.Fatalf("只在标题命中的卡应恰一条指向 title 的理由：%v", title.Reasons)
+	}
+	if !strings.Contains(title.Reasons[0], "注意") {
+		t.Fatalf("理由必须写明命中的词：%v", title.Reasons)
+	}
+
+	tags := byID["k-20260901-g"]
+	if len(tags.Reasons) != 1 || !strings.HasPrefix(tags.Reasons[0], "命中卡的 tags 字段：") {
+		t.Fatalf("只在 tags 命中的卡应恰一条指向 tags 的理由：%v", tags.Reasons)
+	}
+	if !strings.Contains(tags.Reasons[0], "注意") || !strings.Contains(tags.Reasons[0], "tags 值：注意") {
+		t.Fatalf("tags 理由必须写明「哪个词命中了哪个 tag 值」：%v", tags.Reasons)
+	}
+
+	both := byID["k-20260901-x"]
+	if len(both.Reasons) != 2 {
+		t.Fatalf("两处都命中应恰两条理由（不得合并成一句）：%v", both.Reasons)
+	}
+	if !strings.HasPrefix(both.Reasons[0], "命中卡的 tags 字段：") ||
+		!strings.HasPrefix(both.Reasons[1], "命中卡的 title 字段：") {
+		t.Fatalf("理由必须按来源字段名升序（tags → title）：%v", both.Reasons)
+	}
+	// 字段内按命中词升序：把理由里的词切出来逐对比较。
+	words := strings.Split(strings.TrimPrefix(both.Reasons[1], "命中卡的 title 字段："), "、")
+	for i := 1; i < len(words); i++ {
+		if words[i-1] >= words[i] {
+			t.Fatalf("同一条理由内的命中词必须升序：%v", words)
+		}
+	}
+}
+
+// —— ④ 失效卡不进推荐（M1 口径不回归）+ 零理由的卡不进输出 ——
+
+func TestContextDeprecatedNotRecommended(t *testing.T) {
+	dep := strings.Replace(polishCard("k-20260901-old", "注意力机制"),
+		"status: active", "status: deprecated", 1)
+	root := polishVault(t, map[string]string{
+		"domains/ai-infra/knowledge/k-20260901-old.md": dep,
+		"domains/ai-infra/knowledge/k-20260901-new.md": polishCard("k-20260901-new", "注意力机制"),
+		// 与目标标题零共同词：得分 0，既不进候选，也不该被凑出理由。
+		"domains/ai-infra/knowledge/k-20260901-far.md": polishCard("k-20260901-far", "磁盘调度"),
+	})
+	ctx := polishContext(t, root)
+	for _, c := range ctx.Candidates {
+		if c.ID == "k-20260901-old" {
+			t.Fatalf("deprecated 卡不得进候选：%+v", c)
+		}
+		if c.ID == "k-20260901-far" {
+			t.Fatalf("零命中的卡不得进候选：%+v", c)
+		}
+		if c.Score <= 0 || len(c.Reasons) == 0 {
+			t.Fatalf("候选必须同时有正得分与非空理由：%+v", c)
+		}
+	}
+	if len(ctx.Candidates) != 1 || ctx.Candidates[0].ID != "k-20260901-new" {
+		t.Fatalf("只应剩一张 active 且命中的卡，实际 %v", candSig(ctx))
+	}
+	// cards[] 的口径不变：active 卡照常在列，失效卡不在（M1 既有断言的同款事实）。
+	var ids []string
+	for _, c := range ctx.Cards {
+		ids = append(ids, c.ID)
+	}
+	if strings.Join(ids, ",") != "k-20260901-far,k-20260901-new" {
+		t.Fatalf("cards[] 应恰含两张 active 卡（按扫描口径），实际 %v", ids)
+	}
+}
