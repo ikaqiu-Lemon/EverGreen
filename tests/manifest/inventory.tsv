@@ -109,6 +109,7 @@ tests/_staged/internal/query/adr20_isolation_test.go	unit	go	card-query	unit.int
 tests/_staged/internal/query/backend_test.go	unit	go	card-query	unit.internal.query	21	39171
 tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query	12	13873
 tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	11	21279
+tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6609
 tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	unit.internal.query	1	3363
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350
 tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.internal.query.filter	3	4972
@@ -120,7 +121,6 @@ tests/_staged/internal/query/queryset/queryset_test.go	unit	go	queryset	unit.int
 tests/_staged/internal/query/rank_test.go	unit	go	card-query	unit.internal.query	6	12804
 tests/_staged/internal/query/relation_test.go	unit	go	card-query	unit.internal.query	10	12358
 tests/_staged/internal/query/reverse_test.go	unit	go	card-query	unit.internal.query	4	13259
-tests/_staged/internal/query/rowlevel_degrade_test.go	unit	go	card-query	unit.internal.query	2	6609
 tests/_staged/internal/query/scan_test.go	unit	go	card-query	unit.internal.query	10	15063
 tests/_staged/internal/query/search_test.go	unit	go	card-query	unit.internal.query	10	13985
 tests/_staged/internal/query/visibility_test.go	unit	go	card-query	unit.internal.query	7	17822
@@ -194,7 +194,7 @@ tests/contract/arch-boundary/product_tree_selfcontained.sh	contract	shell	arch-b
 tests/contract/archive-hygiene/archive_not_counted.sh	contract	shell	arch-boundary	contract.archive-hygiene.archive_not_counted	23	8374
 tests/contract/contract-live-drift/contract_live_drift.sh	contract	shell	arch-boundary	contract.contract-live-drift	10	4999
 tests/contract/contract-snapshot/contract_snapshot.sh	contract	shell	arch-boundary	contract.contract-snapshot	20	8384
-tests/contract/dep-direction/dep_direction_gate.sh	contract	shell	arch-boundary	contract.dep-direction	0	5216
+tests/contract/dep-direction/dep_direction_gate.sh	contract	shell	arch-boundary	contract.dep-direction	0	5203
 tests/contract/dep-direction/dep_gate_double_sided.sh	contract	shell	arch-boundary	contract.dep-direction-double-sided	19	7464
 tests/contract/e2e-hygiene/hygiene.sh	contract	shell	arch-boundary	contract.e2e-hygiene.hygiene	12	11621
 tests/contract/resource-limits/limits.sh	contract	shell	arch-boundary	contract.resource-limits.limits	51	16948

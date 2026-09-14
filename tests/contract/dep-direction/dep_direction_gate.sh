@@ -56,7 +56,7 @@ for pair in "${FORBIDDEN[@]}"; do
   contract="${pair%%|*}"; host="${pair##*|}"
   target="${contract}"
   pkg_exists "${target}" || target="${host}"
-  if deps "./${target#evergreen/}" | grep -qx "${FILTER}"; then
+  if deps "${target}" | grep -qx "${FILTER}"; then
     bad "${target} 的依赖闭包含 ${FILTER}（ADR-20：受限信号只许出现在筛选条件里）"
   else
     pass "${target}（合同名 ${contract}）依赖闭包不含 query/filter"

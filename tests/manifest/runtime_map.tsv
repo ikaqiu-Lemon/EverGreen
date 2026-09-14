@@ -109,6 +109,7 @@ tests/_staged/internal/query/adr20_isolation_test.go	internal/query/adr20_isolat
 tests/_staged/internal/query/backend_test.go	internal/query/backend_test.go	evergreen	unit	go
 tests/_staged/internal/query/card_test.go	internal/query/card_test.go	evergreen	unit	go
 tests/_staged/internal/query/context_test.go	internal/query/context_test.go	evergreen	unit	go
+tests/_staged/internal/query/degrade_rowlevel_test.go	internal/query/degrade_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/query/diagnostic_placement_test.go	internal/query/diagnostic_placement_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/fuzz_test.go	internal/query/filter/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unreviewed_test.go	evergreen	unit	go
@@ -120,7 +121,6 @@ tests/_staged/internal/query/queryset/queryset_test.go	internal/query/queryset/q
 tests/_staged/internal/query/rank_test.go	internal/query/rank_test.go	evergreen	unit	go
 tests/_staged/internal/query/relation_test.go	internal/query/relation_test.go	evergreen	unit	go
 tests/_staged/internal/query/reverse_test.go	internal/query/reverse_test.go	evergreen	unit	go
-tests/_staged/internal/query/rowlevel_degrade_test.go	internal/query/rowlevel_degrade_test.go	evergreen	unit	go
 tests/_staged/internal/query/scan_test.go	internal/query/scan_test.go	evergreen	unit	go
 tests/_staged/internal/query/search_test.go	internal/query/search_test.go	evergreen	unit	go
 tests/_staged/internal/query/visibility_test.go	internal/query/visibility_test.go	evergreen	unit	go
