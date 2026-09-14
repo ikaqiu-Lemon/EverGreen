@@ -70,6 +70,12 @@ const (
 	ReasonSchemaIncomplete           = "schema_incomplete"
 	ReasonSchemaVersionMismatch      = "schema_version_mismatch"
 	ReasonWatermarkSelfContradiction = "watermark_self_contradiction"
+	// ReasonRowLevelDivergence 是**行级权威一致性**撒谎（I-…-024）：库结构自洽、水位线
+	// 一致、`card_count` 不失配，但 `cards` / `cards_fts` 的**逐行内容**与权威 Markdown
+	// 投影不符（典型：外部进程删 FTS 行 / 改 FTS 文本 / 翻转 deleted·deprecated /
+	// 等行数替换 id·content_hash）。它统一收在 W24 之下（既有码，不新增码），是「派生 DB
+	// 对权威撒谎」这一件事的**封闭子因**——具体差在哪一行哪一列写进 Message，供逐条复算。
+	ReasonRowLevelDivergence = "row_level_divergence"
 )
 
 // Reasons 返回封闭的原因集合（不含 ReasonNone；供测试与下游断言）。
@@ -78,7 +84,7 @@ func Reasons() []string {
 		ReasonIndexDirMissing, ReasonDBFileMissing, ReasonUnexpectedFile,
 		ReasonTruncatedFile, ReasonOpenFailed, ReasonIntegrityCheckFailed,
 		ReasonSchemaIncomplete, ReasonSchemaVersionMismatch,
-		ReasonWatermarkSelfContradiction,
+		ReasonWatermarkSelfContradiction, ReasonRowLevelDivergence,
 	}
 }
 

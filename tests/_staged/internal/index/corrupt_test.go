@@ -287,13 +287,14 @@ func TestHealthEnumHasNoStale(t *testing.T) {
 	}
 }
 
-// TestReasonsClosed 钉住损坏子因集合封闭（9 个，机器可读，供 status 与 e2e 逐字断言）。
+// TestReasonsClosed 钉住损坏子因集合封闭（10 个，机器可读，供 status 与 e2e 逐字断言）。
 func TestReasonsClosed(t *testing.T) {
 	got := index.Reasons()
 	want := []string{
 		"index_dir_missing", "db_file_missing", "unexpected_file", "truncated_file",
 		"open_failed", "integrity_check_failed", "schema_incomplete",
 		"schema_version_mismatch", "watermark_self_contradiction",
+		"row_level_divergence",
 	}
 	if !equalSet(got, want) {
 		t.Fatalf("损坏子因集合不封闭：\n实际 = %v\n期望 = %v", got, want)

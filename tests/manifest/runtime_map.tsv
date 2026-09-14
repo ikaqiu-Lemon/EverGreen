@@ -28,6 +28,7 @@ tests/_staged/internal/cli/index_after_write_proposal_test.go	internal/cli/index
 tests/_staged/internal/cli/index_after_write_undelete_test.go	internal/cli/index_after_write_undelete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_lock_test.go	internal/cli/index_lock_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_reserved_read_test.go	internal/cli/index_reserved_read_test.go	evergreen	unit	go
+tests/_staged/internal/cli/index_rowlevel_test.go	internal/cli/index_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_test.go	internal/cli/index_test.go	evergreen	unit	go
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
@@ -67,6 +68,7 @@ tests/_staged/internal/git/exitcode_test.go	internal/git/exitcode_test.go	evergr
 tests/_staged/internal/git/git_test.go	internal/git/git_test.go	evergreen	unit	go
 tests/_staged/internal/git/log_test.go	internal/git/log_test.go	evergreen	unit	go
 tests/_staged/internal/index/build_test.go	internal/index/build_test.go	evergreen	unit	go
+tests/_staged/internal/index/consistency_rowlevel_test.go	internal/index/consistency_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/index/consistency_test.go	internal/index/consistency_test.go	evergreen	unit	go
 tests/_staged/internal/index/corrupt_test.go	internal/index/corrupt_test.go	evergreen	unit	go
 tests/_staged/internal/index/incremental_test.go	internal/index/incremental_test.go	evergreen	unit	go
@@ -107,6 +109,7 @@ tests/_staged/internal/query/adr20_isolation_test.go	internal/query/adr20_isolat
 tests/_staged/internal/query/backend_test.go	internal/query/backend_test.go	evergreen	unit	go
 tests/_staged/internal/query/card_test.go	internal/query/card_test.go	evergreen	unit	go
 tests/_staged/internal/query/context_test.go	internal/query/context_test.go	evergreen	unit	go
+tests/_staged/internal/query/degrade_rowlevel_test.go	internal/query/degrade_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/query/diagnostic_placement_test.go	internal/query/diagnostic_placement_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/fuzz_test.go	internal/query/filter/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unreviewed_test.go	evergreen	unit	go

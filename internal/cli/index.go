@@ -234,12 +234,17 @@ func (r *Root) runIndexStatus(inv *Invocation) (*Result, error) {
 //
 // quick=true（默认 status）：对 `(path, size, mtime)` 与索引记录逐格一致的文件沿用
 // 索引里的 `content_hash`；quick=false（`--strict` / 写入路径）：全部重算。
+//
+// **带上权威卡投影 `snap.Cards`**（I-…-024）：`indexSnapshotWith` 已经把权威 Markdown
+// 解析成了与 build 同口径的 index.Card（含 Body / content_hash），这里原样交给
+// `index.Check` 做**行级**核对 —— 索引层据此抓「库结构合法、水位线一致，但 cards /
+// cards_fts 行内容对权威撒谎」这类损坏。丢弃它就等于把 status 的行级体检能力白白关掉。
 func (r *Root) indexCurrent(root string, strict bool) (index.Current, error) {
 	snap, _, err := r.indexSnapshotWith(root, !strict)
 	if err != nil {
 		return index.Current{}, err
 	}
-	return index.Current{Head: snap.Head, Files: snap.Files}, nil
+	return index.Current{Head: snap.Head, Files: snap.Files, Cards: snap.Cards}, nil
 }
 
 // runIndexBuild 是 `eg index build` 与 `eg index rebuild` 的共同实现。
@@ -373,22 +378,32 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 	snap := index.Snapshot{Head: indexHead(root)}
 	for _, c := range scan.Cards {
 		size, mtime := fileStat(filepath.Join(root, filepath.FromSlash(c.Path)))
-		hash := ""
-		if prev, ok := indexed[c.Path]; ok &&
-			index.QuickUnchanged(prev, index.File{Path: c.Path, Size: size, MTimeUnix: mtime}) {
-			hash = prev.ContentHash
+		// trueHash 是**现态字节**的真 content_hash（store.ContentHash，与 B3 同源）。
+		trueHash := store.ContentHash(c.Raw)
+		// fileHash 是**水位线**用的 content_hash：默认快路径命中 (size, mtime) 即沿用 files 表
+		// 旧值（合同 §5.1，省一次 hash 计算，对等长原地改写天生不敏感）；--strict / 写入路径
+		// （quick=false）恒用真值。
+		fileHash := trueHash
+		if quick {
+			if prev, ok := indexed[c.Path]; ok &&
+				index.QuickUnchanged(prev, index.File{Path: c.Path, Size: size, MTimeUnix: mtime}) {
+				fileHash = prev.ContentHash
+			}
 		}
-		if hash == "" {
-			hash = store.ContentHash(c.Raw)
-		}
+		// Cards 投影恒带**真** content_hash：index.Check 的行级核对据此圈定「文件字节确未变」
+		// 的作用域（rowlevel.go）—— 快路径若把旧 hash 塞进 Cards，等长改写会被误判成行级撒谎，
+		// eg index status 默认路径就会把「陈旧」误报成 W24 损坏。Files 仍走 fileHash（水位线
+		// 口径一字不变）。两者仅在「快路径命中但内容其实变了」时相异 —— 那恰是区分「陈旧」与
+		// 「撒谎」的关键信号：内容真变了 ⇒ trueHash≠fileHash ⇒ 该卡落在行级核对作用域外（陈旧，
+		// 归 --strict / sync）；内容没变而派生行撒谎 ⇒ trueHash==fileHash ⇒ 在作用域内被逐列抓到。
 		snap.Cards = append(snap.Cards, index.Card{
 			ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title, Status: c.Status,
 			Deprecated: c.Deprecated, Deleted: c.Deleted,
 			ReplacedBy: c.ReplacedByTarget, Body: c.Body(),
-			ContentHash: hash, MTimeUnix: mtime,
+			ContentHash: trueHash, MTimeUnix: mtime,
 		})
 		snap.Files = append(snap.Files, index.File{
-			Path: c.Path, ContentHash: hash, Size: size, MTimeUnix: mtime,
+			Path: c.Path, ContentHash: fileHash, Size: size, MTimeUnix: mtime,
 		})
 		for _, rel := range c.Relations {
 			snap.Relations = append(snap.Relations, index.Relation{

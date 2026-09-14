@@ -28,6 +28,7 @@ tests/_staged/internal/cli/index_after_write_proposal_test.go	unit	go	cli-core	u
 tests/_staged/internal/cli/index_after_write_undelete_test.go	unit	go	cli-core	unit.internal.cli	1	4408
 tests/_staged/internal/cli/index_lock_test.go	unit	go	cli-core	unit.internal.cli	1	22172
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
+tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	1	6626
 tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	53039
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
@@ -67,8 +68,9 @@ tests/_staged/internal/git/exitcode_test.go	unit	go	git-integrity	unit.internal.
 tests/_staged/internal/git/git_test.go	unit	go	git-integrity	unit.internal.git	12	12460
 tests/_staged/internal/git/log_test.go	unit	go	git-integrity	unit.internal.git	4	6849
 tests/_staged/internal/index/build_test.go	unit	go	index-search	unit.internal.index	10	15387
+tests/_staged/internal/index/consistency_rowlevel_test.go	unit	go	index-search	unit.internal.index	2	7900
 tests/_staged/internal/index/consistency_test.go	unit	go	index-search	unit.internal.index	8	9627
-tests/_staged/internal/index/corrupt_test.go	unit	go	index-search	unit.internal.index	11	14573
+tests/_staged/internal/index/corrupt_test.go	unit	go	index-search	unit.internal.index	11	14600
 tests/_staged/internal/index/incremental_test.go	unit	go	index-search	unit.internal.index	12	23541
 tests/_staged/internal/index/purge_test.go	unit	go	index-search	unit.internal.index	4	13002
 tests/_staged/internal/index/rebuild_test.go	unit	go	index-search	unit.internal.index	5	10840
@@ -107,6 +109,7 @@ tests/_staged/internal/query/adr20_isolation_test.go	unit	go	card-query	unit.int
 tests/_staged/internal/query/backend_test.go	unit	go	card-query	unit.internal.query	21	39171
 tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query	12	13873
 tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	11	21279
+tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6609
 tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	unit.internal.query	1	3363
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350
 tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.internal.query.filter	3	4972
@@ -191,7 +194,7 @@ tests/contract/arch-boundary/product_tree_selfcontained.sh	contract	shell	arch-b
 tests/contract/archive-hygiene/archive_not_counted.sh	contract	shell	arch-boundary	contract.archive-hygiene.archive_not_counted	23	8374
 tests/contract/contract-live-drift/contract_live_drift.sh	contract	shell	arch-boundary	contract.contract-live-drift	10	4999
 tests/contract/contract-snapshot/contract_snapshot.sh	contract	shell	arch-boundary	contract.contract-snapshot	20	8384
-tests/contract/dep-direction/dep_direction_gate.sh	contract	shell	arch-boundary	contract.dep-direction	0	5216
+tests/contract/dep-direction/dep_direction_gate.sh	contract	shell	arch-boundary	contract.dep-direction	0	5203
 tests/contract/dep-direction/dep_gate_double_sided.sh	contract	shell	arch-boundary	contract.dep-direction-double-sided	19	7464
 tests/contract/e2e-hygiene/hygiene.sh	contract	shell	arch-boundary	contract.e2e-hygiene.hygiene	12	11621
 tests/contract/resource-limits/limits.sh	contract	shell	arch-boundary	contract.resource-limits.limits	51	16948
@@ -356,7 +359,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24018
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24038
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

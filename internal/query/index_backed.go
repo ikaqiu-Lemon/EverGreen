@@ -131,8 +131,24 @@ func probeIndex(root string, deps IndexDeps) indexProbe {
 	if err != nil {
 		return p.unverifiableBecause(fmt.Sprintf("权威 Markdown 读不动，无法算现态水位线：%v", err))
 	}
+	// 权威**卡投影**：把现态扫描面上每个能解析的知识卡折成与 build 同口径的 index.Card
+	// （含 Body / content_hash），交给 index.Check 做**行级**核对（I-…-024）。没有它，
+	// Check 只能比水位线与表间自洽，会漏掉「删 cards_fts 行 / 翻转 deleted·deprecated /
+	// 等行数替换 id·content_hash」这类**库结构合法但对权威撒谎**的行级损坏。
+	cards, err := currentCardsInput(root, deps, present)
+	if err != nil {
+		return p.unverifiableBecause(fmt.Sprintf("权威 Markdown 读不动，无法算权威卡投影：%v", err))
+	}
 	// 三态结论**只从这一处来**：与 `eg index status`（默认快路径）同一个 index.Check。
-	p.con = index.Check(p.dir, index.Current{Head: deps.Head(), Files: files})
+	p.con = index.Check(p.dir, index.Current{Head: deps.Head(), Files: files, Cards: cards})
+	if p.con.Unusable() {
+		// 行级核对把一个「结构合法、水位线一致」的库判成了不可用（W24 /
+		// row_level_divergence）：让探测结论整体以 con.Diagnosis 为准 —— freshness() 与
+		// SelectBackend 都读 p.diag，据此把本次读整体降级为全量扫描并留痕 W24 + Q5
+		// （合同 §5.2 / §6.3）。不在这里「半索引半扫描」地带病用索引。
+		p.diag = p.con.Diagnosis
+		return p
+	}
 	p.stale = p.con.Stale()
 	p.staleReason, p.staleDetail = p.con.Reason, p.con.Message
 	return p
@@ -183,6 +199,42 @@ func currentWatermarkInput(root string, deps IndexDeps, indexed map[string]index
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+// currentCardsInput 组装 `index.Check` 行级核对所需的**权威卡投影**（I-…-024）。
+//
+// 与 build / status 侧的快照**同口径**：每个能解析的知识卡折成 index.Card，字段取自
+// 全包唯一的 CardEntryFrom（因此 title / status / deprecated / deleted / replaced_by /
+// Body 与扫描后端逐字一致），content_hash 走注入的 B3 口径（deps.Hash，与写口同源）——
+// 查询层不自造第二套解析，也不自造第二套 hash。
+//
+// 为什么必须逐个解析（哪怕水位线快路径判「未变」）：行级核对要比的是 `cards` /
+// `cards_fts` 的**每一列**是否对权威撒谎，而 deprecated / deleted / title 这些列只有解析
+// frontmatter 才拿得到 —— 水位线的 (size, mtime) 快路径给不出它们。这一次全解析是
+// I-…-024 为「读路径不被索引行级撒谎骗到」付出的正确性代价；窄化召回的性能形态属 T-…-068。
+//
+// 解析不动的文件不进投影（与扫描后端的 Q1 / skipped 口径一致：它们本就不该在 cards 表里）。
+// 返回 error 只有一种情形：**权威 Markdown 读不动**（磁盘 / 权限）——调用方据此判为
+// 「新鲜度证不出来」并走扫描，由扫描后端把同一个错误如实上抛。
+func currentCardsInput(root string, deps IndexDeps, present []index.File) ([]index.Card, error) {
+	cards := make([]index.Card, 0, len(present))
+	for _, cur := range present {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(cur.Path)))
+		if err != nil {
+			return nil, err
+		}
+		entry, _, ok := CardEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
+		if !ok {
+			continue // 解析不动 ⇒ 不进权威投影（与 cards 表的收录口径一致）
+		}
+		cards = append(cards, index.Card{
+			ID: entry.ID, Path: entry.Path, Domain: entry.Domain, Title: entry.Title,
+			Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
+			ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
+			ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
+		})
+	}
+	return cards, nil
 }
 
 // statCardFiles 走查**知识卡扫描面**上的全部 `.md`（只 stat 不读字节），按 path 升序。
