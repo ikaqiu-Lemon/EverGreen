@@ -9,6 +9,11 @@ This guide installs and exercises Evergreen `eg` version `0.6.0-m6`.
 - GNU Make
 - Python 3 with PyYAML when running the manifest-driven tests
 
+Offline CI/builds use `GOPROXY=off`; preload the Go module cache first (or ship a
+complete `vendor/` directory). `tests/ci/pipeline.sh` checks this before running
+lint or tests and reports a clear environment error when modules cannot be
+resolved offline.
+
 All build targets use `CGO_ENABLED=0`. The resulting binaries have no C runtime
 dependency.
 
@@ -33,7 +38,10 @@ make lint
 
 `make build` creates `bin/eg` for the current platform and four binaries under
 `dist/`. The version output contains the release version, source commit, build
-time, and Go toolchain.
+time, and Go toolchain. `make dist` also writes `dist/PROVENANCE.txt`; its
+`artifact checksums` section must match `dist/SHA256SUMS`, and `make
+verify-dist-provenance` verifies both the provenance/checksum binding and every
+artifact hash.
 
 After the first release is published, Go users may alternatively install it
 directly:
@@ -63,10 +71,13 @@ dist/eg_linux_arm64
 dist/eg_darwin_amd64
 dist/eg_darwin_arm64
 dist/SHA256SUMS
+dist/PROVENANCE.txt
 ```
 
 `make dist` builds the same four platform binaries without deleting `bin/eg`.
-`make clean` removes local build and release outputs.
+`make clean` removes local build and release outputs; this is safe because
+`dist/PROVENANCE.txt` is generated from the current build and can be recreated by
+`make dist` or `make release`.
 
 ## First run
 
@@ -84,6 +95,10 @@ eg --vault "$VAULT" capture --url https://example.com/attention --title "Attenti
 rm -f "$BODY"
 eg --vault "$VAULT" search attention
 ```
+
+The temporary source body is deliberately written outside the vault. `eg capture`
+records its content into `sources/`; the input file itself should not be placed
+inside the vault and should not enter the vault's Git history.
 
 `eg capture` records the supplied URL and body; it does not fetch the URL.
 Agent-assisted processing continues with `eg context`, a generated ChangePlan,

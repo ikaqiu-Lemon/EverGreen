@@ -30,7 +30,8 @@
 #   D 构建设置：四支产物 `go version -m` 均含 `CGO_ENABLED=0` / `-trimpath=true` 与对应
 #     `GOOS` / `GOARCH`；`go list -deps ./cmd/eg` 含纯 Go 驱动 `modernc.org/sqlite`、
 #     零 cgo 驱动（`mattn/go-sqlite3` 零命中）。
-#   E 校验和：`SHA256SUMS` 恰四行、`sha256sum -c` 四行全 OK。
+#   E 校验和与溯源：`SHA256SUMS` 恰四行、`sha256sum -c` 四行全 OK；`PROVENANCE.txt`
+#     由 `make dist` 现场生成并内嵌同一份 artifact checksums，改动任一产物字节后校验必红。
 #   F 离线可构建：预热模块缓存下 `GOPROXY=off CGO_ENABLED=0 go build ./cmd/eg` 成功。
 #   G INSTALL §3 首次上手四条命令逐行照抄退 0；vault 侧忽略机制在位：
 #     `.git/info/exclude` 含 `.eg/`、`.gitignore` 含 `.index/`、`.eg` 未被 git 跟踪。
@@ -47,16 +48,16 @@
 #     真机验证」的反向说明；本环境 `uname` 唯一原生目标为 linux/amd64（其余三平台的
 #     运行结论如实为「未做」，本 suite 不伪造）。
 #
-# 刻意**不**在本 suite 断言的五条（已登记 issue，判据随修复任务落地，避免把缺陷锁成基线）：
+# 刻意**不**在本 suite 断言的两条（已登记 issue，判据随对应修复任务落地，避免把缺陷锁成基线）：
 #   · 顶层 `eg --help` 退出码行只列 `0`–`4`、缺 `5` / `6` → I-…-012（D1 登记）；
-#   · 顶层 `eg --help` 命令区标题写「S1 九命令」却列 22 条、未知命令话术同源 → I-…-013（D1 登记）；
-#   · `dist/PROVENANCE.txt` 只活在 gitignored 目录、`make clean` / `release` 直接删且无再生成
-#     目标、与 `SHA256SUMS` 漂移无门禁；交付包内 `bin/eg` 为 0.4.0-m4 陈旧产物 → I-…-026；
-#     （本 suite 的 A 段只断言「`clean` 后 `bin/` 与四支产物不在场」，**不**断言 `PROVENANCE.txt` 的存亡）
-#   · 空模块缓存 + `GOPROXY=off` 下构建必失败（无 vendor/、CI 前置不校验）→ I-…-028：
-#     本 suite 的 F 段只断言**预热缓存**下离线构建成功，不断言空缓存行为；
-#   · INSTALL §3 让用户把原文写进 vault 根，照抄后 `article.txt` 被 `capture` 的 `git add -A`
-#     提交进权威仓 → I-…-029（cross_domain → I-…-023）：G 段不断言 `article.txt` 的跟踪状态。
+#   · 顶层 `eg --help` 命令区标题写「S1 九命令」却列 22 条、未知命令话术同源 → I-…-013（D1 登记）。
+#
+# 已修复并转为硬断言的（defect_zeroing 批次 4）：
+#   · `dist/PROVENANCE.txt` 由 `make dist` 生成并与 `SHA256SUMS` 绑定；
+#   · 空模块缓存 + `GOPROXY=off` 在 CI 前置阶段给出 ENV 指引，不再拖到 make lint/go build 底层错误；
+#   · INSTALL §3 把原文写到 vault 外，照抄后 vault 根零 `article.txt` 跟踪；
+#   · SKILL §6.2 样例不再复用 PPE 验收文章 `Verification, The Key to AI`；
+#   · README / INSTALL / skill/SKILL.md 面向用户的旧 `test/` 根路径零残留。
 #
 # 已修复并转为硬断言的（defect_zeroing 批次 1）：
 #   · `eg bench` 语料提示曾指向已不存在的 `./test/perf/corpus_gen.go`（I-…-027，已 close）——
@@ -201,20 +202,40 @@ echo "${DEPS}" | grep -qx "modernc.org/sqlite" || die "依赖闭包缺纯 Go 驱
 echo "${DEPS}" | grep -qi "mattn/go-sqlite3" && die "依赖闭包出现 cgo 驱动 mattn/go-sqlite3"
 ok "modernc.org/sqlite 在场；mattn/go-sqlite3 零命中"
 
-step "校验和：SHA256SUMS 恰四行、sha256sum -c 四行全 OK"
+step "校验和与溯源：SHA256SUMS 恰四行、sha256sum -c 四行全 OK，PROVENANCE 同源绑定"
 LINES="$(wc -l < "${SBX}/dist/SHA256SUMS" | tr -d ' ')"
 [ "${LINES}" = "4" ] || die "SHA256SUMS 应恰四行，实测 ${LINES}"
 (cd "${SBX}/dist" && sha256sum -c SHA256SUMS >"${WORK}/sums.log" 2>&1) \
   || (cd "${SBX}/dist" && shasum -a 256 -c SHA256SUMS >"${WORK}/sums.log" 2>&1) \
   || { cat "${WORK}/sums.log" >&2; die "sha256sum -c 未全 OK"; }
 [ "$(grep -c ': OK$' "${WORK}/sums.log")" = "4" ] || die "OK 行数不足四行"
-ok "SHA256SUMS 恰四行且四行全 OK"
+[ -f "${SBX}/dist/PROVENANCE.txt" ] || die "make dist 未生成 dist/PROVENANCE.txt"
+grep -qF "version: ${WANT_VERSION}" "${SBX}/dist/PROVENANCE.txt" || die "PROVENANCE 缺版本号 ${WANT_VERSION}"
+grep -qF "commit: ${HEAD2}" "${SBX}/dist/PROVENANCE.txt" || die "PROVENANCE 缺当期 commit ${HEAD2}"
+sed -n '/^artifact checksums:$/,$p' "${SBX}/dist/PROVENANCE.txt" | tail -n +2 >"${WORK}/prov.sums"
+cmp -s "${SBX}/dist/SHA256SUMS" "${WORK}/prov.sums" || die "PROVENANCE 中的 artifact checksums 与 SHA256SUMS 不一致"
+(cd "${SBX}" && make -s verify-dist-provenance >/dev/null 2>&1) || die "make verify-dist-provenance 正常产物应通过"
+printf 'tamper' >> "${SBX}/dist/eg_linux_amd64"
+if (cd "${SBX}" && make -s verify-dist-provenance >"${WORK}/prov_tamper.log" 2>&1); then
+  die "篡改 dist/eg_linux_amd64 后 verify-dist-provenance 必须失败"
+fi
+(cd "${SBX}" && make -s dist >"${WORK}/dist_after_tamper.log" 2>&1) || die "篡改反证后 make dist 应可重建恢复"
+ok "SHA256SUMS/PROVENANCE 同源绑定，篡改产物一字节必红，重建恢复通过"
 
 step "离线可构建（预热模块缓存 + GOPROXY=off）"
 (cd "${SBX}" && GOPROXY=off CGO_ENABLED=0 go build -o "${WORK}/eg_offline" ./cmd/eg >"${WORK}/offline.log" 2>&1) \
   || { tail -3 "${WORK}/offline.log" >&2; die "GOPROXY=off 构建失败（预热缓存下应成功）"; }
 [ -x "${WORK}/eg_offline" ] || die "离线构建未产出可执行文件"
 ok "GOPROXY=off CGO_ENABLED=0 go build ./cmd/eg 成功"
+
+step "I-028 反证：空 GOMODCACHE + GOPROXY=off 在 CI 环境前置阶段退 3 并给出指引"
+EMPTY_MODCACHE="${WORK}/empty-gomodcache"
+mkdir -p "${EMPTY_MODCACHE}"
+RC_CI=0
+(cd "${SBX}" && env GOMODCACHE="${EMPTY_MODCACHE}" GOPROXY=off EG_CI_PROFILE=manifest bash tests/ci/pipeline.sh >"${WORK}/ci_empty_cache.log" 2>&1) || RC_CI=$?
+[ "${RC_CI}" = "3" ] || { tail -20 "${WORK}/ci_empty_cache.log" >&2; die "空模块缓存 CI 前置应退 3，实测 ${RC_CI}"; }
+grep -qF "预热 GOMODCACHE 或提交 vendor/" "${WORK}/ci_empty_cache.log" || die "空模块缓存失败未给出 GOMODCACHE/vendor 指引"
+ok "空模块缓存反证在环境前置阶段失败（退 3），未落到 make lint/go build 底层错误"
 
 # 被测二进制拷出后再验 clean（clean 会删掉 bin/ 与 dist/）
 cp "${SBX}/bin/eg" "${EG}"
@@ -226,21 +247,27 @@ rm -rf "${SBX}/bin"
 ok "make dist 未产 bin/eg，四平台产物已重建"
 (cd "${SBX}" && make -s clean >/dev/null 2>&1) || die "make clean 失败"
 [ ! -e "${SBX}/bin" ] || die "make clean 未删 bin/"
-for f in eg_linux_amd64 eg_linux_arm64 eg_darwin_amd64 eg_darwin_arm64; do
+for f in eg_linux_amd64 eg_linux_arm64 eg_darwin_amd64 eg_darwin_arm64 SHA256SUMS PROVENANCE.txt; do
   [ ! -e "${SBX}/dist/${f}" ] || die "make clean 未删 dist/${f}"
 done
-ok "make clean 后 bin/ 与四支可执行产物均不在场（PROVENANCE 存亡见 I-…-026，本步不断言）"
+ok "make clean 后 bin/ 与 dist/ 派生产物均不在场；PROVENANCE 可由 make dist/release 再生成"
 
 # ────────────────────────────────────────────────────────── G：INSTALL §3 首次上手
-step "INSTALL §3 首次上手：四条命令逐行照抄退 0"
+step "INSTALL §3 首次上手：四条命令逐行照抄退 0（素材落在 vault 之外）"
 mkdir -p "${VAULT}"
 [ "$(rcv init --domain ai-infra)" = "0" ]                     || die "§3 eg init 未退 0"
 [ "$(rcv config set default_domain ai-infra)" = "0" ]         || die "§3 eg config set 未退 0"
-printf '正文：Transformer 用并行注意力替代递归，降低了长序列训练成本。\n' > "${VAULT}/article.txt"
+BODY_FILE="${WORK}/article_external.txt"
+printf '正文：Transformer 用并行注意力替代递归，降低了长序列训练成本。\n' > "${BODY_FILE}"
 [ "$(rcv capture --url https://example.com/attention --title "注意力机制综述" \
-        --body-file "${VAULT}/article.txt" --reason "首次上手冒烟")" = "0" ] || die "§3 eg capture 未退 0"
-[ "$(rcv search 注意力)" = "0" ]                               || die "§3 eg search 未退 0（零命中也应退 0）"
+        --body-file "${BODY_FILE}" --reason "首次上手冒烟")" = "0" ] || die "§3 eg capture 未退 0"
+[ "$(rcv search 注意力)" = "0" ]                               || die "§3 eg search 未退 0"
 ok "init / config set / capture / search 四条逐行照抄全退 0"
+
+step "I-029 审计锁：vault 根不得出现 article.txt 跟踪（素材必须落在外部）"
+[ ! -f "${VAULT}/article.txt" ] || die "vault 根不应存在 article.txt（应当使用外部路径）"
+gv ls-files | grep -q "article.txt" && die "vault 根 article.txt 被意外跟踪（I-029 审计红）"
+ok "vault 根干净，无意外跟踪素材"
 
 step "vault 侧 .index/ 忽略在位（init 期即写入 .gitignore）"
 grep -qx "\.index/" "${VAULT}/.gitignore"     || die ".gitignore 未登记 .index/"
@@ -250,6 +277,15 @@ step "内嵌 SKILL.md 与 skill/SKILL.md 逐字相等（go:embed 未过期）"
 cmp -s "${VAULT}/SKILL.md" "${REPO_ROOT}/skill/SKILL.md" \
   || die "eg init 落盘的 SKILL.md 与源文件不同字节"
 ok "SKILL.md 逐字相等（$(wc -c < "${VAULT}/SKILL.md" | tr -d ' ') 字节）"
+
+step "I-004 / defect_zeroing-001 文档审计：SKILL 示例不复用 PPE 语料，交付文档零旧 test/ 根路径"
+if grep -nE 'Verification, The Key to AI|s-20260901-verification|n-20260901-verification|k-20260901-verification' "${REPO_ROOT}/skill/SKILL.md"; then
+  die "skill/SKILL.md 示例仍复用 PPE 验收语料（I-004 审计红）"
+fi
+if grep -nE '(^|[^a-zA-Z0-9_/])(\./)?test/' "${REPO_ROOT}/README.md" "${REPO_ROOT}/INSTALL.md" "${REPO_ROOT}/skill/SKILL.md"; then
+  die "README / INSTALL / SKILL 仍引用已删除的 test/ 根路径（defect_zeroing-001 审计红）"
+fi
+ok "SKILL 示例与 PPE 验收语料零重叠；README/INSTALL/SKILL 零旧 test/ 根路径"
 
 # ────────────────────────────────────────────────────────── H：INSTALL §4 用户闸门链
 step "INSTALL §4 用户闸门链：过目 / 提案 / 批准逐行照抄退 0"
