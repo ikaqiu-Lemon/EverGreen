@@ -319,6 +319,15 @@ func planFromSample(t *testing.T, sample string, base map[string]string) []byte 
 	return out
 }
 
+// sampleForCapturedArticle keeps the public SKILL examples independent from this
+// regression fixture while still exercising the same ChangePlan shape against
+// the article that the test just captured into the vault.
+func sampleForCapturedArticle(sample, source, note string) string {
+	s := strings.ReplaceAll(sample, "s-20260917-knowledge-compounding", source)
+	s = strings.ReplaceAll(s, "n-20260917-knowledge-compounding", note)
+	return s
+}
+
 // ---------- 主用例 ----------
 
 func TestM1RealArticleZeroIntervention(t *testing.T) {
@@ -575,8 +584,10 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		}
 		base2 := contextBase(t, vault, "source", srcArticle2)
 
-		// 样例 ② 先 dry-run（退 0、零写入）。
-		p := writePlan(t, work, "sample2-dry.json", []byte(samples[1]))
+		// 样例 ② 先 dry-run（退 0、零写入）：使用本次 context 的真实 base，
+		// 并把公开示例的独立语料 ID 映射到本 e2e 已收录的第二篇文章。
+		sample2 := sampleForCapturedArticle(samples[1], srcArticle2, noteA2)
+		p := writePlan(t, work, "sample2-dry.json", planFromSample(t, sample2, base2))
 		if env, code := runJSON(t, vault, "apply", "--plan", p, "--dry-run"); code != 0 {
 			t.Fatalf("样例 ② 的 --dry-run 退出码 %d：%s", code, env.raw)
 		}
@@ -584,7 +595,7 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 			t.Fatalf("--dry-run 必须零写入：%s", s)
 		}
 
-		plan2 := planFromSample(t, samples[1], base2)
+		plan2 := planFromSample(t, sample2, base2)
 		env2, code2 := runJSON(t, vault, "apply", "--plan", writePlan(t, work, "plan2.json", plan2))
 		if code2 != 0 {
 			t.Fatalf("第二篇 apply 退出码 %d：%s", code2, env2.raw)
@@ -600,10 +611,16 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		if got := sectionBytes(t, after, "知识内容"); got != beforeCore {
 			t.Fatalf("append_card 改动了「知识内容」分区：\n前：%q\n后：%q", beforeCore, got)
 		}
-		for _, sec := range []string{"解释与依据", "条件与边界", "理解自检"} {
-			if !strings.Contains(sectionBytes(t, after, sec), "补充") &&
-				!strings.Contains(sectionBytes(t, after, sec), "可扩展") {
-				t.Fatalf("分区「%s」未收到追加内容", sec)
+		for _, want := range []struct {
+			section string
+			needle  string
+		}{
+			{"解释与依据", "补充依据"},
+			{"条件与边界", "补充边界"},
+			{"理解自检", "接手者"},
+		} {
+			if !strings.Contains(sectionBytes(t, after, want.section), want.needle) {
+				t.Fatalf("分区「%s」未收到样例②追加内容（缺 %q）", want.section, want.needle)
 			}
 		}
 		if strings.Contains(sectionBytes(t, after, "用户补充"), "补充依据") {

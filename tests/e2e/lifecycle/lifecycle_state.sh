@@ -63,7 +63,7 @@ rawhash() { sha256sum "${VAULT}/$1" | cut -d' ' -f1; }
 # fmkeys 抽出 frontmatter 的**顶层键集合**（缩进行不算），用于反证没长出历史数组。
 fmkeys() { awk 'NR==1&&/^---$/{next} /^---$/{exit} /^[A-Za-z_]+:/{sub(/:.*/,"");print}' \
   "${VAULT}/$1" | sort | tr '\n' ' '; }
-fmvalue() { awk -v k="$2:" '$1==k{print $2; exit}' "${VAULT}/$1"; }
+fmvalue() { awk -v k="$2:" '$1==k{v=$2; gsub(/^'\''|'\''$/, "", v); gsub(/^\"|\"$/, "", v); print v; exit}' "${VAULT}/$1"; }
 
 seed_card() { # $1=id $2=status $3=额外 frontmatter 行（可空）
   cat >"${VAULT}/${KDIR_REL}/$1.md" <<CARD_EOF
