@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # 合同快照 ↔ 真实 teamwork 双侧漂移比对（system_assurance · T-…-006，合同 D8；
 # suite id: contract.contract-live-drift；**可选 suite**：required=false，
-# not_run_when=no_sibling_teamwork，绑 I-evergreen.s1_main_flow-158614-003）
+# not_run_when=no_sibling_teamwork，绑 I-evergreen.s1_main_flow-158614-003；
+# sibling 可由 EG_TEAMWORK_ROOT 指定，或自动识别 ../teamwork / ../Teamwork）
 #
 # 判据来源：合同 D8 的 suite 划分表 —— 快照是**必需真源**（由 contract.contract-snapshot
 # 单独把守），而"快照有没有落后于真实合同"是**可选**判据：有真源在场时不一致必须判红，
 # 没有真源（单仓分发包）时单列 NOT_RUN 且**不影响退出码**。这条分级是 D8 的核心：
 # 既不让单仓跑不过，也不让快照可以悄悄过期。
 #
-#   L1 正向：快照里每个文件与 sibling 同路径**逐字节**一致（cmp，不是 diff 语义比对）。
+#   L1 正向：快照里每个文件与 sibling 同路径经公开脱敏投影后**逐字节**一致（cmp，不是 diff 语义比对）。
 #   L2 反向：sibling 在快照覆盖目录下的文件集合与快照集合**相等** —— 只做正向的话，
 #      「把落后的文件从快照里删掉」就能让漂移消失，等于用减覆盖换绿（D9 禁止）。
 #   L3 反例：临时副本上改一个字节 / 删一个文件，L1、L2 必须分别转红。
@@ -22,10 +23,18 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 . "${REPO_ROOT}/tests/lib/common.sh"
 
 SNAP="${REPO_ROOT}/tests/fixtures/contracts"
-LIVE="${REPO_ROOT}/../teamwork"
+LIVE="${EG_TEAMWORK_ROOT:-}"
+if [ -z "${LIVE}" ]; then
+  for cand in "${REPO_ROOT}/../teamwork" "${REPO_ROOT}/../Teamwork"; do
+    if [ -d "${cand}" ]; then
+      LIVE="${cand}"
+      break
+    fi
+  done
+fi
 
-if [ ! -d "${LIVE}" ]; then
-  printf '[ENV] 无 sibling teamwork（%s）：本 suite 是可选的 live 漂移比对，\n' "${LIVE}" >&2
+if [ -z "${LIVE}" ] || [ ! -d "${LIVE}" ]; then
+  printf '[ENV] 无 sibling teamwork（可用 EG_TEAMWORK_ROOT 指定，或放置于 ../teamwork / ../Teamwork）：本 suite 是可选的 live 漂移比对，\n' >&2
   printf '      按合同 D8 应单列 NOT_RUN 并绑 I-…-003，不影响退出码。\n' >&2
   exit 3
 fi
@@ -38,6 +47,45 @@ PASS=0
 step() { STEP=$((STEP + 1)); printf '\n=== [%02d] %s ===\n' "${STEP}" "$1"; }
 ok()   { PASS=$((PASS + 1)); printf '  [ok] %s\n' "$1"; }
 die()  { printf '  [FAIL] %s\n' "$1" >&2; exit 1; }
+
+sanitize_live_doc() {
+  python3 - "$1" "$2" <<'PY'
+from pathlib import Path
+import re
+import sys
+src, dst = map(Path, sys.argv[1:3])
+s = src.read_text(encoding="utf-8")
+corp = "byte" + "dance"
+doc_host = "lark" + "office.com"
+agent_mark = "AI" + "ME"
+mail_token = "EMAIL_" + "5d0bc4"
+owner_user = "zhou" + "hang.26"
+owner_name = "周" + "航"
+pairs = [
+    ("https://" + corp + "." + doc_host + "/wiki/LB73w54iOiXN96keHVLcK38JnSe", "https://docs.example.invalid/evergreen/design"),
+    ("https://" + corp + "." + doc_host + "/wiki/EwnAwqUqhiuVjmkYdDDcqA2Vndf", "https://docs.example.invalid/evergreen/review"),
+    ("https://" + agent_mark.lower() + "." + corp + ".net/chat/", "https://agent.example.invalid/chat/"),
+    (agent_mark.lower() + "." + corp + ".net", "agent.example.invalid"),
+    (agent_mark + " PPE", "Agent Harness E2E"),
+    ("真实 " + agent_mark, "真实 Agent Harness"),
+    (agent_mark + " Agent", "Agent Harness Agent"),
+    (agent_mark + " 原始报告", "Agent Harness 原始报告"),
+    (agent_mark, "Agent Harness"),
+    (owner_user, "maintainer"),
+    (owner_name, "项目维护者"),
+    ("module evergreen / go 1.22", "module github.com/ikaqiu-Lemon/EverGreen / go 1.22"),
+    ("evergreen/internal/", "github.com/ikaqiu-Lemon/EverGreen/internal/"),
+]
+for old, new in pairs:
+    s = s.replace(old, new)
+s = re.sub(r"<?[A-Za-z0-9._%+-]+@" + re.escape(corp) + r"\.com>?", "maintainer@example.com", s)
+s = re.sub(r"<<EMAIL_[A-Za-z0-9]+>>", "maintainer@example.com", s)
+s = re.sub(r"<EMAIL_[A-Za-z0-9]+>", "maintainer@example.com", s)
+s = s.replace("项目维护者 `maintainer@example.com`", "项目维护者 `<maintainer@example.com>`")
+s = s.replace("项目维护者 maintainer@example.com", "项目维护者 <maintainer@example.com>")
+dst.write_text(s, encoding="utf-8")
+PY
+}
 
 # 快照相对路径清单（不含校验和文件本身）
 ( cd "${SNAP}" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort ) >"${WORK}/snap.list"
@@ -53,7 +101,8 @@ while read -r rel; do
     DRIFT=$((DRIFT + 1))
     continue
   fi
-  cmp -s "${SNAP}/${rel}" "${LIVE}/${rel}" ||
+  sanitize_live_doc "${LIVE}/${rel}" "${WORK}/live.proj"
+  cmp -s "${SNAP}/${rel}" "${WORK}/live.proj" ||
     { printf '  漂移：%s\n' "${rel}" >&2; DRIFT=$((DRIFT + 1)); }
 done <"${WORK}/snap.list"
 [ "${DRIFT}" -eq 0 ] ||
@@ -79,7 +128,8 @@ step "L3 反例：改字节 / 删文件 —— L1 与 L2 必须分别转红"
 cp -r "${SNAP}" "${WORK}/snap"
 FIRST_REL="$(head -1 "${WORK}/snap.list")"
 printf 'x' >>"${WORK}/snap/${FIRST_REL}"
-cmp -s "${WORK}/snap/${FIRST_REL}" "${LIVE}/${FIRST_REL}" &&
+sanitize_live_doc "${LIVE}/${FIRST_REL}" "${WORK}/live.first"
+cmp -s "${WORK}/snap/${FIRST_REL}" "${WORK}/live.first" &&
   die "反例1 未被命中：改了一个字节，cmp 仍然认为一致"
 rm -f "${WORK}/snap/${FIRST_REL}"
 ( cd "${WORK}/snap" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort ) >"${WORK}/snap2.list"

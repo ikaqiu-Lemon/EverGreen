@@ -192,7 +192,7 @@ tests/archive/history/stage-acceptance/m6_acceptance.sh	archive	shell	arch-bound
 tests/ci/pipeline.sh	ci	shell	-	-	18	6999
 tests/contract/arch-boundary/product_tree_selfcontained.sh	contract	shell	arch-boundary	contract.arch-boundary.product_tree_selfcontained	0	6696
 tests/contract/archive-hygiene/archive_not_counted.sh	contract	shell	arch-boundary	contract.archive-hygiene.archive_not_counted	23	8374
-tests/contract/contract-live-drift/contract_live_drift.sh	contract	shell	arch-boundary	contract.contract-live-drift	10	4999
+tests/contract/contract-live-drift/contract_live_drift.sh	contract	shell	arch-boundary	contract.contract-live-drift	10	7292
 tests/contract/contract-snapshot/contract_snapshot.sh	contract	shell	arch-boundary	contract.contract-snapshot	20	8384
 tests/contract/dep-direction/dep_direction_gate.sh	contract	shell	arch-boundary	contract.dep-direction	0	5203
 tests/contract/dep-direction/dep_gate_double_sided.sh	contract	shell	arch-boundary	contract.dep-direction-double-sided	19	7464
@@ -368,7 +368,7 @@ tests/perf/corpus_gen.go	perf	go	perf	perf.bench-p95	0	10652
 tests/perf/thresholds.yaml	perf	data	perf	-	0	2620
 tests/run.sh	-	shell	-	-	0	2535
 tests/runner/materialize.py	runner	python	-	-	0	26076
-tests/runner/run.py	runner	python	-	-	0	27106
+tests/runner/run.py	runner	python	-	-	0	27315
 tests/tools/check_migration.py	tools	python	-	-	0	6977
 tests/tools/inventory.py	tools	python	-	-	0	12976
 tests/tools/legacy_gates.py	tools	python	-	-	0	13312
