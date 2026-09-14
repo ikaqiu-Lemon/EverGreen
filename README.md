@@ -49,8 +49,10 @@ make lint
 ```
 
 `make build` creates the native `bin/eg` binary and cross-compiles release
-artifacts for Linux and macOS. See [INSTALL.md](INSTALL.md) for installation,
-checksum verification, and a complete first-run example.
+artifacts for Linux and macOS. `make dist` writes `dist/SHA256SUMS` and
+`dist/PROVENANCE.txt`; `make verify-dist-provenance` verifies that the
+provenance file is bound to the current artifact hashes. See [INSTALL.md](INSTALL.md)
+for installation, checksum verification, and a complete first-run example.
 
 ## Commands
 

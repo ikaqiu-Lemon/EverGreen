@@ -13,11 +13,11 @@ PLATFORMS  := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
 .PHONY: help build dist test test-full test-race test-manifest test-contract test-unit \
         test-e2e test-perf test-fuzz test-mutation test-go lint fmt vet fmt-check guard \
-        dep-gate public-check release clean print-version
+        dep-gate public-check verify-dist-provenance release clean print-version
 
 help:
-	@echo "make build    - 编译单二进制到 $(BIN) 并从当期 HEAD 重建四平台 dist/ + SHA256SUMS"
-	@echo "make dist     - 仅交叉编译四平台到 dist/ + SHA256SUMS（不产 $(BIN)）"
+	@echo "make build    - 编译单二进制到 $(BIN) 并从当期 HEAD 重建四平台 dist/ + SHA256SUMS + PROVENANCE.txt"
+	@echo "make dist     - 仅交叉编译四平台到 dist/ + SHA256SUMS + PROVENANCE.txt（不产 $(BIN)）"
 	@echo "make test     - bash tests/run.sh --profile core（唯一入口；清单驱动）"
 	@echo "make test-full - bash tests/run.sh --profile full（全量一次遍历，去重）"
 	@echo "make test-race - bash tests/run.sh --profile race（-race 子集）"
@@ -40,7 +40,7 @@ build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) $(PKG)
 	@$(MAKE) --no-print-directory dist
 
-# dist：四平台交叉编译 + 校验和（不删既有 bin/），供 build / release 复用。
+# dist：四平台交叉编译 + 校验和 + 当期溯源（不删既有 bin/），供 build / release 复用。
 dist:
 	@mkdir -p dist
 	@for p in $(PLATFORMS); do \
@@ -50,7 +50,27 @@ dist:
 			-o dist/eg_$${os}_$${arch} $(PKG) || exit 1; \
 	done
 	@cd dist && (sha256sum eg_* > SHA256SUMS 2>/dev/null || shasum -a 256 eg_* > SHA256SUMS)
+	@{ \
+		echo "EverGreen release provenance"; \
+		echo "version: $(VERSION)"; \
+		echo "commit: $(COMMIT)"; \
+		echo "built_at: $(DATE)"; \
+		echo "sha256sums: dist/SHA256SUMS"; \
+		echo; \
+		echo "artifact checksums:"; \
+		cat dist/SHA256SUMS; \
+	} > dist/PROVENANCE.txt
+	@$(MAKE) --no-print-directory verify-dist-provenance
 	@echo "dist 产物："; ls -l dist
+
+verify-dist-provenance:
+	@[ -f dist/SHA256SUMS ] || { echo "dist/SHA256SUMS missing; run make dist" >&2; exit 1; }
+	@[ -f dist/PROVENANCE.txt ] || { echo "dist/PROVENANCE.txt missing; run make dist" >&2; exit 1; }
+	@tmp=$$(mktemp); sed -n '/^artifact checksums:$$/,$$p' dist/PROVENANCE.txt | tail -n +2 > $$tmp; \
+		cmp -s dist/SHA256SUMS $$tmp || { echo "dist/PROVENANCE.txt artifact checksums differ from dist/SHA256SUMS" >&2; rm -f $$tmp; exit 1; }; \
+		rm -f $$tmp
+	@cd dist && (sha256sum -c SHA256SUMS >/dev/null 2>&1 || shasum -a 256 -c SHA256SUMS >/dev/null 2>&1)
+	@echo "dist provenance: SHA256SUMS and PROVENANCE.txt are consistent"
 
 # 唯一测试入口（合同 D4）：所有 profile 都从 tests/manifest/suites.yaml 派生执行计划。
 # `make test` 不再是 `go test ./...`——后者只覆盖 go 单测，看不见 contract / e2e / 清单自检，
