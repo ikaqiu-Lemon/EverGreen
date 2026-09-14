@@ -372,7 +372,7 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
       "core_knowledge": "same",
       "conditions": "different",
       "reuse_purpose": "same",
-      "note": "两篇都在讲「可随算力扩展的通用方法」，核心知识与独立复用用途相同；第二篇补了一条成立条件（知识须能被系统自验证），故 conditions=different，按非核心补充追加到已有卡，不拆新卡"
+      "note": "两篇都在讲「可随团队扩展的通用方法」，核心知识与独立复用用途相同；第二篇补了一条成立条件（知识必须携带上下文、边界与反例），故 conditions=different，按非核心补充追加到已有卡，不拆新卡"
     }
   ],
   "base": {
@@ -382,12 +382,12 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
   "ops": [
     {
       "op": "write_note",
-      "source": "s-20260917-verification-the-key-to-ai",
-      "note_id": "n-20260917-verification-the-key-to-ai",
-      "title": "Verification, The Key to AI（Rich Sutton, 2001）",
+      "source": "s-20260917-knowledge-compounding",
+      "note_id": "n-20260917-knowledge-compounding",
+      "title": "Knowledge Compounding in Small Teams（internal onboarding note, 2026）",
       "sections": {
-        "材料提炼": "- 原文主张：AI 系统必须能自己判断自己是否工作正常，这是可扩展的前提（验证原则）。\n- 原文论据：依赖人工构建与维护的大型知识库无法自我验证，规模一大就维护不动。\n- 原文结论：只保留能被系统自身验证的知识，学习与搜索才能持续放大。\n",
-        "Agent 分析": "- 这一条给「通用方法为何能随算力扩展」补了一个前提：没有自验证，扩展就会被人工维护成本卡住。\n"
+        "材料提炼": "- 原文主张：小团队知识沉淀要优先记录可复用的决策依据，而不是只记录结论。\n- 原文论据：后续成员接手时需要看到上下文、边界和反例，才能在不询问原作者的情况下复用知识。\n- 原文结论：把背景、适用条件与自检问题一起沉淀，知识才能随项目迭代持续复利。\n",
+        "Agent 分析": "- 这一条给「通用方法为何能随团队扩展」补了一个前提：知识条目必须携带可复核的上下文与边界。\n"
       },
       "output_cards": [{ "card": "k-20260917-bitter-lesson", "mode": "补充" }]
     },
@@ -395,18 +395,18 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
       "op": "append_card",
       "card": "k-20260917-bitter-lesson",
       "sections": {
-        "解释与依据": "- 补充依据（Verification, The Key to AI, 2001）：通用方法能扩展的前提之一是系统能自行验证知识，否则维护成本会随规模抵消算力收益。\n",
-        "条件与边界": "- 补充边界：该结论在「知识可被系统自身验证」时最稳固；纯人工维护的知识库不满足该条件。\n",
-        "理解自检": "- 如果一个方法能吃下更多算力但无法自我验证，它还算「可扩展」吗？\n"
+        "解释与依据": "- 补充依据（Knowledge Compounding in Small Teams, 2026）：通用方法能在团队中扩展的前提之一是知识条目携带可复核的决策背景，否则接手成本会抵消复用收益。\n",
+        "条件与边界": "- 补充边界：该结论在「知识携带上下文、边界与反例」时最稳固；只记录孤立结论不满足该条件。\n",
+        "理解自检": "- 如果一条知识只有结论而缺少背景、边界与反例，下一位接手者还能安全复用它吗？\n"
       }
     },
     {
       "op": "add_material_rel",
       "card": "k-20260917-bitter-lesson",
-      "source": "s-20260917-verification-the-key-to-ai",
-      "note": "n-20260917-verification-the-key-to-ai",
+      "source": "s-20260917-knowledge-compounding",
+      "note": "n-20260917-knowledge-compounding",
       "rel": "support",
-      "reason": "第二篇从「自验证是可扩展前提」的角度为该卡结论提供支持性材料依据"
+      "reason": "第二篇从「知识沉淀必须携带上下文」的角度为该卡结论提供支持性材料依据"
     }
   ]
 }
@@ -498,7 +498,7 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 
 ### 8.6 可跑示例
 
-下列命令在 `test/e2e/m3_docs_commands.sh` 里被逐条实跑。前置：`$VAULT` 指向一个已 `eg init`
+下列命令在 `tests/e2e/docs-cli/docs_cli_contract_and_exitcodes.sh` 里被逐条实跑。前置：`$VAULT` 指向一个已 `eg init`
 的库，`$CARD` / `$CARD2` 是库里两张已有知识卡的 ID，`$NOTE` 是一份材料笔记的 ID，`eg` 在 `PATH` 上。
 行尾 `# expect: N` 表示该条**预期退出码是 N**（没有标注的都是 `0`）。
 

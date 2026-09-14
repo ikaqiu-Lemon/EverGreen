@@ -6,7 +6,7 @@
 # tests/manifest/suites.yaml 经 tests/run.sh 派生（D4 唯一清单）。
 #
 # 阶段：
-#   [1] 环境前置：go / python3 / PyYAML 在场，且**全程离线**（不装依赖、不联网）；
+#   [1] 环境前置：go / python3 / PyYAML 在场，Go 模块在 `GOPROXY=off` 下可解析，且**全程离线**（不装依赖、不联网）；
 #   [2] 工作树干净门禁：CI 上跑测试前工作树必须干净（脏树意味着测的不是被审对象）；
 #   [3] 跟踪面卫生门禁：构建产物 / 运行期产物不得被 git 跟踪；
 #   [4] make lint：gofmt + vet + 写路径守卫 + §13 依赖方向；
@@ -29,6 +29,14 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
+# 支持源码分发包直接运行 CI 脚本：无 .git 时先建立本地测试基线，供后续
+# git status / ls-files 型门禁使用；真实仓库不会触发，且不访问网络。
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git init -q .
+  git -c user.name='EverGreen Tests' -c user.email='evergreen-tests@example.invalid' add -A
+  git -c user.name='EverGreen Tests' -c user.email='evergreen-tests@example.invalid' commit -qm 'source package ci baseline'
+fi
+
 STEP=0
 PASS=0
 step() { STEP=$((STEP + 1)); printf '\n=== [%02d] %s ===\n' "${STEP}" "$1"; }
@@ -39,7 +47,7 @@ env_die() { printf '  [ENV] %s\n' "$1" >&2; exit 3; }
 PROFILE="${EG_CI_PROFILE:-core}"
 
 # ---------------------------------------------------------------- 1. 环境前置
-step "环境前置：go / python3 / PyYAML 在场（离线，不安装任何东西）"
+step "环境前置：go / python3 / PyYAML / Go 模块缓存或 vendor 在场（离线，不安装任何东西）"
 command -v go >/dev/null 2>&1 || env_die "缺 go 工具链"
 command -v python3 >/dev/null 2>&1 || env_die "缺 python3"
 python3 -c 'import yaml' 2>/dev/null || env_die "缺 PyYAML（离线环境请预装；CI 镜像应内置）"
@@ -49,7 +57,11 @@ export GOFLAGS="${GOFLAGS:-} -mod=mod"
 export GOPROXY=off
 export GONOSUMDB='*'
 export GOFLAGS="${GOFLAGS} -buildvcs=false"
-ok "go=${GOVER}；python3+PyYAML 在场；GOPROXY=off（离线）"
+go list -deps ./cmd/eg >/dev/null 2>"${TMPDIR:-/tmp}/eg-ci-go-modules.err" || {
+  sed 's/^/    /' "${TMPDIR:-/tmp}/eg-ci-go-modules.err" >&2 || true
+  env_die "Go 模块在 GOPROXY=off 下不可解析：请预热 GOMODCACHE 或提交 vendor/ 后重跑 CI"
+}
+ok "go=${GOVER}；python3+PyYAML 在场；GOPROXY=off；Go 模块离线可解析"
 
 # ---------------------------------------------------------------- 2. 工作树干净门禁
 step "工作树干净门禁：CI 检出后跑测试前，git status 必须为空"
