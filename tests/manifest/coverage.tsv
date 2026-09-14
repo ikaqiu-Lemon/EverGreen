@@ -1,5 +1,5 @@
 capability	unit	integration	e2e	contract	perf	total
-arch-boundary	0	2	2	15	0	19
+arch-boundary	0	2	2	16	0	20
 authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
 card-query	18	0	4	0	0	22
