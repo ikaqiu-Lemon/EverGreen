@@ -29,6 +29,14 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
+# 支持源码分发包直接运行 CI 脚本：无 .git 时先建立本地测试基线，供后续
+# git status / ls-files 型门禁使用；真实仓库不会触发，且不访问网络。
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git init -q .
+  git -c user.name='EverGreen Tests' -c user.email='evergreen-tests@example.invalid' add -A
+  git -c user.name='EverGreen Tests' -c user.email='evergreen-tests@example.invalid' commit -qm 'source package ci baseline'
+fi
+
 STEP=0
 PASS=0
 step() { STEP=$((STEP + 1)); printf '\n=== [%02d] %s ===\n' "${STEP}" "$1"; }
