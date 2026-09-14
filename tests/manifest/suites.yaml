@@ -145,6 +145,24 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: contract.release-hygiene.platform_and_workspace
+  layer: contract
+  capability: arch-boundary
+  kind: shell
+  target: tests/contract/release-hygiene/platform_and_workspace.sh
+  source: tests/contract/release-hygiene/platform_and_workspace.sh
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-005
+  profiles:
+  - contract
+  - core
+  - full
+  timeout_s: 900
+  min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: contract.resource-limits.limits
   layer: contract
   capability: arch-boundary
