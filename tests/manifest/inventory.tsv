@@ -170,7 +170,7 @@ tests/_staged/internal/version/version_test.go	unit	go	dist-install	unit.interna
 tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534
 tests/_staged/test/e2e/layout_test.go	e2e	go	arch-boundary	integration.e2e-go	0	3328
-tests/_staged/test/e2e/m1_test.go	integration	go	capture-ingest	integration.e2e-go	5	49116
+tests/_staged/test/e2e/m1_test.go	integration	go	capture-ingest	integration.e2e-go	5	49870
 tests/_staged/test/e2e/m2_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	4	19798
 tests/_staged/test/e2e/m3_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	6	34458
 tests/_staged/test/e2e/m4_r1_takeover_test.go	integration	go	reconcile-takeover	integration.e2e-go	1	5243
@@ -239,12 +239,12 @@ tests/e2e/index-search/rel_index_equivalence.sh	e2e	shell	index-search	e2e.index
 tests/e2e/index-search/replaced_by_reverse.sh	e2e	shell	index-search	e2e.index-search.replaced_by_reverse	64	16045
 tests/e2e/index-search/sort_page.sh	e2e	shell	index-search	e2e.index-search.sort_page	65	17563
 tests/e2e/lifecycle/c2_updated_at_refresh.sh	e2e	shell	lifecycle	e2e.lifecycle.c2_updated_at_refresh	56	19175
-tests/e2e/lifecycle/lifecycle_state.sh	e2e	shell	lifecycle	e2e.lifecycle.lifecycle_state	48	14063
+tests/e2e/lifecycle/lifecycle_state.sh	e2e	shell	lifecycle	e2e.lifecycle.lifecycle_state	48	14120
 tests/e2e/lifecycle/logical_delete.sh	e2e	shell	lifecycle	e2e.lifecycle.logical_delete	108	28813
 tests/e2e/lifecycle/markers.sh	e2e	shell	lifecycle	e2e.lifecycle.markers	50	14248
 tests/e2e/lifecycle/recap_stale.sh	e2e	shell	lifecycle	e2e.lifecycle.recap_stale	124	37766
 tests/e2e/lifecycle/reviewed.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed	89	20566
-tests/e2e/lifecycle/reviewed_backfill.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed_backfill	115	37196
+tests/e2e/lifecycle/reviewed_backfill.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed_backfill	115	37192
 tests/e2e/lifecycle/superseded.sh	e2e	shell	lifecycle	e2e.lifecycle.superseded	48	19850
 tests/e2e/ops-diagnostics/cmd_check.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.cmd_check	69	31612
 tests/e2e/ops-diagnostics/execution_failed.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.execution_failed	52	23114

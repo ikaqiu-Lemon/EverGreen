@@ -397,9 +397,9 @@ grep -Fq "\"reviewed\":[\"${CARD}\",\"${NOTE}\"]" "${FACTS}" ||
 grep -Eq '"skipped":(\[\]|null)' "${FACTS}" || { cat "${FACTS}"; die "本轮不应有跳过项"; }
 grep -Eq '"failures":(\[\]|null)' "${FACTS}" || { cat "${FACTS}"; die "本轮不应有落盘失败" ; }
 # ① 补写的值逐字可断言（时刻由注入给定，不读本机时钟）。
-grep -Fq "reviewed_at: \"${STAMP}\"" "${VAULT}/${CARD_REL}" ||
+grep -Fq "reviewed_at: '${STAMP}'" "${VAULT}/${CARD_REL}" ||
   { fmline "${CARD_REL}" reviewed_at; die "卡的 reviewed_at 未补成注入的对账时刻"; }
-grep -Fq "reviewed_at: \"${STAMP}\"" "${VAULT}/${NOTE_REL}" ||
+grep -Fq "reviewed_at: '${STAMP}'" "${VAULT}/${NOTE_REL}" ||
   { fmline "${NOTE_REL}" reviewed_at; die "笔记的 reviewed_at 未覆盖成注入的对账时刻"; }
 # ② 键级反证：键差集恰 {reviewed_at}，正文逐字节不变（同文件其他键与正文一字不动）。
 only_reviewed_at "${WORK}/card.before" "${VAULT}/${CARD_REL}"
