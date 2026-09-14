@@ -224,8 +224,12 @@ def not_run_reason(s: dict, native: str) -> str | None:
     if nrw is None:
         return None
     if nrw == "no_sibling_teamwork":
-        sib = REPO.parent / "teamwork"
-        return None if sib.is_dir() else "无 sibling teamwork（单仓分发口径）"
+        candidates = []
+        env_root = os.environ.get("EG_TEAMWORK_ROOT")
+        if env_root:
+            candidates.append(Path(env_root))
+        candidates.extend([REPO.parent / "teamwork", REPO.parent / "Teamwork"])
+        return None if any(p.is_dir() for p in candidates) else "无 sibling teamwork（单仓分发口径）"
     if nrw == "no_go_toolchain":
         return None if shutil.which("go") else "本机无 go 工具链"
     if nrw == "non_native_platform":
