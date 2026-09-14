@@ -139,7 +139,7 @@ mutants:
     op: replace
     # 破坏首条记录的校验和（只动 16 个十六进制字符，行形态不变），
     # 逼判据真的去算文件哈希，而不是"文件在就算过"。
-    find: "246837805ebe64b4"
+    find: "4acfb6c79b7cb180"
     replace: "0000000000000000"
     judge: python3 tests/runner/materialize.py --json
     why: >-
