@@ -28,6 +28,7 @@ tests/_staged/internal/cli/index_after_write_proposal_test.go	internal/cli/index
 tests/_staged/internal/cli/index_after_write_undelete_test.go	internal/cli/index_after_write_undelete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_lock_test.go	internal/cli/index_lock_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_reserved_read_test.go	internal/cli/index_reserved_read_test.go	evergreen	unit	go
+tests/_staged/internal/cli/index_rowlevel_test.go	internal/cli/index_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_test.go	internal/cli/index_test.go	evergreen	unit	go
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
@@ -67,6 +68,7 @@ tests/_staged/internal/git/exitcode_test.go	internal/git/exitcode_test.go	evergr
 tests/_staged/internal/git/git_test.go	internal/git/git_test.go	evergreen	unit	go
 tests/_staged/internal/git/log_test.go	internal/git/log_test.go	evergreen	unit	go
 tests/_staged/internal/index/build_test.go	internal/index/build_test.go	evergreen	unit	go
+tests/_staged/internal/index/consistency_rowlevel_test.go	internal/index/consistency_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/index/consistency_test.go	internal/index/consistency_test.go	evergreen	unit	go
 tests/_staged/internal/index/corrupt_test.go	internal/index/corrupt_test.go	evergreen	unit	go
 tests/_staged/internal/index/incremental_test.go	internal/index/incremental_test.go	evergreen	unit	go
@@ -118,6 +120,7 @@ tests/_staged/internal/query/queryset/queryset_test.go	internal/query/queryset/q
 tests/_staged/internal/query/rank_test.go	internal/query/rank_test.go	evergreen	unit	go
 tests/_staged/internal/query/relation_test.go	internal/query/relation_test.go	evergreen	unit	go
 tests/_staged/internal/query/reverse_test.go	internal/query/reverse_test.go	evergreen	unit	go
+tests/_staged/internal/query/rowlevel_degrade_test.go	internal/query/rowlevel_degrade_test.go	evergreen	unit	go
 tests/_staged/internal/query/scan_test.go	internal/query/scan_test.go	evergreen	unit	go
 tests/_staged/internal/query/search_test.go	internal/query/search_test.go	evergreen	unit	go
 tests/_staged/internal/query/visibility_test.go	internal/query/visibility_test.go	evergreen	unit	go

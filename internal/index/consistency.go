@@ -85,6 +85,16 @@ func StaleReasons() []string {
 type Current struct {
 	Head  string
 	Files []File
+	// Cards 是调用方**已经解析好**的权威 Markdown 卡投影（与 build 快照同口径的中性 DTO：
+	// id/path/domain/title/status/deprecated/deleted/replaced_by/content_hash 逐列，外加喂 FTS
+	// 的 Body）。它是 `Check` 做**行级**权威一致性核对（I-…-024）的唯一输入来源 ——
+	// 索引层**不**自己读 Markdown、不自己算 content_hash（§13：依赖方向恒是调用方 → index）。
+	//
+	// 语义为 **nil = 调用方没提供权威投影 ⇒ 本次不做行级核对**（只做水位线三态判定，与历史一致）；
+	// 非 nil（含空切片 = 权威零卡）⇒ 逐行核对 `cards` / `cards_fts` 是否对权威撒谎。
+	// 读命令与 `eg index status` 一律提供它（见 cli.indexCurrent / query.probeIndex），
+	// 因此真实读路径恒受行级核对保护；只测水位线的单测可省略它、走老口径。
+	Cards []Card
 }
 
 // Consistency 是一次一致性比对的完整结论（机器可读 + 人类可读双份，不引入第三套事实）。
@@ -153,6 +163,25 @@ func Check(dir string, cur Current) Consistency {
 	}
 	indexed := WatermarkOf(diag.Meta)
 	if indexed.Equal(actual) {
+		// 水位线一致 ⇒ 进入 fresh 候选态。仅当调用方提供了权威卡投影（Current.Cards != nil）
+		// 时才做**行级**核对：把 `cards` / `cards_fts` 与权威 Markdown 投影逐列比对，抓出
+		// 「库结构合法、水位线不动、card_count 不失配，但派生表内容对权威撒谎」这类行级损坏
+		// （I-…-024）。任一不一致统一收在既有 W24 之下（row_level_divergence 子因）。
+		// Current.Cards == nil（只测水位线的场景）保持历史口径，不做行级核对。
+		if cur.Cards != nil {
+			if detail, diverged := checkRowLevel(dir, cur.Cards); diverged {
+				corruptDiag := rowLevelCorrupt(diag, detail)
+				return Consistency{
+					Freshness: FreshnessUnusable,
+					Code:      corruptDiag.Code,
+					Reason:    corruptDiag.Reason,
+					Message:   corruptDiag.Message,
+					Diagnosis: corruptDiag,
+					Indexed:   indexed,
+					Actual:    actual,
+				}
+			}
+		}
 		return Consistency{
 			Freshness: FreshnessFresh,
 			Code:      "",
