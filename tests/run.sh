@@ -23,6 +23,15 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# 源码分发包（例如 git archive 解包）没有 .git，但多支合同/e2e 需要用 git
+# 建立只读基线、检测零污染。此处只在无 Git 元数据时为当前解包目录初始化本地
+# 临时仓库；真实开发仓不会触发，且不依赖任何远端或外部合同仓。
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git init -q .
+  git -c user.name='EverGreen Tests' -c user.email='evergreen-tests@example.invalid' add -A
+  git -c user.name='EverGreen Tests' -c user.email='evergreen-tests@example.invalid' commit -qm 'source package test baseline'
+fi
+
 if ! command -v python3 >/dev/null 2>&1; then
   printf '[ENV] 缺少 python3：runner 与 materializer 均以 python3 实现（环境约束，不是产品缺陷）\n' >&2
   exit 3
