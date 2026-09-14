@@ -52,8 +52,13 @@ type CardEntry struct {
 	Deleted       bool
 	Relations     []model.Relation
 	Sources       []model.SourceRef
-	Raw           []byte
-	Doc           *mdfile.Doc
+	// ReplacedByTarget 是 `replaced_by.target` 的**逐字原值**，缺省即空串（不回填默认值）。
+	// 扫描层解码 frontmatter 时**一并带出**这个事实：对账域 R4 的 `dangling_ref`（E12）
+	// 要判「失效卡的替代指针指向不存在的知识卡」，索引层要把它写进 `cards.replaced_by` 列，
+	// 两处都读这一个字段 —— 绝不各自再解码一次 frontmatter（同一事实只一处抽取）。
+	ReplacedByTarget string
+	Raw              []byte
+	Doc              *mdfile.Doc
 
 	// Score / MatchedFields 由 Filter 填写（合同 §1.3 的匹配分与命中字段）。
 	Score         int
@@ -217,8 +222,20 @@ func CardEntryFrom(rel, domain string, raw []byte) (CardEntry, Diagnostic, bool)
 		ReviewedAt: model.ReviewedAtText(card.ReviewedAt),
 		DeletedAt:  stampText(card.DeletedAt), DeletedReason: card.DeletedReason,
 		Deleted:   DeletedFromStamp(stampText(card.DeletedAt)),
-		Relations: card.Relations, Sources: card.Sources, Raw: raw, Doc: doc,
+		Relations: card.Relations, Sources: card.Sources,
+		ReplacedByTarget: replacedByTargetOf(card), Raw: raw, Doc: doc,
 	}, Diagnostic{}, true
+}
+
+// replacedByTargetOf 取 `replaced_by.target` 的逐字原值（未设置即空串）。
+//
+// 与 internal/reverse.go 的 replacedByOf 同一份落盘事实、同一个解码结果：这里在扫描解码
+// 时顺手带出，让下游（对账 R4 / 索引构建）**共用**同一个字段而不各自再解码一次 frontmatter。
+func replacedByTargetOf(card model.Card) string {
+	if card.ReplacedBy == nil {
+		return ""
+	}
+	return card.ReplacedBy.Target
 }
 
 // scanNoteDir 扫描单个领域的 notes/。

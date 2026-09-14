@@ -37,8 +37,34 @@ M2–M6 五支阶段聚合脚本（`m2_acceptance.sh` … `m6_acceptance.sh`）�
 并入关系可核对：`python3 tests/tools/check_migration.py` 的 C4 会检查合并目标里
 真的能检索到来源文件名，检索不到就红。
 
-**没有迁移的部分**是阶段冻结算术等式（例如"本阶段应有 N 支脚本 / N 条断言"），
-已登记为 `I-…-009`，不在当前体系重放。
+**没有按原形态迁移的部分**是阶段冻结算术等式（例如"本阶段应有 N 支脚本 / N 条断言"）。
+等式本体不在当前体系重放 —— 被计数对象换了指称，照搬只会得到与产品无关的红。
+
+但等式的**意图**（规模不得静默缩水）已迁移到当前判据面，落点是
+`tests/manifest/scale_baseline.tsv` + `manifest.scale-ratchet` 门禁
+（`python3 tests/tools/scale_ratchet.py --check`，profiles: manifest/contract/core/full）。
+形态从「等式」换成「棘轮」：19 个规模指标（suite 总数 / 各 layer 支数 / required 支数 /
+清单行数 / 用例总数 / 追溯行数与各 kind / 历史门禁资产数 / 迁移行数）逐个与历史最高水位
+`high_water` 比较，**低于水位即红**，高于水位跑一次 `--write` 抬高即可。
+这补上了四张清单表原本判不出的洞：删一支 suite 时四表会同步缩水而全绿。
+
+棘轮的**机器判据**：低于 `high_water` 判红；**已冻结维度从盘面消失**（把一整类 suite 删空、
+键不再产生）与数值缩水同权判红，`--check` / `--write` 都非零且 `--write` 拒绝落盘；
+`high_water < initial` 判红；盘面出现未登记维度判红；`--write` 只能抬高、不提供任何下调入口。
+
+棘轮的**治理约束（非机器判据）**：`scale_baseline.tsv` 是仓内纯文本，有权限的人可以手改
+`initial` 列，本工具**拦不住**（任何仓内防篡改记录都能被同一只手改掉）。因此准确表述是
+「规模下降不可能**静默**发生」，而不是「基线不可下降」——改 `initial` 会留在 `git diff` 里，
+由 review 要求给出口径变更理由。
+
+反证不是一次性手跑，而是常驻门禁 `contract.scale-ratchet.negatives`
+（`tests/contract/scale-ratchet/negatives.sh`），在 mktemp 沙箱里合成盘面，覆盖 6 类绕过手法：
+删除整类维度、换类补总数（总量守恒但覆盖缩水）、正常新增抬水位、下调数值、
+手改水位线到初值以下、盘面维度未登记。其中「删除整类维度」这一条正是初版棘轮的真实假绿
+（只打 `[warn]` 仍 PASS，监督复核实证），现已固化为永久用例防复发。
+
+历史阶段脚本原文、历史验收结论、历史 Task 一字未改；本门禁是**当前判据面的新增判据**，
+不声称"历史阶段结论已在新体系复现"。
 
 ### 与 teamwork 侧 21 个历史 `.py` 工具的关系
 

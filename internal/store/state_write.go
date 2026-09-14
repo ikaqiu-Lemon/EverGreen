@@ -40,6 +40,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
@@ -96,7 +97,7 @@ func (s *Store) SetStatus(rel string, expectedHash string, status model.Status,
 		return res, fmt.Errorf("status 取值封闭（合法取值恰 %v）：%w",
 			model.ValidStatuses(), err)
 	}
-	line := fmScalarLine(fmKeyStatus, []byte(status))
+	line := fmScalarLine(fmKeyStatus, fmCanonicalScalar(string(status)))
 	return s.mutateGuarded(rel, expectedHash,
 		withUpdatedAt(stamp, func(_ File, doc *mdfile.Doc) ([]byte, error) {
 			return setFMScalarKey(doc, fmKeyStatus, line, true)
@@ -161,8 +162,8 @@ func (s *Store) SetDeleted(rel string, expectedHash string, at model.Stamp,
 	}
 	// 两个值一律双引号标量：deleted_at 含 `:`（时区），reason 是自由文本，
 	// 双引号 + 最小转义是确定性的，且不依赖任何序列化库（写路径禁用 YAML 序列化）。
-	atLine := fmScalarLine(fmKeyDeletedAt, yamlDoubleQuoted(at.String()))
-	reasonLine := fmScalarLine(fmKeyDeletedReason, yamlDoubleQuoted(reason))
+	atLine := fmScalarLine(fmKeyDeletedAt, fmCanonicalScalar(at.String()))
+	reasonLine := fmScalarLine(fmKeyDeletedReason, fmCanonicalScalar(reason))
 	return s.mutateGuarded(rel, expectedHash,
 		withUpdatedAt(stamp, func(_ File, doc *mdfile.Doc) ([]byte, error) {
 			return setFMScalarKeys(doc,
@@ -207,7 +208,7 @@ func (s *Store) SetReviewedAt(rel string, expectedHash string, at model.Stamp) (
 		return res, fmt.Errorf("%w：reviewed_at 必带（零值时间戳不接受）", ErrReviewedAtRequired)
 	}
 	// 双引号标量：时刻含 `:`（时区），双引号 + 最小转义是确定性的，且不依赖任何序列化库。
-	line := fmScalarLine(model.FMKeyReviewedAt, yamlDoubleQuoted(at.String()))
+	line := fmScalarLine(model.FMKeyReviewedAt, fmCanonicalScalar(at.String()))
 	return s.mutateGuarded(rel, expectedHash,
 		func(_ File, doc *mdfile.Doc) ([]byte, error) {
 			return setFMScalarKey(doc, model.FMKeyReviewedAt, line, false)
@@ -241,7 +242,7 @@ func (s *Store) SetStale(rel string, expectedHash string, reason model.StaleReas
 	// stale 是 YAML 布尔真（不加引号）；reason 是封闭枚举里的中文单句，一律双引号标量
 	// （双引号 + 最小转义是确定性的，且不依赖任何序列化库——写路径禁用 YAML 序列化）。
 	staleLine := fmScalarLine(model.FMKeyStale, []byte(staleTrueValue))
-	reasonLine := fmScalarLine(model.FMKeyStaleReason, yamlDoubleQuoted(string(reason)))
+	reasonLine := fmScalarLine(model.FMKeyStaleReason, fmCanonicalScalar(string(reason)))
 	return s.mutateGuarded(rel, expectedHash,
 		func(_ File, doc *mdfile.Doc) ([]byte, error) {
 			return setFMScalarKeys(doc,
@@ -501,4 +502,50 @@ func yamlDoubleQuoted(text string) []byte {
 	}
 	out = append(out, '"')
 	return out
+}
+
+// —— frontmatter 标量序列化风格的统一（I-evergreen.system_assurance-158614-014）——
+//
+// 缺陷现场：同一份权威文件里出现三种标量风格 —— 建卡路径（content.go 的 quoted）写
+// 单引号、状态写路径的时间戳写双引号（yamlDoubleQuoted）、`status` 直接裸写。
+// 于是**同一个字段** status 在建卡是 'active'、在 deprecate/restore 是 active；
+// 一次只改状态的 restore 会顺带产出引号变更噪声，掩盖真实语义变更。
+// Markdown 是唯一权威来源、其 diff 要被人和 Agent 直接审阅，噪声因此有实质代价。
+//
+// 规范化的口径（**只统一序列化风格，不改变语义值**）：
+//   - canonical = **单引号**。选它而不是双引号，因为建卡路径已经是单引号，
+//     库里绝大多数 frontmatter 字节本就是这个风格，选它churn 最小，
+//     且能让 status 在「建卡 / deprecate / restore」三条路径上回到同一形态。
+//   - **只作用于字符串标量**。布尔量（`stale: true`）必须保持裸写：给它加引号会把
+//     YAML 类型从 bool 变成 string —— 那是**语义变更**，越过了本次规范化的边界。
+//   - 含换行的字符串**回退到双引号转义形态**：单引号 YAML 无法在一行内表示 \n，
+//     强行单引号会丢字节。回退是为了无损，不是为了保留旧风格。
+//
+// 兼容性边界（append-only / 旧值兼容）：
+//   - **读侧一律不收紧**：裸写 / 单引号 / 双引号三种历史形态都继续可读，
+//     本改动不含任何解析侧收紧，历史文件不会因风格而变得不可读。
+//   - **不批量重写历史文件**：写路径只替换本次真正要写的那个键的整行
+//     （setFMScalarKey 的 Raw[:start]+line+Raw[end:]），其余键逐字不动。
+//     因此历史文件上的旧风格只会在该键**下一次被真正写入时**顺带归一，
+//     产生一次性、可解释的非语义 diff —— 这正是 Acceptance「diff 可解释」允许的形态，
+//     且换来的是此后同一字段不再反复抖动。
+
+// fmCanonicalScalar 把字符串标量序列化成 canonical 风格（单引号；含换行时回退双引号）。
+//
+// 与 content.go 的 quoted 同风格，但不返回 error：状态写路径的取值（时间戳、原因文本）
+// 允许含换行，此时回退到 yamlDoubleQuoted 的转义形态以保证无损。
+func fmCanonicalScalar(text string) []byte {
+	if strings.ContainsAny(text, "\n\r") {
+		return yamlDoubleQuoted(text)
+	}
+	out := make([]byte, 0, len(text)+2)
+	out = append(out, '\'')
+	for i := 0; i < len(text); i++ {
+		if text[i] == '\'' {
+			out = append(out, '\'', '\'')
+			continue
+		}
+		out = append(out, text[i])
+	}
+	return append(out, '\'')
 }

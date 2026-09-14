@@ -145,12 +145,48 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: contract.resource-limits.limits
+  layer: contract
+  capability: arch-boundary
+  kind: shell
+  target: tests/contract/resource-limits/limits.sh
+  source: tests/contract/resource-limits/limits.sh
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-005
+  profiles:
+  - contract
+  - core
+  - full
+  timeout_s: 900
+  min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: contract.runner-semantics.runner_negatives
   layer: contract
   capability: arch-boundary
   kind: shell
   target: tests/contract/runner-semantics/runner_negatives.sh
   source: tests/contract/runner-semantics/runner_negatives.sh
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-005
+  profiles:
+  - contract
+  - core
+  - full
+  timeout_s: 900
+  min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+- id: contract.scale-ratchet.negatives
+  layer: contract
+  capability: arch-boundary
+  kind: shell
+  target: tests/contract/scale-ratchet/negatives.sh
+  source: tests/contract/scale-ratchet/negatives.sh
   origin: inventory
   owner_task: T-evergreen.system_assurance-158614-005
   profiles:
@@ -266,6 +302,24 @@ suites:
   - full
   timeout_s: 900
   min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+- id: e2e.capture-ingest.c2_report_last_after_capture
+  layer: e2e
+  capability: capture-ingest
+  kind: shell
+  target: tests/e2e/capture-ingest/c2_report_last_after_capture.sh
+  source: tests/e2e/capture-ingest/c2_report_last_after_capture.sh
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-014
+  profiles:
+  - core
+  - e2e
+  - full
+  timeout_s: 900
+  min_cases: 7
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -404,24 +458,6 @@ suites:
   - full
   timeout_s: 900
   min_cases: 1
-  required: true
-  platform_required: linux/amd64
-  not_run_when: null
-  issue: null
-- id: e2e.capture-ingest.c2_report_last_after_capture
-  layer: e2e
-  capability: capture-ingest
-  kind: shell
-  target: tests/e2e/capture-ingest/c2_report_last_after_capture.sh
-  source: tests/e2e/capture-ingest/c2_report_last_after_capture.sh
-  origin: inventory
-  owner_task: T-evergreen.system_assurance-158614-014
-  profiles:
-  - core
-  - e2e
-  - full
-  timeout_s: 900
-  min_cases: 7
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1577,7 +1613,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 372
+  min_cases: 377
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1771,7 +1807,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 67
+  min_cases: 69
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1829,7 +1865,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 92
+  min_cases: 97
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1997,6 +2033,28 @@ suites:
   issue: null
   args:
   - --check
+- id: manifest.scale-ratchet
+  layer: manifest
+  capability: '-'
+  kind: python
+  target: tests/tools/scale_ratchet.py
+  source: tests/tools/scale_ratchet.py
+  origin: tool
+  owner_task: T-evergreen.defect_zeroing-158614-002
+  profiles:
+  - manifest
+  - contract
+  - core
+  - full
+  timeout_s: 600
+  min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+  args:
+  - --check
+  evidence_re: \[ok\]
 - id: mutation.mutants
   layer: mutation
   capability: mutation

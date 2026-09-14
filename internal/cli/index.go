@@ -51,7 +51,6 @@ import (
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/git"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/index"
-	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
@@ -124,7 +123,8 @@ eg index sync [--json]
 权威与派生：只写 vault 下的 .index/（eg init 已把整目录写进 .gitignore），
 domains/ sources/ proposals/ reviews/ 字节零变更，且本命令**不发 commit**。
 schema 不兼容一律整库重建，**永不迁移**；索引恒为可重建派生，删掉零信息损失。
-退出码：0 成功（status 恒 0） | 1 参数非法（零写入） | 4 派生索引写盘失败（权威零改动）
+退出码：0 成功（status 恒 0） | 1 参数非法（零写入） | 4 派生索引写盘失败（权威零改动） |
+        5 run.lock 不可用（E16）/ 写前强校验失败（E15），两者均零写入（build·rebuild·sync；status 只读不取锁）
 `,
 		// 子命令之外不吃任何位置参数：多余位置参数一律退 1（零写入）。
 		// `--strict` 只对 status 有语义：挂在别的子命令上当场判非法，不静默忽略。
@@ -384,7 +384,7 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 		snap.Cards = append(snap.Cards, index.Card{
 			ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title, Status: c.Status,
 			Deprecated: c.Deprecated, Deleted: c.Deleted,
-			ReplacedBy: cardReplacedByTarget(c), Body: c.Body(),
+			ReplacedBy: c.ReplacedByTarget, Body: c.Body(),
 			ContentHash: hash, MTimeUnix: mtime,
 		})
 		snap.Files = append(snap.Files, index.File{
@@ -397,25 +397,6 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 		}
 	}
 	return snap, warnings, nil
-}
-
-// cardReplacedByTarget 取 `replaced_by.target` 的逐字原值（缺省即空串）。
-//
-// 扫描底座的 `CardEntry` 没有这一格（它是 S2 引入的可选键），因此这里从 frontmatter
-// 反序列化一次。**不可解析就当作未设置**：`Q1` 已经由扫描层登记过，索引不替库治病，
-// 也不因为一个可选键读不出来就整体失败。
-func cardReplacedByTarget(c query.CardEntry) string {
-	if c.Doc == nil {
-		return ""
-	}
-	var card model.Card
-	if err := c.Doc.DecodeFM(&card); err != nil {
-		return ""
-	}
-	if card.ReplacedBy == nil {
-		return ""
-	}
-	return card.ReplacedBy.Target
 }
 
 // fileStat 返回文件大小与 mtime（读不到即 0）。

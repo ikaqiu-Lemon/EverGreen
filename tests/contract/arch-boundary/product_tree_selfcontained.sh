@@ -85,9 +85,44 @@ else
   bad "go list -deps ./cmd/eg 执行失败"
 fi
 
+# ------------------------------------------------------------------ ⑤ 用户可见串不得指向测试树
+# 判据来源：I-evergreen.system_assurance-158614-027（`eg bench` 提示 `go run ./test/perf/corpus_gen.go`，
+# 而 `test/` 已整体删除 → 一条**指向不存在文件的可执行建议**）。
+# 边界：只排除整行注释（注释里引用测试树位置属开发者上下文）；已删除的 `test/` 根由 ⑥
+# 连注释一并禁止。产品二进制的诊断建议不得把用户导向测试树路径 ——
+# 测试树可能不随二进制分发，任何 tests/ 路径在用户机器上都不保证存在。
+sec "断言⑤：产品树非注释行不得出现测试树路径（tests?/…）"
+# 判据实现：只排除**整行注释**（`^\s*//`）。行内的双引号串、反引号 raw string（help 文本就是
+# raw string —— I-…-027 的第二处漂移正躲在这里）与代码本体都在覆盖面内。
+lit_viol="$(git ls-files -c -o --exclude-standard -- $(printf '%s ' "${PRODUCT_DIRS[@]}") | grep '\.go$' \
+  | xargs -r grep -nE '\btests?/[A-Za-z0-9_.-]' \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+if [ -n "${lit_viol}" ]; then
+  bad "用户可见串/代码指向测试树路径（提示必须现态可执行或改中性表述）：$(printf '%s' "${lit_viol}" | head -3 | tr '\n' ' ')"
+else
+  pass "cmd/ internal/ skill/ 的非注释行零测试树路径"
+fi
+
+# ------------------------------------------------------------------ ⑥ 全文不得引用已删除的 test/ 根
+# 批次 A 把测试树外置后 `test/`（单数）整棵目录已删除。产品树里任何对它的引用（含注释）
+# 都是失效指针：开发者按注释找文件必然落空。`tests/`（复数，现态）在注释中允许出现。
+sec "断言⑥：产品树零引用已删除的 test/ 根（含注释）"
+if [ -e "${REPO_ROOT}/test" ]; then
+  bad "仓内重新出现 test/ 目录（现态唯一测试根是 tests/）"
+else
+  pass "仓内无 test/ 目录（唯一测试根 tests/）"
+fi
+stale="$(git ls-files -c -o --exclude-standard -- $(printf '%s ' "${PRODUCT_DIRS[@]}") | grep '\.go$' \
+  | xargs -r grep -nE '(^|[^a-zA-Z0-9_/])(\./)?test/' || true)"
+if [ -n "${stale}" ]; then
+  bad "产品树引用了已删除的 test/ 根：$(printf '%s' "${stale}" | head -3 | tr '\n' ' ')"
+else
+  pass "产品树零 test/ 失效路径引用"
+fi
+
 printf '\n'
 if [ "${FAIL}" -ne 0 ]; then
   printf '[FAIL] 产品树自足门禁未通过\n' >&2
   exit 1
 fi
-printf '[PASS] 产品树自足门禁通过（零 _test.go / 零测试树依赖 / 未物化可构建）\n'
+printf '[PASS] 产品树自足门禁通过（零 _test.go / 零测试树依赖 / 未物化可构建 / 用户可见串零测试树路径）\n'

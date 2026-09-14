@@ -97,7 +97,7 @@ func TestSetStatusRefreshesUpdatedAt(t *testing.T) {
 		t.Fatal("hash 相符时必须落盘")
 	}
 	after := mustBytes(t, abs)
-	if !strings.Contains(fmOf(t, after), "status: deprecated\n") {
+	if !strings.Contains(fmOf(t, after), "status: 'deprecated'\n") {
 		t.Fatalf("status 未被覆盖：%s", fmOf(t, after))
 	}
 	// 恰两行会变：status 与 updated_at；别的键（含未知字段）逐字不动。

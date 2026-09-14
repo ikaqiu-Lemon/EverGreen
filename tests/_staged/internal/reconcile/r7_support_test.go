@@ -147,26 +147,29 @@ func TestR7ZeroEffectiveSupport(t *testing.T) {
 	cases := []struct {
 		name      string
 		card      query.CardEntry
-		wantHit   bool
+		wantHit   bool // SupportFact.Insufficient()：有效 support 数是否为 0
 		declared  int
 		effective int
+		yields    bool // 无效原因是否被 E12 独家承载 → W20 让位（finding 不落地）
 	}{
-		{"零 support 条目", r7CardEntry(r7Card, "active"), true, 0, 0},
+		{"零 support 条目", r7CardEntry(r7Card, "active"), true, 0, 0, false},
 		{"只有 against", r7CardEntry(r7Card, "active",
-			r7Ref(r7Src, r7Note, model.MaterialAgainst)), true, 0, 0},
+			r7Ref(r7Src, r7Note, model.MaterialAgainst)), true, 0, 0, false},
 		{"只有 context", r7CardEntry(r7Card, "active",
-			r7Ref(r7Src, r7Note, model.MaterialContext)), true, 0, 0},
+			r7Ref(r7Src, r7Note, model.MaterialContext)), true, 0, 0, false},
 		{"一条有效 support", r7CardEntry(r7Card, "active",
-			r7Ref(r7Src, r7Note, model.MaterialSupport)), false, 1, 1},
+			r7Ref(r7Src, r7Note, model.MaterialSupport)), false, 1, 1, false},
 		{"一条有效 + 一条对端已删除", r7CardEntry(r7Card, "active",
 			r7Ref(r7Src, r7Note, model.MaterialSupport),
-			r7Ref(r7Src2, r7Note2, model.MaterialSupport)), false, 2, 1},
+			r7Ref(r7Src2, r7Note2, model.MaterialSupport)), false, 2, 1, false},
 		{"全部 support 的对端已删除", r7CardEntry(r7Card, "active",
-			r7Ref(r7Src2, r7Note2, model.MaterialSupport)), true, 1, 0},
+			r7Ref(r7Src2, r7Note2, model.MaterialSupport)), true, 1, 0, false},
 		{"四要素不全（note 为空）", r7CardEntry(r7Card, "active",
-			r7Ref(r7Src, "", model.MaterialSupport)), true, 1, 0},
-		{"原文端缺失", r7CardEntry(r7Card, "active",
-			r7Ref("s-20269999-gone", r7Note, model.MaterialSupport)), true, 1, 0},
+			r7Ref(r7Src, "", model.MaterialSupport)), true, 1, 0, false},
+		// 原文端缺失：SupportFact 仍判无效（Insufficient()==true），但该事实由 E12 第 ③ 类
+		// 独家承载（I-…-019 修复），W20 整体让位不落地 —— 逐字锁死「同一件事不两码」。
+		{"原文端缺失（让位 E12）", r7CardEntry(r7Card, "active",
+			r7Ref("s-20269999-gone", r7Note, model.MaterialSupport)), true, 1, 0, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -183,11 +186,13 @@ func TestR7ZeroEffectiveSupport(t *testing.T) {
 				t.Fatalf("Insufficient() = %v，期望 %v（%+v）",
 					facts[0].Insufficient(), c.wantHit, facts[0])
 			}
+			// W20 落地 = 有效数为 0 **且**不让位给 E12。
+			wantFinding := c.wantHit && !c.yields
 			fs := r7Of(t, in)
-			if got := len(fs) == 1; got != c.wantHit {
-				t.Fatalf("finding 命中 = %v（%d 条），期望 %v", got, len(fs), c.wantHit)
+			if got := len(fs) == 1; got != wantFinding {
+				t.Fatalf("finding 命中 = %v（%d 条），期望 %v", got, len(fs), wantFinding)
 			}
-			if c.wantHit && fs[0].Targets[0] != c.card.ID {
+			if wantFinding && fs[0].Targets[0] != c.card.ID {
 				t.Fatalf("targets 应恰 [%s]，实得 %v", c.card.ID, fs[0].Targets)
 			}
 		})
@@ -466,16 +471,19 @@ func TestR7NoDoubleCountWithR4DanglingRef(t *testing.T) {
 	if got := countCheck(res.Findings, CheckDanglingRef); got != 0 {
 		t.Fatalf("对端存在（只是被删）不是悬空引用，E12 应恰 0 条，实得 %d 条", got)
 	}
-	// 反向之二：原文端缺失不在 E12 覆盖内（合同 §6.2）→ W20 照报、E12 仍 0。
+	// 反向之二（I-…-019 修复后的新真相）：原文端缺失现由 E12 第 ③ 类独家承载 →
+	// E12 恰 1 条、W20 恰 0 条（R7 让位）。这不是放宽让位：对端缺失是「一件事」，
+	// 由 error 级的 E12 记，warning 级的 W20 不再重复记同一件事。
 	srcMiss := r7In([]query.CardEntry{r7CardEntry(r7Card, "active",
 		r7Ref("s-20269999-gone", r7Note, model.MaterialSupport))},
 		[]query.NoteEntry{r7NoteEntry(r7Note, r7Src, false)}, sources)
 	res = Run(srcMiss)
-	if got := countCheck(res.Findings, CheckSupportInsufficient); got != 1 {
-		t.Fatalf("原文端缺失应恰 1 条 W20，实得 %d 条：%+v", got, res.Findings)
+	if got := countCheck(res.Findings, CheckDanglingRef); got != 1 {
+		t.Fatalf("原文端缺失现归 E12 第 ③ 类，应恰 1 条 %s，实得 %d 条：%+v",
+			CheckDanglingRef, got, res.Findings)
 	}
-	if got := countCheck(res.Findings, CheckDanglingRef); got != 0 {
-		t.Fatalf("知识卡 sources[].source 缺失不属 E12（§6.2），实得 %d 条", got)
+	if got := countCheck(res.Findings, CheckSupportInsufficient); got != 0 {
+		t.Fatalf("原文端缺失已由 E12 独家承载，W20 应恰 0 条（让位），实得 %d 条", got)
 	}
 }
 

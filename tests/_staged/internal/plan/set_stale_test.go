@@ -85,7 +85,7 @@ func TestSetStale_AgentPathWritesExactlyTwoKeys(t *testing.T) {
 	}
 	after := readVaultFile(t, dir, relRecap)
 	want := recapM4("r-20260901-attention",
-		"\nstale: true\nstale_reason: \"引用卡已更新\"")
+		"\nstale: true\nstale_reason: '引用卡已更新'")
 	if after != want {
 		t.Fatalf("落盘结果只应多 stale / stale_reason 两行：\n实得：\n%s", after)
 	}

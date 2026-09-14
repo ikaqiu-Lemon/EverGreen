@@ -79,12 +79,14 @@ package reconcile
 //   - **R4 的 `duplicate_id`（E11）**：同一卡 ID 落在 ≥ 2 个文件时，**R7 整体跳过该 ID**
 //     —— 那些文件的支持面差异只是 ID 冲突这**一件**事实的投影，归 E11 独家承载
 //     （口径与 R5 逐字相同，见 r5_domain.go 的同一条让位）。
-//   - **R4 的 `dangling_ref`（E12）第 ② 类**：`card.sources[].note` 指向的来源笔记缺失
-//     **已由 E12 独家承载**（合同 §6.2 逐字）。故本文件对「无效原因里含来源笔记缺失」的卡
-//     **让位不报 W20**：同一件落盘事实不许 error 与 warning 各记一次（T-…-053 在 W16 侧、
-//     T-…-054 在 W18 侧踩过的同一个坑，修法同样是**收紧新检查器的阈值**，而不是去放宽
-//     别人的判据）。让位不等于「永不报」：对端**存在但已逻辑删除**、或**原文端缺失**
-//     （§6.2 明确不在 E12 覆盖内）、或压根没有 support 条目时，W20 照报 —— 反证见
+//   - **R4 的 `dangling_ref`（E12）**：`card.sources[].note` 指向的来源笔记缺失、
+//     `card.sources[].source` 指向的原文缺失，**均已由 E12 独家承载**
+//     （前者是历史合同 §6.2 第 ② 类；后者由 I-evergreen.system_assurance-158614-019
+//     的实现侧完整修复纳入 E12 的第 ③ 类）。故本文件对「无效原因里含来源笔记缺失
+//     **或**原文端缺失」的卡**让位不报 W20**：同一件落盘事实不许 error 与 warning 各记一次
+//     （T-…-053 在 W16 侧、T-…-054 在 W18 侧踩过的同一个坑，修法同样是**收紧新检查器的
+//     阈值**，而不是去放宽别人的判据）。让位不等于「永不报」：对端**存在但已逻辑删除**、
+//     或材料四要素不全、或压根没有 support 条目时，W20 照报 —— 反证见
 //     TestR7NoDoubleCountWithR4DanglingRef 的正反两向用例。
 //
 // # 取数前提：`sources/` 分区必须已采样
@@ -346,13 +348,20 @@ func checkR7SupportInsufficient(in Input) ([]Finding, []RepairSpec) {
 	return fs, nil
 }
 
-// yieldsToDanglingRef 报告这张卡是否要让位给 R4 的 `dangling_ref`（E12 第 ② 类）。
+// yieldsToDanglingRef 报告这张卡是否要让位给 R4 的 `dangling_ref`（E12）。
 //
-// 判据只有一条：无效原因里含 SupportIneffectiveNoteMissing —— 「知识卡 sources[].note
-// 指向的来源笔记不存在」这件落盘事实由 E12 独家承载（合同 §6.2 逐字）。
+// 判据：无效原因里含 SupportIneffectiveNoteMissing **或** SupportIneffectiveSourceMissing ——
+// 「知识卡 sources[].note 指向的来源笔记不存在」与「sources[].source 指向的原文不存在」
+// 这两件落盘事实都由 E12 独家承载（前者是历史 §6.2 第 ② 类，后者是
+// I-evergreen.system_assurance-158614-019 修复后新纳入 E12 的第 ③ 类）。同一件事不许
+// error（E12）与 warning（W20）各记一次，故本卡整体让位、不报 W20。
+//
+// 让位只对「对端**缺失**」成立；对端**存在但已逻辑删除**（note_deleted）、或材料四要素
+// 不全（endpoint_incomplete）、或压根没有 support 条目时不在 E12 覆盖内，W20 照报
+// （反证见 TestR7NoDoubleCountWithR4DanglingRef 的正反两向用例）。
 func yieldsToDanglingRef(f SupportFact) bool {
 	for _, r := range f.Ineffective {
-		if r == SupportIneffectiveNoteMissing {
+		if r == SupportIneffectiveNoteMissing || r == SupportIneffectiveSourceMissing {
 			return true
 		}
 	}

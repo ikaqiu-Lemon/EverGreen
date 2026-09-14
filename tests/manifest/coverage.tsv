@@ -1,9 +1,9 @@
 capability	unit	integration	e2e	contract	perf	total
-arch-boundary	0	2	2	13	0	17
+arch-boundary	0	2	2	15	0	19
 authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
 card-query	17	0	4	0	0	21
-cli-core	63	0	6	0	0	69
+cli-core	64	0	6	0	0	70
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2
@@ -14,7 +14,7 @@ ops-diagnostics	4	1	5	0	0	10
 perf	0	0	0	0	3	3
 proposal	20	0	4	0	0	24
 queryset	1	0	0	0	0	1
-reconcile-takeover	10	4	6	0	0	20
+reconcile-takeover	11	4	6	0	0	21
 relation	0	1	5	0	0	6
-storage-markdown	22	0	0	0	0	22
+storage-markdown	23	0	0	0	0	23
 txn-atomicity	10	1	11	0	0	22

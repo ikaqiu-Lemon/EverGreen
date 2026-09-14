@@ -1,5 +1,5 @@
 // test/txnctl/main.go：M6 端到端脚本（m6_run_lock.sh / m6_txn_journal.sh）驱动 internal/txn
-// 公开 API 的**测试专用**命令行 helper（对标 test/perf/corpus_gen.go 的「go run 驱动」模式）。
+// 公开 API 的**测试专用**命令行 helper（对标 tests/perf/corpus_gen.go 的「go run 驱动」模式）。
 //
 // # 为什么需要它
 //

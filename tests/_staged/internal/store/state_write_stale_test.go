@@ -71,7 +71,7 @@ func TestSetStale_WritesExactlyTwoKeysInOneGuardedWrite(t *testing.T) {
 		if !strings.Contains(fm, "stale: true\n") {
 			t.Fatalf("%s：stale 必须逐字落成 YAML 布尔真：%s", reason, fm)
 		}
-		if !strings.Contains(fm, `stale_reason: "`+string(reason)+"\"\n") {
+		if !strings.Contains(fm, `stale_reason: '`+string(reason)+"'\n") {
 			t.Fatalf("%s：stale_reason 必须逐字落成双引号标量：%s", reason, fm)
 		}
 		// 写入键集合恰两格：只许新增两行，不重排、不新增第三个键。
@@ -241,7 +241,7 @@ func TestApplyStateWriteStale_IsTheFifthShape(t *testing.T) {
 	}
 	fm := fmOf(t, mustBytes(t, abs))
 	if !strings.Contains(fm, "stale: true\n") ||
-		!strings.Contains(fm, `stale_reason: "`+string(model.StaleReasonDeprecated)+"\"\n") {
+		!strings.Contains(fm, `stale_reason: '`+string(model.StaleReasonDeprecated)+"'\n") {
 		t.Fatalf("第五形态未按合同落盘：%s", fm)
 	}
 	// 第六形态：未知形态一律报错，且文案里必须钉住「恰五种」。

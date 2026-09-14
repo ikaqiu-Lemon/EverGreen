@@ -117,6 +117,10 @@ func checkCommand() *Command {
 
 检查面：**恰** R3 + R4 七个 check —— 重复 ID / 悬空引用 / 孤儿 /
 关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复。
+悬空引用（dangling_ref / E12）覆盖 frontmatter **全部**引用承载字段（恰四类）：
+note.source→原文 / card.sources[].note→材料笔记 / card.sources[].source→原文 / replaced_by.target→知识卡；
+指向原文的两类只在 sources/ 分区已采样时判定（不把「没采样」说成「不存在」）。
+关系条目的 target 缺失**不进** E12，走 R3 的关系目标缺失（E13）/ 关系前缀非法（E14）。
 事务态披露（默认就给，--strict 不影响）：库被事务扫描阻断时（损坏事务，或未闭合事务多于 1 个），
 本命令逐条列出全部问题事务的 txn_id（在诊断的 target 位）、每个损坏事务的不可解析原因，
 并给出人工出路（` + checkTxnRemedyHelpLine + `）。

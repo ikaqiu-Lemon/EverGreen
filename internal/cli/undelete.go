@@ -104,7 +104,8 @@ func undeleteCommand() *Command {
 整行删掉 deleted_at 与 deleted_reason（不留墓碑、不写空值）：status 绝不被自动改变，
 关系与 sources[] 的记录一条不动。不需要二次确认，也不产生退出码 6。
 目标未被逻辑删除 → W11 幂等 no-op：零写入、不产生空 commit（退 0）。
-退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 写入被跳过 | 4 Git 提交失败
+退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("target", "", "要恢复的对象 ID")

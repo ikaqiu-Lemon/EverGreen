@@ -202,13 +202,18 @@ func renameToTarget(vault string, s fileSpecArg) {
 }
 
 // pauseForKill：到达崩溃点后 touch 就绪文件并长眠等待被 kill -9（真实崩溃留态）。
+//
+// 这里的 3600s 不是"等待"，而是"停在崩溃点上把进程挂住"，由父测试 kill -9 立即终结；
+// 墙钟耗时取决于父测试而不是这个数字，因此不受合同 D7「任何等待 ≤ 120s」约束。
+// 该豁免由 tests/contract/resource-limits/limits.sh 的 A7 按下面这个显式标记识别，
+// 且豁免点总数有上限——去掉标记或新增豁免点都会让门禁变红，不存在静默放行。
 func pauseForKill(ready string) {
 	if ready != "" {
 		if err := os.WriteFile(ready, []byte("ready\n"), 0o644); err != nil {
 			panic(err)
 		}
 	}
-	time.Sleep(3600 * time.Second)
+	time.Sleep(3600 * time.Second) // eg:sleep-exempt 崩溃点驻留，由父测试 kill -9 终结，非墙钟等待
 }
 
 // crashCommit：把事务真实推进到 --crash-at 指定的崩溃点后停下等待被 kill -9。

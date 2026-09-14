@@ -86,7 +86,8 @@ func editCommand() *Command {
 status / deleted_at / deleted_reason / reviewed_at 与未知字段逐字不动。
 写前逐文件比对 content_hash：不一致即跳过该文件并退 3（授权不放宽 B3）。
 不需二次确认，也不产生退出码 6。
-退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 写入被跳过 | 4 Git 提交失败
+退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("target", "", "要修改的知识卡 ID")

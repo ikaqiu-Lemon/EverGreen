@@ -26,7 +26,7 @@ package cli
 //     环境信息（CPU / Go 版本）与门槛建议值只进 `summary` 与诊断区，**不进 data** ——
 //     否则就是扩张信封（§8.3 禁令）。
 //   - **不含门槛判定**：本命令只报实测值，**不判合格**。门槛是「实测 × 1.5 向上取整到
-//     10ms」，由合同 §7 的回填列持有、由 `test/e2e/m5_bench_p95.sh` 断言 ——
+//     10ms」，由合同 §7 的回填列持有、由仓内 P95 性能门槛门禁（suite `perf.bench-p95`）断言 ——
 //     让被测者自己判自己合格，等于没有门禁。
 //
 // # 为什么前置要求「索引 healthy」
@@ -160,7 +160,7 @@ func benchCommand() *Command {
 只读到底：当前 vault 的权威 Markdown 与 .index/ 零写入、零 commit；
 构建两指标在临时副本上测量，副本用完即删。
 本命令只报实测值、不判合格：门槛 = ceil(实测 × 1.5 / 10) × 10，由合同 §7 回填列与
-test/e2e/m5_bench_p95.sh 持有。
+仓内 P95 性能门槛门禁（suite perf.bench-p95）持有。
 退出码：0 | 1 参数非法或前置不满足（零副作用） | 4 采样执行失败（权威恒零改动）
 `,
 		Validate: func(inv *Invocation) error {
@@ -232,7 +232,7 @@ func (r *Root) runBench(inv *Invocation) (*Result, error) {
 	}
 	if len(ids) == 0 {
 		return nil, &UsageError{Msg: "vault 里没有任何知识卡，无从采样（零副作用）：" +
-			"先造语料，例如 go run ./test/perf/corpus_gen.go -cards 10000 -rels 30000 -out <vault>"}
+			"先在 vault 里放入知识卡再采样：可用 eg capture/apply 收录，或用随源码分发的确定性性能语料生成器（用法见 README「只读性能采样」一节）"}
 	}
 	kws := queryset.Keywords()
 
@@ -596,7 +596,7 @@ func benchSummary(data map[string]interface{}, spec BenchSpec, ids, cards int) [
 		fmt.Sprintf("采样环境（门槛与环境绑定，换环境需重新回填而非放宽）：%s/%s、%d 逻辑核、Go %s",
 			runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), runtime.Version()),
 		BenchAuthorityNotice,
-		"本命令不判合格：门槛数值由合同 §7 回填列持有，断言在 test/e2e/m5_bench_p95.sh",
+		"本命令不判合格：门槛数值由合同 §7 回填列持有，断言由仓内 P95 性能门槛门禁（suite perf.bench-p95）持有",
 	)
 	return lines
 }

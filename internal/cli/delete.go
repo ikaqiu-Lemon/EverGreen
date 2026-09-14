@@ -119,7 +119,9 @@ func deleteCommand() *Command {
 （无物理删除，U-01；不级联删除关系）。全部 target 与提案 execution 同进一次原子事务：
 中途任一处写不成 ⇒ 一个字节都不生效（退 3），不会留下「删了一半」的库。
 退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 未生效（全部目标字节不变） |
-        4 Git 提交失败（删除已原子生效、保留现状） | 6 仅缺 --confirm（权威 Markdown 完全不变）
+        4 Git 提交失败（删除已原子生效、保留现状） |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入 |
+        6 仅缺 --confirm（权威 Markdown 完全不变）
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("target", "", "被删对象 ID")

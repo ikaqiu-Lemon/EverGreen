@@ -1,11 +1,11 @@
-// [S4] test/perf/corpus_gen.go：M5 性能语料的**确定性**生成器
+// [S4] tests/perf/corpus_gen.go：M5 性能语料的**确定性**生成器
 // （M5 索引架构合同 §7.3「语料规模」行：`-cards 10000 -rels 30000`，固定随机种子，
 // 同参数两次生成逐字节相同）。
 //
 // # 用法
 //
 //	eg init --vault "$VAULT" --domain perf          # 先有一个 vault（本文件不造 vault）
-//	go run ./test/perf/corpus_gen.go -cards 10000 -rels 30000 -out "$VAULT"
+//	go run ./tests/perf/corpus_gen.go -cards 10000 -rels 30000 -out "$VAULT"
 //
 // # 三条硬边界
 //

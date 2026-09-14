@@ -47,17 +47,21 @@
 #     真机验证」的反向说明；本环境 `uname` 唯一原生目标为 linux/amd64（其余三平台的
 #     运行结论如实为「未做」，本 suite 不伪造）。
 #
-# 刻意**不**在本 suite 断言的六条（已登记 issue，判据随修复任务落地，避免把缺陷锁成基线）：
+# 刻意**不**在本 suite 断言的五条（已登记 issue，判据随修复任务落地，避免把缺陷锁成基线）：
 #   · 顶层 `eg --help` 退出码行只列 `0`–`4`、缺 `5` / `6` → I-…-012（D1 登记）；
 #   · 顶层 `eg --help` 命令区标题写「S1 九命令」却列 22 条、未知命令话术同源 → I-…-013（D1 登记）；
 #   · `dist/PROVENANCE.txt` 只活在 gitignored 目录、`make clean` / `release` 直接删且无再生成
 #     目标、与 `SHA256SUMS` 漂移无门禁；交付包内 `bin/eg` 为 0.4.0-m4 陈旧产物 → I-…-026；
 #     （本 suite 的 A 段只断言「`clean` 后 `bin/` 与四支产物不在场」，**不**断言 `PROVENANCE.txt` 的存亡）
-#   · `eg bench` 语料提示指向已不存在的 `./test/perf/corpus_gen.go` → I-…-027；
 #   · 空模块缓存 + `GOPROXY=off` 下构建必失败（无 vendor/、CI 前置不校验）→ I-…-028：
 #     本 suite 的 F 段只断言**预热缓存**下离线构建成功，不断言空缓存行为；
 #   · INSTALL §3 让用户把原文写进 vault 根，照抄后 `article.txt` 被 `capture` 的 `git add -A`
 #     提交进权威仓 → I-…-029（cross_domain → I-…-023）：G 段不断言 `article.txt` 的跟踪状态。
+#
+# 已修复并转为硬断言的（defect_zeroing 批次 1）：
+#   · `eg bench` 语料提示曾指向已不存在的 `./test/perf/corpus_gen.go`（I-…-027，已 close）——
+#     判据落在 `tests/contract/arch-boundary/product_tree_selfcontained.sh` 断言⑤⑥
+#     （产品树非注释行零 `tests?/` 路径 + 全文零已删除 `test/` 根引用），本 suite 不重复覆盖。
 #
 # 约束：离线、零交互、可重复执行、无外部依赖（bash / coreutils / git / go / make / file）；
 # 一切写与构建只发生在 mktemp -d 目录内，真实仓库工作区零污染（脚本末尾自查）；

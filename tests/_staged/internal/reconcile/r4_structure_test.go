@@ -36,11 +36,14 @@ func card(id, path string, rels ...string) query.CardEntry {
 	return c
 }
 
-// withSourceRefs 给卡挂来源笔记引用（`sources[].note`，第二类悬空引用的判定面）。
+// withSourceRefs 给卡挂来源笔记引用（`sources[].note`，第 ② 类悬空引用的判定面）。
+// `source` 端一律用 s-b2（这些用例恒把 s-b2 放进 Sources 采样面），使本 helper 只在
+// **来源笔记**这一维度制造悬空，不误触第 ③ 类（`sources[].source→原文`）——
+// 后者的逐字段反证由 r4_dangling_fields_test.go 独立承载。
 func withSourceRefs(c query.CardEntry, notes ...string) query.CardEntry {
 	for _, n := range notes {
 		c.Sources = append(c.Sources, model.SourceRef{
-			Source: model.SourceID("s-x"), Note: model.NoteID(n),
+			Source: model.SourceID("s-b2"), Note: model.NoteID(n),
 			Rel: model.MaterialSupport, Reason: "e2e 事实",
 		})
 	}
@@ -219,15 +222,17 @@ func TestR4DanglingRefTwoKinds(t *testing.T) {
 			}
 		})
 	}
-	// 两类**同时**存在时各产一条，共 2 条（封闭类别数恰 2）。
+	// 前两类（历史 §6.2）**同时**存在时各产一条，共恰 2 条。第 ③ / ④ 类
+	// （sources[].source / replaced_by.target）的四字段全覆盖冻结在
+	// r4_dangling_fields_test.go；本用例仍逐字守住原两类的方向与去重语义。
 	both := Input{
 		Scan: scanOf([]query.CardEntry{withSourceRefs(
 			card("k-a1", "domains/ai/knowledge/k-a1.md", "k-b2"), "n-gone")},
 			[]query.NoteEntry{note("n-c3", "domains/ai/notes/n-c3.md", "s-gone")}),
 		Sources: []SourceFact{{ID: "s-b2", Path: "sources/s-b2.md"}},
 	}
-	if got := pick(findingsOf(t, both), CheckDanglingRef); len(got) != DanglingRefKindCount {
-		t.Fatalf("两类引用同时悬空应恰 %d 条，实得 %d 条：%+v", DanglingRefKindCount, len(got), got)
+	if got := pick(findingsOf(t, both), CheckDanglingRef); len(got) != 2 {
+		t.Fatalf("前两类引用同时悬空应恰 2 条，实得 %d 条：%+v", len(got), got)
 	}
 	// 目标存在即不报；同一 (引用方, 缺失目标) 出现两次只报一条。
 	solid := Input{

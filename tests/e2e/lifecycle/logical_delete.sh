@@ -258,6 +258,28 @@ grep -q -- '--confirm' "${WORK}/err.txt" "${WORK}/out.txt" || die "退 6 必须�
 [ "$(logcount)" = "${LOGN_BEFORE}" ] || die "退 6 不得产生 commit"
 ok "③-后半 退 6 且 porcelain 计数 / log -1 / 提案与目标字节四样逐字不变"
 
+# --------------------------------------------- ③-后半b 未执行态的 attempted_at 语义（I-…-020）
+# 任务 Scope 要求"dry-run 态语义明确（不写或显式 null，二者之一并断言）"。现态参数面上
+# `eg delete` **没有** --dry-run flag（只有 --confirm / --target / --reason / --proposal /
+# --json / --user-request），因此这里断言的是等价的"未执行态"：拦下的调用不得产生任何带
+# 时间戳的 execution 投影 —— 走"不写"这一分支，并把它钉住，防止将来有人给未执行的提案
+# 也填一个"看起来对"的 attempted_at。
+step "③-后半b 未执行态（退 6）不产生任何非空 attempted_at 投影"
+[ "$(eg_code delete --target "${NOTE}" --reason '该材料已被更权威的版本取代' --proposal "${PID}" --user-request --json)" = "6" ] ||
+  { cat "${WORK}/err.txt"; die "带 --json 的无 --confirm delete 未退 6"; }
+cp "${WORK}/out.txt" "${WORK}/delete_blocked.json"
+# 先证明这份未执行态报告**确实处理了这条提案**（否则"零非空 attempted_at"会因报告是空壳而
+# 空洞成立）：报告里必须逐字出现提案 ID。
+grep -Fq "${PID}" "${WORK}/delete_blocked.json" ||
+  { cat "${WORK}/delete_blocked.json"; die "未执行态报告未提及提案 ${PID}：断言会空洞成立"; }
+NONNULL="$(jq -r '[.data.report.proposals[]?.execution.attempted_at | select(. != null and . != "")] | length' \
+           "${WORK}/delete_blocked.json")"
+[ "${NONNULL}" = "0" ] ||
+  { cat "${WORK}/delete_blocked.json"; die "未执行态出现 ${NONNULL} 个非空 attempted_at：拦下的调用不得有执行时刻"; }
+[ "$(rawhash "${PREL}")" = "${PHASH_BEFORE}" ] || die "未执行态仍改了提案字节"
+[ "$(logcount)" = "${LOGN_BEFORE}" ] || die "未执行态仍产生了 commit"
+ok "③-后半b 未执行态零非空 attempted_at、零写入、零 commit（eg delete 无 --dry-run flag，按"不写"分支断言）"
+
 # ---------------------------------------------------------------- 6. ⑤ 执行前重算影响面
 step "⑤ 执行前重算影响面（approve 内已做，断言其发生）"
 grep -Fq '执行前重算影响面' "${WORK}/approve.txt" ||
@@ -309,6 +331,34 @@ printf '%s\n' "${RECS}" | grep -Fq '建议标记 `deprecated`' ||
 CARD_IN_CHECK="$(jq -re '.data.report.support_check[]?.id' "${WORK}/delete.json")"
 printf '%s\n' "${CARD_IN_CHECK}" | grep -Fq "${CARD}" || die "受影响的卡 ${CARD} 未进 support_check[]"
 ok "⑨ 建议清单非空且命中「建议标记 \`deprecated\`」（受影响卡 ${CARD}）"
+
+# --------------------------------------------- 10b. ⑨b 报告投影 attempted_at（I-…-020）
+# 缺陷原态：权威 Markdown 的 execution.attempted_at 落了真实时间戳，同一次调用返回的
+# 报告投影 proposals[].execution.attempted_at 却是**空字符串**（整格漏投影）。
+# 断言口径刻意做成「不可被空值通过」：非空 + RFC3339 形态 + 落在本次运行窗口内，
+# 三者缺一都可能让一个恒为 "" 或恒为某常量的实现蒙混过关。
+step "⑨b proposals[].execution.attempted_at 非空、RFC3339、且落在本次运行窗口内"
+ATT="$(jq -re '.data.report.proposals[] | select(.execution.status == "succeeded") | .execution.attempted_at' "${WORK}/delete.json")"
+[ -n "${ATT}" ] ||
+  { cat "${WORK}/delete.json"; die "已执行提案的 execution.attempted_at 为空（I-…-020 未修）"; }
+printf '%s\n' "${ATT}" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([+-][0-9]{2}:[0-9]{2}|Z)$' ||
+  die "attempted_at 不是 RFC3339 形态，实际：${ATT}"
+# 与权威 Markdown 逐字一致：报告是投影，不得自造一个「看起来对」的时刻。
+PROP_REL="$(jq -re '.data.report.proposals[] | select(.execution.status == "succeeded") | .path' "${WORK}/delete.json")"
+MD_ATT="$(grep -E "^[[:space:]]*attempted_at:" "${VAULT}/${PROP_REL}" | head -1 |
+  sed -E "s/^[[:space:]]*attempted_at:[[:space:]]*//; s/^['\"]//; s/['\"]$//")"
+[ -n "${MD_ATT}" ] || die "权威 Markdown 侧 attempted_at 缺失，样例前提不成立：${VAULT}/${PROP_REL}"
+[ "${ATT}" = "${MD_ATT}" ] ||
+  die "报告投影与权威 Markdown 不一致：报告「${ATT}」≠ Markdown「${MD_ATT}」"
+# 运行窗口：不早于本脚本启动时刻的当天，且不晚于此刻（挡住写死的历史常量）。
+NOW_EPOCH="$(date +%s)"
+ATT_EPOCH="$(date -d "${ATT}" +%s 2>/dev/null || echo 0)"
+[ "${ATT_EPOCH}" != "0" ] || die "attempted_at 无法被解析成时刻：${ATT}"
+[ "${ATT_EPOCH}" -le "$((NOW_EPOCH + 60))" ] ||
+  die "attempted_at 落在未来（${ATT}），不可能是本次尝试时刻"
+[ "$((NOW_EPOCH - ATT_EPOCH))" -le 3600 ] ||
+  die "attempted_at 距今超过 1 小时（${ATT}），疑似写死的常量而非本次尝试时刻"
+ok "⑨b attempted_at=${ATT}（非空 / RFC3339 / 与权威 Markdown 逐字一致 / 在运行窗口内）"
 
 # ---------------------------------------------------------------- 11. ⑩ status 逐字未变
 step "⑩ status 逐字未变：删除不自动改状态"

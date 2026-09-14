@@ -97,8 +97,8 @@ func TestSetDeleted_AllFourKinds(t *testing.T) {
 		{"原文", "sources/s-20260901-del.md", delSourceSample},
 		{"综述", "domains/ai/reviews/r-20260901-del.md", delReviewSample},
 	}
-	wantAt := `deleted_at: "` + deletedStamp + `"`
-	wantReason := `deleted_reason: "用户要求删除"`
+	wantAt := `deleted_at: '` + deletedStamp + `'`
+	wantReason := `deleted_reason: '用户要求删除'`
 	for _, c := range cases {
 		s, root := newVault(t)
 		abs := writeSeed(t, root, c.rel, c.content)
@@ -314,7 +314,7 @@ func TestApplyStateWriteDeletedBothDirections(t *testing.T) {
 		ExpectedHash: f.Hash, At: mustStamp(t), Reason: "入口删"}); err != nil {
 		t.Fatalf("ApplyStateWrite 删: %v", err)
 	}
-	if !strings.Contains(string(mustBytes(t, abs)), `deleted_reason: "入口删"`) {
+	if !strings.Contains(string(mustBytes(t, abs)), `deleted_reason: '入口删'`) {
 		t.Fatal("入口必须真的落盘删除标记")
 	}
 	f2, err := s.Read(rel)

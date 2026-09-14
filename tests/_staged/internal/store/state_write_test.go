@@ -91,10 +91,10 @@ func TestSetStatusOnlyTouchesStatusKey(t *testing.T) {
 	}
 	after := mustBytes(t, abs)
 	fm := fmOf(t, after)
-	if !strings.Contains(fm, "status: deprecated\n") {
+	if !strings.Contains(fm, "status: 'deprecated'\n") {
 		t.Fatalf("status 未被覆盖：%s", fm)
 	}
-	if strings.Contains(fm, "status: active") {
+	if strings.Contains(fm, "status: 'active'") || strings.Contains(fm, "status: active") {
 		t.Fatalf("旧值残留：%s", fm)
 	}
 	for _, forbidden := range []string{"deleted_at", "deleted_reason"} {
@@ -135,7 +135,7 @@ func TestSetStatusRepeatedOverwritesSingleKey(t *testing.T) {
 			t.Fatalf("frontmatter 不得新增历史键 %s（变更原因由 Git 历史查阅）：%s", forbidden, fm)
 		}
 	}
-	if !strings.Contains(fm, "status: deprecated\n") {
+	if !strings.Contains(fm, "status: 'deprecated'\n") {
 		t.Fatalf("末次取值须生效：%s", fm)
 	}
 }

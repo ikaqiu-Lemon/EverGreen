@@ -76,16 +76,36 @@ func readState(t *testing.T, path string) string {
 	return string(raw)
 }
 
-// fmValue 取 frontmatter 里某个顶层单键的值（只用于 status 这类标量键）。
+// fmValue 取 frontmatter 里某个顶层单键的**语义值**（只用于 status 这类标量键）。
+//
+// 刻意返回去引号后的值而不是原始字面：frontmatter 的标量序列化风格（裸写 / 单引号 /
+// 双引号）在库里三种历史形态并存（I-…-014），本 helper 的用途是断言「状态是不是
+// deprecated」这类**语义**，不该被引号风格绑架。序列化风格本身由
+// state_write_style_test.go 的规范化断言单独钉住，两件事分开验证：
+// 若在这里比字面量，风格一变就会有一批语义没变的用例集体转红（假红）。
 func fmValue(t *testing.T, body, key string) string {
 	t.Helper()
 	for _, line := range strings.Split(body, "\n") {
 		if strings.HasPrefix(line, key+":") {
-			return strings.TrimSpace(strings.TrimPrefix(line, key+":"))
+			return unquoteYAMLScalar(strings.TrimSpace(strings.TrimPrefix(line, key+":")))
 		}
 	}
 	t.Fatalf("frontmatter 缺键 %s：\n%s", key, body)
 	return ""
+}
+
+// unquoteYAMLScalar 去掉 YAML 标量的外层引号（单/双），并还原单引号内的 ” 转义。
+// 无引号时原样返回 —— 三种历史形态都能取到同一个语义值。
+func unquoteYAMLScalar(s string) string {
+	if len(s) >= 2 {
+		if s[0] == '\'' && s[len(s)-1] == '\'' {
+			return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
+		}
+		if s[0] == '"' && s[len(s)-1] == '"' {
+			return strings.NewReplacer(`\"`, `"`, `\\`, `\`, `\n`, "\n", `\r`, "\r").Replace(s[1 : len(s)-1])
+		}
+	}
+	return s
 }
 
 func countSub(body, sub string) int { return strings.Count(body, sub) }

@@ -271,11 +271,19 @@ func (r *Root) Wire(name string, h Handler) error {
 	return nil
 }
 
-// Usage 渲染顶层帮助：命令区**只列九个 S1 命令**。
+// Usage 渲染顶层帮助。
+//
+// 命令区标题与退出码表都**由数据源渲染**，不写死字面量（I-…-013 / I-…-012）：
+//   - 标题条数取 len(r.cmds)（注册表实际条数），此前写死「S1 九命令」而实际已 22 条，
+//     既泄漏内部阶段代号，又让用户以为其余 13 条不受支持；
+//   - 退出码表取 ExitCodeDocs()（exitcode.go 的单一数据源），此前手写只列 0~4，
+//     而 5 / 6 早已启用，集成方按 help 实现分支会把它们落进 default。
+//
+// 两处的「声明面 == 实现面」由 root_help_contract_test.go 做集合相等断言。
 func (r *Root) Usage() string {
 	var b strings.Builder
 	b.WriteString("eg — Evergreen 确定性本地 CLI（单二进制；不调用模型、不做网络请求）\n\n")
-	b.WriteString("用法：\n  eg <command> [flags]\n\n命令（S1 九命令）：\n")
+	b.WriteString(fmt.Sprintf("用法：\n  eg <command> [flags]\n\n命令（共 %d 条）：\n", len(r.cmds)))
 	width := 0
 	for _, c := range r.cmds {
 		if len(c.Display) > width {
@@ -300,9 +308,11 @@ func (r *Root) Usage() string {
   --help, -h       打印用法后退 0
   --version        打印版本后退 0
 
-退出码：0 成功 | 1 用法 / 参数非法（零写入） | 2 校验失败（零写入） |
-       3 部分写入被跳过 | 4 Git 提交失败（磁盘保留现状，不做破坏性还原）
 `)
+	b.WriteString("退出码：\n")
+	for _, d := range ExitCodeDocs() {
+		b.WriteString(fmt.Sprintf("  %d  %s\n", d.Code, d.Desc))
+	}
 	return b.String()
 }
 

@@ -55,6 +55,7 @@ tests/_staged/internal/cli/rel_test.go	internal/cli/rel_test.go	evergreen	unit	g
 tests/_staged/internal/cli/report_test.go	internal/cli/report_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reserved_runtime_exit5_test.go	internal/cli/reserved_runtime_exit5_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reviewed_test.go	internal/cli/reviewed_test.go	evergreen	unit	go
+tests/_staged/internal/cli/root_help_contract_test.go	internal/cli/root_help_contract_test.go	evergreen	unit	go
 tests/_staged/internal/cli/search_test.go	internal/cli/search_test.go	evergreen	unit	go
 tests/_staged/internal/cli/skill_test.go	internal/cli/skill_test.go	evergreen	unit	go
 tests/_staged/internal/cli/t061_final_review_test.go	internal/cli/t061_final_review_test.go	evergreen	unit	go
@@ -125,6 +126,7 @@ tests/_staged/internal/reconcile/finding_test.go	internal/reconcile/finding_test
 tests/_staged/internal/reconcile/r1_git_test.go	internal/reconcile/r1_git_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r2_reviewed_test.go	internal/reconcile/r2_reviewed_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r3_relation_test.go	internal/reconcile/r3_relation_test.go	evergreen	unit	go
+tests/_staged/internal/reconcile/r4_dangling_fields_test.go	internal/reconcile/r4_dangling_fields_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r4_structure_test.go	internal/reconcile/r4_structure_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r5_domain_test.go	internal/reconcile/r5_domain_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r6_recap_test.go	internal/reconcile/r6_recap_test.go	evergreen	unit	go
@@ -146,6 +148,7 @@ tests/_staged/internal/store/section_write_test.go	internal/store/section_write_
 tests/_staged/internal/store/source_test.go	internal/store/source_test.go	evergreen	unit	go
 tests/_staged/internal/store/state_write_deleted_test.go	internal/store/state_write_deleted_test.go	evergreen	unit	go
 tests/_staged/internal/store/state_write_stale_test.go	internal/store/state_write_stale_test.go	evergreen	unit	go
+tests/_staged/internal/store/state_write_style_test.go	internal/store/state_write_style_test.go	evergreen	unit	go
 tests/_staged/internal/store/state_write_test.go	internal/store/state_write_test.go	evergreen	unit	go
 tests/_staged/internal/store/store_test.go	internal/store/store_test.go	evergreen	unit	go
 tests/_staged/internal/store/updated_at_test.go	internal/store/updated_at_test.go	evergreen	unit	go

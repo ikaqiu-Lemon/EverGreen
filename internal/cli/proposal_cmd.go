@@ -116,7 +116,8 @@ list / show 只读：零文件变化、零 commit，可任意次调用。
 approve 只允许用户显式路径（U-12）：缺 --user-request 退 2、零写入；
 approve 缺 --confirm 退 6：零写入、零 commit，权威 Markdown 完全不变；
 approve 执行前必须重算影响面并与 impact 比对，前提已变则改判 superseded 且不执行。
-退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 4 Git 提交失败 | 6 仅缺 --confirm
+退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入 | 6 仅缺 --confirm
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("type", "", "提案类型（v1 唯一：logical_delete）")

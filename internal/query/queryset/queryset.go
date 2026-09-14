@@ -1,6 +1,7 @@
 // [S4] internal/query/queryset：M5 性能采样的**固定查询集**与语料命名规则的唯一定义处。
 //
-// 归位说明（system_assurance 批次 A）：本包历史位置为 `test/perf/queryset`，但它被产品代码
+// 归位说明（system_assurance 批次 A）：本包历史位置在旧测试根（单数目录，已随测试树外置整体
+// 删除）下的 perf/queryset，但它被产品代码
 // `internal/cli/bench.go` import —— 被产品 import 的包按定义是产品代码。测试树外置到 `tests/`
 // 后，旧位置会让产品树无法独立构建，故归位到 `internal/query/queryset`。
 // 采样口径（固定查询集、不随机）一字未改；路径与 M5 合同 §7.3 字面的差异登记在
@@ -25,7 +26,7 @@
 //     也不影响 `cmd/eg/arch_test.go` 对 `internal/` 依赖方向的判据（它只看 internal/ 集合）。
 //   - **纯确定性**：本包不含随机数、不读时钟、不读环境变量。同样入参恒得同样出参。
 //   - **不含门槛数值**：门槛是「实测 × 1.5 向上取整到 10ms」，由合同 §7 的回填列与
-//     `test/e2e/m5_bench_p95.sh` 持有；本包只管「查什么」，不管「多快算合格」。
+//     仓内 P95 性能门槛门禁（suite `perf.bench-p95`）持有；本包只管「查什么」，不管「多快算合格」。
 package queryset
 
 import (

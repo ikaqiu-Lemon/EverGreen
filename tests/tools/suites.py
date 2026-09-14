@@ -51,6 +51,9 @@ META_SUITES = [
     ("manifest.traceability", "tests/tools/traceability.py", "python", "manifest", ["--check"]),
     ("manifest.legacy-gates", "tests/tools/legacy_gates.py", "python", "manifest", ["--check"]),
     ("manifest.suites", "tests/tools/suites.py", "python", "manifest", ["--check"]),
+    # 规模棘轮：承接历史阶段「冻结算术等式」的意图（规模不得静默缩水），
+    # 修 I-evergreen.system_assurance-158614-005。判据见 tests/tools/scale_ratchet.py 头注释。
+    ("manifest.scale-ratchet", "tests/tools/scale_ratchet.py", "python", "manifest", ["--check"]),
     ("mutation.mutants", "tests/mutation/run_mutation.py", "python", "mutation", ["--set", "all"]),
     ("fuzz.go-targets", "tests/fuzz/run_fuzz.sh", "shell", "fuzz", []),
 ]

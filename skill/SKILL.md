@@ -553,7 +553,7 @@ eg reconcile [--dry-run] [--json]
 
 | 项 | 口径 |
 |-|-|
-| 职责 | **全库**对账：R1（Git 纳管）+ R2（`reviewed_at` 补齐）+ R3（关系校验，只报告）+ R4（重复 ID / 悬空引用 / 孤儿）+ R5（跨领域移动检测，只报告）+ R6（综述可能失准标记）+ R7（材料支持不足实时判定，只报告，**永不改 `status`**） |
+| 职责 | **全库**对账：R1（Git 纳管）+ R2（`reviewed_at` 补齐）+ R3（关系校验，只报告）+ R4（重复 ID / 悬空引用 / 孤儿）+ R5（跨领域移动检测，只报告）+ R6（综述可能失准标记）+ R7（材料支持不足实时判定，只报告，**永不改 `status`**）<br>**悬空引用（`dangling_ref` / E12）覆盖 frontmatter 全部引用承载字段（恰四类）**：`note.source→原文` / `card.sources[].note→材料笔记` / `card.sources[].source→原文` / `replaced_by.target→知识卡`；指向原文的两类只在 `sources/` 已采样时判定。**关系条目 `target` 缺失归 R3（E13/E14），不进 E12**；`sources[].source` / `sources[].note` 缺失由 E12 独家承载，R7 让位、不重复报 `W20`（一件事一码） |
 | 是否写入 | **是**：R1 的纳管 commit + R2 / R6 的 frontmatter 补写（经内存 ChangePlan 落盘，B3 前置比对不豁免） |
 | commit | **恰 0 或 1 次**（零改动即零 commit；R1 与 R2 / R6 合并为一次） |
 | `--dry-run` | 只跑检查与报告，**零写入、零 commit**；`reconcile.ran = true`、`reconcile.commit = null` |
@@ -582,7 +582,7 @@ eg check [--json]
 
 | 项 | 口径 |
 |-|-|
-| 职责 | `eg reconcile --dry-run` 的**只读别名子集**：**只跑 R3 + R4 恰 7 个 check**——重复 ID / 悬空引用 / 孤儿 / 关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复 |
+| 职责 | `eg reconcile --dry-run` 的**只读别名子集**：**只跑 R3 + R4 恰 7 个 check**——重复 ID / 悬空引用 / 孤儿 / 关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复<br>其中**悬空引用（E12）覆盖 frontmatter 全部引用承载字段（恰四类）**：`note.source→原文` / `card.sources[].note→材料笔记` / `card.sources[].source→原文` / `replaced_by.target→知识卡`；关系条目 `target` 缺失走 R3 的 `relation_target_missing`（E13），不进 E12 |
 | 是否写入 | **否**：零写入、**恒 0 次 commit**、不改写 `eg report --last`，也没有 `--fix` / `--repair`（修复走 `eg reconcile`） |
 | 未判面 | R1 / R2 / R5 / R6 / R7 的 5 个 check **不判**（未判 ≠ 不存在，全量判定请跑 `eg reconcile`） |
 | 是否前置 | `eg check` **命令本身不作为任何写命令的前置**；不接受任何范围收窄或可见性参数。**M6 现态**：`eg check --strict` 对本命令 finding 是**恒等变换**——`eg check` 只判 R3/R4 结构（`E11`–`E14` / `W13`–`W20`），与强校验升级面（`W1`/`W2`/`W3`/`W4`/`W6`，真源 `internal/reconcile/strict.go`）**不相交**，故 `--strict` 不改本命令任何 finding severity、不改退出码。真正把 `W1`/`W2`/`W3`/`W4`/`W6` 升 error 并退 `5` + `E15` 的是 **A 类写命令内部的写前强校验**（自动执行，复用同一 strict 逻辑），**不需要 Agent 手动先跑 `eg check`**（见 §11） |

@@ -356,7 +356,15 @@ func addProposalEntry(rep *report.Report, st *store.Store, rel string) error {
 		Execution: report.ProposalExecution{
 			// git_commit 恒 nil：本层不回写 execution 三态（属 T-…-036），
 			// 报告里也不得凭空填一个 SHA 假装执行已发生。
+			// （A-32 既定裁决：git_commit 在权威 Markdown 整键缺席、在报告投影恒 null，
+			//   本处不动它 —— I-…-020 只针对 attempted_at。）
 			Status: string(p.Execution.Status), GitCommit: nil,
+			// I-…-020：attempted_at 此前**整格漏投影**，于是权威 Markdown 已落真实
+			// 时间戳、同一次调用的报告投影却是空字符串。这里如实搬运权威值：
+			// 报告是权威事实的投影，既不凭空生成时刻，也不把已有事实丢掉。
+			// 未执行的提案（not_started）权威侧本就没有这一键，投影为空字符串即
+			// 「缺席」的忠实表达 —— 不伪造时刻来填满字段。
+			AttemptedAt:    p.Execution.AttemptedAt,
 			WrittenPaths:   nonNilStrings(p.Execution.WrittenPaths),
 			UnwrittenPaths: nonNilStrings(p.Execution.UnwrittenPaths),
 		},

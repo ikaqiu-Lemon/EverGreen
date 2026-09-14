@@ -151,7 +151,7 @@ func TestSetStatus_WritesOnlyStatusKey(t *testing.T) {
 	after := readVaultFile(t, dir, relAttention)
 	// 只许差两行：status 那一格，以及跟随本次实际写入刷新的 updated_at（矩阵第 8 行 /
 	// I-…-009）。deleted_* / reviewed_at / 历史键一格不许动。
-	want := strings.Replace(files[relAttention], "status: active", "status: deprecated", 1)
+	want := strings.Replace(files[relAttention], "status: active", "status: 'deprecated'", 1)
 	want = strings.Replace(want,
 		"updated_at: '2026-09-01T10:00:00+08:00'",
 		"updated_at: '"+mustStamp(t).String()+"'", 1)

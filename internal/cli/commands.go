@@ -78,7 +78,8 @@ func deprecateCommand() *Command {
 只覆盖 frontmatter 的 status 单键：不写 deleted_at、不动关系与 sources[]、
 不新增任何历史数组（反复失效/恢复只反复覆盖同一个键）。
 目标已是 deprecated → W11 幂等 no-op：零写入、不产生空 commit。
-退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败
+退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("target", "", "要失效的卡 ID")
@@ -106,7 +107,8 @@ func restoreCommand() *Command {
 
 不以「存在有效 support」为前提：系统不拦截、不判定材料是否充分（该提示归 S3）。
 目标已是 active → W11 幂等 no-op：零写入、不产生空 commit。
-退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败
+退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("target", "", "要恢复的卡 ID")
@@ -136,7 +138,8 @@ func replacedByCommand() *Command {
 单向写入：被指向的新卡文件字节不变（反向查询归 S4）。
 E10：target 或 --to 任一已被逻辑删除 → 退 2、零写入。
 W12：--to 是 deprecated 且未被删除 → 允许写入 + 进报告提示（退 0）。
-退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败
+退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("target", "", "被替代的失效卡 ID")
@@ -171,7 +174,8 @@ func initCommand() *Command {
 
 写入 F1 的 [S1] 列；不创建 reviews/（S2）、proposals/（S2）、.index/（S4）。
 commit：verb = init。幂等：重复执行不改已有字节，干净工作区下不产生空 commit。
-退出码：0 | 1 参数非法 | 4 Git 提交失败
+退出码：0 | 1 参数非法 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			var domains stringList
@@ -199,7 +203,7 @@ eg config set <key> <value>
 
 commit：get 无；set 产生 verb = reconcile（≠ S3 的 eg reconcile 命令，≠ §4.6 报告字段 reconcile）。
 get default_domain 未设置时输出空值并退 0（不是错误）。
-退出码：0 | 1 | 4
+退出码：0 | 1 | 4 | 5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入（仅 set 会取锁）
 `,
 		Validate: func(inv *Invocation) error {
 			if inv.Sub == "" {
@@ -247,7 +251,8 @@ func captureCommand() *Command {
 
 eg 不抓取网页、不解析 HTML、不调用模型：正文字节由 Agent 清洗后传入。
 退出码：0 | 1 参数非法 | 2 正文为空/过短或 --url 与 --title 同时缺失（零写入） |
-        3 部分写入被跳过 | 4 Git 提交失败
+        3 部分写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("url", "", "原文 URL（判重第一键）")
@@ -347,7 +352,8 @@ func applyCommand() *Command {
 
 写入遵守 B1 只追加 / B2 保留用户块 / B3 content_hash 校验；
 verb 未知值 → warning 并退化为 process（§4.5），不拒绝提交。
-退出码：0 | 1 参数非法 | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败
+退出码：0 | 1 参数非法 | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败 |
+        5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入（--dry-run 只读、不取锁）
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("plan", "", "ChangePlan 文件（- 为 stdin）")

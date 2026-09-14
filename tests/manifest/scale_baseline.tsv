@@ -1,0 +1,20 @@
+metric	high_water	initial	source	note
+inventory_cases	5703	5592	tests/manifest/inventory.tsv	首次冻结（defect_zeroing 批次1）
+inventory_rows	371	364	tests/manifest/inventory.tsv	首次冻结（defect_zeroing 批次1）
+legacy_gate_assets	21	21	tests/manifest/legacy_gates.tsv	首次冻结（defect_zeroing 批次1）
+migration_rows	289	289	tests/manifest/migration.tsv	首次冻结（defect_zeroing 批次1）
+requirements_kind_command	22	22	tests/manifest/traceability.tsv	首次冻结（defect_zeroing 批次1）
+requirements_kind_frozen	6	6	tests/manifest/traceability.tsv	首次冻结（defect_zeroing 批次1）
+requirements_mapped	28	28	tests/manifest/traceability.tsv	首次冻结（defect_zeroing 批次1）
+requirements_rows	28	28	tests/manifest/traceability.tsv	首次冻结（defect_zeroing 批次1）
+suites_executable	108	106	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_contract	16	14	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_e2e	71	71	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_fuzz	1	1	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_integration	2	2	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_manifest	6	5	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_mutation	1	1	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_perf	1	1	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_layer_unit	18	18	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_required	115	112	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）
+suites_total	116	113	tests/manifest/suites.yaml	首次冻结（defect_zeroing 批次1）

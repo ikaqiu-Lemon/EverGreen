@@ -349,30 +349,40 @@ func labelOf(kind string) string {
 
 // —— dangling_ref（E12 / error，合同 §6.2）——
 
-// DanglingRefKindCount 是本码覆盖的引用类别数：**恰两类**（§6.2 逐字）。
-// 多判一类就是扩张判定面（例如知识卡 `sources[].source` 指向的原文缺失**不在**本码内）。
-const DanglingRefKindCount = 2
+// DanglingRefKindCount 是本码覆盖的引用类别数：**恰四类**。
+//
+// 历史 M4 合同 §6.2 只冻结了前两类（note.source / card.sources[].note）；
+// I-evergreen.system_assurance-158614-019 的实现侧完整修复枚举并冻结了 frontmatter
+// **全部**引用承载字段：另外两类 `card.sources[].source→原文` 与 `replaced_by.target→知识卡`
+// 此前逃逸出 E12（前者一度落到 R7 的 W20、后者压根无人判），一件事因此被 error + warning
+// 双报或彻底漏报。四类合一后，R7 对「原文端缺失」这一件事整体让位给 E12（见 r7_support.go
+// 的 yieldsToDanglingRef），关系条目的 target 仍归 R3（E13 / E14），互不重叠。
+const DanglingRefKindCount = 4
 
-// 两类引用的机器串（进 detail，供逐条复算）。
+// 四类引用的机器串（进 detail，供逐条复算）。
 const (
 	danglingNoteSource = "note.source→原文"
 	danglingCardNote   = "card.sources[].note→材料笔记"
+	danglingCardSource = "card.sources[].source→原文"
+	danglingReplacedBy = "replaced_by.target→知识卡"
 )
 
 // refFact 是一条待判定的引用事实（引用方 / 目标 / 类别 / 引用方落盘路径）。
 type refFact struct{ from, to, kind, path string }
 
-// checkR4DanglingRef 覆盖**恰两类**引用：
+// checkR4DanglingRef 覆盖**恰四类**引用承载字段：
 //
 //	① 材料笔记 frontmatter 的 `source` 指向的原文不存在；
-//	② 知识卡 frontmatter `sources[].note` 指向的来源笔记不存在。
+//	② 知识卡 frontmatter `sources[].note` 指向的来源笔记不存在；
+//	③ 知识卡 frontmatter `sources[].source` 指向的原文不存在；
+//	④ 知识卡 frontmatter `replaced_by.target` 指向的替代卡不存在。
 //
-// `targets[]` = `[引用方 ID, 缺失的目标 ID]`。两元素经 NormalizeTargets 去重升序 ——
-// 由于 ID 前缀恒有 `k-` < `n-` < `s-` 的字典序，而两类引用的方向恒是「卡 → 笔记」
-// 与「笔记 → 原文」，**升序结果恒等于「引用方在前、缺失目标在后」**：
-// 合同 §2 的 targets 排序规则与 §6.2 的元素次序因此不冲突（用例逐字锁死）。
+// `targets[]` = `[引用方 ID, 缺失的目标 ID]`。两元素经 NormalizeTargets 去重升序。
+// 指向**原文**的两类（① / ③）只在 `sources/` 分区已采样时判定：绝不把「没采样」
+// 说成「不存在」（与 R7 / query 侧 Q2 逐字同源的诚实性口径）。
 //
-// **关系条目的 target 缺失不走这条**：那属 R3 的 relation_target_missing（E13，归 T-…-053）。
+// **关系条目的 target 缺失不走这条**：那属 R3 的 relation_target_missing（E13，归 T-…-053）——
+// 一件事不许两码重复计。同理，③ 一旦被本码承载，R7 对「原文端缺失」整体让位（不再报 W20）。
 func checkR4DanglingRef(x StructureIndex, in Input) []Finding {
 	var refs []refFact
 	if in.Scan != nil {
@@ -390,16 +400,24 @@ func checkR4DanglingRef(x StructureIndex, in Input) []Finding {
 				kind: danglingNoteSource, path: n.Path})
 		}
 		for _, c := range in.Scan.Cards {
+			cid := strings.TrimSpace(c.ID)
 			for _, s := range c.Sources {
-				note := strings.TrimSpace(string(s.Note))
-				if note == "" {
-					continue // 四要素缺失属材料关系完整性（S1 既有校验），不是悬空引用
+				// ② 来源笔记端：存在性看落盘事实（不做删除过滤，删除维度归 R7 的 W20）。
+				if note := strings.TrimSpace(string(s.Note)); note != "" && !x.Has(note, KindNote) {
+					refs = append(refs, refFact{from: cid, to: note,
+						kind: danglingCardNote, path: c.Path})
 				}
-				if x.Has(note, KindNote) {
-					continue
+				// ③ 原文端：与笔记的 source 同口径，仅在 sources/ 已采样时判定。
+				if src := strings.TrimSpace(string(s.Source)); src != "" &&
+					x.SourcesSampled && !x.Has(src, KindSource) {
+					refs = append(refs, refFact{from: cid, to: src,
+						kind: danglingCardSource, path: c.Path})
 				}
-				refs = append(refs, refFact{from: strings.TrimSpace(c.ID), to: note,
-					kind: danglingCardNote, path: c.Path})
+			}
+			// ④ 替代指针：失效卡的 replaced_by.target 必须指向一张真实存在的知识卡。
+			if tgt := strings.TrimSpace(c.ReplacedByTarget); tgt != "" && !x.Has(tgt, KindCard) {
+				refs = append(refs, refFact{from: cid, to: tgt,
+					kind: danglingReplacedBy, path: c.Path})
 			}
 		}
 	}

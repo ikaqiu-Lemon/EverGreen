@@ -77,6 +77,45 @@ func NeedConfirmEnabled(command string) bool {
 // 以函数而非注释表达，是为了让「5 已启用」这条边界可被测试直接消费。
 func ExitCode5Enabled() bool { return true }
 
+// —— 退出码 5 的**自述面**边界：哪些顶层命令的 `--help` 必须列 5 ——
+//
+// 修 I-…-012 第 2 条：15 条会进临界区的命令，其 `--help`「退出码：」行此前统一止于 4，
+// 而正文里已经在说「锁忙退 5 + E16」——声明面与实现面对不上，集成方会漏掉 5 的分支。
+//
+// 集合口径不是手感，而是**代码路径**：一条顶层命令只要其写路径会进 `.index/run.lock`
+// 临界区（因此可能撞上 E16 锁不可用，或在锁内重读重算时撞上 E15 写前强校验失败），
+// 就必须列 5。逐条来源（grep 可复核）：
+//   - `runPlanCritical`（plan 写链）：apply / edit / deprecate / restore / replaced-by / rel；
+//   - `enterTxnCritical(At)`（A 类强事务）：init / config（set）/ capture / delete / undelete /
+//     mark-reviewed / proposal（new·approve·reject）/ reconcile；
+//   - `runIndexCritical`（B 类索引维护）：index（build·rebuild·sync；status 是 C 类只读，
+//     但 help 是按顶层命令渲染的，故 index 整体在列）。
+//
+// 反面同样封闭：只读命令（search / card / context / report / unreviewed / check / bench）
+// 不取锁、不开事务，其 help **不得**列 5 —— 声明一个永不出现的分支同样是漂移。
+// 断言在 tests/_staged/internal/cli/root_help_contract_test.go 里做双向（iff）比对。
+var precheckOrLockHelpCommands = []string{
+	"apply", "capture", "config", "delete", "deprecate", "edit", "index", "init",
+	"mark-reviewed", "proposal", "reconcile", "rel", "replaced-by", "restore", "undelete",
+}
+
+// PrecheckOrLockHelpCommands 返回必须在 `--help` 里声明退出码 5 的顶层命令白名单（升序副本）。
+func PrecheckOrLockHelpCommands() []string {
+	out := append([]string{}, precheckOrLockHelpCommands...)
+	sort.Strings(out)
+	return out
+}
+
+// PrecheckOrLockHelpEnabled 报告某条顶层命令的 help 是否必须列退出码 5。
+func PrecheckOrLockHelpEnabled(command string) bool {
+	for _, c := range precheckOrLockHelpCommands {
+		if c == command {
+			return true
+		}
+	}
+	return false
+}
+
 // —— 判定顺序：参数错 1 → 校验失败 2 → 仅缺确认 6 ——
 
 // ConfirmDecision 是一次退出码判定的三个输入事实（由命令层如实填写，不含任何顺序逻辑）。
@@ -164,3 +203,54 @@ type LockUnavailableError struct{ *TxnBlockedError }
 
 // Unwrap 暴露内层 *TxnBlockedError（它再 Unwrap 到 071 / 072 的 sentinel）。
 func (e *LockUnavailableError) Unwrap() error { return e.TxnBlockedError }
+
+// —— 退出码声明面的唯一数据源（I-evergreen.system_assurance-158614-012）——
+//
+// 修 I-…-012 前，顶层 `--help` 的退出码表是**手写字符串**，与 exit.go / 本文件的常量
+// 各自演进：5 与 6 早已启用，声明面却只列 0~4，集成方按 help 实现分支就会把 5 / 6
+// 落进 default。根因是「同一事实有两套来源」，因此这里把退出码的**码值 + 对外语义**
+// 收敛成一张表，`Root.Usage()` 由它渲染，测试再对「表 ↔ 常量」做集合相等断言。
+//
+// 刻意不把描述文案放在 root.go：文案与码值一旦分处两地，就会重新长出漂移。
+// 新增退出码时只改这张表，help 自动跟随；漏改则集合相等断言立刻转红。
+
+// ExitCodeDoc 是一个退出码的对外声明（码值 + 面向集成方的语义）。
+type ExitCodeDoc struct {
+	Code int
+	// Desc 是面向用户/集成方的语义描述，直接进 `--help`。
+	Desc string
+}
+
+// exitCodeDocs 是退出码全集的声明面单一数据源，按码值升序。
+//
+// 与合同 §9.1 的「全集恰 {0,1,2,3,4,5,6}」逐一对应，不多不少。
+var exitCodeDocs = []ExitCodeDoc{
+	{ExitOK, "成功"},
+	{ExitUsage, "用法 / 参数非法（零写入）"},
+	{ExitValidation, "校验失败（零写入）"},
+	{ExitPartialWrite, "部分写入被跳过（已完成写入保留并提交）"},
+	{ExitCommitFailed, "Git 提交失败（磁盘保留现状，不做破坏性还原）"},
+	{ExitPrecheckOrLock, "写前强校验失败（E15）或锁不可用（E16）（零权威写入）"},
+	{ExitNeedConfirm, "仅缺用户确认：重跑并加 --confirm（零写入、零 commit，权威 Markdown 完全不变）"},
+}
+
+// ExitCodeDocs 返回退出码声明面全集（升序副本，供 help 渲染与测试直接断言）。
+func ExitCodeDocs() []ExitCodeDoc {
+	out := append([]ExitCodeDoc{}, exitCodeDocs...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Code < out[j].Code })
+	return out
+}
+
+// ExitCodeSet 返回声明面覆盖的退出码集合（升序去重），供集合相等断言消费。
+func ExitCodeSet() []int {
+	seen := map[int]bool{}
+	var out []int
+	for _, d := range exitCodeDocs {
+		if !seen[d.Code] {
+			seen[d.Code] = true
+			out = append(out, d.Code)
+		}
+	}
+	sort.Ints(out)
+	return out
+}
