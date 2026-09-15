@@ -257,6 +257,11 @@ func CoverageThreshold(anchors int) int {
 // 前缀是类型的唯一真源（§3.1），据它分组才不会与目录布局对不上。
 // 前缀既非 `k-` 也非 `o-` 的条目归入 Knowledge 一组并记一条 I1——
 // 静默丢弃会让「产出了什么」在笔记里消失。
+//
+// Opinion 行额外带 `[<validation>]` 标记（§5.1）：读者在笔记里就能看出这条判断
+// 当时论证到哪一步，而不必逐个点开 `o-*`。Knowledge 行**不带**——`validation` 是
+// Opinion 独有的 frontmatter 键（§3.4），给知识卡也盖一个标记等于把「论证进度」
+// 扩散到不持有它的实体上。
 func (v *validator) noteExtraction(op *Op) *NoteExtraction {
 	var knowledge, opinions []string
 	for i, c := range op.OutputCards {
@@ -267,19 +272,77 @@ func (v *validator) noteExtraction(op *Op) *NoteExtraction {
 		if c.Mode != "" {
 			item = fmt.Sprintf("%s（%s）", c.Card, c.Mode)
 		}
+		path := fmt.Sprintf("ops[%d].output_cards[%d].card", op.Index, i)
 		switch {
 		case hasIDPrefix(c.Card, model.PrefixOpinion):
-			opinions = append(opinions, item)
+			opinions = append(opinions, v.opinionItem(op, path, c.Card, item))
 		case hasIDPrefix(c.Card, model.PrefixCard):
 			knowledge = append(knowledge, item)
 		default:
-			v.add(infoAt(op.Index, fmt.Sprintf("ops[%d].output_cards[%d].card", op.Index, i),
+			v.add(infoAt(op.Index, path,
 				"%q 既不是 %s 也不是 %s 前缀：已归入「%s」组照常列出（类型只由 ID 前缀表达，§3.1）",
 				c.Card, model.PrefixCard, model.PrefixOpinion, store.ExtractionKnowledgeHeading))
 			knowledge = append(knowledge, item)
 		}
 	}
 	return &NoteExtraction{Knowledge: knowledge, Opinions: opinions}
+}
+
+// opinionItem 给一条 Opinion 清单项补上 `[<validation>]` 标记。
+//
+// 状态**只从真源取**（opinionValidation）：取不到时不补标记，并记一条 I1 点名该 ID。
+// 为什么不退化成「取不到就写 pending」：那是在替读者断言「这条观点还没被验证」，
+// 而事实是「这条观点此刻定位不到」。快照里的每个标记都会被后来的人当成当时的事实读，
+// 凭默认值填出来的事实是伪造，且伪造之后再也无法与真的 pending 区分。
+func (v *validator) opinionItem(op *Op, path, id, item string) string {
+	val, ok := v.opinionValidation(id)
+	if !ok {
+		v.add(infoAt(op.Index, path,
+			"观点 %s 既不在本 plan 内新建、也无法从全库读到 %s：「%s」照常列出该条目，"+
+				"但**不补**验证状态标记（凭默认值填一个 %s 等于伪造当时的事实）；"+
+				"悬空引用由 eg reconcile 的关系 / 结构检查负责检出",
+			id, model.FMKeyValidation, store.SecExtraction, model.ValidationPending))
+		return item
+	}
+	return item + " " + store.ExtractionValidationMark(val)
+}
+
+// opinionValidation 取一条观点在**本次加工时**的验证状态。
+//
+// 两个真源，次序不可换：
+//
+//	① 本 plan 内由 create_opinion 新建 → 新建默认值 pending（§4.5：创建即验证被 E2 拦在门外，
+//	   因此这里不必也不应去看 op 里显式给的值——能通过校验的只有 pending）；
+//	② 库里已有 `o-*` → 读盘上 frontmatter 的 `validation`（用户显式路径流转的结果，§6.3）。
+//
+// ① 必须在 ② 之前：本 plan 新建的 ID 若已在库里存在，declare 早已判 E1，
+// 两个真源不可能同时命中；但顺序写反会让「先读盘、读不到再看 plan」在 ops 顺序为
+// 「write_note 在 create_opinion 之前」时取不到值（新建产物此刻还没落盘）。
+//
+// 读不到、解析不了、或 `validation` 越界一律返回 false：本函数不猜、不补默认值。
+func (v *validator) opinionValidation(id string) (model.Validation, bool) {
+	if val, ok := v.planOpinions[id]; ok {
+		return val, true
+	}
+	rel, ok := v.resolve(id)
+	if !ok {
+		return "", false
+	}
+	raw, ok := v.readExisting(rel)
+	if !ok {
+		return "", false
+	}
+	var fm struct {
+		Validation string `yaml:"validation"`
+	}
+	if err := store.FrontmatterInto(raw, &fm); err != nil {
+		return "", false
+	}
+	val, err := model.ParseValidation(fm.Validation)
+	if err != nil {
+		return "", false
+	}
+	return val, true
 }
 
 // hasIDPrefix 报告 ID 是否以某个前缀开头（前缀判定不用 ParseID：这里只分组，

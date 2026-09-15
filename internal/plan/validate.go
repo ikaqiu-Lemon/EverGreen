@@ -158,6 +158,16 @@ type validator struct {
 	pending map[string]string
 	// declared 是本 plan 内已声明的新产物 id → 首次声明的 op 下标（plan 内重复也是 E1）。
 	declared map[string]int
+	// planOpinions 是本 plan 内将新建的观点 id → 新建时的验证状态（恒 pending，§4.5）。
+	//
+	// 单独一份而不复用 pending：pending 是「id → 将建路径」，回答的是「能否定位」；
+	// 本表回答的是「状态取什么值」。把状态塞进路径那张表就得靠解析路径反推实体类型，
+	// 而「提取结果」的标记恰恰不能靠反推——反推错一次就会给知识卡盖上验证标记。
+	//
+	// **预扫**得来（planOpinionStates，在 ops 循环之前）：`write_note` 完全可能写在
+	// `create_opinion` 之前（v1 存量 plan 的惯用顺序就是先笔记后卡片），
+	// 边遍历边登记会让顺序决定标记有无。
+	planOpinions map[string]model.Validation
 }
 
 // Validate 校验并展开一份 plan。error 非空时**不得执行任何 action**（零写入）。
@@ -169,6 +179,7 @@ func Validate(p *ChangePlan, env Env) *Result {
 	}
 	v.planLevel()
 	v.convergence()
+	v.planOpinions = v.planOpinionStates()
 	for _, op := range p.Ops {
 		v.op(op)
 	}

@@ -73,7 +73,7 @@ func (v *validator) createOpinion(op *Op) {
 		return
 	}
 	if id == "" {
-		id = string(model.NewOpinionID(v.date(""), op.Title))
+		id = v.opinionTargetID(op)
 	}
 	act := Action{Kind: ActOpinionNew, OpIndex: op.Index, Op: op, ID: id, Domain: domain,
 		Path: store.OpinionRel(domain, id), Sections: sections}
@@ -84,6 +84,45 @@ func (v *validator) createOpinion(op *Op) {
 		return
 	}
 	v.res.Actions = append(v.res.Actions, act)
+}
+
+// opinionTargetID 算出 `create_opinion` 的落点 ID：显式 `opinion_id` 优先，否则由
+// 日期 + title 派生（与 createKnowledge 的口径同构）。
+//
+// 单列成函数是因为它有**两个**调用方：展开时要用它定落点，`提取结果` 的预扫
+// （planOpinionStates）也要用它认出「本 plan 内将新建的观点」。两处各写一遍派生规则，
+// 第一个后果就是「plan 里不写 opinion_id 时清单行拿不到验证状态」这种只在特定写法下
+// 复现的缺陷。
+func (v *validator) opinionTargetID(op *Op) string {
+	if op.OpinionID != "" {
+		return op.OpinionID
+	}
+	if op.Title == "" {
+		return "" // 缺 title 的 op 已被 createOpinion 判 E5，此处不再重复发声。
+	}
+	return string(model.NewOpinionID(v.date(""), op.Title))
+}
+
+// planOpinionStates 预扫 ops[]，登记本 plan 内将新建的观点 → 新建时的验证状态。
+//
+// 只登记 `create_opinion`：`append_opinion` 的目标是**已有**观点（其状态的真源在盘上，
+// 且 append 不得改写 validation，见 appendOpinion 的 E6 分支），把它也登进来就会用
+// 「新建默认值」覆盖盘上真值。
+//
+// 本函数**不产出任何诊断**：它在 ops 循环之前跑，此刻还没做过任何字段校验，
+// 在这里发声会让同一个问题被报两遍（一遍来自预扫、一遍来自 createOpinion 的判据），
+// 且预扫看不到上下文，措辞必然更差。
+func (v *validator) planOpinionStates() map[string]model.Validation {
+	out := map[string]model.Validation{}
+	for _, op := range v.p.Ops {
+		if op == nil || op.Name != OpCreateOpinion {
+			continue
+		}
+		if id := v.opinionTargetID(op); id != "" {
+			out[id] = model.ValidationPending
+		}
+	}
+	return out
 }
 
 // opinionCreateValidation 落地 §4.5 的「不得在 plan 里直接设 validated/rejected」。

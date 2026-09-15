@@ -1729,7 +1729,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 91
+  min_cases: 94
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1883,7 +1883,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 103
+  min_cases: 105
   required: true
   platform_required: linux/amd64
   not_run_when: null

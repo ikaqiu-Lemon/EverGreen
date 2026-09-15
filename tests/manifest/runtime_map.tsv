@@ -91,6 +91,7 @@ tests/_staged/internal/model/status_values_test.go	internal/model/status_values_
 tests/_staged/internal/plan/atomic_finalizer_test.go	internal/plan/atomic_finalizer_test.go	evergreen	unit	go
 tests/_staged/internal/plan/atomic_test.go	internal/plan/atomic_test.go	evergreen	unit	go
 tests/_staged/internal/plan/authorize_test.go	internal/plan/authorize_test.go	evergreen	unit	go
+tests/_staged/internal/plan/executor_note_v2_test.go	internal/plan/executor_note_v2_test.go	evergreen	unit	go
 tests/_staged/internal/plan/knowledge_opinion_v2_test.go	internal/plan/knowledge_opinion_v2_test.go	evergreen	unit	go
 tests/_staged/internal/plan/m3_test.go	internal/plan/m3_test.go	evergreen	unit	go
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	internal/plan/mark_reviewed_w7_test.go	evergreen	unit	go
@@ -147,6 +148,7 @@ tests/_staged/internal/rules/rules_test.go	internal/rules/rules_test.go	evergree
 tests/_staged/internal/store/atomic_test.go	internal/store/atomic_test.go	evergreen	unit	go
 tests/_staged/internal/store/b3_authorization_test.go	internal/store/b3_authorization_test.go	evergreen	unit	go
 tests/_staged/internal/store/merge_test.go	internal/store/merge_test.go	evergreen	unit	go
+tests/_staged/internal/store/note_blocks_test.go	internal/store/note_blocks_test.go	evergreen	unit	go
 tests/_staged/internal/store/opinion_layout_test.go	internal/store/opinion_layout_test.go	evergreen	unit	go
 tests/_staged/internal/store/proposal_test.go	internal/store/proposal_test.go	evergreen	unit	go
 tests/_staged/internal/store/receipt_test.go	internal/store/receipt_test.go	evergreen	unit	go

@@ -28,6 +28,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 )
 
 // NoteBlockRole 是一个有序块的来源角色（**二值封闭枚举**，契约 §4.2 第 2 条）。
@@ -216,3 +218,19 @@ const (
 	ExtractionKnowledgeHeading = "Knowledge"
 	ExtractionOpinionHeading   = "Opinion"
 )
+
+// ExtractionValidationMark 渲染 Opinion 行末的验证状态标记（契约 §5.1 逐字：“ `[pending]` “）。
+//
+// # 为什么标记的字面量在 store 而条目文本在 plan
+//
+// 「行末带一个反引号包裹的状态」是**落盘形态**，与 H3 标题、`- ` 行首同属一套模板，
+// 因此字面量收在本包（§16.3 写路径硬约束）；而「这条观点的状态取什么值」是一次
+// 判定——真源是本 plan 的新建默认值或盘上的 frontmatter，判定要读库、要产出诊断，
+// 只能发生在 plan 侧。两件事分层的判据很实际：换标记写法只改本函数一处，
+// 换取值口径只改 plan 一处，两者互不牵连。
+//
+// 只接受 model.Validation（封闭三值）而不是 string：Note 是本次加工的快照，
+// 一个来路不明的字符串一旦落进快照就再也没人能判断它当时是什么意思。
+func ExtractionValidationMark(v model.Validation) string {
+	return fmt.Sprintf("`[%s]`", v)
+}
