@@ -4,7 +4,7 @@ This guide installs and exercises Evergreen `eg` version `0.6.0-m6`.
 
 ## Requirements
 
-- Go 1.24 or newer
+- Go 1.25 or newer
 - Git
 - GNU Make
 - Python 3 with PyYAML when running the manifest-driven tests

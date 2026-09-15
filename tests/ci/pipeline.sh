@@ -51,7 +51,11 @@ step "环境前置：go / python3 / PyYAML / Go 模块缓存或 vendor 在场（
 command -v go >/dev/null 2>&1 || env_die "缺 go 工具链"
 command -v python3 >/dev/null 2>&1 || env_die "缺 python3"
 python3 -c 'import yaml' 2>/dev/null || env_die "缺 PyYAML（离线环境请预装；CI 镜像应内置）"
-GOVER="$(go env GOVERSION)"
+# go.mod 的 go 指令可能要求比镜像内置更新的工具链；GOTOOLCHAIN=auto 下 go
+# 会尝试从 GOMODCACHE（golang.org/toolchain）取用。离线且缓存缺失时这一步会
+# 失败——同样属"环境未就绪"，不能让 set -e 在此处以裸退出码 1 中断，必须落到
+# 下面统一的 env_die（退 3 + 指引）。故容错取版本号，真正的可用性由 go list 判定。
+GOVER="$(go env GOVERSION 2>/dev/null || true)"
 # 离线硬化：即使镜像里带了代理配置，本流水线也不允许联网取模块。
 export GOFLAGS="${GOFLAGS:-} -mod=mod"
 export GOPROXY=off
@@ -59,7 +63,7 @@ export GONOSUMDB='*'
 export GOFLAGS="${GOFLAGS} -buildvcs=false"
 go list -deps ./cmd/eg >/dev/null 2>"${TMPDIR:-/tmp}/eg-ci-go-modules.err" || {
   sed 's/^/    /' "${TMPDIR:-/tmp}/eg-ci-go-modules.err" >&2 || true
-  env_die "Go 模块在 GOPROXY=off 下不可解析：请预热 GOMODCACHE 或提交 vendor/ 后重跑 CI"
+  env_die "Go 工具链或模块在 GOPROXY=off 下不可离线解析（缺 go.mod 所需 Go 工具链或依赖模块）：请预热 GOMODCACHE 或提交 vendor/ 后重跑 CI"
 }
 ok "go=${GOVER}；python3+PyYAML 在场；GOPROXY=off；Go 模块离线可解析"
 

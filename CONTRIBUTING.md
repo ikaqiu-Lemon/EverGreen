@@ -4,7 +4,7 @@ Thank you for helping improve Evergreen.
 
 ## Development setup
 
-Evergreen requires Go 1.24 or newer, Git, GNU Make, Python 3, and the Python
+Evergreen requires Go 1.25 or newer, Git, GNU Make, Python 3, and the Python
 packages listed in `requirements-dev.txt`.
 
 ```bash
