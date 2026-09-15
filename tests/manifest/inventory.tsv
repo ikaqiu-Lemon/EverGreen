@@ -92,7 +92,7 @@ tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	56
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2122
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	9141
-tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	29289
+tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	30951
 tests/_staged/internal/plan/precheck_test.go	unit	go	proposal	unit.internal.plan	3	3614
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	unit	go	proposal	unit.internal.plan	1	4129
 tests/_staged/internal/plan/set_stale_test.go	unit	go	proposal	unit.internal.plan	8	11798

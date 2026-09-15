@@ -285,12 +285,18 @@ func (v *validator) dimsConflict(base string, c Convergence, dims rules.Dims) Di
 //
 // M-13（提案合同 §8.4）：`remove_relation` 与 `add_relation` **对称**，必须计入；
 // 另七个 M3 op 不计入（只改标量 / 生命周期指针 / 自检元数据，反推三维度即伪造证据），
-// 但「不计入」**不等于「可抵消」**（M-14）：它们与下列三个 op 同 plan 时 W5 照常触发。
+// 但「不计入」**不等于「可抵消」**（M-14）：它们与下列 op 同 plan 时 W5 照常触发。
+// `add_material_rel` 只有目标卡在执行前已存在时才计入；同 plan 的 `create_card` +
+// `add_material_rel` 是 independent_new 的标准组合，不涉及候选卡收敛。
 func (v *validator) touchesExistingCard() bool {
 	for _, op := range v.p.Ops {
 		switch op.Name {
-		case OpAppendCard, OpAddRelation, OpAddMaterialRel, OpRemoveRelation:
+		case OpAppendCard, OpAddRelation, OpRemoveRelation:
 			return true
+		case OpAddMaterialRel:
+			if _, err := v.env.Index.Resolve(op.Card); err == nil {
+				return true
+			}
 		}
 	}
 	return false
