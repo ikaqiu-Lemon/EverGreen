@@ -2,6 +2,7 @@ repo_path	runtime_path	root	layer	kind
 tests/_staged/cmd/eg/arch_test.go	cmd/eg/arch_test.go	evergreen	unit	go
 tests/_staged/cmd/eg/main_test.go	cmd/eg/main_test.go	evergreen	unit	go
 tests/_staged/internal/cli/apply_inplan_test.go	internal/cli/apply_inplan_test.go	evergreen	unit	go
+tests/_staged/internal/cli/apply_opinion_transaction_test.go	internal/cli/apply_opinion_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/apply_test.go	internal/cli/apply_test.go	evergreen	unit	go
 tests/_staged/internal/cli/bench_test.go	internal/cli/bench_test.go	evergreen	unit	go
 tests/_staged/internal/cli/capture_test.go	internal/cli/capture_test.go	evergreen	unit	go
@@ -171,6 +172,7 @@ tests/_staged/internal/txn/journal_strict_test.go	internal/txn/journal_strict_te
 tests/_staged/internal/txn/journal_test.go	internal/txn/journal_test.go	evergreen	unit	go
 tests/_staged/internal/txn/lock_test.go	internal/txn/lock_test.go	evergreen	unit	go
 tests/_staged/internal/txn/marker_strict_test.go	internal/txn/marker_strict_test.go	evergreen	unit	go
+tests/_staged/internal/txn/opinion_path_test.go	internal/txn/opinion_path_test.go	evergreen	unit	go
 tests/_staged/internal/txn/recover_test.go	internal/txn/recover_test.go	evergreen	unit	go
 tests/_staged/internal/txn/safedir_test.go	internal/txn/safedir_test.go	evergreen	unit	go
 tests/_staged/internal/version/version_test.go	internal/version/version_test.go	evergreen	unit	go

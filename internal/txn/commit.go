@@ -310,12 +310,12 @@ type stagedFile struct {
 }
 
 // stageTemp 在目标同目录内以**确定性名**（stageTempName）写临时文件并 fsync（同文件系统，供后续原子 rename）。
-// 目标父目录不存在则创建（create:true 的目标可能落在尚不存在的子目录下）。
+// 目标父目录不存在则创建（create:true 的目标可能落在尚不存在的子目录下），且新建目录链逐层 fsync（见 mkdirAllSynced）。
 // 先清掉本事务同名残留（只可能是本 txn 上一次崩溃遗留的临时文件），再以 O_EXCL 独占创建：
 // 这样既保证崩溃后确定性可清理（P0-1），又保证绝不覆盖任何已有权威文件（保留前缀天然不与 .md 重名）。
 func stageTemp(txnID string, index int, phase, abs string, data []byte) (tmp, dir string, err error) {
 	dir = filepath.Dir(abs)
-	if err = os.MkdirAll(dir, 0o755); err != nil {
+	if err = mkdirAllSynced(dir); err != nil {
 		return "", "", err
 	}
 	name := filepath.Join(dir, stageTempName(txnID, index, phase))
@@ -406,6 +406,79 @@ func authoritativeAbs(vaultRoot, rel string) string {
 	return filepath.Join(vaultRoot, filepath.FromSlash(rel))
 }
 
+// mkdirAllSynced 创建 dir（含缺失祖先），并对**每个新建目录的父目录**做 fsync。
+//
+// # 为什么不能只用 os.MkdirAll
+//
+// 目录项住在**父目录**里。`MkdirAll` 只保证目录在内存里可见，不保证那条目录项已落盘。
+// 既有备料序只 fsync 目标目录本身（让文件项落盘），于是「目标目录自己刚被本次提交创建」
+// 这一格是空的：崩溃后父目录可能仍不含该目录项，整个目录连同已 rename 的权威文件一起消失。
+// 而此时 commit 标记很可能已落盘（标记住在 `.index/txn/` 这条完全不同的目录链上，
+// 由 writeFileSyncedAt 独立 fsync），恢复层按 §6 P5~P8 判「已提交 ⇒ 不回滚、不发 W26」，
+// 于是这份丢失既没人回滚、也没人报错——一个静默的数据丢失。
+//
+// # 谁会踩到
+//
+// 任何落在**尚不存在的目录**下的新建权威文件。Schema v2 的观点目录
+// `domains/<d>/opinions/` 不在 `eg init` 的骨架里，因此「一个领域里的第一条观点」
+// 是这条路径的常态而非边角；`writeAuthoritative`（恢复层 B-R2 还原前像）复用
+// 同一个备料原语，因此回滚侧同样受益。
+//
+// # 落盘序
+//
+// 由浅至深逐个 fsync 新建目录的父目录：父目录的目录项先落盘，子目录项才有归属。
+// 全部祖先都已存在时零 fsync（没有新目录项需要持久化，不给常态路径添开销）。
+func mkdirAllSynced(dir string) error {
+	missing := missingDirChain(dir)
+	// 0o755 与 store 侧权威目录创建口径一致（不借用 runtimeDirMode：那是 .index/ 运行时目录的位）。
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, created := range missing {
+		if err := fsyncDirPath(filepath.Dir(created)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// missingDirChain 返回 dir 及其缺失祖先的路径链，**由浅至深**排列；全部已存在时返回 nil。
+//
+// 只做「当下是否存在」的如实观察，不判类型：若某一段存在但不是目录，交给 MkdirAll 报
+// 原生错误（本函数不复述系统语义，也不多加一层可漂移的判断）。遇到非 ENOENT 的读错误
+// 同样交给 MkdirAll —— 那时它必然也失败，错误面只留一处。
+func missingDirChain(dir string) []string {
+	var deepestFirst []string
+	cur := filepath.Clean(dir)
+	for {
+		if _, err := os.Lstat(cur); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		deepestFirst = append(deepestFirst, cur)
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	out := make([]string, 0, len(deepestFirst))
+	for i := len(deepestFirst) - 1; i >= 0; i-- {
+		out = append(out, deepestFirst[i])
+	}
+	return out
+}
+
+// dirSyncObserver 仅供**包内测试**观测（生产恒 nil）：每次目录 fsync **成功之后**以目录路径回调。
+//
+// 为什么需要它：目录 fsync 是一次没有返回值、也不改变任何可 Stat 元数据的副作用，
+// 从进程外完全不可见。而「新建的权威目录，其目录项是否已在父目录里落盘」恰好是
+// 崩溃后丢数据与不丢数据的分界（见 mkdirAllSynced 的说明）。没有观测面，这条判据
+// 就只能靠读代码相信；有了它，测试能逐个目录反证。与 commitFailpoint 同规格：
+// 生产路径恒 nil、零开销、不改变任何控制流。
+var dirSyncObserver func(dir string)
+
 // fsyncDirPath 打开目录并 Fsync（使 rename / 创建的目录项落盘）。
 func fsyncDirPath(dir string) error {
 	d, err := os.Open(dir)
@@ -416,7 +489,13 @@ func fsyncDirPath(dir string) error {
 		_ = d.Close()
 		return serr
 	}
-	return d.Close()
+	if cerr := d.Close(); cerr != nil {
+		return cerr
+	}
+	if dirSyncObserver != nil {
+		dirSyncObserver(dir)
+	}
+	return nil
 }
 
 // classifyOne 只读复核单个事务目录的分类（复用 Scan 的全量分类，取其中一项）。
