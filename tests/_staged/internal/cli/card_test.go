@@ -108,9 +108,23 @@ func TestCardShowDataKeyOrderMatchesContract(t *testing.T) {
 		[]string{`"source":`, `"note":`, `"rel":`, `"reason":`})
 }
 
-// TestCardShowFiveSections —— 五分区键集合恒定：「齐全」与「只写知识内容」两张卡的
+// TestCardShowFixedSectionKeys —— 固定分区键集合恒定：「齐全」与「只写知识内容」两张卡的
 // sections 键集合与键序两次完全相同，缺分区值为空串而非缺键；文本模式标注「（本分区缺失）」。
-func TestCardShowFiveSections(t *testing.T) {
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：原名 TestCardShowFiveSections，
+// 钉的是 v1 的五分区。契约 D-7 把 Knowledge 收敛为 `知识内容 / 条件与边界 / 用户补充`
+// 三分区，`card show` 的固定键表随 mdfile.CardSections() 一起变成三键。
+//
+// 判据一格没放宽，反而多了一条：键数从写死的 5 改为 len(CardSections())（键表是唯一真源，
+// 用例不再各写一份数字），并**新增**「被移除的两个分区不得再出现在固定键表里」——
+// 否则「模板收敛了」这件事在读路径上无从验证。
+//
+// 本用例的夹具 k-20260901-a 是一份**手写的 v1 存量卡**（五个 H2 都在），因此它同时是
+// 「v2 读路径读 v1 存量文件」的场地：固定三键照常给出，`解释与依据` / `理解自检` 的字节
+// 仍在文件里（字节保真由 mdfile / store 层的用例守着），但**不在** card show 的固定键表中。
+// 这条可见性缺口已登记为 I-…-007（minor），由 T-…-006 的读路径任务收口；
+// 本任务不放宽固定键表来提前兑现它 —— 把未知分区混进固定键集合会让「键集合恒定」失效。
+func TestCardShowFixedSectionKeys(t *testing.T) {
 	dir := cardVault(t)
 	keysOf := func(id string) ([]string, map[string]interface{}) {
 		_, env, _ := runCardShowJSON(t, dir, id)
@@ -130,8 +144,15 @@ func TestCardShowFiveSections(t *testing.T) {
 				t.Fatalf("分区 %s 的值必须是字符串，实际 %T", name, v)
 			}
 		}
-		if len(sec) != 5 {
-			t.Fatalf("%s 的 sections 键数 = %d，期望恰 5", id, len(sec))
+		if len(sec) != len(mdfile.CardSections()) {
+			t.Fatalf("%s 的 sections 键数 = %d，期望恰 %d（%v）",
+				id, len(sec), len(mdfile.CardSections()), mdfile.CardSections())
+		}
+		// v2 起被移出模板的分区不得再作为固定键出现（见上：读路径可见性走 I-…-007）。
+		for _, legacy := range mdfile.LegacyV1Sections(mdfile.KindCard) {
+			if _, ok := sec[legacy]; ok {
+				t.Fatalf("%s 的固定键表不得含 v1 存量分区 %q：%v", id, legacy, sec)
+			}
 		}
 		return out, sec
 	}
@@ -140,15 +161,15 @@ func TestCardShowFiveSections(t *testing.T) {
 	if strings.Join(fullKeys, ",") != strings.Join(partKeys, ",") {
 		t.Fatalf("两张卡的 sections 键序不同：%v / %v", fullKeys, partKeys)
 	}
-	if full[mdfile.SecSelfCheck] == "" {
-		t.Fatal("五分区齐全的卡「理解自检」不应为空")
+	if full[mdfile.SecBoundary] == "" {
+		t.Fatal("分区齐全的卡「条件与边界」不应为空")
 	}
-	if part[mdfile.SecRationale] != "" {
-		t.Fatalf("缺分区应为空串，实际 %q", part[mdfile.SecRationale])
+	if part[mdfile.SecBoundary] != "" {
+		t.Fatalf("缺分区应为空串，实际 %q", part[mdfile.SecBoundary])
 	}
 	r := newTestRoot(t, dir)
 	_, out, _ := runCLI(t, r, "--vault", dir, "card", "show", "k-20260902-b")
-	if !strings.Contains(out, "分区 解释与依据：（本分区缺失）") {
+	if !strings.Contains(out, "分区 "+mdfile.SecBoundary+"：（本分区缺失）") {
 		t.Fatalf("文本模式应标注缺失分区：%s", out)
 	}
 }

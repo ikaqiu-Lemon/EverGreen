@@ -4,10 +4,12 @@ package plan
 //
 // 编号纪律（§8.2.4 编号占用总览）：
 //   - error 从 **E7** 起，恰 `E7`–`E10`；warning 从 **W9** 起，恰 `W9`–`W12`；
+//   - Schema v2（T-…-003）追加 **`W21`** 一个 warning（结构覆盖诊断，D-9），
+//     `W1`–`W12` 一字未动；
 //   - **不新增 info 编号**（`I1` 之外没有第二个）；
 //   - **不新增第七个诊断字段**（载荷仍是 code / level / path / op_index / message / target）；
 //   - **不新增 `skipped[].kind`**（仍恰两值，见 internal/store/receipt.go）；
-//   - 全库 `code` 字面量必须闭合在 `E1..E10 ∪ W1..W12 ∪ {I1}`，
+//   - 全库 `code` 字面量必须闭合在 `E1..E10 ∪ W1..W12 ∪ {W21} ∪ {I1}`，
 //     由 TestDiagnosticCodes_Closed + e2e grep 双侧钉死。
 //
 // 既有编号在 M3 的**分级变化**（§8.2.3，不新增编号）：
@@ -33,6 +35,26 @@ const (
 	E10 = "E10"
 )
 
+// Schema v2 新增的 warning 编号（契约 §4.3 / D-9）。
+const (
+	// W21 `write_note` 的**结构覆盖诊断**：`blocks[]` 里 `role: source` 的块数
+	// 显著少于 Source 的 H2/H3 章节数 → 疑似退化为摘要。
+	//
+	// 为什么是 W21 而不是号段顺延的 W13：全局编号占用总览（internal/cli/codes.go:24）
+	// 是 `W1`–`W20`、`W22`–`W28`，`W13`–`W20` 属 `eg check` 的 R3/R4 结构码、
+	// `W22`–`W24` 属索引、`W25` 属查询结果截断、`W26`/`W28` 属事务、`W27` 属块合并。
+	// `W21` 是唯一空号，且 internal/query/diagnostic.go 与 internal/reconcile/r7_support.go
+	// 两处注释已逐字把它预留给 **ChangePlan 分级表**（「查询域不得借用」）。
+	// 本诊断正是 ChangePlan 写前校验的产物，认领这个空号与既有留白意图完全一致。
+	// 契约原文误写为 `W25`，已由 D-9 更正——一个机器码不能同时表达
+	// 「分页截断」与「Note 疑似退化」两件无关的事，否则 `--json` 消费方无法据 code 分派。
+	//
+	// 恒为 warning，且在 `--strict` 下**不**升级为 error（D-6，落点在同包
+	// strict_exempt.go 的豁免表）：覆盖度是质量判断而非机械对错，
+	// 升级为 error 会把语义门禁劣化成「按标题数凑块」的计数游戏。
+	W21 = "W21"
+)
+
 // M3 新增的 warning 编号（一律不影响退出码）。
 const (
 	// W9 提案十项必备缺项（照常创建提案 + 进 warnings[]）。
@@ -50,15 +72,19 @@ func ErrorCodes() []string {
 	return []string{E1, E2, E3, E4, E5, E6, E7, E8, E9, E10}
 }
 
-// WarningCodes 是 M3 收口后的 warning 编号全集（恰 W1–W12）。
+// WarningCodes 是 warning 编号全集（`W1`–`W12` ∪ `{W21}`，共 13 个）。
+//
+// `W21` 末位追加、`W1`–`W12` 的语义与顺序一字未动（D-9）：号段之所以不连续，
+// 是因为 `W13`–`W20` 早已属 `eg check`、`W22`–`W28` 属索引 / 查询 / 事务 / 块合并，
+// ChangePlan 域在全局占用表里能认领的空号只有 `W21`。
 func WarningCodes() []string {
-	return []string{W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11, W12}
+	return []string{W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11, W12, W21}
 }
 
 // InfoCodes 是 info 编号全集（**恰 I1**：M3 不新增 info 编号）。
 func InfoCodes() []string { return []string{I1} }
 
-// AllCodes 是编号闭合集合 `E1..E10 ∪ W1..W12 ∪ {I1}`（共 23 个）。
+// AllCodes 是编号闭合集合 `E1..E10 ∪ W1..W12 ∪ {W21} ∪ {I1}`（共 24 个）。
 // 未编号 warning 的 Code 是空串（Unnumbered），不在本集合内、也不参与闭合断言。
 func AllCodes() []string {
 	out := make([]string, 0, len(ErrorCodes())+len(WarningCodes())+len(InfoCodes()))

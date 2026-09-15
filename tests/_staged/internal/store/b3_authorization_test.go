@@ -35,7 +35,7 @@ func TestB3_UserExplicitPathStillHashChecked(t *testing.T) {
 	// store 的签名里没有、也不会有任何「授权」参数可供放宽。
 	res, err := s.WriteGuarded("cards/k.md", f.Hash, Edit{
 		Kind:     mdfile.KindCard,
-		Sections: []SectionAppend{{Section: mdfile.SecRationale, Payload: []byte("用户要求补的依据。\n")}},
+		Sections: []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("用户要求补的边界。\n")}},
 	})
 	skip, ok := AsSkip(err)
 	if !ok {
@@ -62,7 +62,7 @@ func TestB3_UserExplicitPathStillHashChecked(t *testing.T) {
 	}
 	res2, err := s.WriteGuarded("cards/k.md", f2.Hash, Edit{
 		Kind:     mdfile.KindCard,
-		Sections: []SectionAppend{{Section: mdfile.SecRationale, Payload: []byte("用户要求补的依据。\n")}},
+		Sections: []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("用户要求补的边界。\n")}},
 	})
 	if err != nil || !res2.Written {
 		t.Fatalf("凭据刷新后必须写成，实得 written=%v err=%v", res2.Written, err)

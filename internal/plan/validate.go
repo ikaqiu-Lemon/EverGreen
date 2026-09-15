@@ -19,16 +19,21 @@ type ActionKind string
 
 // 写入形态。Reuse 形态是「命中已有产物、按 S1 口径复用不重写」，零写入但要进报告。
 const (
-	ActSourceNew    ActionKind = "source_new"
-	ActSourceReuse  ActionKind = "source_reuse"
-	ActNoteNew      ActionKind = "note_new"
-	ActNoteReuse    ActionKind = "note_reuse"
-	ActNoteAppend   ActionKind = "note_append"
-	ActCardNew      ActionKind = "card_new"
-	ActCardAppend   ActionKind = "card_append"
-	ActMaterialRel  ActionKind = "material_rel"
-	ActRelation     ActionKind = "relation"
-	ActOpenQuestion ActionKind = "open_question"
+	ActSourceNew   ActionKind = "source_new"
+	ActSourceReuse ActionKind = "source_reuse"
+	ActNoteNew     ActionKind = "note_new"
+	ActNoteReuse   ActionKind = "note_reuse"
+	ActNoteAppend  ActionKind = "note_append"
+	ActCardNew     ActionKind = "card_new"
+	ActCardAppend  ActionKind = "card_append"
+	// Schema v2 的观点两形态（契约 §4.4）。**不复用** ActCardNew / ActCardAppend：
+	// executor 靠 Kind 选写口，两类实体的落点目录与 frontmatter 键集合都不同，
+	// 共用一个 Kind 就只能在写口里靠路径前缀反推实体类型 —— 而落点恰恰不能靠反推决定。
+	ActOpinionNew    ActionKind = "opinion_new"
+	ActOpinionAppend ActionKind = "opinion_append"
+	ActMaterialRel   ActionKind = "material_rel"
+	ActRelation      ActionKind = "relation"
+	ActOpenQuestion  ActionKind = "open_question"
 )
 
 // SectionWrite 是一次分区追加（载荷逐字，必须以换行结束；本包不改写一个字节）。
@@ -58,8 +63,15 @@ type Action struct {
 	Sections     []SectionWrite
 	Material     *MaterialRef
 	Relation     *RelationWrite
-	OutputCards  []OutputCard
 	Gaps         []string
+
+	// Extraction 是 Note「提取结果」两组清单（Schema v2 §5.1）：由 `op.OutputCards`
+	// 按 ID 前缀拆分而来。**不在 store 侧再拆一次**——前缀分组会产出 I1 诊断
+	// （既非 `k-` 也非 `o-` 的条目），而 store 不产出 plan 诊断，拆分只能发生在这一侧。
+	//
+	// 因此 Action 上**不再**保留一份未分组的 OutputCards：留着它就会出现「有人从
+	// 未分组的那一份重新渲染一遍」的第二条路径，而那条路径不会产出 I1。
+	Extraction *NoteExtraction
 
 	// Edit 属 ActEditSection（`eg edit` 的分区正文替换，A-13）：追加字段，
 	// 既有形态的语义一字不改。
@@ -175,12 +187,22 @@ func (v *validator) add(d Diagnostic) {
 func (v *validator) planLevel() {
 	p, res := v.p, v.res
 
-	// plan_version：缺失或 != 1 → E5（零写入）。
-	if p.VersionRaw == nil {
-		v.add(errorAt(E5, NonOp, "plan_version", "plan_version 缺失：S1 只支持 plan_version=%d", PlanVersion))
-	} else if p.Version != PlanVersion {
+	// plan_version：缺失或不在受支持集合内 → E5（零写入）；v1 被接受但进入兼容期（契约 §4.1）。
+	switch {
+	case p.VersionRaw == nil:
 		v.add(errorAt(E5, NonOp, "plan_version",
-			"plan_version=%v 不被支持：S1 只支持 plan_version=%d", p.VersionRaw, PlanVersion))
+			"plan_version 缺失：受支持的版本恰 %v（当前版本 %d）",
+			SupportedPlanVersions(), PlanVersion))
+	case !PlanVersionSupported(p.Version):
+		v.add(errorAt(E5, NonOp, "plan_version",
+			"plan_version=%v 不被支持：受支持的版本恰 %v（当前版本 %d）",
+			p.VersionRaw, SupportedPlanVersions(), PlanVersion))
+	case p.Version == PlanVersionV1:
+		v.add(infoAt(NonOp, "plan_version",
+			"plan_version %d 已进入兼容期：write_note 走 v1 固定分区口径（sections{} 按固定映射"+
+				"落到 v2 分区），create_card / append_card 作用于 Knowledge；"+
+				"当前版本是 %d，请尽早改用有序 blocks[] 与 create_knowledge / create_opinion",
+			PlanVersionV1, PlanVersion))
 	}
 
 	// verb：缺失或未知值 → 未编号 warning + 退化为 process。
@@ -289,7 +311,7 @@ func (v *validator) dimsConflict(base string, c Convergence, dims rules.Dims) Di
 func (v *validator) touchesExistingCard() bool {
 	for _, op := range v.p.Ops {
 		switch op.Name {
-		case OpAppendCard, OpAddRelation, OpAddMaterialRel, OpRemoveRelation:
+		case OpAppendKnowledge, OpAppendOpinion, OpAddRelation, OpAddMaterialRel, OpRemoveRelation:
 			return true
 		}
 	}
@@ -303,10 +325,15 @@ func (v *validator) op(op *Op) {
 		v.addSource(op)
 	case OpWriteNote:
 		v.writeNote(op)
-	case OpCreateCard:
-		v.createCard(op)
-	case OpAppendCard:
-		v.appendCard(op)
+	case OpCreateKnowledge:
+		v.createKnowledge(op)
+	case OpAppendKnowledge:
+		v.appendKnowledge(op)
+	// —— Schema v2 新增：Opinion 写口（契约 §4.4 / §4.5）——
+	case OpCreateOpinion:
+		v.createOpinion(op)
+	case OpAppendOpinion:
+		v.appendOpinion(op)
 	case OpAddMaterialRel:
 		v.materialRel(op)
 	case OpAddRelation:
@@ -455,6 +482,12 @@ func (v *validator) sectionPayloads(op *Op, kind store.Kind, writable []string) 
 	}
 	allowed := set(writable)
 	known := set(store.KnownSections(kind))
+	// legacy 是「v1 是固定分区、v2 起不再是」的分区名（契约 D-7 / §3.2）。
+	// 它们与「真正拼错的分区名」必须分开报：两者都不会被写入，但成因完全不同 ——
+	// 前者是模板收敛的既定结果（存量文件里那段正文仍在磁盘上、字节不变，只能由用户
+	// 显式路径修改），后者是 plan 写错了字。同一条「未知分区」文案会让写 plan 的人
+	// 以为自己拼错了名字，然后把它改成别的固定分区 —— 那正是模板收敛想避免的编造。
+	legacy := set(store.LegacyV1Sections(kind))
 	var out []SectionWrite
 	for _, name := range store.KnownSections(kind) {
 		payload, ok := op.Sections[name]
@@ -479,6 +512,14 @@ func (v *validator) sectionPayloads(op *Op, kind store.Kind, writable []string) 
 	}
 	for name := range op.Sections {
 		if known[name] {
+			continue
+		}
+		if legacy[name] {
+			v.add(infoAt(op.Index, opPath(op.Index, "sections."+name),
+				"分区「%s」自 Schema v2 起不再是 %s 的固定分区（契约 D-7 / §3.2）：本次**未写入**它，"+
+					"存量文件里的同名分区原样保留、字节不变；要改它只能走用户显式路径（eg edit），"+
+					"自动路径请改写 %v",
+				name, kind, writable))
 			continue
 		}
 		v.add(infoAt(op.Index, opPath(op.Index, "sections."+name),
@@ -544,7 +585,8 @@ func (v *validator) addSource(op *Op) {
 	v.res.Actions = append(v.res.Actions, act)
 }
 
-// writeNote 校验并展开 write_note（材料笔记五分区 + 收件区条目移出）。
+// writeNote 校验并展开 write_note（Schema v2：有序 blocks[] 整理正文 + 提取结果清单；
+// v1 的 sections{} 走固定映射兼容）。
 func (v *validator) writeNote(op *Op) {
 	if op.Source == "" {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "source"),
@@ -568,11 +610,14 @@ func (v *validator) writeNote(op *Op) {
 			return
 		}
 	}
-	sections := v.sectionPayloads(op, store.KindNote, store.NoteSections())
+	sections, ok := v.noteWrites(op)
+	if !ok {
+		return
+	}
 	v.coverageGaps(op)
 
 	act := Action{Kind: ActNoteNew, OpIndex: op.Index, Op: op, ID: id, Domain: domain,
-		Sections: sections, OutputCards: op.OutputCards, Gaps: op.Gaps}
+		Sections: sections, Gaps: op.Gaps, Extraction: v.noteExtraction(op)}
 	if id != "" {
 		if rel, ok := v.resolve(id); ok {
 			act.Path = rel
@@ -595,13 +640,18 @@ func (v *validator) writeNote(op *Op) {
 		}
 	}
 	if len(sections) == 0 {
-		v.add(errorAt(E5, op.Index, opPath(op.Index, "sections"),
-			"write_note 缺 sections：至少要写「%s」", store.SecDigest))
+		v.add(errorAt(E5, op.Index, opPath(op.Index, "blocks"),
+			"write_note 没有任何可写内容：v2 用有序 blocks[]（至少一个 role: %s 块），"+
+				"兼容期的 v1 plan 用 sections{}", NoteBlockSource))
 		return
 	}
-	if !hasSection(sections, store.SecDigest) {
-		v.add(errorAt(E5, op.Index, opPath(op.Index, "sections"),
-			"write_note 缺「%s」：材料提炼是加工产出的落点", store.SecDigest))
+	// 「整理正文」必写（RequiredSection(KindNote)）：Note 是整理版文章，
+	// 只有一份提取清单的文件是 manifest 而不是 Note（契约 §2.1）。
+	if !hasSection(sections, store.SecNoteBody) {
+		v.add(errorAt(E5, op.Index, opPath(op.Index, "blocks"),
+			"write_note 缺「%s」：Note 是按原文顺序整理的正文，"+
+				"没有正文就只剩一份清单（契约 §2.1：Note 既不是 summary 也不是 manifest）",
+			store.SecNoteBody))
 		return
 	}
 	if domain == "" {
@@ -635,16 +685,22 @@ func (v *validator) coverageGaps(op *Op) {
 	}
 }
 
-// createCard 校验并展开 create_card（新建知识卡，五分区都可写）。
-func (v *validator) createCard(op *Op) {
+// createKnowledge 校验并展开 create_knowledge（新建知识卡；`create_card` 是它的兼容别名）。
+//
+// v2 的知识卡恰三分区（`知识内容` / `条件与边界` / `用户补充`），新建时可写前两个：
+// `解释与依据` 与 `理解自检` 已随 D-7 移出模板，写它们会落到「未知分区」的 I1 分支。
+// 这不是放宽——Knowledge 不再要求 Agent 自证论证，论证职责整体归 Opinion。
+func (v *validator) createKnowledge(op *Op) {
 	if op.Title == "" {
-		v.add(errorAt(E5, op.Index, opPath(op.Index, "title"), "create_card 缺 title：卡片标题是 H1 与 slug 来源"))
+		v.add(errorAt(E5, op.Index, opPath(op.Index, "title"),
+			"%s 缺 title：卡片标题是 H1 与 slug 来源", op.Name))
 		return
 	}
 	// V3/V7（EG-SRC-04）：建卡必须带材料关系——缺 sources[] 或空数组一律拒绝建卡。
 	if !op.SourcesGiven || len(op.Sources) == 0 {
 		v.add(errorAt(E5, op.Index, opPath(op.Index, "sources"),
-			"create_card 缺 sources[]（或为空数组）：每次知识加工必须有可回读文章作依据，新建卡必须建立材料关系"))
+			"%s 缺 sources[]（或为空数组）：每次知识加工必须有可回读文章作依据，新建卡必须建立材料关系",
+			op.Name))
 		return
 	}
 	domain := v.opDomain(op)
@@ -655,11 +711,11 @@ func (v *validator) createCard(op *Op) {
 			return
 		}
 	}
-	sections := v.sectionPayloads(op, store.KindCard, []string{store.SecKnowledge,
-		store.SecRationale, store.SecBoundary, store.SecSelfCheck})
+	sections := v.sectionPayloads(op, store.KindCard,
+		[]string{store.SecKnowledge, store.SecBoundary})
 	if !hasSection(sections, store.SecKnowledge) {
 		v.add(errorAt(E5, op.Index, opPath(op.Index, "sections"),
-			"create_card 缺「%s」：卡片没有知识内容就不成立", store.SecKnowledge))
+			"%s 缺「%s」：卡片没有知识内容就不成立", op.Name, store.SecKnowledge))
 		return
 	}
 	refs := v.materialRefs(op)
@@ -685,13 +741,18 @@ func (v *validator) createCard(op *Op) {
 	v.res.Actions = append(v.res.Actions, act)
 }
 
-// appendCard 校验并展开 append_card（对已有卡只追加三分区）。
-func (v *validator) appendCard(op *Op) {
+// appendKnowledge 校验并展开 append_knowledge（对已有卡只追加「条件与边界」；
+// `append_card` 是它的兼容别名）。
+//
+// v2 起自动可写分区只剩一个（AutoWritableSections(KindCard)）：`解释与依据` 与
+// `理解自检` 已移出模板，`知识内容` 对已有卡只读（矩阵 #12 的 🔴 子情形），
+// `用户补充` 永不写（矩阵 #15）。
+func (v *validator) appendKnowledge(op *Op) {
 	rel, ok := v.cardTarget(op, "card", op.Card)
 	if !ok {
 		return
 	}
-	// 矩阵 #12（**唯一的条件解锁行**）：append_card 的目标恒为**已有卡**，
+	// 矩阵 #12（条件解锁行之一）：append_knowledge 的目标恒为**已有卡**，
 	// 因此它取的永远是 P-A 那格的 🔴 子情形（✅ 子情形只属 create_card 新建）。
 	// 这一判定必须在 sectionPayloads 之前发声：只有这里才点得出矩阵行号与两列取值。
 	if _, wants := op.Sections[store.SecKnowledge]; wants && !v.coreKnowledgeGate(op) {
@@ -707,7 +768,8 @@ func (v *validator) appendCard(op *Op) {
 	}
 	if len(sections) == 0 {
 		v.add(errorAt(E5, op.Index, opPath(op.Index, "sections"),
-			"append_card 缺 sections：至少要追加一个分区（%v）", store.AutoWritableSections(store.KindCard)))
+			"%s 缺 sections：至少要追加一个分区（%v）",
+			op.Name, store.AutoWritableSections(store.KindCard)))
 		return
 	}
 	act := Action{Kind: ActCardAppend, OpIndex: op.Index, Op: op, ID: op.Card,

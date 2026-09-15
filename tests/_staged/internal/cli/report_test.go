@@ -7,6 +7,14 @@ package cli
 // 这里覆盖必须由真实执行才能产生的事实：覆盖项缺失标注、工作区既有改动、
 // 领域缺省落位、收件区条目未移出、以及最近一次报告的复现。
 
+// **Schema v2 · T-…-003 夹具重钉（事实变了，判据形态不变）**：本文件里自动路径
+// （`append_card` / `append_knowledge`）原先追加的是 Card 的 `解释与依据`。契约 D-7 把
+// Knowledge 收敛为 `知识内容 / 条件与边界 / 用户补充` 三分区，`解释与依据` 自 v2 起
+// 只作为**存量文件**的分区存在、且不在自动路径写白名单内，因此再拿它当写目标会让
+// 整条 op 在校验期就被判「缺可写分区」而退 2 —— 那考的不再是本文件要考的事
+// （B3 跳过 / 部分成功 / 事务放弃 / op 顺序 / 报告计数）。改用同为「只追加块」语义的
+// v2 分区 `条件与边界`，本文件的判据一格未动。
+
 import (
 	"encoding/json"
 	"os"
@@ -210,7 +218,7 @@ func TestReportHighImpactCoversFourS1Classes(t *testing.T) {
 "ops":[{"op":"create_card","card_id":"` + applyCardID + `","title":"注意力机制",
 "sources":[{"source":"` + applySourceID + `","note":"` + applyNoteID + `","rel":"support","reason":"原文给出定义"}],
 "sections":{"知识内容":"注意力是一种加权求和。"}},
-{"op":"append_card","card":"` + applyCard2ID + `","sections":{"解释与依据":"补一条非核心说明。"}},
+{"op":"append_card","card":"` + applyCard2ID + `","sections":{"条件与边界":"补一条非核心说明。"}},
 {"op":"add_relation","from":"` + applyCardID + `","type":"opposing","target":"` + applyCard2ID + `","reason":"两者结论冲突"},
 {"op":"add_relation","from":"` + applyCardID + `","type":"supports","target":"` + applyCard2ID + `","reason":"另一角度佐证"}]}`
 	code, env, errOut := runApplyPlan(t, dir, plan)

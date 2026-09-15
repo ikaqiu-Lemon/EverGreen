@@ -248,14 +248,37 @@ func TestE4BrokenFrontmatter(t *testing.T) {
 	})
 	env.Index.ByID["k-20260901-broken"] = rel
 	res := run(t, env, planWith(`{"op":"append_card","card":"k-20260901-broken",
- "sections":{"解释与依据":"- 补充\n"}}`))
+ "sections":{"条件与边界":"- 补充\n"}}`))
 	requireError(t, res, E4)
 }
 
+// TestE5VersionAndUnknownOp 钉住 E5 的两条来源：版本不被支持、op 未知。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：`plan_version: 2` 原本是
+// 「不被支持的版本」反例，契约 §4.1 把它变成**当前版本**，v1 则进入兼容期继续被接受。
+// 于是「不被支持」的反例必须换成受支持集合 `{1, 2}` 之外的号：这里取 `3`（下一个尚未
+// 定义的版本，同时覆盖「未来版本不得被当前实现静默当作 v2 执行」这一真实风险）。
+// 判据本身没有放宽：仍要求 E5 + 零展开，且 v2 侧另有正例证明当前版本零 error（见下）。
 func TestE5VersionAndUnknownOp(t *testing.T) {
 	env, _ := baseVault(t)
-	res := run(t, env, `{"plan_version":2,"verb":"process","domain":"ai-infra","ops":[]}`)
-	requireError(t, res, E5)
+	res := run(t, env, `{"plan_version":3,"verb":"process","domain":"ai-infra","ops":[]}`)
+	d0 := requireError(t, res, E5)
+	if !strings.Contains(d0.Message, "不被支持") {
+		t.Fatalf("越界版本应注明不被支持：%+v", d0)
+	}
+	if len(res.Actions) != 0 {
+		t.Fatal("版本不被支持时整条 plan 不执行")
+	}
+	// 缺 plan_version 同样是 E5（与「越界版本」同码不同文案，两者都不得静默取默认值）。
+	res = run(t, env, `{"verb":"process","domain":"ai-infra","ops":[]}`)
+	if d := requireError(t, res, E5); !strings.Contains(d.Message, "缺失") {
+		t.Fatalf("缺 plan_version 应注明缺失：%+v", d)
+	}
+	// 反向正例：当前版本 2 不再是 E5 的来源（空 ops[] 本身不是错误）。
+	res = run(t, env, `{"plan_version":2,"verb":"process","domain":"ai-infra","ops":[]}`)
+	if _, ok := find(res.Errors, E5); ok {
+		t.Fatalf("plan_version=%d 是当前版本，不得再判 E5：%v", PlanVersion, codes(res.Errors))
+	}
 
 	// M3（T-…-037）重钉：`replace_block` 已实装（提案合同 §8.1 第 7 行），不再是未知 op。
 	// 未知 op 的反例改用**归属仍未定**的 `set_tags`（授权合同 §9 A-18，本仓不定义其字段）。
@@ -333,7 +356,7 @@ func TestW1CrossDomainStillWrites(t *testing.T) {
 	env := vault(t, files)
 	res := run(t, env, `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"补充",
  "base":{"k-20260901-attention":"sha256:x"},
- "ops":[{"op":"append_card","card":"k-20260901-attention","sections":{"解释与依据":"- 补充\n"}}]}`)
+ "ops":[{"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- 补充\n"}}]}`)
 	requireWarning(t, res, W1)
 	if len(res.Actions) != 1 || res.Actions[0].Skip {
 		t.Fatalf("W1 必须照常写入：%+v", res.Actions)
@@ -492,7 +515,7 @@ func TestW6BaseNotCoveringSkipsOnlyThatFile(t *testing.T) {
  "convergence":[{"card":"k-20260901-attention","relation":"non_core_supplement",
    "core_knowledge":"same","conditions":"different","reuse_purpose":"same"}],
  "ops":[{"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- 补充\n"}},
-        {"op":"append_card","card":"k-20260815-rnn","sections":{"解释与依据":"- 补充\n"}}]}`)
+        {"op":"append_card","card":"k-20260815-rnn","sections":{"条件与边界":"- 补充\n"}}]}`)
 	d := requireWarning(t, res, W6)
 	if d.Target != "k-20260901-attention" {
 		t.Fatalf("W6 应指向未被 base 覆盖的文件：%+v", d)
@@ -647,7 +670,7 @@ func TestDiagnosticCarriesOpIndexAndFieldPath(t *testing.T) {
  "convergence":[{"card":"k-20260901-attention","relation":"non_core_supplement",
    "core_knowledge":"same","conditions":"different","reuse_purpose":"same"}],
  "ops":[{"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- a\n"}},
-        {"op":"append_card","card":"k-20260815-rnn","sections":{"解释与依据":"- b\n"}},
+        {"op":"append_card","card":"k-20260815-rnn","sections":{"条件与边界":"- b\n"}},
         {"op":"add_relation","from":"k-20260901-attention","type":"limits",
          "target":"k-20260815-rnn","reason":""}]}`)
 	found := false
@@ -683,13 +706,37 @@ func TestCoverageGapsPassThrough(t *testing.T) {
 	}
 	res = run(t, env, planWith(`{"op":"write_note","source":"s-20260901-attention",
  "note_id":"n-20260903-new","sections":{"材料提炼":"- 提炼\n"},"coverage_gaps":["nuance"]}`))
-	d, ok := find(res.Warnings, I1)
-	if !ok || !strings.Contains(d.Path, "coverage_gaps") {
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：v1 plan 现在自带两条兼容期
+	// I1（`plan_version` 兼容提示 + `材料提炼` → `整理正文` 的固定映射提示，契约 §4.1），
+	// 于是「取第一条 I1」会取到 plan_version 那条。改为在**全部** I1 里按字段路径定位
+	// coverage_gaps 那一条 —— 比原断言更紧：既要求该条存在，也要求它的路径精确、
+	// 且原样保留了越界取值本身。
+	gapInfo, ok := findByPath(res.Warnings, I1, "coverage_gaps")
+	if !ok {
 		t.Fatalf("枚举外取值应判 I1 并原样保留：%v", res.Warnings)
+	}
+	if !strings.Contains(gapInfo.Message, "nuance") {
+		t.Fatalf("I1 应逐字带上越界取值本身：%+v", gapInfo)
 	}
 	if res.Failed() {
 		t.Fatal("枚举外取值不得升级为 error")
 	}
+	if len(res.Actions) != 1 || len(res.Actions[0].Gaps) != 1 || res.Actions[0].Gaps[0] != "nuance" {
+		t.Fatalf("枚举外取值同样原样透传进 action：%+v", res.Actions)
+	}
+}
+
+// findByPath 在诊断集合里按「码 + 字段路径子串」定位一条诊断。
+//
+// 存在的理由：v1 兼容期起，同一次校验可能同码多条（例如 `I1` 既有 plan_version 兼容提示、
+// 又有字段级提示），`find` 只取第一条会让「某个字段有没有被诊断到」这类断言取到无关的一条。
+func findByPath(diags []Diagnostic, code, pathSub string) (Diagnostic, bool) {
+	for _, d := range diags {
+		if d.Code == code && strings.Contains(d.Path, pathSub) {
+			return d, true
+		}
+	}
+	return Diagnostic{}, false
 }
 
 func TestNoteReuseByDefault(t *testing.T) {
@@ -716,7 +763,7 @@ func TestExpandKeepsOpsOrder(t *testing.T) {
  "ops":[{"op":"create_card","card_id":"k-20260902-flash","title":"FlashAttention",
    "sources":[{"source":"s-20260901-attention","note":"n-20260901-attention","rel":"support","reason":"原文实测"}],
    "sections":{"知识内容":"分块计算\n"}},
-  {"op":"append_card","card":"k-20260902-flash","sections":{"解释与依据":"- 补充\n"}},
+  {"op":"append_card","card":"k-20260902-flash","sections":{"条件与边界":"- 补充\n"}},
   {"op":"add_open_question","note":"n-20260901-attention","question":"长序列复杂度？"}]}`)
 	if res.Failed() {
 		t.Fatalf("合法 plan：%v", res.Errors)

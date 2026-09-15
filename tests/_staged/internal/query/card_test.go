@@ -1,10 +1,10 @@
 package query_test
 
-// T-…-022 的 query 层机器判据：`eg card show` 的五分区键序、sources[]、正向 / 反向关系、
+// T-…-022 的 query 层机器判据：`eg card show` 的固定分区键序、sources[]、正向 / 反向关系、
 // 显著标记、重复 ID 与悬空引用诊断、卡不存在，以及**只读零副作用**。
 //
 // 判据来源：M2 查询合同 `2026-09-19-m2-query-contract.md` §2.1（定位与退出口径）、
-// §2.2（data 键表 / 五分区键序 / markers）、§3.2（正反向取数）、§3.3（两级排序）、
+// §2.2（data 键表 / 固定分区键序 / markers）、§3.2（正反向取数）、§3.3（两级排序）、
 // §5（Q 系列）、§6（只读零副作用）。
 //
 // 测试名统一含 `CardShow`，与 T-…-022 的 verify.test（`-run CardShow`）对齐。
@@ -70,8 +70,16 @@ func TestCardShowDataKeysMatchContract(t *testing.T) {
 	}
 }
 
-// TestCardShowSectionsKeyOrderFixed —— sections 键序恒为五分区声明序（F5），
-// 且「五分区齐全」与「只写了知识内容」两张卡的键集合与键序**完全相同**（缺分区值为空串）。
+// TestCardShowSectionsKeyOrderFixed —— sections 键序恒为 Knowledge 固定分区声明序（F5），
+// 且「分区齐全」与「只写了知识内容」两张卡的键集合与键序**完全相同**（缺分区值为空串）。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：契约 D-7 把 Knowledge 从五分区
+// 收敛为三分区（`知识内容` / `条件与边界` / `用户补充`），`解释与依据` / `理解自检` 不再是
+// 固定分区。判据形态一格未动：仍是「键序 == 固定分区声明序」「缺分区键仍在、值为空串」
+// 「两张卡键集合完全相同」，只是「五」变成「Keys() 的长度」，并额外钉住
+// **被移除的两个 v1 分区不再出现在键表里**（否则等于模板没真切换）。
+// 存量文件里这两段正文在 v2 的 `card show` 里不再可见——这是模板切换的既知读路径影响，
+// 已登记为 I-…-007，由 T-…-006（读路径与 opinion 命令）收口，不在本 task 放宽。
 func TestCardShowSectionsKeyOrderFixed(t *testing.T) {
 	root := cardShowVault(t)
 	full := mustShowCard(t, root, "k-20260901-a").Card.Sections
@@ -88,7 +96,7 @@ func TestCardShowSectionsKeyOrderFixed(t *testing.T) {
 		for _, name := range want {
 			i := strings.Index(string(raw)[at:], `"`+name+`":`)
 			if i < 0 {
-				t.Fatalf("sections 缺分区 %s 或键序不是五分区声明序：%s", name, raw)
+				t.Fatalf("sections 缺分区 %s 或键序不是固定分区声明序：%s", name, raw)
 			}
 			at += i
 			got = append(got, name)
@@ -108,8 +116,19 @@ func TestCardShowSectionsKeyOrderFixed(t *testing.T) {
 			t.Fatalf("缺分区 %s 应为空串并判定为缺失，实际 %q", name, partial.Get(name))
 		}
 	}
-	if full.Missing(mdfile.SecSelfCheck) {
-		t.Fatal("五分区齐全的卡不应判定「理解自检」缺失")
+	// 三分区齐全的卡：每个键都取得到正文、都不判缺失。
+	for _, name := range want {
+		if full.Get(name) == "" || full.Missing(name) {
+			t.Fatalf("分区齐全的卡不应判定 %s 缺失，实际 %q", name, full.Get(name))
+		}
+	}
+	// 被 D-7 移除的两个 v1 分区不得再出现在键表里（模板确实切换了的正面证据）。
+	for _, legacy := range []string{mdfile.SecRationale, mdfile.SecSelfCheck} {
+		for _, name := range want {
+			if name == legacy {
+				t.Fatalf("v2 固定分区不应再含 %s：%v", legacy, want)
+			}
+		}
 	}
 }
 

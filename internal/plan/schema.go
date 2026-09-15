@@ -14,8 +14,35 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// PlanVersion 是 S1 唯一支持的 plan 版本。
-const PlanVersion = 1
+// PlanVersion 是**当前**的 plan 版本（Schema v2 契约 §4.1）。
+//
+// v1 → v2 的差别只在写口：`write_note` 由固定分区 `sections` 改为有序 `blocks[]`，
+// 并新增 `create_knowledge` / `append_knowledge` / `create_opinion` / `append_opinion`
+// 四个 op。顶层 8 键**一个未改**（契约 §4.1 末条），因此 v1 与 v2 共用同一条解析路径。
+const PlanVersion = 2
+
+// PlanVersionV1 是**兼容期**仍被接受的旧版本号。
+//
+// 单列成常量而不是写裸 1：v1 兼容分支在 planLevel（I1 提示）、writeNote（走 sections 口径）
+// 与 noteBlocks（互斥判定）三处都要判版本，三处必须引用同一个字面量。
+const PlanVersionV1 = 1
+
+// SupportedPlanVersions 是受支持的版本集合（声明顺序 = 从旧到新）。
+//
+// 为什么是「集合」而不是「最低版本 + 单调放宽」：plan 版本不是语义化版本，
+// 两个版本各自对应一套**写口形态**，不存在「≥ N 都行」的连续区间。
+// 集合让「哪一版被接受」可机器复算，也让兼容期结束时的收窄只需删一个元素。
+func SupportedPlanVersions() []int { return []int{PlanVersionV1, PlanVersion} }
+
+// PlanVersionSupported 报告某个版本号是否在受支持集合内。
+func PlanVersionSupported(n int) bool {
+	for _, ok := range SupportedPlanVersions() {
+		if n == ok {
+			return true
+		}
+	}
+	return false
+}
 
 // TopLevelKeys 是顶层键的封闭集合（恰 8 个，合同 §1）。
 func TopLevelKeys() []string {
@@ -23,21 +50,48 @@ func TopLevelKeys() []string {
 		"requirement_ids", "convergence", "base", "ops"}
 }
 
-// S1 七个 op 名（封闭集合，合同 §3）。
+// 主链路 op 名（封闭集合，合同 §3 + Schema v2 契约 §4.4）。
 const (
 	OpAddSource       = "add_source"
 	OpWriteNote       = "write_note"
-	OpCreateCard      = "create_card"
-	OpAppendCard      = "append_card"
 	OpAddMaterialRel  = "add_material_rel"
 	OpAddRelation     = "add_relation"
 	OpAddOpenQuestion = "add_open_question"
+
+	// OpCreateKnowledge / OpAppendKnowledge 是 Knowledge 的**规范名**（契约 §4.4）。
+	OpCreateKnowledge = "create_knowledge"
+	OpAppendKnowledge = "append_knowledge"
+
+	// OpCreateOpinion / OpAppendOpinion 是 Opinion 的写口（契约 §4.4，新增）。
+	OpCreateOpinion = "create_opinion"
+	OpAppendOpinion = "append_opinion"
+
+	// OpCreateCard / OpAppendCard 是**兼容别名**，在 normalizeAliases 阶段改写成
+	// 上面两个 Knowledge 规范名，validate 与 executor **看不到**它们（契约 §4.4）。
+	OpCreateCard = "create_card"
+	OpAppendCard = "append_card"
 )
 
-// OpNames 是 S1 支持的 op 名（恰七个，声明顺序即合同 §3 顺序）。
+// OpNames 是主链路 op 的**规范名**（恰九个，声明顺序即契约 §4.4 表格顺序）。
+//
+// 两个兼容别名**不在**本清单里：它们不是独立 op，只是同一个 op 的旧名字，
+// 在解析结束前就已被改写。把别名也列进来会让「本阶段恰有 N 个 op」的报错文案
+// 把同一件事数两遍。
 func OpNames() []string {
-	return []string{OpAddSource, OpWriteNote, OpCreateCard, OpAppendCard,
-		OpAddMaterialRel, OpAddRelation, OpAddOpenQuestion}
+	return []string{OpAddSource, OpWriteNote, OpCreateKnowledge, OpAppendKnowledge,
+		OpCreateOpinion, OpAppendOpinion, OpAddMaterialRel, OpAddRelation, OpAddOpenQuestion}
+}
+
+// OpAliases 是「兼容别名 → 规范名」的唯一真源（契约 §4.4）。
+//
+// 唯一真源的意思是：改写在 normalizeAliases 一处发生，报错文案、迁移提示与用例
+// 全部读这一份表。禁止在 validate / executor 里各写一份 `case "create_card"`——
+// 两处分支必然漂移，而漂移的表现是「同一份 plan 在校验期与执行期作用于不同实体」。
+func OpAliases() map[string]string {
+	return map[string]string{
+		OpCreateCard: OpCreateKnowledge,
+		OpAppendCard: OpAppendKnowledge,
+	}
 }
 
 // s2OpNames 是「归属 S2+ 但**本仓仍未定义语义**」的 op：一律按「未知 op」拒绝（E5），
@@ -111,6 +165,23 @@ type Op struct {
 	Gaps         []string
 	Reprocess    bool
 	ReprocessSet bool
+	// Blocks 是 v2 `write_note` 的**有序块数组**（契约 §4.2）：数组顺序即落盘顺序。
+	// BlocksGiven 区分「缺 blocks 字段」与「给了空数组」——前者可能是 v1 plan，
+	// 后者是「声称按块整理却一个块都没有」，两种成因的诊断不同，不得折叠成一个判断。
+	Blocks      []NoteBlock
+	BlocksGiven bool
+
+	// create_opinion / append_opinion
+	//
+	// OpinionID / Opinion 与 CardID / Card **不复用**同一对字段：Opinion 与 Knowledge
+	// 是同级实体，共用字段会让「这条 op 到底作用于哪一类产物」只能靠 op 名反推，
+	// 而 executor 的落点（opinions/ vs cards/）恰恰不能靠反推决定。
+	OpinionID string
+	Opinion   string
+	// Validation 是 `create_opinion` 显式给出的验证状态；ValidationGiven 区分
+	// 「缺该键」（默认 pending）与「显式给了值」（越权取值须判 E2）。
+	Validation      string
+	ValidationGiven bool
 
 	// create_card
 	CardID  string
@@ -248,6 +319,8 @@ func Parse(raw []byte) (*ChangePlan, error) {
 		p.Extra[k] = v
 		p.Diags = append(p.Diags, classifyExtra(NonOp, "plan", "plan."+k, k))
 	}
+	// 别名改写是解析的**最后一步**（契约 §4.4）：此后 validate 与 executor 只见规范名。
+	normalizeAliases(p)
 	return p, nil
 }
 
@@ -296,12 +369,22 @@ func opKnownKeys(name string) []string {
 		return []string{"op", "url", "title", "body", "reason", "source_id",
 			"saved_at", "target_domain", "tags"}
 	case OpWriteNote:
+		// `blocks` 必须是**已知字段**：否则 classifyExtra 会把它当未知附加字段
+		// 原样忽略并只记一条 I1，v2 的 write_note 会静默退化成「没有任何正文」。
 		return []string{"op", "source", "note_id", "title", "domain", "tags",
-			"sections", "output_cards", "coverage_gaps", "reprocess"}
-	case OpCreateCard:
+			"sections", "blocks", "output_cards", "coverage_gaps", "reprocess"}
+	case OpCreateKnowledge, OpCreateCard:
 		return []string{"op", "title", "card_id", "domain", "tags", "sources", "sections"}
-	case OpAppendCard:
+	case OpAppendKnowledge, OpAppendCard:
 		return []string{"op", "card", "sections"}
+	case OpCreateOpinion:
+		// `validation` 是 Opinion 唯一新增的 frontmatter 键（契约 §3.4）。它是**已知字段**
+		// 而不是 extra：只有已知才能对「plan 内直接写 validated/rejected」判 E2；
+		// 若走 extra 分支，越权取值会被当成前向兼容字段原样忽略。
+		return []string{"op", "title", "opinion_id", "domain", "tags", "sources",
+			"sections", "validation"}
+	case OpAppendOpinion:
+		return []string{"op", "opinion", "sections"}
 	case OpAddMaterialRel:
 		return []string{"op", "card", "source", "note", "rel", "reason"}
 	case OpAddRelation:
@@ -342,6 +425,12 @@ func parseOp(index int, item interface{}) (*Op, []Diagnostic) {
 	op.SavedAt, _ = asString(m["saved_at"])
 	op.TargetDomain, _ = asString(m["target_domain"])
 	op.SourceID, _ = asString(m["source_id"])
+	op.OpinionID, _ = asString(m["opinion_id"])
+	op.Opinion, _ = asString(m["opinion"])
+	if v, ok := m["validation"]; ok {
+		op.ValidationGiven = true
+		op.Validation, _ = asString(v)
+	}
 	op.Source, _ = asString(m["source"])
 	op.NoteID, _ = asString(m["note_id"])
 	op.CardID, _ = asString(m["card_id"])
@@ -382,6 +471,12 @@ func parseOp(index int, item interface{}) (*Op, []Diagnostic) {
 				op.Sections[k] = []byte(s)
 			}
 		}
+	}
+	if v, ok := m["blocks"]; ok {
+		op.BlocksGiven = true
+		blocks, bd := parseNoteBlocks(index, v)
+		op.Blocks = blocks
+		diags = append(diags, bd...)
 	}
 	if v, ok := m["output_cards"]; ok {
 		for _, oc := range listOf(v) {
@@ -429,7 +524,12 @@ func parseOp(index int, item interface{}) (*Op, []Diagnostic) {
 // fieldPathPrefix 是该 op 的产物字段路径前缀（黑名单只按字段路径判定，见 classifyExtra）。
 func fieldPathPrefix(name string) string {
 	switch name {
-	case OpCreateCard, OpAppendCard, OpAddMaterialRel, OpAddRelation:
+	case OpCreateOpinion, OpAppendOpinion:
+		// 黑名单对称项是 `opinion.type` / `opinion.stance` / `opinion.lean`
+		// （契约 §3.1）：观点的类型由 ID 前缀与目录表达，不由字段表达。
+		return "opinion"
+	case OpCreateKnowledge, OpAppendKnowledge, OpCreateCard, OpAppendCard,
+		OpAddMaterialRel, OpAddRelation:
 		return "card"
 	case OpWriteNote, OpAddOpenQuestion:
 		return "note"

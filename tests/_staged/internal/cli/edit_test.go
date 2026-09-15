@@ -268,6 +268,16 @@ func TestEdit_UsageErrors(t *testing.T) {
 
 // TestEdit_ContentFromFile 断言 `--content` 的文件口径：值是既存普通文件时按字节读入，
 // 内容逐字生效（与字面文本口径同一条落盘路径）。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：原用例改的是 `解释与依据`。
+// 契约 D-7 把它移出 Knowledge 模板后，`applyVault` 里由工具新建的卡**不含**该分区，
+// 于是写口如实报「分区不存在」并整事务放弃 —— 那是正确行为，不是本用例要考的事
+// （本用例考的是 `--content` 的文件口径）。改用 v2 固定分区 `条件与边界`：
+// 它同在 `EditableSections()` 白名单内（矩阵 #14 的 P-U 为 ✅），落盘路径一模一样。
+//
+// 「用户显式路径仍能改存量文件的 `解释与依据`」这条矩阵 #13 P-U 的事实，
+// 由紧随其后的 TestEdit_LegacyV1SectionStillEditable 单独守着 —— 两件事分开考，
+// 才不会让「文件口径坏了」与「存量兼容坏了」共用同一条失败信息。
 func TestEdit_ContentFromFile(t *testing.T) {
 	dir := applyVault(t)
 	cardRel := mustCardRel(t, dir)
@@ -278,16 +288,57 @@ func TestEdit_ContentFromFile(t *testing.T) {
 	writeFileMk(t, src, payload)
 
 	code, env, errOut := runEditCLI(t, dir, "--target", applyCardID,
-		"--section", mdfile.SecRationale, "--content", src, "--"+UserRequestFlag)
+		"--section", mdfile.SecBoundary, "--content", src, "--"+UserRequestFlag)
 	if code != ExitOK {
 		t.Fatalf("文件口径应退 0，实际 %d（%s）\n%v", code, errOut, envMessages(env))
 	}
 	after := string(mustRead(t, abs))
-	if got, want := editSectionBody(t, after, mdfile.SecRationale), "\n"+payload+"\n"; got != want {
-		t.Fatalf("「解释与依据」正文 = %q，期望 %q", got, want)
+	if got, want := editSectionBody(t, after, mdfile.SecBoundary), "\n"+payload+"\n"; got != want {
+		t.Fatalf("「%s」正文 = %q，期望 %q", mdfile.SecBoundary, got, want)
 	}
-	// 其它分区不受牵连。
-	if !strings.Contains(after, "## "+mdfile.SecKnowledge) || !strings.Contains(after, "## "+mdfile.SecSelfCheck) {
+	// 其它分区不受牵连（取 v2 模板里的另外两个固定分区）。
+	if !strings.Contains(after, "## "+mdfile.SecKnowledge) ||
+		!strings.Contains(after, "## "+mdfile.SecUserAppend) {
 		t.Fatalf("其它分区必须逐字保留：\n%s", after)
+	}
+}
+
+// TestEdit_LegacyV1SectionStillEditable —— 存量兼容的正例：v1 卡里的 `解释与依据`
+// 仍可由**用户显式路径**整段替换（矩阵 #13 的 P-U 为 ✅，v2 未翻这一格）。
+//
+// 为什么必须有这一支：D-7 之后 `解释与依据` 从两个角度看是「两件不同的事」——
+// 对**自动路径**它已不是可写分区（模板白名单 AND 掉，只留 I1 交代），
+// 对**用户显式路径**它仍在 `EditableSections()` 里、且存量文件里真有这个 H2。
+// 没有这一支，「矩阵 43 行一格未动」这句话在 CLI 层就没有事实支撑，
+// 日后有人顺手把 `解释与依据` 从白名单删掉也不会有任何判据变红。
+func TestEdit_LegacyV1SectionStillEditable(t *testing.T) {
+	dir := applyVault(t)
+	// 手写一份 v1 存量卡（五分区齐全）：工具新建的卡是 v2 三分区，构造不出这个场地。
+	const legacyID = "k-20260901-legacy"
+	legacyRel := "domains/ai-infra/knowledge/" + legacyID + ".md"
+	abs := filepath.Join(dir, filepath.FromSlash(legacyRel))
+	writeFileMk(t, abs, "---\nid: "+legacyID+"\nstatus: active\ncreated_at: '2026-09-01'\n"+
+		"updated_at: '2026-09-01T10:00:00+08:00'\ntitle: v1 存量卡\nsources: []\n---\n\n"+
+		"## 知识内容\n\n结论正文。\n\n## 解释与依据\n\nv1 时期写下的依据。\n\n"+
+		"## 条件与边界\n\n边界正文。\n\n## 用户补充\n\n用户写的。\n\n"+
+		"## 理解自检\n\n自检问题。\n")
+	gitOut(t, dir, "add", "-A")
+	gitOut(t, dir, "-c", "user.name=eg-test", "-c", "user.email=eg-test@example.com",
+		"commit", "-q", "-m", "seed v1 legacy card")
+
+	const payload = "用户显式改写的依据。\n"
+	code, env, errOut := runEditCLI(t, dir, "--target", legacyID,
+		"--section", mdfile.SecRationale, "--content", payload, "--"+UserRequestFlag)
+	if code != ExitOK {
+		t.Fatalf("用户显式路径改存量分区应退 0，实际 %d（%s）\n%v", code, errOut, envMessages(env))
+	}
+	after := string(mustRead(t, abs))
+	if got, want := editSectionBody(t, after, mdfile.SecRationale), "\n"+payload+"\n"; got != want {
+		t.Fatalf("「%s」正文 = %q，期望 %q", mdfile.SecRationale, got, want)
+	}
+	// 其余分区（含另一个 v1 存量分区）字节不受牵连。
+	if !strings.Contains(after, "## "+mdfile.SecSelfCheck) ||
+		!strings.Contains(after, "自检问题。") {
+		t.Fatalf("未被指名的存量分区必须逐字保留：\n%s", after)
 	}
 }

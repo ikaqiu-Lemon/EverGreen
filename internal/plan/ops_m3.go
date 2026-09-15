@@ -55,7 +55,10 @@ func M3OpNames() []string {
 // （`set_stale`，R6 综述失准标记，见 validate_m4.go）。
 //
 // 计数口径是**加法等式**（M3 期结论不改写、不放宽）：
-// **M3 期 7 + 8 + 1 = 16** ＋ **M4 新增 1** = **17**。
+// **M3 期 7 + 8 + 1 = 16** ＋ **M4 新增 1** = **17**；
+// Schema v2（T-…-003）按契约 §4.4 给主链路加 `create_opinion` / `append_opinion`
+// 两个 Opinion 写口，主链路由 7 变 **9**（`create_card` / `append_card` 只是改名，
+// 旧名以别名保留、不计入名册），故全集由 17 变 **19**。
 func AllOpNames() []string {
 	out := append(OpNames(), M3OpNames()...)
 	out = append(out, EditOpNames()...)

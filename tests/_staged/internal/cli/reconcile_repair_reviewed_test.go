@@ -401,13 +401,24 @@ func TestR2WrittenKeySetClosed(t *testing.T) {
 		t.Fatalf("R2 用的 op = %q，A-33 裁决为复用既有 mark_reviewed", ReviewedRepairOp)
 	}
 	// op 全集按**加法等式**钉死，不写死单个数字：
-	//   M3 期 16（历史事实，M3 结论不改写）+ M4 新增 1（R6 的 set_stale，A-33）= 17。
-	// 只改判据**形态**，本体（「R2 不新增 op」）一格未放宽：新增的那 1 个 op 属 R6/T-055，
-	// 与本文件（R2 修复桥）无关，故下方同时反证「R2 的 op 不是新增的那个」。
-	const m3AllOps, m4NewOps = 16, 1
-	if n := len(plan.AllOpNames()); n != m3AllOps+m4NewOps {
-		t.Fatalf("可派发 op 总数 = %d，期望「M3 期 %d + M4 新增 %d = %d」",
-			n, m3AllOps, m4NewOps, m3AllOps+m4NewOps)
+	//   M3 期 16（历史事实，M3 结论不改写）+ M4 新增 1（R6 的 set_stale，A-33）
+	//   + Schema v2 新增 2（Opinion 的 create_opinion / append_opinion，契约 §4.4）= 19。
+	//
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：等式右侧多了一项，
+	// 而不是把 17 改成 19 —— 加法等式的价值就在于「每一项都能说出自己是哪个里程碑加的」。
+	// 本体（「R2 不新增 op」）一格未放宽：新增的两个 op 属 Knowledge/Opinion 写口，
+	// 与本文件（R2 修复桥）无关，故下方同时反证「R2 的 op 既不是 M4 新增的那个，
+	// 也不是 v2 新增的两个」。注意两个 Knowledge 兼容别名（create_card / append_card）
+	// **不计入**：它们在 expand 阶段就被改写成规范名，不是可派发 op。
+	const m3AllOps, m4NewOps, v2NewOps = 16, 1, 2
+	if n := len(plan.AllOpNames()); n != m3AllOps+m4NewOps+v2NewOps {
+		t.Fatalf("可派发 op 总数 = %d，期望「M3 期 %d + M4 新增 %d + Schema v2 新增 %d = %d」",
+			n, m3AllOps, m4NewOps, v2NewOps, m3AllOps+m4NewOps+v2NewOps)
+	}
+	for _, op := range []string{plan.OpCreateOpinion, plan.OpAppendOpinion} {
+		if ReviewedRepairOp == op {
+			t.Fatalf("R2 修复桥不得改用 Schema v2 新增的 %s（那是 Opinion 的写口）", op)
+		}
 	}
 	// 加严一格：M4 新增的 op 恰一个，且其名字逐字为 `set_stale`（R6 专属，A-33）。
 	// 若日后有人往 M4 面偷偷再加 op，或把新增 op 混成 R2 用的那个，这里立即红。

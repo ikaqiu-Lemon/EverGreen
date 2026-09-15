@@ -25,7 +25,7 @@ func TestAtomicZeroDiskWriteOnGuardedWrite(t *testing.T) {
 	if err := s.BeginAtomic(); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	res, err := s.WriteGuarded("notes/n.md", ContentHash(before), appendEdit(mdfile.SecAgentReview, "预演补充。\n"))
+	res, err := s.WriteGuarded("notes/n.md", ContentHash(before), appendEdit(mdfile.SecNoteBody, "预演补充。\n"))
 	if err != nil {
 		t.Fatalf("guarded write: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestAtomicSameFileMultiOpReadsOverlay(t *testing.T) {
 	if err := s.BeginAtomic(); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	r1, err := s.WriteGuarded("notes/n.md", base.Hash, appendEdit(mdfile.SecAgentReview, "第一段。\n"))
+	r1, err := s.WriteGuarded("notes/n.md", base.Hash, appendEdit(mdfile.SecNoteBody, "第一段。\n"))
 	if err != nil {
 		t.Fatalf("op1: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestAtomicSameFileMultiOpReadsOverlay(t *testing.T) {
 		t.Fatalf("staged 读取应含第一段追加")
 	}
 	// 第二个 op 以 staged hash 为基线（B3 正确基线），继续追加。
-	r2, err := s.WriteGuarded("notes/n.md", mid.Hash, appendEdit(mdfile.SecAgentReview, "第二段。\n"))
+	r2, err := s.WriteGuarded("notes/n.md", mid.Hash, appendEdit(mdfile.SecNoteBody, "第二段。\n"))
 	if err != nil {
 		t.Fatalf("op2: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestAtomicWriteSetBytesVerbatim(t *testing.T) {
 	if err := sA.BeginAtomic(); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := sA.WriteGuarded("notes/n.md", baseA.Hash, appendEdit(mdfile.SecDigest, "要点。\n")); err != nil {
+	if _, err := sA.WriteGuarded("notes/n.md", baseA.Hash, appendEdit(mdfile.SecNoteBody, "要点。\n")); err != nil {
 		t.Fatalf("dry write: %v", err)
 	}
 	ws := sA.AtomicWriteSet()
@@ -161,7 +161,7 @@ func TestAtomicWriteSetBytesVerbatim(t *testing.T) {
 	sB, rootB := newVault(t)
 	absB := writeSeed(t, rootB, "notes/n.md", noteSample)
 	baseB, _ := sB.Read("notes/n.md")
-	if _, err := sB.WriteGuarded("notes/n.md", baseB.Hash, appendEdit(mdfile.SecDigest, "要点。\n")); err != nil {
+	if _, err := sB.WriteGuarded("notes/n.md", baseB.Hash, appendEdit(mdfile.SecNoteBody, "要点。\n")); err != nil {
 		t.Fatalf("real write: %v", err)
 	}
 	realBytes := mustBytes(t, absB)
@@ -189,14 +189,14 @@ func TestAtomicOrderByFirstWrite(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	// 首次写入顺序：b, a；随后再写一次 b（不改变首次顺序，也不新增条目）。
-	if _, err := s.WriteGuarded("notes/b.md", hb.Hash, appendEdit(mdfile.SecDigest, "b1。\n")); err != nil {
+	if _, err := s.WriteGuarded("notes/b.md", hb.Hash, appendEdit(mdfile.SecNoteBody, "b1。\n")); err != nil {
 		t.Fatalf("b1: %v", err)
 	}
-	if _, err := s.WriteGuarded("notes/a.md", ha.Hash, appendEdit(mdfile.SecDigest, "a1。\n")); err != nil {
+	if _, err := s.WriteGuarded("notes/a.md", ha.Hash, appendEdit(mdfile.SecNoteBody, "a1。\n")); err != nil {
 		t.Fatalf("a1: %v", err)
 	}
 	nb, _ := s.Read("notes/b.md")
-	if _, err := s.WriteGuarded("notes/b.md", nb.Hash, appendEdit(mdfile.SecDigest, "b2。\n")); err != nil {
+	if _, err := s.WriteGuarded("notes/b.md", nb.Hash, appendEdit(mdfile.SecNoteBody, "b2。\n")); err != nil {
 		t.Fatalf("b2: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestAtomicSkipDoesNotStage(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	// 传入错误的 expectedHash → SkipFileChanged，不写。
-	_, err := s.WriteGuarded("notes/n.md", "sha256:deadbeef", appendEdit(mdfile.SecDigest, "不应写入。\n"))
+	_, err := s.WriteGuarded("notes/n.md", "sha256:deadbeef", appendEdit(mdfile.SecNoteBody, "不应写入。\n"))
 	if _, ok := AsSkip(err); !ok {
 		t.Fatalf("hash 不符应返回 SkipError，got %v", err)
 	}

@@ -56,26 +56,76 @@ func TestOpinionSectionsFiveInOrder(t *testing.T) {
 	}
 }
 
-func TestOpinionAdditionKeepsCardAndNoteTemplatesIntact(t *testing.T) {
-	// 加性边界：本次只新增实体，Knowledge / Note 的固定分区、必需分区、
-	// 自动可写集合逐字不变。三张表在写口切换任务里一起改，不在这里偷偷改一半。
-	wantCard := []string{"知识内容", "解释与依据", "条件与边界", "用户补充", "理解自检"}
+// TestSchemaV2TemplatesFlippedForCardAndNote 钉住 **T-…-003 的模板切换结果**（契约 §3.2 + D-7/D-8）。
+//
+// T-…-002 只新增 Opinion，Knowledge / Note 的模板逐字未动（那一版的用例断言「本次不应改动」）；
+// 模板切换按 D-8 移交本任务，与授权矩阵、plan 校验、writers、CLI 文案同一提交落地。
+// 因此这里的期望值**必须**换成 v2 口径——继续断言 v1 五分区就等于要求实现回退。
+//
+// 同时钉住 v1 顺序表仍在册：存量文件按它校验（否则每份存量卡 / 笔记都会被误判为结构错误），
+// 被移除的分区则由 UnknownSections 承接、只记 info、字节不变。
+func TestSchemaV2TemplatesFlippedForCardAndNote(t *testing.T) {
+	wantCard := []string{"知识内容", "条件与边界", "用户补充"}
 	if got := mdfile.KnownSections(mdfile.KindCard); !eqStrings(got, wantCard) {
-		t.Fatalf("Knowledge 固定分区本次不应改动，期望 %v，实际 %v", wantCard, got)
+		t.Fatalf("Knowledge 固定分区应收敛为三分区 %v，实际 %v", wantCard, got)
 	}
-	wantNote := []string{"材料提炼", "Agent 分析", "用户补充", "存疑与待验证", "产出知识卡"}
+	wantNote := []string{"整理正文", "提取结果", "存疑与待验证", "用户补充"}
 	if got := mdfile.KnownSections(mdfile.KindNote); !eqStrings(got, wantNote) {
-		t.Fatalf("Note 固定分区本次不应改动，期望 %v，实际 %v", wantNote, got)
+		t.Fatalf("Note 固定分区应合并为四分区 %v，实际 %v", wantNote, got)
 	}
 	if got := mdfile.RequiredSection(mdfile.KindCard); got != "知识内容" {
 		t.Fatalf("Knowledge 必需分区应仍为「知识内容」，实际 %q", got)
 	}
-	if got := mdfile.RequiredSection(mdfile.KindNote); got != "材料提炼" {
-		t.Fatalf("Note 必需分区应仍为「材料提炼」，实际 %q", got)
+	if got := mdfile.RequiredSection(mdfile.KindNote); got != "整理正文" {
+		t.Fatalf("Note 必需分区应为「整理正文」（Note 是整理版文章而非摘要），实际 %q", got)
 	}
-	wantCardAuto := []string{"解释与依据", "条件与边界", "理解自检"}
+	// 自动可写集合是模板收敛的算术结果：`知识内容` 对已有卡只读、`用户补充` 永不写，
+	// 被移除的两个分区不再在册——于是知识卡只剩一格。
+	wantCardAuto := []string{"条件与边界"}
 	if got := mdfile.AutoWritableSections(mdfile.KindCard); !eqStrings(got, wantCardAuto) {
-		t.Fatalf("Knowledge 自动可写分区本次不应改动，期望 %v，实际 %v", wantCardAuto, got)
+		t.Fatalf("Knowledge 自动可写分区应为 %v，实际 %v", wantCardAuto, got)
+	}
+	wantNoteAuto := []string{"整理正文", "提取结果", "存疑与待验证"}
+	if got := mdfile.AutoWritableSections(mdfile.KindNote); !eqStrings(got, wantNoteAuto) {
+		t.Fatalf("Note 自动可写分区应为 %v，实际 %v", wantNoteAuto, got)
+	}
+	// 被移除的四个分区名仍是常量、且仍以「v1 存量分区」在册：迁移工具与
+	// `replace_block` 的存量形态都按名字定位它们。
+	wantCardLegacy := []string{"解释与依据", "理解自检"}
+	if got := mdfile.LegacyV1Sections(mdfile.KindCard); !eqStrings(got, wantCardLegacy) {
+		t.Fatalf("Knowledge 的 v1 存量分区应为 %v，实际 %v", wantCardLegacy, got)
+	}
+	wantNoteLegacy := []string{"材料提炼", "Agent 分析", "产出知识卡"}
+	if got := mdfile.LegacyV1Sections(mdfile.KindNote); !eqStrings(got, wantNoteLegacy) {
+		t.Fatalf("Note 的 v1 存量分区应为 %v，实际 %v", wantNoteLegacy, got)
+	}
+	// 存量分区一律不在自动写白名单里：它们只能被读取与迁移，不能继续被 Agent 写大。
+	for _, kind := range []mdfile.Kind{mdfile.KindCard, mdfile.KindNote} {
+		auto := map[string]bool{}
+		for _, s := range mdfile.AutoWritableSections(kind) {
+			auto[s] = true
+		}
+		known := map[string]bool{}
+		for _, s := range mdfile.KnownSections(kind) {
+			known[s] = true
+		}
+		for _, sec := range mdfile.LegacyV1Sections(kind) {
+			if auto[sec] {
+				t.Fatalf("%s 的存量分区 %q 不得留在自动写白名单里", kind, sec)
+			}
+			if known[sec] {
+				t.Fatalf("%s 的存量分区 %q 不得仍算固定分区", kind, sec)
+			}
+		}
+	}
+	// v1 顺序表在册且逐字等于切换前的模板（含 Note 把 `用户补充` 排第三位这处差异）。
+	if got := mdfile.V1Sections(mdfile.KindCard); !eqStrings(got,
+		[]string{"知识内容", "解释与依据", "条件与边界", "用户补充", "理解自检"}) {
+		t.Fatalf("v1 知识卡顺序表不得改动，实际 %v", got)
+	}
+	if got := mdfile.V1Sections(mdfile.KindNote); !eqStrings(got,
+		[]string{"材料提炼", "Agent 分析", "用户补充", "存疑与待验证", "产出知识卡"}) {
+		t.Fatalf("v1 笔记顺序表不得改动，实际 %v", got)
 	}
 	// 观点独有的四个分区名不得渗入知识卡 / 笔记的固定分区。
 	for _, kind := range []mdfile.Kind{mdfile.KindCard, mdfile.KindNote} {
@@ -92,6 +142,25 @@ func TestOpinionAdditionKeepsCardAndNoteTemplatesIntact(t *testing.T) {
 	}
 	if got := mdfile.RequiredSection(mdfile.KindSource); got != "" {
 		t.Fatalf("原文没有固定分区，RequiredSection 应为空串，实际 %q", got)
+	}
+	if got := mdfile.V1Sections(mdfile.KindSource); got != nil {
+		t.Fatalf("原文没有固定分区，v1 顺序表也应为空，实际 %v", got)
+	}
+}
+
+// TestOpinionTemplateUnaffectedBySchemaV2Flip 钉住模板切换**没有**顺带改动 Opinion：
+// 观点五分区是 T-…-002 定稿的，本次只切 Knowledge / Note 两张模板。
+func TestOpinionTemplateUnaffectedBySchemaV2Flip(t *testing.T) {
+	want := []string{"观点", "论据与推理", "条件与反例", "待验证", "用户补充"}
+	if got := mdfile.KnownSections(mdfile.KindOpinion); !eqStrings(got, want) {
+		t.Fatalf("Opinion 固定分区不应被模板切换改动，期望 %v，实际 %v", want, got)
+	}
+	// Opinion 没有 v1 形态：它是 Schema v2 才引入的实体，不存在存量分区。
+	if got := mdfile.LegacyV1Sections(mdfile.KindOpinion); got != nil {
+		t.Fatalf("Opinion 不应有 v1 存量分区，实际 %v", got)
+	}
+	if got := mdfile.V1Sections(mdfile.KindOpinion); got != nil {
+		t.Fatalf("Opinion 不应有 v1 顺序表，实际 %v", got)
 	}
 }
 

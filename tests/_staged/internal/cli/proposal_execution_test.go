@@ -10,6 +10,14 @@ package cli
 // unwritten_paths ⊇ 报告 skipped[] 中属本提案者）、§5.3 第 9b–10 步、§8.3（proposals[]
 // 首次产出真实值），以及 §5 的 **B4**（部分写入如实记成部分写入，不做破坏性还原）。
 
+// **Schema v2 · T-…-003 夹具重钉（事实变了，判据形态不变）**：本文件里自动路径
+// （`append_card` / `append_knowledge`）原先追加的是 Card 的 `解释与依据`。契约 D-7 把
+// Knowledge 收敛为 `知识内容 / 条件与边界 / 用户补充` 三分区，`解释与依据` 自 v2 起
+// 只作为**存量文件**的分区存在、且不在自动路径写白名单内，因此再拿它当写目标会让
+// 整条 op 在校验期就被判「缺可写分区」而退 2 —— 那考的不再是本文件要考的事
+// （B3 跳过 / 部分成功 / 事务放弃 / op 顺序 / 报告计数）。改用同为「只追加块」语义的
+// v2 分区 `条件与边界`，本文件的判据一格未动。
+
 import (
 	"os"
 	"path/filepath"
@@ -97,8 +105,8 @@ func TestApplyRecordsExecutionFailedPerPath(t *testing.T) {
 "` + applyCard2ID + `":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},
 "ops":[{"op":"delete","target":"` + applyCardID + `","reason":"内容重复且无引用",
 "initiator":"user","proposal":"` + string(peProposalID) + `"},
-{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"补一条依据。"}},
-{"op":"append_card","card":"` + applyCard2ID + `","sections":{"解释与依据":"这一条不会被写入。"}}]}`
+{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"补一条依据。"}},
+{"op":"append_card","card":"` + applyCard2ID + `","sections":{"条件与边界":"这一条不会被写入。"}}]}`
 	// plan 内的 initiator: user 必须配上命令行 --user-request 才构成 P-U（N-1）。
 	code, env, errOut := runApplyPlan(t, dir, plan, "--"+UserRequestFlag)
 	if code != ExitPartialWrite {

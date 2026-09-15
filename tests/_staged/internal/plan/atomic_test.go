@@ -5,6 +5,12 @@ package plan
 // 覆盖：N=1/2/5 写、同文件多 op 合并（B3 正确基线）、新建/既有前像、预演零实盘写、
 // 导出字节原样、失败账本（不把部分 staged 误当成功）、skip 不进入 accepted set，
 // 以及与 Execute 的账本对拍。全程不触 S5 提交层、不接 CLI / index。
+//
+// **Schema v2 · T-…-003 夹具重钉（事实变了，判据形态不变）**：本文件的写 op 原先落在
+// Card 的 `解释与依据` 分区。契约 D-7 把 Knowledge 收敛为三分区、移除该分区，它在 v2 下
+// 只作为存量文件的 `UnknownSections` 存在、且不在自动路径写白名单内（矩阵 #13 的 P-A 为
+// deny），因此再拿它做写目标会被 E5 拦在原子性判据之前 —— 那考的就不是原子性了。
+// 改用同样「只追加块」语义的 v2 分区 `条件与边界`（矩阵 P-A allow），事务判据一格未动。
 
 import (
 	"fmt"
@@ -86,7 +92,7 @@ func TestExecuteAtomicNDistinctWrites(t *testing.T) {
 		var ops []string
 		for _, id := range ids {
 			ops = append(ops, fmt.Sprintf(
-				`{"op":"append_card","card":%q,"sections":{"解释与依据":"- 追加 %s\n"}}`, id, id))
+				`{"op":"append_card","card":%q,"sections":{"条件与边界":"- 追加 %s\n"}}`, id, id))
 		}
 		out, ar, realDir := execRealAndDry(t, files, strings.Join(ops, ","))
 		if !ar.Complete {
@@ -165,7 +171,7 @@ func TestExecuteAtomicCreatePreimage(t *testing.T) {
 	ops := `{"op":"create_card","card_id":"k-20260902-flash","title":"FlashAttention",` +
 		`"sources":[{"source":"s-20260901-attention","note":"n-20260901-attention","rel":"support","reason":"原文实测"}],` +
 		`"sections":{"知识内容":"分块计算\n"}},` +
-		`{"op":"append_card","card":"k-20260901-attention","sections":{"解释与依据":"- 既有卡追加\n"}}`
+		`{"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- 既有卡追加\n"}}`
 	_, ar, _ := execRealAndDry(t, files, ops)
 	if !ar.Complete {
 		t.Fatalf("新建+追加应 Complete；failures=%+v", ar.Exec.Failures)
@@ -202,10 +208,10 @@ func TestExecuteAtomicFailureGatesWriteSet(t *testing.T) {
 	// 直接构造 Actions：op0 合法追加（会 stage），op1 指向不存在的文件（读失败 → 普通失败）。
 	res := &Result{Verb: "process", Domain: "ai-infra", Actions: []Action{
 		{Kind: ActCardAppend, OpIndex: 0, ID: ids[0], Path: okRel, ExpectedHash: okHash,
-			Sections: []SectionWrite{{Section: "解释与依据", Payload: []byte("- 会 stage\n")}}},
+			Sections: []SectionWrite{{Section: "条件与边界", Payload: []byte("- 会 stage\n")}}},
 		{Kind: ActCardAppend, OpIndex: 1, ID: "k-20260901-missing",
 			Path:     "domains/ai-infra/knowledge/k-20260901-missing.md",
-			Sections: []SectionWrite{{Section: "解释与依据", Payload: []byte("- 读失败\n")}}},
+			Sections: []SectionWrite{{Section: "条件与边界", Payload: []byte("- 读失败\n")}}},
 	}}
 	ar, err := ExecuteAtomic(store.New(dir), res, ExecOptions{Stamp: mustStamp(t)})
 	if err != nil {
@@ -242,10 +248,10 @@ func TestExecuteAtomicSkipDoesNotEnterWriteSet(t *testing.T) {
 
 	res := &Result{Verb: "process", Domain: "ai-infra", Actions: []Action{
 		{Kind: ActCardAppend, OpIndex: 0, ID: ids[0], Path: okRel, ExpectedHash: okHash,
-			Sections: []SectionWrite{{Section: "解释与依据", Payload: []byte("- 会 stage\n")}}},
+			Sections: []SectionWrite{{Section: "条件与边界", Payload: []byte("- 会 stage\n")}}},
 		// 错误的 ExpectedHash → B3 SkipFileChanged。
 		{Kind: ActCardAppend, OpIndex: 1, ID: ids[1], Path: skipRel, ExpectedHash: "sha256:deadbeef",
-			Sections: []SectionWrite{{Section: "解释与依据", Payload: []byte("- 应跳过\n")}}},
+			Sections: []SectionWrite{{Section: "条件与边界", Payload: []byte("- 应跳过\n")}}},
 	}}
 	ar, err := ExecuteAtomic(store.New(dir), res, ExecOptions{Stamp: mustStamp(t)})
 	if err != nil {

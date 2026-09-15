@@ -63,12 +63,27 @@ func TestRoundTripKeepsUnknownFieldsSectionsAndBlocks(t *testing.T) {
 			t.Fatalf("渲染结果丢失原始写法 %q", lit)
 		}
 	}
-	// 未知的第六个 H2：原样保留、不重排。
-	unknown := d.UnknownSections(KindCard)
-	if len(unknown) != 1 || unknown[0].Name != "用户自建的第六个分区" {
-		t.Fatalf("未知分区应恰一个且原样保留，实际 %v", d.SectionNames())
+	// 非固定分区原样保留、不重排。card.md 是一份 **v1 存量卡**，因此 Schema v2 下
+	// 非固定分区恰有三个：被移除的 `解释与依据` / `理解自检`（契约 D-7，只记 info、
+	// 待迁移收口）与用户自建的第六个分区。顺序按文档序，不重排。
+	var unknownNames []string
+	for _, sp := range d.UnknownSections(KindCard) {
+		unknownNames = append(unknownNames, sp.Name)
 	}
-	// 固定五分区顺序不变。
+	wantUnknown := []string{SecRationale, SecSelfCheck, "用户自建的第六个分区"}
+	if strings.Join(unknownNames, ",") != strings.Join(wantUnknown, ",") {
+		t.Fatalf("非固定分区应恰为 %v（文档序），实际 %v（全部分区 %v）",
+			wantUnknown, unknownNames, d.SectionNames())
+	}
+	// 存量卡按 v1 模板校验（否则每份存量卡都会被误判成结构错误），
+	// 但被移除的分区仍属「非固定分区」——这两处口径必须同时成立。
+	if got := d.SectionSchema(KindCard); got != SchemaV1 {
+		t.Fatalf("含 v1 专有分区的存量卡应判为 v1 模板，实际 %v", got)
+	}
+	if err := d.ValidateSections(KindCard); err != nil {
+		t.Fatalf("v1 存量卡的结构校验必须通过：%v", err)
+	}
+	// v2 固定三分区的相对顺序不变。
 	var fixed []string
 	for _, n := range d.SectionNames() {
 		for _, k := range CardSections() {

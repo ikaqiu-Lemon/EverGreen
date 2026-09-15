@@ -102,14 +102,47 @@ func TestPPEPlanParsesWithZeroErrorDiagnostics(t *testing.T) {
 	}
 }
 
-// ppePlanCards 返回 plan 里 create_card 新建的唯一卡 ID。
+// ppePlanCards 返回 plan 里新建知识卡的唯一卡 ID。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：`testdata/ppe/plan.json` 是
+// M2 期的**留痕原件**（`plan_version: 1`、op 写作 `create_card`），字节一个都不改 ——
+// 它正是「v1 plan 必须继续可执行」这条兼容判据的证据。契约 §4.4 规定别名在解析的
+// 最后一步被改写成规范名，`validate` 与 `executor` 只见 `create_knowledge`，
+// 因此本 helper 按**规范名**取卡；「恰一张」这条判据本体逐字未动。
+//
+// 同时新增三格加严（比原判据更严，不是放宽）：
+//   - 留痕原件里必须仍是旧名 `create_card`（一旦有人偷改留痕去迁就代码，这里当场红）；
+//   - 解析后**任何** op 都不得再叫别名（别名改写必须彻底，不能只改第一条）；
+//   - 每条别名改写必须留一条 info 级迁移提示（兼容是**可观测**的，不是静默行为）。
 func ppePlanCards(t *testing.T, p *plan.ChangePlan) string {
 	t.Helper()
+	raw := ppeRead(t, "plan.json")
+	if !strings.Contains(raw, `"`+plan.OpCreateCard+`"`) {
+		t.Fatalf("留痕 plan.json 应保留 M2 期原样的旧 op 名 %q（v1 兼容判据的证据，不得为迁就代码而改留痕）",
+			plan.OpCreateCard)
+	}
 	var ids []string
+	aliasCount, migrationInfos := 0, 0
 	for _, op := range p.Ops {
-		if op.Name == plan.OpCreateCard {
+		if op.Name == plan.OpCreateKnowledge {
 			ids = append(ids, op.CardID)
 		}
+		if _, isAlias := plan.OpAliases()[op.Name]; isAlias {
+			aliasCount++
+		}
+	}
+	if aliasCount != 0 {
+		t.Fatalf("解析后仍有 %d 条 op 叫兼容别名：契约 §4.4 要求改写在解析末尾一次做完，"+
+			"validate / executor 不得见到别名", aliasCount)
+	}
+	for _, d := range p.Diags {
+		if d.Level == plan.LevelInfo && strings.Contains(d.Message, plan.OpCreateCard) {
+			migrationInfos++
+		}
+	}
+	if migrationInfos == 0 {
+		t.Fatalf("别名 %q 被改写后必须留下 info 级迁移提示（兼容必须可观测），实得诊断 %v",
+			plan.OpCreateCard, p.Diags)
 	}
 	if len(ids) != 1 {
 		t.Fatalf("plan 应恰新建一张卡，实际 %v", ids)

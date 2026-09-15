@@ -11,6 +11,11 @@
 # 形态转换：历史脚本按「阶段冻结计数」判定；本脚本改判**取值集合逐字相等**与**符号唯一性 / 在册性**，
 # 语义等价但不冻结阶段数字（差异登记 I-…-009，历史脚本原样留档 tests/archive/）。
 #
+# 2026-09-16（knowledge_opinion_split · T-…-003）：Schema v2 契约 D-9 把 `W21` 正式发放给
+# ChangePlan 域，上面两行 m5/m6 的「无 W21 / `"W21"` == 0」是**已被授权变更推翻的历史前提**，
+# 原文保留以留痕来源。现行判据见 ⑨：字面量落点逐字封闭在 `internal/plan/diagnostics.go`
+# 且非注释面恰 1 处（同 M5 对 `W25` 的先例），skill/ docs/ 仍零字面量。
+#
 # 约束：离线、只读、零副作用。
 # 用法：cd evergreen && bash tests/contract/static-boundaries/exit_codes_and_diagnostics.sh
 
@@ -69,7 +74,7 @@ fi
 # ------------------------------------------------------- ⑤ 诊断码在册性与退役码
 # C2 · I-…-015 追加：命令层新码 E17–E25 一并纳入「在册 + 写进 SKILL.md」的同一条判据
 # （新增 9 个码的等号，是加严；M6 的 6 个码逐字保留、一格不放宽）。
-sec "⑤M6 + 命令层新增诊断码在册 + 退役码 W21 零残留"
+sec "⑤M6 + 命令层新增诊断码在册（W21 的落点判据见 ⑨）"
 expected_file() {
   case "$1" in
     E15|E16|W28) printf '%s' "internal/txn/doc.go" ;;
@@ -192,8 +197,28 @@ else
   bad "codes.go 码集合漂移（期望 [E17 E18 E19 E20 E21 E22 E23 E24 E25]，实际 [${got_cmd}]）"
 fi
 
-n21="$({ grep -rn '"W21"' internal/ cmd/ skill/ docs/ 2>/dev/null || true; } | grep -vc '_test\.go:' || true)"
-[ "${n21}" = "0" ] && pass "退役诊断码 W21 零残留" || bad "W21 仍有 ${n21} 处残留"
+# ------------------------------------------------------- ⑨ W21 已发放：落点封闭在 owner 包
+# Schema v2（knowledge_opinion_split · T-…-003 / 契约 D-9）把 `W21`（structure_coverage，
+# `write_note.blocks[]` 的结构覆盖诊断）**正式发放**给 ChangePlan 域，历史「W21 不分配」的
+# 前提就此失效。这里不是删掉判据，而是把它换成同等严格的**分域封闭 + 常量唯一**：
+#   a) 全库 `"W21"` 字面量落点逐字 == internal/plan/diagnostics.go（其余包只许引用 plan.W21）；
+#   b) 该文件内 `"W21"` 字面量恰 1 处（唯一常量声明，注释用反引号不计）；
+#   c) skill/ docs/ 里仍不得出现 `"W21"` 字面量（文档写码用反引号，Agent 侧在册同步归 T-…-008）。
+# 沿用 M5 对 `W25` 的先例（唯一落点 + 非注释面恰 1 处），语义等价、一格不放宽。
+sec "⑨已发放诊断码 W21 落点封闭（唯一字面量 = internal/plan/diagnostics.go）"
+where21="$({ grep -rl '"W21"' internal/ cmd/ --include='*.go' || true; } \
+           | grep -v '_test\.go$' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+if [ "${where21}" = "internal/plan/diagnostics.go" ]; then
+  pass "W21 字面量落点逐字封闭 = [${where21}]"
+else
+  bad "W21 字面量落点越界（期望 [internal/plan/diagnostics.go]，实际 [${where21}]）"
+fi
+n21="$(grep -c '"W21"' internal/plan/diagnostics.go || true)"
+[ "${n21}" = "1" ] && pass "W21 常量声明唯一（非注释面恰 1 处）" \
+  || bad "internal/plan/diagnostics.go 内 W21 字面量应恰 1 处，实得 ${n21}"
+ndoc21="$({ grep -rn '"W21"' skill/ docs/ 2>/dev/null || true; } | wc -l | tr -d ' ')"
+[ "${ndoc21}" = "0" ] && pass "skill/ docs/ 零 W21 字面量（文档引用走反引号）" \
+  || bad "skill/ docs/ 出现 ${ndoc21} 处 W21 字面量"
 
 printf '\n'
 [ "${FAIL}" -eq 0 ] || { printf '[FAIL] 退出码与诊断码合同门禁未通过\n' >&2; exit 1; }

@@ -30,9 +30,26 @@ import (
 	"time"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/cli"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
 	"github.com/ikaqiu-Lemon/EverGreen/skill"
 )
+
+// vaultKindOf 按目录判定一份权威 Markdown 的类型（目录布局是类型的落盘表达，§3.1）。
+//
+// 不看文件名前缀：前缀是 ID 的一部分、由 store 负责，读侧按目录判定与 store 的落位规则
+// 同源；两处都改才会漂移，只改一处会被本函数当场判成另一类而变红。
+func vaultKindOf(path string) mdfile.Kind {
+	sep := string(filepath.Separator)
+	switch {
+	case strings.Contains(path, sep+"notes"+sep):
+		return mdfile.KindNote
+	case strings.Contains(path, sep+"opinions"+sep):
+		return mdfile.KindOpinion
+	default:
+		return mdfile.KindCard
+	}
+}
 
 const (
 	domain      = "ai-infra"
@@ -391,8 +408,15 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 			}
 		}
 		note := readFile(t, filepath.Join(vault, "domains", domain, "notes", noteA1+".md"))
-		if !strings.Contains(note, "## 产出知识卡") || !strings.Contains(note, cardA1) {
-			t.Fatal("笔记「产出知识卡」未列出该卡 ID")
+		// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：v1 的「产出知识卡」
+		// 在契约 §3.2 里更名扩展为「提取结果」（同时列 Knowledge 与 Opinion 两组）。
+		// SKILL.md 的样例仍是 v1 口径，走兼容映射落到新分区名，因此这里改按新名字取。
+		// 判据没放宽：仍要求笔记里能逐字读到本次产出的卡 ID，且旧分区名不得再出现。
+		if !strings.Contains(note, "## "+mdfile.SecExtraction) || !strings.Contains(note, cardA1) {
+			t.Fatalf("笔记「%s」未列出该卡 ID：\n%s", mdfile.SecExtraction, note)
+		}
+		if strings.Contains(note, "## "+mdfile.SecOutputCards) {
+			t.Fatalf("v2 笔记不得再出现 v1 分区名「%s」：\n%s", mdfile.SecOutputCards, note)
 		}
 		card := readFile(t, filepath.Join(vault, "domains", domain, "knowledge", cardA1+".md"))
 		for _, four := range []string{"source: '" + srcArticle1 + "'", "note: '" + noteA1 + "'", "rel: 'support'", "reason: '"} {
@@ -611,16 +635,30 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		if got := sectionBytes(t, after, "知识内容"); got != beforeCore {
 			t.Fatalf("append_card 改动了「知识内容」分区：\n前：%q\n后：%q", beforeCore, got)
 		}
-		for _, want := range []struct {
-			section string
-			needle  string
-		}{
-			{"解释与依据", "补充依据"},
-			{"条件与边界", "补充边界"},
-			{"理解自检", "接手者"},
-		} {
-			if !strings.Contains(sectionBytes(t, after, want.section), want.needle) {
-				t.Fatalf("分区「%s」未收到样例②追加内容（缺 %q）", want.section, want.needle)
+		// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：SKILL.md 的样例②
+		// 往三个分区追加（`解释与依据` / `条件与边界` / `理解自检`）。契约 D-7 把 Knowledge
+		// 收敛为三分区后，只有 `条件与边界` 仍是自动路径可写分区，另外两个自 v2 起
+		// 不是固定分区 —— 它们既不落盘，也不得被静默吞掉，而要各留一条 I1 交代。
+		//
+		// 判据因此比原来更强：既钉住「该写的写进去了」，又钉住「不该写的一个字节都没写、
+		// 且如实说明了原因」。SKILL.md 的样例本身仍是 v1 口径，属文档同步范围（T-…-008），
+		// 不在本任务改；已登记为 I-…-008。
+		if got := sectionBytes(t, after, mdfile.SecBoundary); !strings.Contains(got, "补充边界") {
+			t.Fatalf("分区「%s」未收到样例②追加内容：%q", mdfile.SecBoundary, got)
+		}
+		for _, legacy := range mdfile.LegacyV1Sections(mdfile.KindCard) {
+			if strings.Contains(after, "\n## "+legacy+"\n") {
+				t.Fatalf("v2 卡不得因一份 v1 plan 长出「%s」分区：\n%s", legacy, after)
+			}
+			var noticed bool
+			for _, w := range rep2.Warnings {
+				if strings.Contains(w.Message, legacy) && w.Level == "info" {
+					noticed = true
+					break
+				}
+			}
+			if !noticed {
+				t.Fatalf("被忽略的 v1 分区「%s」必须留一条 info 级交代：%+v", legacy, rep2.Warnings)
 			}
 		}
 		if strings.Contains(sectionBytes(t, after, "用户补充"), "补充依据") {
@@ -649,7 +687,7 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		body := fmt.Sprintf(`{"plan_version":1,"verb":"process","domain":%q,
  "reason":"B3 回归：base 用改动前的 content_hash",
  "base":{"domains/%s/knowledge/%s.md":%q},
- "ops":[{"op":"append_card","card":%q,"sections":{"解释与依据":"- 这条不应落盘\n"}}]}`,
+ "ops":[{"op":"append_card","card":%q,"sections":{"条件与边界":"- 这条不应落盘\n"}}]}`,
 			domain, domain, cardA1, before, cardA1)
 		env, code := runJSON(t, vault, "apply", "--plan", writePlan(t, work, "b3.json", []byte(body)))
 		if code != 3 {
@@ -1105,21 +1143,22 @@ func firstGapName(s string) string {
 
 // assertVaultParsable 对 vault 内**全部**笔记与知识卡跑 Markdown 解析断言
 // （§16.1「产物能被 Obsidian 正常打开」的机器替代判据）：
-// 五个 H2 分区名逐字正确、无 H1、frontmatter 可被 YAML 解析、内部 wiki 链接目标存在。
+// H2 分区名逐字正确、无 H1、frontmatter 可被 YAML 解析、内部 wiki 链接目标存在。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：分区名单原先在本函数里写死
+// 两份五元切片。契约 §3.2 把 Knowledge 收敛为三分区、Note 合并为四分区之后，写死的名单
+// 与模板必然对不上。改为按类型从 mdfile.KnownSections() 取 —— 模板是唯一真源，
+// 判据（逐字相等 + H2 数恰等于名单长度 + 无 H1）一格未放宽，且以后模板再变，
+// 这里不必再改一次。
 func assertVaultParsable(t *testing.T, vault string) {
 	t.Helper()
-	noteSections := []string{"材料提炼", "Agent 分析", "用户补充", "存疑与待验证", "产出知识卡"}
-	cardSections := []string{"知识内容", "解释与依据", "条件与边界", "用户补充", "理解自检"}
 	var checked int
 	err := filepath.Walk(filepath.Join(vault, "domains"), func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
 			return err
 		}
 		doc := readFile(t, path)
-		want := cardSections
-		if strings.Contains(path, string(filepath.Separator)+"notes"+string(filepath.Separator)) {
-			want = noteSections
-		}
+		want := mdfile.KnownSections(vaultKindOf(path))
 		for _, sec := range want {
 			if !strings.Contains(doc, "\n## "+sec+"\n") {
 				t.Fatalf("%s 缺分区「%s」或分区名不逐字正确", path, sec)

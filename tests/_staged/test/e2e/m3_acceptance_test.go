@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/cli"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/plan"
 )
 
@@ -155,10 +156,19 @@ func TestExitCodeSetClosed(t *testing.T) {
 func TestDiagnosticCodesCovered(t *testing.T) {
 	root := repoRootT047(t)
 
-	// ① 闭合集合恰 23 值。
+	// ① 闭合集合恰 24 值。
+	//
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：知识 / 观点分离契约 D-9 把
+	// `W21`（structure_coverage，`write_note.blocks[]` 的结构覆盖诊断）正式发放给 ChangePlan 域，
+	// 于是闭合集合由 23 变 **24 = E1..E10 ∪ W1..W12 ∪ {W21} ∪ {I1}**。`E1`–`E10` / `W1`–`W12` /
+	// `I1` 的语义、编号与顺序一字未动，新码只在 warning 末位追加 —— 判据仍是**双侧等号**
+	// （多一码 / 少一码都判红），且下面 ② 另加一域把 `W21` 的落点收窄到 `internal/plan`。
+	const m3ClosedCodes, planV2NewCodes = 23, 1
 	all := plan.AllCodes()
-	if len(all) != 23 {
-		t.Fatalf("plan.AllCodes() 共 %d 个，应恰 23（E1..E10 ∪ W1..W12 ∪ {I1}）", len(all))
+	if len(all) != m3ClosedCodes+planV2NewCodes {
+		t.Fatalf("plan.AllCodes() 共 %d 个，应恰「M3 期 %d + Schema v2 新增 %d = %d」"+
+			"（E1..E10 ∪ W1..W12 ∪ {W21} ∪ {I1}）",
+			len(all), m3ClosedCodes, planV2NewCodes, m3ClosedCodes+planV2NewCodes)
 	}
 	closed := map[string]bool{}
 	for _, c := range all {
@@ -176,6 +186,10 @@ func TestDiagnosticCodesCovered(t *testing.T) {
 	}
 	if !closed["I1"] {
 		t.Fatal("闭合集合缺 I1")
+	}
+	// Schema v2 新增的那一码逐字是 `W21`（契约 D-9），不是别的空号：漏发 / 改号都判红。
+	if !closed[plan.W21] || plan.W21 != "W"+strconv.Itoa(21) {
+		t.Fatalf("闭合集合缺 W21（Schema v2 · 契约 D-9 的 structure_coverage），实得 %v", all)
 	}
 
 	// ② 源码里出现的每个码都在闭合集合内。
@@ -265,6 +279,15 @@ func TestDiagnosticCodesCovered(t *testing.T) {
 	queryOwner := filepath.Join(root, "internal", "query") + string(filepath.Separator)
 	txnOwner := filepath.Join(root, "internal", "txn") + string(filepath.Separator)
 	mdfileOwner := filepath.Join(root, "internal", "mdfile") + string(filepath.Separator)
+	// **Schema v2 · T-…-003 追加 ChangePlan 域（同一手法，只增不改）**：上面几段都写着
+	// 「`W21` 仍零命中，留给下游」——本 task 即那位下游。契约 D-9 把 `W21` 发放给 ChangePlan 域，
+	// 唯一字面量落点是 `internal/plan/diagnostics.go` 的 `W21` 常量（其余落点一律引用该常量）。
+	// 由于 ① 已把 `W21` 纳入闭合集合，若不加这一域，`W21` 就会被 `closed` 无条件放行到全库，
+	// 那是**放宽**；因此这一域**先于** closed 处理，仍是双侧等号：
+	//   - `internal/plan` 之外 `W21` 恒零命中（命令层 / 索引层引用必须走 plan.W21 常量）；
+	//   - `internal/plan` 内必须真实出现 `W21`，否则分域失去事实基础，立即判红。
+	planOwner := filepath.Join(root, "internal", "plan") + string(filepath.Separator)
+	planSeen := 0
 	lit := regexp.MustCompile(`"([EWI][0-9]+)"`)
 	m4Seen, m5Seen, querySeen := 0, 0, 0
 	// mdfileSeen 记录 internal/mdfile 内 W27 的命中数（块级合并域的事实基础）。
@@ -280,8 +303,19 @@ func TestDiagnosticCodesCovered(t *testing.T) {
 		inQueryOwner := strings.HasPrefix(p, queryOwner)
 		inTxnOwner := strings.HasPrefix(p, txnOwner)
 		inMdfileOwner := strings.HasPrefix(p, mdfileOwner)
+		inPlanOwner := strings.HasPrefix(p, planOwner)
 		inCLICodesFile := p == cliCodesFile
 		for _, m := range lit.FindAllStringSubmatch(body, -1) {
+			// ChangePlan 域（Schema v2 · 契约 D-9）**先于** baseline/closed 放行：`W21` 只许出现在
+			// internal/plan，出现在任何其它包都判红（引用必须走 plan.W21 常量）。
+			if m[1] == plan.W21 {
+				if !inPlanOwner {
+					t.Fatalf("%s 出现 %s：ChangePlan 域的 W21 唯一字面量落点是 internal/plan，"+
+						"其它包只许引用 plan.W21 常量", p, m[1])
+				}
+				planSeen++
+				continue
+			}
 			// S5 事务域**先于** baseline/closed 放行处理：精确闭合为 {E15, E16, W26, W28}，任何其他
 			// E / W / I 数字码（含 M3 已闭合的 23 值，以及尚未启用的 W27）都判红 —— 否则「txn 内混入
 			// E1 / W1 / W27 也能过」会与下方「internal/txn 精确等于 {E15, E16, W26, W28}」自相矛盾。
@@ -344,6 +378,10 @@ func TestDiagnosticCodesCovered(t *testing.T) {
 	}
 	if mdfileSeen == 0 {
 		t.Fatal("internal/mdfile 内未见 W27：块级合并分域判据失去事实基础，" +
+			"应回落为「全库恰闭合在 M3 的 23 值」的原形态")
+	}
+	if planSeen == 0 {
+		t.Fatal("internal/plan 内未见 W21：ChangePlan 分域判据失去事实基础，" +
 			"应回落为「全库恰闭合在 M3 的 23 值」的原形态")
 	}
 	// M6 事务域：E15 / E16 / W26 / W28 **逐码**各至少出现一次（不满足于「四者任一存在」）。
@@ -441,10 +479,46 @@ func TestM3OpsAllExecutable(t *testing.T) {
 	// 只改判据形态、不放宽本体：M3 期那 8 个 op 的逐个可派发 / 字段表非空 / e2e 落点三条
 	// 断言逐字未动；下面另新增两格加严（M4 新增面恰 1 个且名字逐字 `set_stale`、
 	// 且它**不**混进 M3 面），任何往 op 全集偷加一个都会立刻红。
-	const m3AllOps, m4NewOps = 16, 1
-	if all := plan.AllOpNames(); len(all) != m3AllOps+m4NewOps {
-		t.Fatalf("plan.AllOpNames() %d 个，应恰「M3 期 %d + M4 新增 %d = %d」",
-			len(all), m3AllOps, m4NewOps, m3AllOps+m4NewOps)
+	//
+	// **Schema v2 · T-…-003 再次重钉（同一手法，事实变了，判据形态不变）**：契约 §4.4 把主链路
+	// 写口由 S1 的七个扩为 **九个** —— `create_card` / `append_card` 改名为
+	// `create_knowledge` / `append_knowledge`（**改名，不是新增**；旧名以兼容别名保留、
+	// 在解析末尾被改写，不计入名册），并**新增** `create_opinion` / `append_opinion`
+	// 两个 Opinion 写口。于是加法等式由「16 + 1 = 17」写成逐项形态
+	// 「主链路 9 + M3 8 + 编辑 1 + M4 1 = 19」，差额恰等于新增的两个 Opinion op，一个不多。
+	// M3 面恒 8、状态类恒 5、编辑恒 1、M4 恒 1 四个计数一律不动；下面另新增三格加严
+	// （主链路恰九个且逐字含两个 Opinion op、两个兼容别名不得进名册、Opinion op 不得混进
+	// M3 / 状态类 / M4 三个面），任何往 op 全集偷加一个仍会立刻红。
+	const mainOps, m3Ops, editOps, m4NewOps = 9, 8, 1, 1
+	wantAllOps := mainOps + m3Ops + editOps + m4NewOps
+	if all := plan.AllOpNames(); len(all) != wantAllOps {
+		t.Fatalf("plan.AllOpNames() %d 个，应恰「主链路 %d + M3 %d + 编辑 %d + M4 %d = %d」：%v",
+			len(all), mainOps, m3Ops, editOps, m4NewOps, wantAllOps, all)
+	}
+	if main := plan.OpNames(); len(main) != mainOps {
+		t.Fatalf("主链路 op %d 个，应恰 %d（契约 §4.4）：%v", len(main), mainOps, main)
+	}
+	for _, op := range []string{plan.OpCreateOpinion, plan.OpAppendOpinion} {
+		if !opInList(plan.OpNames(), op) {
+			t.Fatalf("主链路名册缺 Opinion 写口 %q（契约 §4.4）：%v", op, plan.OpNames())
+		}
+		if plan.IsM3Op(op) || plan.IsStateOp(op) || plan.IsM4Op(op) {
+			t.Fatalf("%q 属 Schema v2 主链路，不得混进 M3OpNames %v / StateOpNames %v / M4OpNames %v",
+				op, plan.M3OpNames(), plan.StateOpNames(), plan.M4OpNames())
+		}
+	}
+	// 兼容别名恰两个，且**不**在名册里：它们不是独立 op，只是同一个 op 的旧名字。
+	if aliases := plan.OpAliases(); len(aliases) != 2 {
+		t.Fatalf("兼容别名应恰两个（create_card / append_card），实得 %v", aliases)
+	}
+	for alias, canonical := range plan.OpAliases() {
+		if opInList(plan.OpNames(), alias) || opInList(plan.AllOpNames(), alias) {
+			t.Fatalf("兼容别名 %q 不得进入 op 名册（主链路 %v / 全集 %v）",
+				alias, plan.OpNames(), plan.AllOpNames())
+		}
+		if !opInList(plan.OpNames(), canonical) {
+			t.Fatalf("别名 %q 的规范名 %q 必须在主链路名册里：%v", alias, canonical, plan.OpNames())
+		}
 	}
 	if m4 := plan.M4OpNames(); len(m4) != m4NewOps || m4[0] != plan.OpSetStale ||
 		plan.OpSetStale != "set_stale" {
@@ -506,39 +580,88 @@ func TestM3OpsAllExecutable(t *testing.T) {
 	}
 }
 
-// TestWritePermissionMatrixCounts：43 行矩阵与 §2.8 的三个计数（判据 8 / 9 / 10）。
-func TestWritePermissionMatrixCounts(t *testing.T) {
-	if got := len(plan.Matrix()); got != 43 {
-		t.Fatalf("写权限矩阵 %d 行，应恰 43", got)
+// opInList 报告 name 是否逐字出现在 list 里（op 名册断言的小工具，不做任何归一化：
+// 名册判据要的就是「逐字相等」，任何 trim / 大小写折叠都会把漂移掩盖过去）。
+func opInList(list []string, name string) bool {
+	for _, v := range list {
+		if v == name {
+			return true
+		}
 	}
-	if got := plan.MatrixCells(); got != 86 {
-		t.Fatalf("矩阵格数 %d，应恰 86（43 × 2 条路径）", got)
+	return false
+}
+
+// TestWritePermissionMatrixCounts：矩阵行数与 §2.8 的三个计数（判据 8 / 9 / 10）。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：知识 / 观点分离契约 §3.3 在矩阵尾部
+// **追加** 7 行（#44–#50 = Note v2 的 `整理正文` / `提取结果` 两分区 + Opinion 五分区），
+// 于是 43 行 / 86 格 / 7 个对象类分别变 **50 / 100 / 8**，条件解锁由 1 变 **2**（新增 #46
+// 与 #12 同口径），两路皆拒由 4 变 **5**（新增 #50，Opinion 的 `用户补充`，B2 安全底线）。
+// 追加而非改名 #23/#24/#27 的理由见 matrix.go 行注释：存量笔记里 v1 分区仍在，改名会让
+// LookupRow 对存量分区查无此格、把合法追加拦死。
+// 判据本体一格不放宽：路径恒 2、严格解锁恒 16（新增七行无「P-A 🔴 且 P-U ✅」形态）、
+// #33 的四格断言与「#33 不再落进三个集合」逐字保留；下面另新增两格加严
+// （#46 恰是「P-A 条件解锁 / P-U ✅」、#50 恰是两路皆拒）。
+func TestWritePermissionMatrixCounts(t *testing.T) {
+	// 行数与格数按**加法等式**钉死：合同 §2.8 的 43 是历史事实、一格不改写；契约 §3.3 新增 7。
+	const m3Rows, planV2Rows = 43, 7
+	wantRows := m3Rows + planV2Rows
+	if got := len(plan.Matrix()); got != wantRows {
+		t.Fatalf("写权限矩阵 %d 行，应恰「合同 §2.8 的 %d + 契约 §3.3 的 %d = %d」",
+			got, m3Rows, planV2Rows, wantRows)
+	}
+	if got := plan.MatrixCells(); got != wantRows*2 {
+		t.Fatalf("矩阵格数 %d，应恰 %d（%d × 2 条路径）", got, wantRows*2, wantRows)
 	}
 	if got := len(plan.Paths()); got != 2 {
 		t.Fatalf("写入路径 %d 条，应恰 2（P-A / P-U）", got)
 	}
 	if got := len(plan.StrictUnlockRows()); got != 16 {
-		t.Fatalf("严格「P-A 🔴 → P-U ✅」%d 行，应恰 16", got)
+		t.Fatalf("严格「P-A 🔴 → P-U ✅」%d 行，应恰 16（契约 §3.3 新增七行均无此形态）", got)
 	}
+	// 条件解锁：M3 期恰 1 行（#12 知识卡「知识内容」）+ 契约 §3.3 新增 1 行（#46 观点「观点」，
+	// §3.3 明确「同 知识内容 口径」）= 2，且两行的行号逐字钉死、顺序即矩阵行序。
+	const m3Conditional, planV2Conditional = 1, 1
 	cond := plan.ConditionalUnlockRows()
-	if len(cond) != 1 {
-		t.Fatalf("条件解锁 %d 行，应恰 1", len(cond))
+	if len(cond) != m3Conditional+planV2Conditional {
+		t.Fatalf("条件解锁 %d 行，应恰「M3 期 %d（#12）+ 契约 §3.3 新增 %d（#46）= %d」",
+			len(cond), m3Conditional, planV2Conditional, m3Conditional+planV2Conditional)
 	}
-	if cond[0].Num != 12 {
-		t.Fatalf("条件解锁行是 #%d，应为 #12", cond[0].Num)
+	for i, wantNum := range []int{12, 46} {
+		if cond[i].Num != wantNum {
+			t.Fatalf("条件解锁第 %d 行是 #%d，应为 #%d", i+1, cond[i].Num, wantNum)
+		}
 	}
-	// 两路径同 🔴 按**减法等式**钉死（2026-09-07 随 M4 · T-…-055 按实测重钉）：
+	// 新增的那一行**恰**是 Opinion 的「观点」分区，且**恰**与 #12 同形态：
+	// P-A 既有 🔴 又有 ✅（对已有观点 🔴、create_opinion 新建 ✅），P-U 纯 ✅。
+	row46, ok := plan.LookupRow(plan.ObjectOpinion, plan.SectionField(mdfile.SecOpinionClaim))
+	if !ok || row46.Num != 46 {
+		t.Fatalf("矩阵里找不到 #46（%s · 分区「观点」），实得 %+v", plan.ObjectOpinion, row46)
+	}
+	if !row46.Auto.Has(plan.VerdictDeny) || !row46.Auto.Has(plan.VerdictAllow) ||
+		!row46.User.Has(plan.VerdictAllow) || row46.User.Has(plan.VerdictDeny) {
+		t.Fatalf("#46 应为 P-A 条件解锁（🔴 + ✅）/ P-U ✅，与 #12 同口径，实得 %s", row46)
+	}
+	// 两路径同 🔴 按**加减法等式**钉死（2026-09-07 随 M4 · T-…-055 按实测重钉）：
 	//   M3 期 5（历史事实，**一格不改写**）− 依 A-34 放开 1（矩阵 #33 的 P-A，R6 由对账
-	// 自动写 stale/stale_reason，不需要 --user-request）= 4。
-	// 只改判据形态、不放宽本体：行数恒 43 / 格数恒 86 / 路径恒 2 / 严格解锁恒 16 /
-	// 条件解锁恒 1 且是 #12 / 对象类恒 7 六条逐字未动；下面另新增三格加严 ——
-	// 放开的那一格**恰**是 #33 且**恰**是 P-A（P-U 仍 🔴，用户显式路径一格没放开）、
-	// #33 既不进严格解锁也不进条件解锁、且离开同 🔴 集合的**恰**这一行。
-	const m3BothDenied, a34Unlocked = 5, 1
+	// 自动写 stale/stale_reason，不需要 --user-request）= 4；
+	// 再 + 契约 §3.3 新增 1（#50 观点「用户补充」，B2：CLI 写入路径对四类实体一律永不写）= 5。
+	// 只改判据形态、不放宽本体：放开的那一格**恰**是 #33 且**恰**是 P-A（P-U 仍 🔴）、
+	// #33 既不进严格解锁也不进条件解锁、且离开同 🔴 集合的**恰**这一行，三条逐字未动。
+	const m3BothDenied, a34Unlocked, planV2BothDenied = 5, 1, 1
+	wantBoth := m3BothDenied - a34Unlocked + planV2BothDenied
 	both := plan.BothDeniedRows()
-	if len(both) != m3BothDenied-a34Unlocked {
-		t.Fatalf("两路径同 🔴 %d 行，应恰「M3 期 %d − 依 A-34 放开 %d = %d」",
-			len(both), m3BothDenied, a34Unlocked, m3BothDenied-a34Unlocked)
+	if len(both) != wantBoth {
+		t.Fatalf("两路径同 🔴 %d 行，应恰「M3 期 %d − 依 A-34 放开 %d + 契约 §3.3 新增 %d = %d」",
+			len(both), m3BothDenied, a34Unlocked, planV2BothDenied, wantBoth)
+	}
+	row50, ok := plan.LookupRow(plan.ObjectOpinion, plan.SectionField(mdfile.SecUserAppend))
+	if !ok || row50.Num != 50 {
+		t.Fatalf("矩阵里找不到 #50（%s · 分区「用户补充」），实得 %+v", plan.ObjectOpinion, row50)
+	}
+	if row50.Auto.Has(plan.VerdictAllow) || !row50.Auto.Has(plan.VerdictDeny) ||
+		row50.User.Has(plan.VerdictAllow) || !row50.User.Has(plan.VerdictDeny) {
+		t.Fatalf("#50 应两路径同 🔴（B2：CLI 永不写「用户补充」），实得 %s", row50)
 	}
 	row33, ok := plan.LookupRow(plan.ObjectReview, plan.FieldReviewStale)
 	if !ok || row33.Num != 33 {
@@ -564,8 +687,23 @@ func TestWritePermissionMatrixCounts(t *testing.T) {
 			}
 		}
 	}
-	if got := len(plan.MatrixObjects()); got != 7 {
-		t.Fatalf("矩阵对象类 %d 个，应恰 7", got)
+	// 对象类：合同 §2.8 的 7 类（历史事实）+ 契约 §3.3 的 ObjectOpinion 一类 = 8。
+	// 观点是与知识**同级**的第四类实体，故必须是独立对象类，不能挂在 ObjectCard 下
+	// （复用会让日后放开观点某一格时连带放开知识卡的同名格）。
+	const m3Objects, planV2Objects = 7, 1
+	if got := len(plan.MatrixObjects()); got != m3Objects+planV2Objects {
+		t.Fatalf("矩阵对象类 %d 个，应恰「合同 §2.8 的 %d + 契约 §3.3 的 %d = %d」",
+			got, m3Objects, planV2Objects, m3Objects+planV2Objects)
+	}
+	var opinionObjects int
+	for _, o := range plan.MatrixObjects() {
+		if o == plan.ObjectOpinion {
+			opinionObjects++
+		}
+	}
+	if opinionObjects != 1 {
+		t.Fatalf("对象类里 %s 应恰出现一次，实得 %d 次：%v",
+			plan.ObjectOpinion, opinionObjects, plan.MatrixObjects())
 	}
 }
 

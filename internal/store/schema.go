@@ -24,33 +24,40 @@ const (
 	KindOpinion = mdfile.KindOpinion
 )
 
-// 固定分区名（知识卡五分区 + 材料笔记五分区 + 观点五分区）。
+// 固定分区名（知识卡三分区 + 材料笔记四分区 + 观点五分区，Schema v2 §3.2）。
 const (
-	SecKnowledge   = mdfile.SecKnowledge
-	SecRationale   = mdfile.SecRationale
-	SecBoundary    = mdfile.SecBoundary
-	SecUserAppend  = mdfile.SecUserAppend
-	SecSelfCheck   = mdfile.SecSelfCheck
-	SecDigest      = mdfile.SecDigest
-	SecAgentReview = mdfile.SecAgentReview
-	SecOpenQuest   = mdfile.SecOpenQuest
-	SecOutputCards = mdfile.SecOutputCards
+	SecKnowledge  = mdfile.SecKnowledge
+	SecBoundary   = mdfile.SecBoundary
+	SecUserAppend = mdfile.SecUserAppend
+	SecNoteBody   = mdfile.SecNoteBody
+	SecExtraction = mdfile.SecExtraction
+	SecOpenQuest  = mdfile.SecOpenQuest
 
 	// —— 观点固定五分区（Schema v2 §3.2）——
 	SecOpinionClaim = mdfile.SecOpinionClaim
 	SecArgument     = mdfile.SecArgument
 	SecCounter      = mdfile.SecCounter
 	SecToVerify     = mdfile.SecToVerify
+
+	// —— v1 存量分区名（v2 起不再是固定分区；仍需按名字定位存量文件）——
+	SecRationale   = mdfile.SecRationale
+	SecSelfCheck   = mdfile.SecSelfCheck
+	SecDigest      = mdfile.SecDigest
+	SecAgentReview = mdfile.SecAgentReview
+	SecOutputCards = mdfile.SecOutputCards
 )
 
 // KnownSections 返回该类型的固定分区名（按 F5 固定顺序）。
 func KnownSections(kind Kind) []string { return mdfile.KnownSections(kind) }
 
-// CardSections 返回知识卡五分区（顺序固定）。
+// CardSections 返回知识卡的固定三分区（顺序固定）。
 func CardSections() []string { return mdfile.CardSections() }
 
-// NoteSections 返回材料笔记五分区（顺序固定）。
+// NoteSections 返回材料笔记的固定四分区（顺序固定）。
 func NoteSections() []string { return mdfile.NoteSections() }
+
+// LegacyV1Sections 返回该类型在 v1 是固定分区、v2 起不再是固定分区的分区名。
+func LegacyV1Sections(kind Kind) []string { return mdfile.LegacyV1Sections(kind) }
 
 // OpinionSections 返回观点的固定五分区（顺序固定）。
 func OpinionSections() []string { return mdfile.OpinionSections() }
@@ -66,6 +73,14 @@ func AutoWritableSections(kind Kind) []string { return mdfile.AutoWritableSectio
 
 // RequiredSection 返回该类型必须存在的分区名。
 func RequiredSection(kind Kind) string { return mdfile.RequiredSection(kind) }
+
+// CountBodyAnchors 返回一份文档正文里的 H2 + H3 标题数（去空标题、屏蔽围栏代码块）。
+//
+// 转发而非在上层重写：`W21` 结构覆盖诊断（Schema v2 契约 §4.3）要数原文的 `src_anchors`，
+// 而「围栏代码块里的 `## 注释` 不算章节」这条口径依赖 mdfile 的围栏状态机与 frontmatter
+// 边界。在 plan 层重写一遍的第一个后果就是带 Markdown 示例的技术文章被误报。
+// 解析失败时返回 0，调用方据此**不判**诊断。
+func CountBodyAnchors(raw []byte) int { return mdfile.CountBodyAnchors(raw) }
 
 // FrontmatterInto 只读解析 raw 的 frontmatter 到 out：文档结构不合法或
 // frontmatter YAML 不可解析时返回错误（上层据此判 E4）。

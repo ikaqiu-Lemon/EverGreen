@@ -117,6 +117,15 @@ type ExecResult struct {
 	CardsReused  []string
 	CardsUpdated []string
 
+	// OpinionsCreated / OpinionsUpdated 是本次新建与被追加论据的观点 ID（Schema v2）。
+	//
+	// 刻意与 Cards* 三个字段分开：观点与知识是**同级**实体（§3.1），
+	// 报告里「新增了几条知识」与「提出了几条待验证的判断」是两个不同的事实。
+	// 折叠进 CardsCreated 会让一次「只提了观点、没沉淀知识」的加工在报告里
+	// 看起来与「新建了知识卡」完全一样，而这正是本 Epic 要解决的混淆本身。
+	OpinionsCreated []string
+	OpinionsUpdated []string
+
 	Material  []MaterialRecord
 	Knowledge []KnowledgeRecord
 	Questions []QuestionRecord
@@ -268,6 +277,11 @@ func (e *executor) run(a Action) {
 		e.cardNew(a)
 	case ActCardAppend:
 		e.cardAppend(a)
+	// Schema v2 观点两形态（落盘走 store.ApplyOpinion / ApplyOpinionAppend）。
+	case ActOpinionNew:
+		e.opinionNew(a)
+	case ActOpinionAppend:
+		e.opinionAppend(a)
 	case ActMaterialRel:
 		e.materialRelWrite(a)
 	case ActRelation:
@@ -338,16 +352,16 @@ func (e *executor) sourceNew(a Action) {
 func (e *executor) noteNew(a Action) {
 	op := a.Op
 	out, err := e.s.ApplyNote(store.NoteSpec{
-		Rel:         a.Path,
-		ID:          model.NoteID(a.ID),
-		SourceID:    model.SourceID(op.Source),
-		Title:       op.Title,
-		Date:        e.dateOf(),
-		Stamp:       e.opt.Stamp,
-		Tags:        op.Tags,
-		Sections:    sectionAppends(a.Sections),
-		OutputCards: outputCardItems(a.OutputCards),
-		Inbox:       store.InboxSpec{ExpectedHash: e.baseHash(store.UnprocessedFile)},
+		Rel:        a.Path,
+		ID:         model.NoteID(a.ID),
+		SourceID:   model.SourceID(op.Source),
+		Title:      op.Title,
+		Date:       e.dateOf(),
+		Stamp:      e.opt.Stamp,
+		Tags:       op.Tags,
+		Sections:   sectionAppends(a.Sections),
+		Extraction: a.Extraction,
+		Inbox:      store.InboxSpec{ExpectedHash: e.baseHash(store.UnprocessedFile)},
 	})
 	if !e.record(a, out.Note, err) {
 		return
@@ -405,6 +419,58 @@ func (e *executor) cardAppend(a Action) {
 	e.out.CardsUpdated = append(e.out.CardsUpdated, a.ID)
 	e.impact(ImpactNonCoreSupplement, a.ID, a.OpIndex,
 		fmt.Sprintf("向已有卡追加非核心补充：%s", sectionNames(a.Sections)))
+}
+
+// opinionNew 落盘一条新观点。
+//
+// 与 cardNew 的三处刻意差异：
+//
+//	① 走 ApplyOpinion（观点目录 + 五分区模板 + `validation: pending`）；
+//	② 记进 OpinionsCreated 而不是 CardsCreated —— 报告里「新建了几条知识」与
+//	   「新建了几条观点」必须分得开，否则 §5.2 的检索拆分在报告侧又被合并回去；
+//	③ **不产出 ImpactNewCoreCard**。影响面登记回答的是「本次加工对知识库的核心含义
+//	   做了什么」，而新建观点恰恰**没有**动核心知识——它新增了一条待验证的判断。
+//	   套用知识卡的影响面会让收敛报告把「提了个观点」读成「改了知识」。
+//
+// 材料关系照样逐条登记：观点与知识同源同据，`sources[]` 是它的硬前提。
+func (e *executor) opinionNew(a Action) {
+	op := a.Op
+	res, err := e.s.ApplyOpinion(store.OpinionSpec{
+		Rel:      a.Path,
+		ID:       model.OpinionID(a.ID),
+		Title:    op.Title,
+		Date:     e.dateOf(),
+		Stamp:    e.opt.Stamp,
+		Tags:     op.Tags,
+		Sources:  sourceRefs(op.Sources),
+		Sections: sectionAppends(a.Sections),
+	})
+	if !e.record(a, res, err) {
+		return
+	}
+	e.out.OpinionsCreated = append(e.out.OpinionsCreated, a.ID)
+	for _, ref := range op.Sources {
+		e.addMaterial(MaterialRecord{
+			Card: a.ID, Source: ref.Source, Note: ref.Note, Rel: ref.Rel, Reason: ref.Reason,
+		})
+	}
+}
+
+// opinionAppend 向已有观点追加「论据与推理」/「条件与反例」/「待验证」。
+//
+// 同样不产出影响面记录：补充论据不改变任何知识卡的核心含义，
+// 它改变的是这条观点自身的论证进度，而那由 `validation` 表达（且只由用户流转）。
+func (e *executor) opinionAppend(a Action) {
+	res, err := e.s.ApplyOpinionAppend(store.OpinionAppendSpec{
+		Rel:          a.Path,
+		ExpectedHash: e.expect(a),
+		Stamp:        e.opt.Stamp,
+		Sections:     sectionAppends(a.Sections),
+	})
+	if !e.record(a, res, err) {
+		return
+	}
+	e.out.OpinionsUpdated = append(e.out.OpinionsUpdated, a.ID)
 }
 
 func (e *executor) materialRelWrite(a Action) {
@@ -647,22 +713,6 @@ func sourceRefs(refs []MaterialRef) []model.SourceRef {
 			Rel:    model.MaterialRel(r.Rel),
 			Reason: r.Reason,
 		})
-	}
-	return out
-}
-
-// outputCardItems 把「产出知识卡」快照渲染成列表项文本（逐字，不做任何推断）。
-func outputCardItems(cards []OutputCard) []string {
-	out := make([]string, 0, len(cards))
-	for _, c := range cards {
-		if c.Card == "" {
-			continue
-		}
-		if c.Mode == "" {
-			out = append(out, c.Card)
-			continue
-		}
-		out = append(out, fmt.Sprintf("%s（%s）", c.Card, c.Mode))
 	}
 	return out
 }

@@ -219,12 +219,17 @@ RC="$(codev "${V}" mark-reviewed --target "${ID_B}")"
 ok "恢复幂等：第二条写命令退 0 且零 W26"
 
 # ---------------------------------------------------------------- 3. A/edit
+# Schema v2（knowledge_opinion_split · T-…-003 / 契约 D-7）后 Knowledge 模板恰三分区
+# `知识内容 / 条件与边界 / 用户补充`：上面 seed 用的 v1 plan 里 `解释与依据` / `理解自检`
+# 只记 I1、**不落盘**，故本步编辑的分区重钉为 v2 实存分区 `条件与边界`。
+# 本步判据（崩溃后首条 edit 退 0 + 恰一条 W26 + 分区真的追加 + commit +1）与分区名无关，
+# 且下面额外反证「v2 卡上不存在的存量分区必须退 3 且零写入」，覆盖面不减。
 step "A2：崩溃后首条 edit 必须退 0 + 恰一条 W26 + 分区真的追加"
 V="$(fresh a_edit)"
 N0="$(gitv "${V}" rev-list --count HEAD)"
 crash_partial "${V}" "TAMPERED-EDIT"
 printf '%s\n' '- 崩溃恢复之后追加的一行判据内容。' >"${WORK}/edit_body.md"
-RC="$(codev "${V}" edit --target "${ID_A}" --section '解释与依据' \
+RC="$(codev "${V}" edit --target "${ID_A}" --section '条件与边界' \
         --content "${WORK}/edit_body.md" --user-request)"
 cp "${WORK}/out.txt" "${WORK}/edit.json"
 [ "${RC}" = "0" ] || { cat "${WORK}/edit.json"; die "崩溃后首条 edit 应退 0，实际 ${RC}"; }
@@ -232,6 +237,16 @@ assert_recovered_ok "${V}" "${WORK}/edit.json" "edit"
 grep -q '崩溃恢复之后追加的一行判据内容' "${V}/${CARD_A}" || die "edit 必须真的把内容写进分区"
 [ "$(gitv "${V}" rev-list --count HEAD)" = "$((N0 + 1))" ] || die "edit 应恰 +1 次 commit"
 ok "edit：退 0 + completed + 恰一条 W26 + 零 mismatch + 分区已追加 + commit +1"
+
+step "A2'：v2 卡上编辑不存在的存量分区（解释与依据）必须退 3 + 零写入 + 零 commit"
+PRE_A2="$(sha "${V}/${CARD_A}")"
+N1="$(gitv "${V}" rev-list --count HEAD)"
+RC="$(codev "${V}" edit --target "${ID_A}" --section '解释与依据' \
+        --content "${WORK}/edit_body.md" --user-request)"
+[ "${RC}" = "3" ] || { cat "${WORK}/out.txt"; die "编辑不存在的分区应退 3，实际 ${RC}"; }
+[ "$(sha "${V}/${CARD_A}")" = "${PRE_A2}" ] || die "被拒的 edit 必须零字节落盘"
+[ "$(gitv "${V}" rev-list --count HEAD)" = "${N1}" ] || die "被拒的 edit 必须零 commit"
+ok "存量分区不存在：退 3 + 字节不变 + 零 commit（Schema v2 模板收敛后的正确处置）"
 
 # ---------------------------------------------------------------- 4. A/rel add
 step "A3：崩溃后首条 rel add 必须退 0 + 恰一条 W26 + 关系真的建立"

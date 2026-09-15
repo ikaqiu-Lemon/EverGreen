@@ -6,6 +6,14 @@ package cli
 // 全部用例都走真实的 store 写口与真实 git 仓：不打桩写入、不打桩校验，
 // 唯一被注入的是「时间」与「Git Runner」（提交失败分支）——保证确定性且零网络。
 
+// **Schema v2 · T-…-003 夹具重钉（事实变了，判据形态不变）**：本文件里自动路径
+// （`append_card` / `append_knowledge`）原先追加的是 Card 的 `解释与依据`。契约 D-7 把
+// Knowledge 收敛为 `知识内容 / 条件与边界 / 用户补充` 三分区，`解释与依据` 自 v2 起
+// 只作为**存量文件**的分区存在、且不在自动路径写白名单内，因此再拿它当写目标会让
+// 整条 op 在校验期就被判「缺可写分区」而退 2 —— 那考的不再是本文件要考的事
+// （B3 跳过 / 部分成功 / 事务放弃 / op 顺序 / 报告计数）。改用同为「只追加块」语义的
+// v2 分区 `条件与边界`，本文件的判据一格未动。
+
 import (
 	"bytes"
 	"encoding/json"
@@ -18,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/git"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/txn"
@@ -308,7 +317,7 @@ func TestApplyPartialSkipsFileChanged(t *testing.T) {
 
 	plan := `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"部分成功",
 "base":{"` + applyCardID + `":"` + oldHash + `","` + applyNoteID + `":"` + hashOf(t, dir, noteRel) + `"},
-"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"补一条依据。"}},
+"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"补一条依据。"}},
 {"op":"add_open_question","note":"` + applyNoteID + `","question":"这条结论在小样本下成立吗？"}]}`
 	code, env, _ := runApplyPlan(t, dir, plan)
 	if code != ExitPartialWrite {
@@ -526,7 +535,7 @@ func TestApplyDryRunReportCountsMatchPlanned(t *testing.T) {
 	appendPlan := `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"补充",
 "base":{"` + applyCardID + `":"` + hashOf(t, dir, cardRel) + `"},
 "ops":[{"op":"append_card","card":"` + applyCardID + `",
-"sections":{"解释与依据":"dry-run 与正式执行必须数出同一张补充卡。"}}]}`
+"sections":{"条件与边界":"dry-run 与正式执行必须数出同一张补充卡。"}}]}`
 	code, dryEnv2, errOut := runApplyPlan(t, dir, appendPlan, "--dry-run")
 	if code != ExitOK {
 		t.Fatalf("补充卡 --dry-run 退出码 = %d：%s", code, errOut)
@@ -557,24 +566,56 @@ func TestApplyDryRunReportCountsMatchPlanned(t *testing.T) {
 
 // —— ⑧ 自检非前置（EG-CHK-05）——
 
+// TestApplySelfCheckIsNotAGate 断言「自检未作答不阻塞写入与提交」。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据不放宽）**：原用例先检查新建卡里有没有
+// 「理解自检」分区，没有就 `t.Skip`。契约 D-7 把该分区从 Knowledge 模板里移除之后，
+// 那条 skip 会**恒真**——一条本该守着 EG-CHK-05 的判据从此永不执行，而统一 runner
+// 明文禁止隐式 skip（合同 D6.2）。
+//
+// v2 下这条需求的正确表述变成：自动路径写「理解自检」时，**整条 plan 不得被拦下**，
+// 其余分区照常落盘提交，且关于该分区的交代只能是 info 级兼容提示，不得出现任何
+// warning / error 级的「自检未完成」门禁。判据因此比原来更强：既钉住不拦截（退 0 +
+// 真实落盘 + 真实 commit），又钉住诊断分级（自检相关条目一律 info），
+// 不再依赖「模板里恰好有这个分区」这个已经不成立的前提。
 func TestApplySelfCheckIsNotAGate(t *testing.T) {
 	dir := applyVault(t)
 	_, cardRel := applyNoteAndCard(t, dir)
-	if !strings.Contains(string(mustRead(t, filepath.Join(dir, filepath.FromSlash(cardRel)))),
-		"理解自检") {
-		t.Skip("卡模板未含理解自检分区")
-	}
+	logBefore := gitLogCount(t, dir)
 	plan := `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"自检非前置",
 "base":{"` + applyCardID + `":"` + hashOf(t, dir, cardRel) + `"},
-"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"理解自检":"Q: 这条结论的边界是什么？"}}]}`
+"ops":[{"op":"append_card","card":"` + applyCardID + `",
+"sections":{"理解自检":"Q: 这条结论的边界是什么？","条件与边界":"边界：仅限序列建模。"}}]}`
 	code, env, errOut := runApplyPlan(t, dir, plan)
 	if code != ExitOK {
 		t.Fatalf("退出码 = %d，期望 0（自检未作答不阻塞写入与提交）：%s", code, errOut)
 	}
+	// 同一条 op 里的 v2 可写分区必须照常生效：自检分区被忽略，不影响其余写入。
+	body := string(mustRead(t, filepath.Join(dir, filepath.FromSlash(cardRel))))
+	if !strings.Contains(body, "边界：仅限序列建模。") {
+		t.Fatalf("自检分区不得连带阻塞同一 op 的其它分区写入：\n%s", body)
+	}
+	if got := gitLogCount(t, dir); got != logBefore+1 {
+		t.Fatalf("commit 数 = %d，期望 %d（写入与提交同一步）", got, logBefore+1)
+	}
+	// 「理解自检」自 v2 起不是固定分区：它既不该被写出，也不该被静默吞掉——
+	// 只能留一条 info 级交代（自动路径请改写 v2 可写分区）。
+	if strings.Contains(body, "## "+mdfile.SecSelfCheck) {
+		t.Fatalf("v2 卡不得因一条 plan 长出「%s」分区：\n%s", mdfile.SecSelfCheck, body)
+	}
+	var mentions int
 	for _, w := range applyReport(t, env).Warnings {
-		if strings.Contains(w.Message, "自检") || strings.Contains(w.Path, "自检") {
-			t.Fatalf("报告不得出现任何与自检相关的条目：%+v", w)
+		if !strings.Contains(w.Message, mdfile.SecSelfCheck) &&
+			!strings.Contains(w.Path, mdfile.SecSelfCheck) {
+			continue
 		}
+		mentions++
+		if w.Level != "info" {
+			t.Fatalf("自检相关条目只能是 info 级兼容提示，不得成为门禁：%+v", w)
+		}
+	}
+	if mentions != 1 {
+		t.Fatalf("自检分区被忽略必须如实交代恰一条 info，实得 %d 条", mentions)
 	}
 }
 
@@ -590,7 +631,7 @@ func TestApplyExecutesOpsInDeclaredOrder(t *testing.T) {
 "ops":[{"op":"create_card","card_id":"` + applyCardID + `","title":"注意力机制",
 "sources":[{"source":"` + applySourceID + `","note":"` + applyNoteID + `","rel":"support","reason":"原文给出定义"}],
 "sections":{"知识内容":"注意力是一种加权求和。"}},
-{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"后一条 op 追加的依据。"}}]}`
+{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"后一条 op 追加的依据。"}}]}`
 	code, env, errOut := runApplyPlan(t, dir, plan)
 	if code != ExitOK {
 		t.Fatalf("退出码 = %d，期望 0：%s", code, errOut)

@@ -16,25 +16,31 @@ package plan
 import "testing"
 
 // TestWritePermissionMatrixCountsClosed 复算写权限矩阵的七项聚合计数，逐项与合同 §2.8 对齐。
+//
+// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：契约 §3.3 追加 Note v2 两分区与
+// Opinion 五分区共 7 行（#44–#50），于是 43/86/7/1/4 变 50/100/8/2/5；
+// 严格解锁 16 与 §2.9 锁定 5 一格未动（新增行既无「P-A 🔴 且 P-U ✅」形态，
+// 也不在 owner 裁决锁定条款覆盖面内）。七项仍逐项独立复算，一项漂移即判红。
 func TestWritePermissionMatrixCountsClosed(t *testing.T) {
-	if n := len(Matrix()); n != 43 {
-		t.Fatalf("写权限矩阵行数 = %d，合同 §2.8 定死为 43", n)
+	if n := len(Matrix()); n != 50 {
+		t.Fatalf("写权限矩阵行数 = %d，合同 §2.8 的 43 + 契约 §3.3 的 7 = 50", n)
 	}
-	if n := MatrixCells(); n != 86 {
-		t.Fatalf("判定格总数 = %d，期望 43 × 2 = 86", n)
+	if n := MatrixCells(); n != 100 {
+		t.Fatalf("判定格总数 = %d，期望 50 × 2 = 100", n)
 	}
-	if n := len(MatrixObjects()); n != 7 {
-		t.Fatalf("对象类数 = %d，合同 §2.8 定死为 7", n)
+	if n := len(MatrixObjects()); n != 8 {
+		t.Fatalf("对象类数 = %d，合同 §2.8 的 7 + 契约 §3.3 的 Opinion = 8", n)
 	}
 	if n := len(StrictUnlockRows()); n != 16 {
-		t.Fatalf("严格解锁行 = %d，期望恰 16", n)
+		t.Fatalf("严格解锁行 = %d，期望恰 16（新增七行无此形态）", n)
 	}
-	if n := len(ConditionalUnlockRows()); n != 1 {
-		t.Fatalf("条件解锁行 = %d，期望恰 1（#12）", n)
+	if n := len(ConditionalUnlockRows()); n != 2 {
+		t.Fatalf("条件解锁行 = %d，期望恰 2（#12 知识内容 + #46 观点，同口径）", n)
 	}
-	// 两路皆拒：M4 · T-…-055 阶段 1 依 A-34 把 #33 的 P-A 由 🔴 改 ✅ 后由 5 降为 4。
-	if n := len(BothDeniedRows()); n != 4 {
-		t.Fatalf("两路皆拒行 = %d，期望恰 4（M4 阶段 1 后 5 − 1 = 4）", n)
+	// 两路皆拒：M4 · T-…-055 阶段 1 依 A-34 把 #33 的 P-A 由 🔴 改 ✅ 后由 5 降为 4；
+	// 契约 §3.3 的 #50（Opinion 的 `用户补充`，安全底线 B2）使其回到 5。
+	if n := len(BothDeniedRows()); n != 5 {
+		t.Fatalf("两路皆拒行 = %d，期望恰 5（M4 阶段 1 后 4 + 契约 §3.3 新增 1）", n)
 	}
 	// §2.9 锁定条款覆盖 #35–#39 恰五行。
 	if n := len(AdjudicationLockedRows()); n != 5 {

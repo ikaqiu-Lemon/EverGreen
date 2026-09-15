@@ -314,6 +314,36 @@ AT_B="$(assert_refreshed "${REL_B}" "${AT_B}" "eg rel remove")"
 ok "rel add / rel remove：宿主卡 updated_at 严格变新（当前 ${AT_B}）"
 
 # ---------------------------------------------------------------- 8. G Agent 自动路径
+# Schema v2（knowledge_opinion_split · T-…-003 / 契约 D-7）把 Knowledge 模板收敛为
+# `知识内容 / 条件与边界 / 用户补充`，`解释与依据` 退为**只存量兼容**的分区：自动路径
+# 一律不写它（只记 I1），要改只能走 `eg edit`。本步的判据主体是「实际写入 ⇒ 刷新
+# updated_at」，与写哪个分区无关，故正面用例重钉到 v2 自动可写分区 `条件与边界`；
+# 原来那条 `解释与依据` 的写法不删，改判为**负面用例**（G0）：被拒 + 零写入 + 不刷新
+# + 必须给出可执行的迁移提示 —— 覆盖面比原先只有一条正面路径更宽，不是放宽。
+step "G0 Agent 自动路径写存量分区（解释与依据）→ 必须被拒、零写入、不刷新、给迁移提示"
+BEFORE_G="$(sha256sum "${VAULT}/${REL_B}" | cut -d' ' -f1)"
+LOG_G="$(commits)"
+sleep 1
+cat >"${WORK}/auto-legacy.json" <<PLAN
+{ "plan_version": 1, "verb": "process", "domain": "tech",
+  "reason": "判据：自动路径不得写 Schema v2 已退为存量兼容的分区（契约 D-7）",
+  "requirement_ids": ["EG-CFM-06"],
+  "base": { "${REL_B}": "$(chash "${REL_B}")" },
+  "ops": [ { "op": "append_card", "card": "${CARD_B}",
+             "sections": { "解释与依据": "- Agent 自动追加的一条依据。\n" } } ] }
+PLAN
+[ "$(eg_code apply --plan "${WORK}/auto-legacy.json" --json)" = "2" ] ||
+  { cat "${WORK}/out.txt"; die "自动路径写存量分区必须退 2（无可写分区）"; }
+grep -Fq '解释与依据' "${WORK}/out.txt" ||
+  { cat "${WORK}/out.txt"; die "被拒时必须点名是哪个分区不再自动可写"; }
+grep -Fq '条件与边界' "${WORK}/out.txt" ||
+  { cat "${WORK}/out.txt"; die "被拒时必须给出可执行的迁移落点（条件与边界）"; }
+[ "$(sha256sum "${VAULT}/${REL_B}" | cut -d' ' -f1)" = "${BEFORE_G}" ] ||
+  die "被拒的自动写必须字节不变（存量分区原样保留）"
+[ "$(fmvalue "${REL_B}" updated_at)" = "${AT_B}" ] || die "零写入不得刷新 updated_at"
+[ "$(commits)" = "${LOG_G}" ] || die "被拒必须零 commit"
+ok "自动路径写存量分区：退 2 + 字节不变 + 时间戳不动 + I1 指明迁移落点"
+
 step "G Agent 自动路径（eg apply 追加正文，不带 --user-request）→ 同样严格变新"
 sleep 1
 cat >"${WORK}/auto.json" <<PLAN
@@ -322,10 +352,14 @@ cat >"${WORK}/auto.json" <<PLAN
   "requirement_ids": ["EG-CFM-06"],
   "base": { "${REL_B}": "$(chash "${REL_B}")" },
   "ops": [ { "op": "append_card", "card": "${CARD_B}",
-             "sections": { "解释与依据": "- Agent 自动追加的一条依据。\n" } } ] }
+             "sections": { "条件与边界": "- Agent 自动追加的一条边界。\n" } } ] }
 PLAN
 [ "$(eg_code apply --plan "${WORK}/auto.json" --json)" = "0" ] ||
   { cat "${WORK}/out.txt"; die "Agent 自动路径 apply 应退 0"; }
+grep -Fq -e '- Agent 自动追加的一条边界。' "${VAULT}/${REL_B}" ||
+  die "自动路径的追加内容必须逐字落盘"
+grep -Fq '依据占位。' "${VAULT}/${REL_B}" ||
+  die "存量分区「解释与依据」的原有字节必须原样保留"
 AT_B="$(assert_refreshed "${REL_B}" "${AT_B}" "eg apply（Agent 自动路径）")"
 if grep -q '^reviewed_at:' "${VAULT}/${REL_B}"; then die "Agent 写入一律不得写 reviewed_at"; fi
 ok "Agent 自动路径与用户显式路径无差别：updated_at 同样刷新（当前 ${AT_B}）"

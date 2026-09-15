@@ -128,28 +128,63 @@ func (v *validator) gateDiag(op *Op, code, field, msg string) Diagnostic {
 	return d
 }
 
-// coreKnowledgeGate 落地矩阵 #12（**唯一的条件解锁行**）在 `append_card` 上的子情形。
+// coreKnowledgeGate 落地矩阵 #12（条件解锁行之一）在 `append_knowledge` 上的子情形。
 //
-// #12 的 P-A 格同时含 🔴 与 ✅：🔴 对**已有卡**、✅ 对 `create_card` **新建**。
-// `append_card` 的目标恒为已有卡，故 P-A 侧恒取 🔴 子情形 → E6、整条 op 不执行、
+// #12 的 P-A 格同时含 🔴 与 ✅：🔴 对**已有卡**、✅ 对 `create_knowledge` **新建**。
+// `append_knowledge` 的目标恒为已有卡，故 P-A 侧恒取 🔴 子情形 → E6、整条 op 不执行、
 // 目标文件字节不变（这是 §16.1 M3 判据「Agent 自动路径改不了核心内容」的唯一落点）。
 //
 // P-U 侧的 ✅ 由 `eg edit` 承接（A-13），属 T-…-045，本阶段不实现；
-// `append_card` **不是** P-U 的载体，因此两条路径下它写「知识内容」都不放行——
+// `append_knowledge` **不是** P-U 的载体，因此两条路径下它写「知识内容」都不放行——
 // 与 sectionPayloads 的既有 E6 同结论，本函数只是把矩阵行号与两列取值点名进 message。
+//
+// 诊断里的 op 名一律取 `op.Name`：`create_card` / `append_card` 已在 expand 阶段
+// 规范化（契约 §4.4），门闸看到的恒是规范名，别名只在那一步留一条 I1 迁移提示。
 func (v *validator) coreKnowledgeGate(op *Op) bool {
-	row, ok := RowNum(12)
+	return v.claimSectionGate(op, 12, ObjectCard, store.SecKnowledge,
+		"对已有卡是 🔴 子情形（✅ 子情形只属 "+OpCreateKnowledge+" 新建）",
+		"P-U 的 ✅ 由 eg edit 承接（A-13，归 T-…-045），"+
+			OpAppendKnowledge+" 不是用户显式路径的载体")
+}
+
+// opinionClaimGate 落地矩阵 #46（条件解锁行之二）在 `append_opinion` 上的子情形。
+//
+// 与 coreKnowledgeGate 同一条口径（契约 §3.3「同 `知识内容` 口径」）：观点的主张由
+// 创建者一次写定，此后自动路径不得改写。理由不是「保护字节」，而是**改写主张不是补充
+// 论据**——把「A 成立」改成「A 不成立」是换了一个观点，它该走 `create_opinion` 加一条
+// `opposing` 关系（§6.4），而不是就地改掉那句话，让所有指向它的关系与 `validation`
+// 状态悄悄换了对象。
+func (v *validator) opinionClaimGate(op *Op) bool {
+	return v.claimSectionGate(op, 46, ObjectOpinion, store.SecOpinionClaim,
+		"对已有观点是 🔴 子情形（✅ 子情形只属 "+OpCreateOpinion+" 新建）",
+		"P-U 的 ✅ 由 eg edit 承接（A-13，归 T-…-045），"+
+			OpAppendOpinion+" 不是用户显式路径的载体")
+}
+
+// claimSectionGate 是两个条件解锁行（#12 / #46）共用的拒绝路径。
+//
+// 抽出来不是为了省行数，而是因为两行的判定**完全同构**：目标恒为已有实体，故 P-A 恒取
+// 🔴 子情形；P-U 的 ✅ 另有载体。各写一份的唯一后果是某天只改了其中一处。
+//
+// obj 参与断言而非仅作注释：行号一旦被重排，`row.Object` 会与调用点声明的对象类不符，
+// 此时 panic 比「继续拿错行去拼诊断」诚实——错行拼出的 message 会指向另一类实体。
+func (v *validator) claimSectionGate(op *Op, rowNum int, obj Object, section, autoSub, userSub string) bool {
+	row, ok := RowNum(rowNum)
 	if !ok {
-		panic("写权限矩阵缺第 12 行：合同 §2.1 的条件解锁行不得被删")
+		panic(fmt.Sprintf("写权限矩阵缺第 %d 行：条件解锁行不得被删", rowNum))
+	}
+	if row.Object != obj || row.Field != SectionField(section) {
+		panic(fmt.Sprintf("写权限矩阵第 %d 行是「%s · %s」，调用点声明的是「%s · %s」：行号被重排",
+			rowNum, row.Object, row.Field, obj, SectionField(section)))
 	}
 	path := v.pathOf(op)
-	sub := "对已有卡是 🔴 子情形（✅ 子情形只属 create_card 新建）"
+	sub := autoSub
 	if path == PathUser {
-		sub = "P-U 的 ✅ 由 eg edit 承接（A-13，归 T-…-045），append_card 不是用户显式路径的载体"
+		sub = userSub
 	}
-	v.add(v.gateDiag(op, E6, "sections."+store.SecKnowledge, fmt.Sprintf(
-		"写权限矩阵 %s：append_card 在 %s 路径不得写「%s」——%s；整条 op 不执行，目标文件字节不变",
-		row, path, store.SecKnowledge, sub)))
+	v.add(v.gateDiag(op, E6, "sections."+section, fmt.Sprintf(
+		"写权限矩阵 %s：%s 在 %s 路径不得写「%s」——%s；整条 op 不执行，目标文件字节不变",
+		row, op.Name, path, section, sub)))
 	return false
 }
 
@@ -211,6 +246,12 @@ func (v *validator) editSectionGate(op *Op, section string) bool {
 
 // cardSectionField 把知识卡分区名映射到矩阵 Field 列（「理解自检」的追加块是 #16）。
 // 返回 false 表示该分区不在矩阵的分区行里（如「用户补充」由 sectionPayloads 直接判 E6）。
+//
+// 「解释与依据」（#13）与「理解自检」（#16 / #17）已随 D-7 移出 v2 的 Knowledge 模板，
+// 但两行**仍留在矩阵里**且本函数**仍映射它们**：存量 v1 卡片里这两个分区照旧存在，
+// `replace_block` 对「理解自检」的口径收敛为**仅存量文件适用**（见 replace_block.go），
+// 而 matrixGate 的「查不到即拒绝」会把存量文件的合法追加一并拦死。
+// 换言之：模板决定「新建时写哪几个分区」，矩阵决定「谁有权写某个分区」——两者不是同一件事。
 func cardSectionField(name string) (string, bool) {
 	switch name {
 	case store.SecKnowledge:
@@ -229,8 +270,12 @@ func cardSectionField(name string) (string, bool) {
 // 「知识内容」（#12）由 coreKnowledgeGate 单独处理（条件解锁行有子情形），
 // 「用户补充」（#15）由 sectionPayloads 直接判 E6（两条路径同为 🔴，与路径无关）。
 // 本函数因此只覆盖剩下三个 ✅ 格：它们今天全放行，明天任何一格被翻成 🔴 都会立刻被拦。
+//
+// 遍历面取「v2 模板固定分区 ∪ v1 存量分区」：v2 模板收敛到三分区后，若只遍历模板，
+// 存量分区名就再也走不到查表这一步——它们会被 sectionPayloads 当未知分区记 I1 忽略，
+// 表面结果相同，但「矩阵拦的」与「模板里没有」是两个不同的事实，报告里必须能分辨。
 func (v *validator) autoSectionGate(op *Op) bool {
-	for _, name := range store.KnownSections(store.KindCard) {
+	for _, name := range cardGateSections() {
 		if _, wants := op.Sections[name]; !wants {
 			continue
 		}
@@ -242,6 +287,44 @@ func (v *validator) autoSectionGate(op *Op) bool {
 			continue
 		}
 		if !v.matrixGate(op, ObjectCard, field) {
+			return false
+		}
+	}
+	return true
+}
+
+// cardGateSections 是 autoSectionGate 的遍历面：v2 固定分区后接 v1 存量分区（去重保序）。
+func cardGateSections() []string {
+	out := append([]string{}, store.KnownSections(store.KindCard)...)
+	seen := set(out)
+	for _, name := range store.LegacyV1Sections(store.KindCard) {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
+// opinionSectionGate 对一条 op 请求写入的观点分区逐个查表（#47 / #48 / #49）。
+//
+// 与 autoSectionGate 同构，分工也同构：「观点」（#46）由 opinionClaimGate 处理，
+// 「用户补充」（#50）由 sectionPayloads 直接判 E6。剩下三格今天全是 ✅——
+// 查表这一步不省略，任何一格被翻成 🔴 都会立刻在这里生效，而不是靠人记住。
+//
+// 为什么不与 autoSectionGate 合成一个「按 kind 查表」的函数：两者的对象类不同、
+// 单独处理的分区不同、遍历面不同（观点没有 v1 存量分区，它是 v2 才有的实体）。
+// 合成后函数体里会长出三个 `if kind == …`，而那正是本仓反复拒绝的形态。
+func (v *validator) opinionSectionGate(op *Op) bool {
+	for _, name := range store.KnownSections(store.KindOpinion) {
+		if _, wants := op.Sections[name]; !wants {
+			continue
+		}
+		if name == store.SecOpinionClaim || name == store.SecUserAppend {
+			continue
+		}
+		if !v.matrixGate(op, ObjectOpinion, SectionField(name)) {
 			return false
 		}
 	}

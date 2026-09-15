@@ -91,6 +91,7 @@ tests/_staged/internal/model/status_values_test.go	internal/model/status_values_
 tests/_staged/internal/plan/atomic_finalizer_test.go	internal/plan/atomic_finalizer_test.go	evergreen	unit	go
 tests/_staged/internal/plan/atomic_test.go	internal/plan/atomic_test.go	evergreen	unit	go
 tests/_staged/internal/plan/authorize_test.go	internal/plan/authorize_test.go	evergreen	unit	go
+tests/_staged/internal/plan/knowledge_opinion_v2_test.go	internal/plan/knowledge_opinion_v2_test.go	evergreen	unit	go
 tests/_staged/internal/plan/m3_test.go	internal/plan/m3_test.go	evergreen	unit	go
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	internal/plan/mark_reviewed_w7_test.go	evergreen	unit	go
 tests/_staged/internal/plan/matrix_contract_test.go	internal/plan/matrix_contract_test.go	evergreen	unit	go

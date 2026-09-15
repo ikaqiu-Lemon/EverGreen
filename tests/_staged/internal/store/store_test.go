@@ -17,6 +17,7 @@ import (
 
 // ---------- 样例与工具 ----------
 
+// cardSample 是 **Schema v2** 知识卡语料：固定三分区（契约 §3.2）。
 const cardSample = `---
 id: k-20260901-guard-order
 title: 守卫写入固定次序
@@ -36,10 +37,6 @@ tags:
 
 写前自检不等即拒写。
 
-## 解释与依据
-
-Go 生态没有 ruamel 式保真兜底库。
-
 ## 条件与边界
 
 仅 S1。
@@ -50,37 +47,103 @@ Go 生态没有 ruamel 式保真兜底库。
 
 - 用户自己的列表
     - 未知子结构
-
-## 理解自检
-
-- [ ] 能说出固定次序
 `
 
+// noteSample 是 **Schema v2** 材料笔记语料：固定四分区，`用户补充` 收尾（契约 §3.2）。
 const noteSample = `---
 id: n-20260901-spec
 title: 技术方案笔记
 created_at: '2026-09-01'
 ---
 
-## 材料提炼
+## 整理正文
 
 要点一。
 
-## Agent 分析
+> **[Agent 补充]** 分析一。
 
-分析一。
+## 提取结果
 
-## 用户补充
+### Knowledge
 
-用户原话，别动。
+- k-20260901-guard-order
 
 ## 存疑与待验证
 
 - 旧的存疑项
 
+## 用户补充
+
+用户原话，别动。
+`
+
+// legacyCardV1 / legacyNoteV1 是**真实 v1 存量语料**（T-…-003 的存量兼容底线）：
+// 被移除的分区（卡的 `解释与依据` / `理解自检`，笔记的 `材料提炼` / `Agent 分析` /
+// `产出知识卡`）必须原样保留、只记 info、字节不变，且解析与结构校验都不得报错。
+//
+// 注意 v1 笔记的 `用户补充` 排在**第三位**（v2 挪到末位）：这正是 v2 顺序表校验
+// v1 文件时会误报「顺序颠倒」的那处差异，因此语料必须逐字保留 v1 的排布。
+const legacyCardV1 = `---
+id: k-20260801-legacy
+title: v1 存量卡
+status: active
+created_at: '2026-08-01'
+updated_at: '2026-08-01T10:00:00+08:00'
+sources:
+  - source: s-20260801-legacy
+    note: n-20260801-legacy
+    rel: support
+    reason: v1 时代的引用
+tags:
+  - s1
+---
+
+## 知识内容
+
+v1 的知识内容。
+
+## 解释与依据
+
+v1 时代 Agent 写的论证。
+
+## 条件与边界
+
+仅 v1。
+
+## 用户补充
+
+	用户在 v1 时代手写的缩进块。
+
+## 理解自检
+
+- [ ] v1 时代的自检项
+`
+
+const legacyNoteV1 = `---
+id: n-20260801-legacy
+title: v1 存量笔记
+created_at: '2026-08-01'
+---
+
+## 材料提炼
+
+v1 的要点。
+
+## Agent 分析
+
+v1 的分析。
+
+## 用户补充
+
+用户在 v1 时代写的原话。
+
+## 存疑与待验证
+
+- v1 时代的存疑项
+
 ## 产出知识卡
 
-- k-20260901-guard-order
+- k-20260801-legacy
 `
 
 // malformedSample 的 frontmatter 未闭合：Parse→Render 无法逐字复原，写前自检必须拒写。
@@ -155,7 +218,7 @@ func TestGuardB3FileChangedSkipsAndKeepsBytes(t *testing.T) {
 
 	res, err := s.WriteGuarded("cards/k.md", f.Hash, Edit{
 		Kind:     mdfile.KindCard,
-		Sections: []SectionAppend{{Section: mdfile.SecRationale, Payload: []byte("新增依据。\n")}},
+		Sections: []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("新增边界。\n")}},
 	})
 	skip, ok := AsSkip(err)
 	if !ok {
@@ -209,7 +272,7 @@ func TestGuardSelfCheckRejectsWrite(t *testing.T) {
 	}
 	res, err := s.WriteGuarded("cards/broken.md", f.Hash, Edit{
 		Kind:     mdfile.KindCard,
-		Sections: []SectionAppend{{Section: mdfile.SecRationale, Payload: []byte("x\n")}},
+		Sections: []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("x\n")}},
 	})
 	skip, ok := AsSkip(err)
 	if !ok {
@@ -241,13 +304,13 @@ func TestGuardSelfCheckPositiveWrites(t *testing.T) {
 	}
 	res, err := s.WriteGuarded("cards/k.md", "", Edit{
 		Kind:     mdfile.KindCard,
-		Sections: []SectionAppend{{Section: mdfile.SecSelfCheck, Payload: []byte("- [ ] 新增自检项\n")}},
+		Sections: []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("- 新增边界项\n")}},
 	})
 	if err != nil || !res.Written {
 		t.Fatalf("正例应写入：%v / %+v", err, res)
 	}
 	out := mustBytes(t, abs)
-	if !bytes.Contains(out, []byte("- [ ] 新增自检项\n")) {
+	if !bytes.Contains(out, []byte("- 新增边界项\n")) {
 		t.Fatal("追加内容应落盘")
 	}
 	if len(res.Warnings) != 0 {
@@ -271,7 +334,7 @@ func TestGuardB2UserSectionsRoundTrip(t *testing.T) {
 	if len(bytes.TrimSpace(userBefore[mdfile.SecUserAppend])) == 0 {
 		t.Fatal("样例的用户补充不应为空")
 	}
-	if _, err := s.AppendToSection("cards/k.md", mdfile.KindCard, mdfile.SecRationale, []byte("再加一条依据。\n")); err != nil {
+	if _, err := s.AppendToSection("cards/k.md", mdfile.KindCard, mdfile.SecBoundary, []byte("再加一条边界。\n")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	afterUser, err := UserSectionBytes(mustBytes(t, absCard))
@@ -306,7 +369,7 @@ func TestGuardB2UnsafeUserBlockSkips(t *testing.T) {
 	s, root := newVault(t)
 	unsafe := cardSample + "\n## 用户补充\n\n第二处同名用户分区。\n"
 	abs := writeSeed(t, root, "cards/unsafe.md", unsafe)
-	res, err := s.AppendToSection("cards/unsafe.md", mdfile.KindCard, mdfile.SecRationale, []byte("x\n"))
+	res, err := s.AppendToSection("cards/unsafe.md", mdfile.KindCard, mdfile.SecBoundary, []byte("x\n"))
 	skip, ok := AsSkip(err)
 	if !ok {
 		t.Fatalf("期望 *SkipError，得到 %v", err)
@@ -344,7 +407,7 @@ func TestGuardUserAppendWriteRejectedOnAllPaths(t *testing.T) {
 	if _, err := s.WriteGuarded("cards/k.md", f.Hash, Edit{
 		Kind: mdfile.KindCard,
 		Sections: []SectionAppend{
-			{Section: mdfile.SecRationale, Payload: []byte("正常一条。\n")},
+			{Section: mdfile.SecBoundary, Payload: []byte("正常一条。\n")},
 			{Section: mdfile.SecUserAppend, Payload: []byte("越界一条。\n")},
 		},
 	}); err == nil {
@@ -358,16 +421,107 @@ func TestGuardUserAppendWriteRejectedOnAllPaths(t *testing.T) {
 
 // ---------- 分区写白名单 ----------
 
+// TestSectionWhitelistOnExistingCard 钉住 **Schema v2** 的知识卡自动写白名单。
+//
+// v2 起白名单只剩 `条件与边界` 一格（契约 §3.3 的 Knowledge 三行 + D-7）：
+// `知识内容` 对已有卡只读（矩阵 #12 的 🔴 子情形），`用户补充` 永不写（B2），
+// 而 `解释与依据` / `理解自检` 已**不再是固定分区**——它们既不在 KnownSections、
+// 也不在 AutoWritableSections，自动路径对存量卡里的同名 H2 一律拒写。
+// 这是收紧而非放宽：存量分区只能被读取与迁移（T-…-009），不能继续被 Agent 写大。
 func TestSectionWhitelistOnExistingCard(t *testing.T) {
 	s, root := newVault(t)
 	writeSeed(t, root, "cards/k.md", cardSample)
 	if _, err := s.AppendToSection("cards/k.md", mdfile.KindCard, mdfile.SecKnowledge, []byte("自动改知识内容\n")); err == nil {
 		t.Fatal("已有卡的知识内容对自动路径只读")
 	}
-	for _, sec := range []string{mdfile.SecRationale, mdfile.SecBoundary, mdfile.SecSelfCheck} {
-		res, err := s.AppendToSection("cards/k.md", mdfile.KindCard, sec, []byte("追加一行。\n"))
-		if err != nil || !res.Written {
-			t.Fatalf("分区 %s 应允许追加：%v / %+v", sec, err, res)
+	res, err := s.AppendToSection("cards/k.md", mdfile.KindCard, mdfile.SecBoundary, []byte("追加一行。\n"))
+	if err != nil || !res.Written {
+		t.Fatalf("分区 %s 应允许追加：%v / %+v", mdfile.SecBoundary, err, res)
+	}
+	if got := mdfile.AutoWritableSections(mdfile.KindCard); len(got) != 1 || got[0] != mdfile.SecBoundary {
+		t.Fatalf("v2 知识卡自动写白名单必须恰为 [%s]，实得 %v", mdfile.SecBoundary, got)
+	}
+}
+
+// TestLegacyV1SectionsAreNotAutoWritable 钉住存量分区对自动路径的**只读**口径。
+//
+// 语料是真实 v1 存量卡：`解释与依据` 与 `理解自检` 都在文件里实际存在，
+// 因此拒写不可能是「分区找不到」的副产物，只能来自白名单判定。
+func TestLegacyV1SectionsAreNotAutoWritable(t *testing.T) {
+	s, root := newVault(t)
+	abs := writeSeed(t, root, "cards/legacy.md", legacyCardV1)
+	before := mustBytes(t, abs)
+	for _, sec := range mdfile.LegacyV1Sections(mdfile.KindCard) {
+		if !bytes.Contains(before, []byte("## "+sec+"\n")) {
+			t.Fatalf("语料必须真的含存量分区「%s」", sec)
+		}
+		res, err := s.AppendToSection("cards/legacy.md", mdfile.KindCard, sec, []byte("不该写入。\n"))
+		if err == nil || res.Written {
+			t.Fatalf("存量分区「%s」对自动路径必须拒写：%v / %+v", sec, err, res)
+		}
+		if !bytes.Equal(mustBytes(t, abs), before) {
+			t.Fatalf("拒写后字节必须逐字不变（分区 %s）", sec)
+		}
+	}
+}
+
+// TestLegacyV1FilesParseAndKeepBytes 是 T-…-003 的存量兼容底线：
+// 真实 v1 存量卡与存量笔记各一份，解析不报错、结构校验通过、
+// `UnknownSections` 命中被移除的分区、字节零变化。
+func TestLegacyV1FilesParseAndKeepBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		kind mdfile.Kind
+	}{
+		{"v1 存量卡", legacyCardV1, mdfile.KindCard},
+		{"v1 存量笔记", legacyNoteV1, mdfile.KindNote},
+	}
+	for _, c := range cases {
+		doc, err := mdfile.Parse([]byte(c.raw))
+		if err != nil {
+			t.Fatalf("%s 必须可解析：%v", c.name, err)
+		}
+		if err := doc.ValidateSections(c.kind); err != nil {
+			t.Fatalf("%s 的结构校验必须通过（存量兼容底线）：%v", c.name, err)
+		}
+		if got := doc.SectionSchema(c.kind); got != mdfile.SchemaV1 {
+			t.Fatalf("%s 必须被判定为 v1 模板，实得 %v", c.name, got)
+		}
+		got := map[string]bool{}
+		for _, sp := range doc.UnknownSections(c.kind) {
+			got[sp.Name] = true
+		}
+		for _, sec := range mdfile.LegacyV1Sections(c.kind) {
+			if !got[sec] {
+				t.Fatalf("%s 的被移除分区「%s」必须落入 UnknownSections（只记 info），实得 %v",
+					c.name, sec, got)
+			}
+		}
+		if out := doc.Render(); !bytes.Equal(out, []byte(c.raw)) {
+			t.Fatalf("%s 的字节必须零变化：\n%q", c.name, out)
+		}
+	}
+}
+
+// TestLegacyV1NoteStillAcceptsOpenQuestion 钉住存量笔记仍可被 `add_open_question` 追加：
+// `存疑与待验证` 是两版模板**共有**的分区，模板切换不得连带打死存量笔记的这条主链路。
+func TestLegacyV1NoteStillAcceptsOpenQuestion(t *testing.T) {
+	s, root := newVault(t)
+	abs := writeSeed(t, root, "notes/legacy.md", legacyNoteV1)
+	res, err := s.AppendToSection("notes/legacy.md", mdfile.KindNote, mdfile.SecOpenQuest,
+		[]byte("- 新的存疑项\n"))
+	if err != nil || !res.Written {
+		t.Fatalf("存量笔记的「%s」应允许追加：%v / %+v", mdfile.SecOpenQuest, err, res)
+	}
+	got := mustBytes(t, abs)
+	if !bytes.Contains(got, []byte("- v1 时代的存疑项\n- 新的存疑项\n")) {
+		t.Fatalf("追加应落在既有条目之后：\n%s", got)
+	}
+	for _, keep := range []string{"## 材料提炼\n", "## Agent 分析\n", "## 产出知识卡\n",
+		"用户在 v1 时代写的原话。\n"} {
+		if !bytes.Contains(got, []byte(keep)) {
+			t.Fatalf("存量分区与用户字节必须逐字保留，丢了 %q", keep)
 		}
 	}
 }

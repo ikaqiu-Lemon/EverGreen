@@ -14,6 +14,7 @@ package cli
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -126,9 +127,13 @@ func TestRelAddProducesSingleRelateCommit(t *testing.T) {
 		t.Fatalf("report.git.commit 必须是本次 sha，实际 %v", rep.Git.Commit)
 	}
 	// --json 回带组装出的 plan，供 Agent 复投（合同 §4.2）。
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：`eg rel add` 组装的 plan
+	// 版本号随**当前**版本走（契约 §4.1 把 PlanVersion 提到 2，v1 只是兼容期仍被接受）。
+	// 期望值取自 plan.PlanVersion 而不是再写死一个数字：写死 2 只会让下一次版本变更
+	// 重演今天这次修改，而「CLI 组装的 plan 必须是当前版本」这条判据本身一格未放宽。
 	raw, _ := json.Marshal(env.Data["plan"])
 	for _, want := range []string{`"verb":"relate"`, `"op":"add_relation"`,
-		`"plan_version":1`, `"target":"` + relAddCardB + `"`} {
+		fmt.Sprintf(`"plan_version":%d`, plan.PlanVersion), `"target":"` + relAddCardB + `"`} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("data.plan 缺 %s：%s", want, raw)
 		}

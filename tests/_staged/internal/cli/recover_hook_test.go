@@ -14,6 +14,14 @@ package cli
 //
 // 本文件不测 internal/txn 自身的崩溃安全（那是 txn 包的用例），也不测 internal/index。
 
+// **Schema v2 · T-…-003 夹具重钉（事实变了，判据形态不变）**：本文件里自动路径
+// （`append_card` / `append_knowledge`）原先追加的是 Card 的 `解释与依据`。契约 D-7 把
+// Knowledge 收敛为 `知识内容 / 条件与边界 / 用户补充` 三分区，`解释与依据` 自 v2 起
+// 只作为**存量文件**的分区存在、且不在自动路径写白名单内，因此再拿它当写目标会让
+// 整条 op 在校验期就被判「缺可写分区」而退 2 —— 那考的不再是本文件要考的事
+// （B3 跳过 / 部分成功 / 事务放弃 / op 顺序 / 报告计数）。改用同为「只追加块」语义的
+// v2 分区 `条件与边界`，本文件的判据一格未动。
+
 import (
 	"bytes"
 	"encoding/json"
@@ -532,7 +540,7 @@ func TestPlanTxnRereadsInsideLock(t *testing.T) {
 
 	plan := `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"锁内重读反证",
 "base":{"` + applyCardID + `":"` + staleHash + `"},
-"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"不该被写进去。"}}]}`
+"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"不该被写进去。"}}]}`
 	code, env, errOut := runApplyPlan(t, dir, plan)
 	if code != ExitPartialWrite {
 		t.Fatalf("退出码 = %d，期望 3（锁内重读应发现文件已变化并整文件跳过）：%s", code, errOut)
@@ -743,7 +751,7 @@ func TestPlanTxnAbortedPreviewIsZeroWrite(t *testing.T) {
 "ops":[{"op":"create_card","card_id":"` + newCard + `","title":"会被放弃的卡",
 "sources":[{"source":"` + applySourceID + `","note":"` + applyNoteID + `","rel":"support","reason":"原文给出定义"}],
 "sections":{"知识内容":"这张卡不该落盘。"}},
-{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"读不到的追加。"}}]}`
+{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"读不到的追加。"}}]}`
 	code, env, errOut := runApplyPlan(t, dir, plan)
 
 	// 先把夹具复原，避免「目录冒充卡」污染后面的快照比对。
@@ -794,7 +802,7 @@ func TestPlanTxnZeroAcceptedWriteSetSkipsTxnAndGit(t *testing.T) {
 	stale := "sha256:" + strings.Repeat("0", 64)
 	plan := `{"plan_version":1,"verb":"process","domain":"ai-infra","reason":"零写反证",
 "base":{"` + applyCardID + `":"` + stale + `"},
-"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"不会被写。"}}]}`
+"ops":[{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"不会被写。"}}]}`
 	code, env, errOut := runApplyPlan(t, dir, plan)
 	if code != ExitPartialWrite {
 		t.Fatalf("退出码 = %d，期望 3：%s", code, errOut)
@@ -889,8 +897,8 @@ func TestPlanTxnProposalWriteBackRidesSameTransaction(t *testing.T) {
 "` + applyCard2ID + `":"sha256:` + strings.Repeat("0", 64) + `"},
 "ops":[{"op":"delete","target":"` + applyCardID + `","reason":"内容重复且无引用",
 "initiator":"user","proposal":"` + string(peProposalID) + `"},
-{"op":"append_card","card":"` + applyCardID + `","sections":{"解释与依据":"这一条会被写入。"}},
-{"op":"append_card","card":"` + applyCard2ID + `","sections":{"解释与依据":"这一条不会被写入。"}}]}`
+{"op":"append_card","card":"` + applyCardID + `","sections":{"条件与边界":"这一条会被写入。"}},
+{"op":"append_card","card":"` + applyCard2ID + `","sections":{"条件与边界":"这一条不会被写入。"}}]}`
 
 	r := newTestRoot(t, dir)
 	r.NewRepo = failingCommitRepo() // Git 失败：正是「会不会补第二次写」最危险的那一支

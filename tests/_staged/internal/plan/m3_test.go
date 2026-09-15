@@ -228,23 +228,46 @@ func TestM3Ops(t *testing.T) {
 			}
 		}
 	}
-	// 状态类 op 恰五个；S1 七个 op 一个不加；合起来恰 15 个可派发 op。
+	// 状态类 op 恰五个；主链路 op 在 Schema v2 下恰九个；合起来的派发全集见下。
 	if len(StateOpNames()) != 5 {
 		t.Fatalf("状态类 op 必须恰 5 个（A-15），实得 %v", StateOpNames())
 	}
-	if len(OpNames()) != 7 {
-		t.Fatalf("S1 七个 op 冻结，一个不加，实得 %v", OpNames())
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：契约 §4.4 把主链路
+	// 写口从 S1 的七个扩为九个——`create_card` / `append_card` 改名为
+	// `create_knowledge` / `append_knowledge`（**不是**新增，旧名以别名保留），
+	// 并新增 `create_opinion` / `append_opinion` 两个 Opinion 写口。
+	// 因此 7 变 9 的差额恰等于新增的两个 Opinion op，一个不多。
+	wantMain := []string{"add_source", "write_note", "create_knowledge", "append_knowledge",
+		"create_opinion", "append_opinion", "add_material_rel", "add_relation", "add_open_question"}
+	if strings.Join(OpNames(), ",") != strings.Join(wantMain, ",") {
+		t.Fatalf("主链路 op 必须逐字等于契约 §4.4 的九个（含顺序），期望 %v，实得 %v",
+			wantMain, OpNames())
+	}
+	// 两个兼容别名**不**进名册：它们不是独立 op，只是同一个 op 的旧名字，
+	// 在 normalizeAliases 阶段就已被改写，validate / executor 看不到它们。
+	if len(OpAliases()) != 2 {
+		t.Fatalf("兼容别名恰两个（create_card / append_card），实得 %v", OpAliases())
+	}
+	for alias, canonical := range OpAliases() {
+		for _, name := range OpNames() {
+			if name == alias {
+				t.Fatalf("兼容别名 %q 不得进入主链路名册 %v", alias, OpNames())
+			}
+		}
+		if !inList(OpNames(), canonical) {
+			t.Fatalf("别名 %q 的规范名 %q 必须在主链路名册里：%v", alias, canonical, OpNames())
+		}
 	}
 	// **T-…-045 重钉**：A-13 的 `edit_section` 使可派发 op 从 15 变 16。它**不**进
 	// StateOpNames / M3OpNames（提案与状态合同 §8.1 的八条 op 一条不加），而是授权合同
-	// §2 矩阵 #12 P-U ✅ 独有的编辑 op，因此 5 / 7 / 8 三个计数一律不动。
+	// §2 矩阵 #12 P-U ✅ 独有的编辑 op，因此 5 / 8 两个计数一律不动。
 	if len(EditOpNames()) != 1 {
 		t.Fatalf("A-13 编辑 op 恰一个（edit_section），实得 %v", EditOpNames())
 	}
 	// **T-…-055 阶段 1 重钉（加法等式，M3 期结论不改写）**：A-33 的 `set_stale` 使派发
 	// 全集由 M3 期的 16 变 17。它**不**进 M3OpNames（§8.1 恒 8 行）、**不**进
 	// StateOpNames（A-15 恒 5；A-34 明确 R6 写 stale 不需要 --user-request，
-	// 不得落进 W7 升 error 的收紧面），故 5 / 7 / 8 / 1 四个计数一律不动。
+	// 不得落进 W7 升 error 的收紧面），故 5 / 8 / 1 三个计数一律不动。
 	if len(M4OpNames()) != 1 {
 		t.Fatalf("M4 新增 op 恰一个（set_stale，A-33），实得 %v", M4OpNames())
 	}
@@ -252,10 +275,13 @@ func TestM3Ops(t *testing.T) {
 		t.Fatalf("%s 不得进入 M3OpNames %v / StateOpNames %v（A-33 / A-34）",
 			OpSetStale, M3OpNames(), StateOpNames())
 	}
-	const m3AllOps, m4NewOps = 16, 1 // M3 期 7+8+1=16（历史事实，不改写）+ M4 新增 1
-	if len(AllOpNames()) != m3AllOps+m4NewOps {
-		t.Fatalf("可派发 op 应为「M3 期 %d + M4 新增 %d = %d」，实得 %d：%v",
-			m3AllOps, m4NewOps, m3AllOps+m4NewOps, len(AllOpNames()), AllOpNames())
+	// M3 期的派发全集是 7+8+1=16、M4 加 1 得 17（历史事实，不改写）；Schema v2 的两个
+	// Opinion 写口使主链路由 7 变 9，故全集由 17 变 19。等式逐项写死，任何一项漂移都判红。
+	const mainOps, m3Ops, editOps, m4NewOps = 9, 8, 1, 1
+	wantAll := mainOps + m3Ops + editOps + m4NewOps
+	if len(AllOpNames()) != wantAll {
+		t.Fatalf("可派发 op 应为「主链路 %d + M3 %d + 编辑 %d + M4 %d = %d」，实得 %d：%v",
+			mainOps, m3Ops, editOps, m4NewOps, wantAll, len(AllOpNames()), AllOpNames())
 	}
 	// 未知 op（归属未定的三个之一）仍报 E5 且整条不执行。
 	files := m3Files()
@@ -544,7 +570,7 @@ func TestW10_RemoveRelationNoMatch(t *testing.T) {
 	// 不拦截其余 op：同一 plan 内后一条 op 照常展开。
 	res = m3Run(t, files, `{"op":"remove_relation","from":"k-20260901-attention","type":"supports",
  "target":"k-20260815-rnn","reason":"这条关系并不存在","initiator":"user"},
- {"op":"append_card","card":"k-20260901-attention","sections":{"解释与依据":"- 追加一条依据\n"}}`)
+ {"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- 追加一条边界\n"}}`)
 	if res.Failed() {
 		t.Fatalf("W10 不得影响退出码：实得 errors=%v", codes(res.Errors))
 	}
@@ -608,12 +634,16 @@ func TestW12ReplacedByDeprecatedTarget(t *testing.T) {
 // 且 internal/ 全库的 code 字面量不越界（M4 · T-…-049 起按包分域：E11–E14 / W13–W20
 // 只许出现在 M4 的 S3 检查器包，其余落点恒零命中；E15+ / W21+ / I2+ 留给 M5–M6）。
 func TestDiagnosticCodes_Closed(t *testing.T) {
-	if len(ErrorCodes()) != 10 || len(WarningCodes()) != 12 || len(InfoCodes()) != 1 {
-		t.Fatalf("编号占用总览：error 10 / warning 12 / info 1，实得 %d / %d / %d",
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：契约 D-9 给结构覆盖诊断
+	// 发放 `W21`（号段不连续是因为全局占用总览里 ChangePlan 域只剩这一个空号），
+	// 于是 warning 从 12 变 13、闭合集合从 23 变 24。`W1`–`W12` 与 `E1`–`E10` / `I1`
+	// 的语义与顺序一字未动，`W21` 只在末位追加。
+	if len(ErrorCodes()) != 10 || len(WarningCodes()) != 13 || len(InfoCodes()) != 1 {
+		t.Fatalf("编号占用总览：error 10 / warning 13 / info 1，实得 %d / %d / %d",
 			len(ErrorCodes()), len(WarningCodes()), len(InfoCodes()))
 	}
-	if len(AllCodes()) != 23 {
-		t.Fatalf("闭合集合应恰 23 个编号，实得 %d：%v", len(AllCodes()), AllCodes())
+	if len(AllCodes()) != 24 {
+		t.Fatalf("闭合集合应恰 24 个编号，实得 %d：%v", len(AllCodes()), AllCodes())
 	}
 	for i, want := range []string{"E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10"} {
 		if ErrorCodes()[i] != want {
@@ -621,7 +651,7 @@ func TestDiagnosticCodes_Closed(t *testing.T) {
 		}
 	}
 	for i, want := range []string{"W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8",
-		"W9", "W10", "W11", "W12"} {
+		"W9", "W10", "W11", "W12", "W2" + "1"} {
 		if WarningCodes()[i] != want {
 			t.Fatalf("WarningCodes()[%d] = %q，期望 %q", i, WarningCodes()[i], want)
 		}
@@ -630,7 +660,7 @@ func TestDiagnosticCodes_Closed(t *testing.T) {
 	// 判据 15 的两条反证 grep（`"(E1[1-9]|W1[3-9]|I[2-9])"` 与 block 冲突预留名）
 	// 扫的是整个 internal/ 而不排除测试文件，恒零命中才算真闭合。
 	outOfRange := []string{"E" + "0", "E" + "11", "E" + "12", "W" + "0",
-		"W" + "13", "W" + "14", "I" + "2", "I" + "3"}
+		"W" + "13", "W" + "14", "W" + "20", "I" + "2", "I" + "3"}
 	reservedKinds := []string{"block" + "_conflict", "block" + "_hash_changed"}
 	for _, bad := range append(outOfRange, reservedKinds...) {
 		if IsKnownCode(bad) {
@@ -715,6 +745,17 @@ func TestDiagnosticCodes_Closed(t *testing.T) {
 	//     预留正则共同保证：四张表都把 E15+ / W26 / W28 判为越界）；
 	//   - 且 `E15` / `E16` / `W26` / `W28` 必须在该包内真实出现，否则本追加失去事实基础，当场判红。
 	txnReserved := regexp.MustCompile(`"(E1[1-47-9]|E[2-9][0-9]|W1[3-9]|W2[0-57]|W29|W[3-9][0-9]|I[2-9])"`)
+	// **Schema v2 · T-…-003 追加 ChangePlan 域（同一手法，只增不改）**：上面每一段都写着
+	// 「W21 / W29+ 留给下游」——本 task 即那位下游。契约 D-9 把 `W21`（structure_coverage，
+	// `write_note` 的结构覆盖诊断）发放给 ChangePlan 域，唯一字面量落点是
+	// `internal/plan/diagnostics.go` 的 `W21` 常量（其余落点一律引用该常量）。
+	// 因此新增一域，仍是**双侧等号**：
+	//   - `internal/plan` 内部：高号段只许 `W21` 一码，`E11+` / `W13`–`W20` / `W22+` / `I2+`
+	//     一律零命中（M3 已闭合的低码 `E1`–`E10` / `W1`–`W12` / `I1` 是本域自有编号，照旧放行）；
+	//   - `internal/plan` 之外 `W21` 同样零命中 —— 由默认 `bad` 判红面与其它四个 owner 域
+	//     各自的预留正则共同保证（五张表都把 `W21` 判为越界）；
+	//   - 且 `W21` **必须**在 `internal/plan` 内真实出现，否则本追加失去事实基础，当场判红。
+	planReserved := regexp.MustCompile(`"(E1[1-9]|E[2-9][0-9]|W1[3-9]|W20|W2[2-9]|W[3-9][0-9]|I[2-9])"`)
 	forbidden := regexp.MustCompile(strings.Join(reservedKinds, "|"))
 	// codeLit 从源码里把**带双引号的**诊断码字面量剥出裸码（如剥出 E16），用于对 M6 事务域做
 	// **逐码**存在性断言：seen[dir]>0 只能证明「四者任一存在」，不满足合同「E15 / E16 / W26 /
@@ -725,7 +766,9 @@ func TestDiagnosticCodes_Closed(t *testing.T) {
 	m5OwnerPkg := "ind" + "ex"
 	queryOwnerPkg := "que" + "ry"
 	m6OwnerPkg := "tx" + "n"
+	planOwnerPkg := "pl" + "an"
 	txnDir := filepath.Join(root, m6OwnerPkg)
+	planDir := filepath.Join(root, planOwnerPkg)
 	// blockMergeDir 是 T-…-073 的 W27 唯一字面量落点包 internal/mdfile（判定内核所在）。
 	blockMergeDir := filepath.Join(root, "mdfile")
 	// txnRequired 是 M6 事务域**必须逐码出现**的精确集合（合同 §12 截至 T-…-072 已启用的四码）。
@@ -761,6 +804,7 @@ func TestDiagnosticCodes_Closed(t *testing.T) {
 		filepath.Join(root, queryOwnerPkg): queryReserved,
 		txnDir:                             txnReserved,
 		blockMergeDir:                      blockMergeReserved,
+		planDir:                            planReserved,
 	}
 	seen := map[string]int{}
 	// txnCodeSeen 逐码记录 M6 事务域内每个诊断码字面量的出现次数（精确集合断言的事实来源）。
@@ -823,8 +867,9 @@ func TestDiagnosticCodes_Closed(t *testing.T) {
 		if m := limit.FindString(string(raw)); m != "" {
 			t.Fatalf("%s 出现越界诊断编号 %s（分域发放：E11–E14 / W13–W20 → internal/%s，"+
 				"W22 / W23 / W24 → internal/%s，W25 → internal/%s，E15 / E16 / W26 / W28 → internal/%s，"+
-				"W27 → internal/mdfile；其余落点恒零命中，E17+ / W29+ / I2+ 留给下游）",
-				p, m, m4OwnerPkg, m5OwnerPkg, queryOwnerPkg, m6OwnerPkg)
+				"W27 → internal/mdfile，W21 → internal/%s；其余落点恒零命中，"+
+				"E17+ / W29+ / I2+ 留给下游）",
+				p, m, m4OwnerPkg, m5OwnerPkg, queryOwnerPkg, m6OwnerPkg, planOwnerPkg)
 		}
 		if m := forbidden.FindString(string(raw)); m != "" {
 			t.Fatalf("%s 出现 %s：skipped[].kind 恒为封闭两值，永不启用该预留字面量", p, m)
@@ -994,7 +1039,7 @@ func TestRemoveRelation_CountedInTouchesExistingCard(t *testing.T) {
 	files := m3Files()
 	res := m3Run(t, files, `{"op":"remove_relation","from":"k-20260901-attention","type":"limits",
  "target":"k-20260815-rnn","reason":"该限定已不成立","initiator":"user"},
- {"op":"append_card","card":"k-20260901-attention","sections":{"解释与依据":"- 追加\n"}}`)
+ {"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- 追加\n"}}`)
 	if _, ok := find(res.Warnings, W5); !ok {
 		t.Fatalf("verb=process 的多 op plan 夹带 remove_relation 且缺 convergence[] → 必须判 W5：%v",
 			codes(res.Warnings))
@@ -1010,7 +1055,7 @@ func TestStateOps_DoNotSuppressW5_WhenMixed(t *testing.T) {
 		`{"op":"mark_reviewed","target":"k-20260815-rnn","initiator":"user"}`,
 	} {
 		res := m3Run(t, files, op+`,
- {"op":"append_card","card":"k-20260901-attention","sections":{"解释与依据":"- 追加\n"}}`)
+ {"op":"append_card","card":"k-20260901-attention","sections":{"条件与边界":"- 追加\n"}}`)
 		if _, ok := find(res.Warnings, W5); !ok {
 			t.Fatalf("状态类 op 不得为 plan 整体豁免收敛义务：%s → warnings=%v", op, codes(res.Warnings))
 		}

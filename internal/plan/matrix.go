@@ -22,6 +22,25 @@ package plan
 // 条件解锁行 **1**（不变）、两路径同 🔴 由 **5 变 4**。
 // 这一格是 T-048 登记「需 owner 复核」的一格：本次是**依 A-34 执行放开，仍待 owner 事后复核**。
 
+// [Schema v2] 2026-09-15（T-…-003）：按 v2 契约 §3.3 追加 **7 行**（#44–#50）——
+// Note v2 的 `整理正文` / `提取结果`，以及 Opinion 的五个分区。行数由 43 变 **50**，
+// 对象类由 7 变 **8**（新增 ObjectOpinion）。§2.8 的三个派生计数随之变为：
+// 严格解锁行 **16**（不变：新增行无「P-A 🔴 且 P-U ✅」形态）、
+// 条件解锁行 **2**（#12 知识内容 + #46 观点，同口径）、两路径同 🔴 由 4 变 **5**（新增 #50）。
+// 三个数字仍全部由符号规则派生，实现侧一个都不写死。
+// 既有 43 行**一格未动**：#13/#16/#17（`解释与依据` / `理解自检`）与 #23/#24/#27
+// （v1 Note 分区）都保留，存量文件的写权限仍可查。
+//
+// **为什么这些行的 P-A 仍是 ✅，而自动路径实际写不进去**：矩阵与模板是**两道独立门禁**，
+// 判定结果取二者的与（AND）。矩阵回答「这条路径有没有权限动这个分区」，
+// 模板（mdfile.AutoWritableSections）回答「这个分区在 v2 模型里还是不是自动路径的落点」。
+// D-7 把 `解释与依据` / `理解自检` 移出 Knowledge 模板后，自动路径对它们的追加会在
+// sectionPayloads 处被判为「非固定分区」并原样忽略（产出一条指名道姓的 I1，
+// 不写入、字节不变）；用户显式路径仍按矩阵 P-U 的 ✅ 生效（`eg edit` 走
+// ApplyReplaceSection，不受自动路径白名单约束）。因此**不需要**、也**不得**在本 task 里
+// 翻这三格符号：授权合同 §2.1 的 43 行是冻结面，符号翻转要走 owner 裁决，
+// 而模板收敛已经把「Agent 不再往 Knowledge 里写论证」这条 D-7 结论落地了。
+
 import (
 	"fmt"
 
@@ -91,7 +110,7 @@ const (
 // Paths 返回两条路径（顺序即矩阵两列的列序）。
 func Paths() []Path { return []Path{PathAgent, PathUser} }
 
-// Object 是矩阵的对象类（合同 §2.8：**恰 7 个**）。
+// Object 是矩阵的对象类（合同 §2.8 原为**恰 7 个**；Schema v2 §3.3 加 ObjectOpinion 后**恰 8 个**）。
 type Object string
 
 // 七个对象类。取值同时用作诊断 message 里的人类可读名。
@@ -110,6 +129,14 @@ const (
 	ObjectProject Object = "工程文件"
 	// ObjectGit Git 历史（§2.7 第 4 行）。
 	ObjectGit Object = "Git"
+
+	// ObjectOpinion 观点 `o-`（Schema v2 §3.3 新增，5 行）。
+	//
+	// 观点是与知识**同级**的第四类实体，不是知识卡的子类：它有自己的分区模板与
+	// 独占的 `validation` 字段，因此必须是独立对象类，而不是在 ObjectCard 上加分区行。
+	// 复用 ObjectCard 会让「知识卡的分区权限」与「观点的分区权限」共用一套行，
+	// 日后放开观点某一格时会连带放开知识卡的同名格。
+	ObjectOpinion Object = "观点 o-"
 )
 
 // 矩阵 Field 列的逐字取值（供 LookupRow 精确查表；调用点一律引用常量，不写裸字符串）。
@@ -155,7 +182,7 @@ func SectionField(name string) string { return "分区「" + name + "」" }
 
 // MatrixRow 是矩阵的一行（对象 × 字段/分区 × 两列取值）。
 type MatrixRow struct {
-	// Num 是合同 §2 的行号（1..43 连续，**逐字**，不得重排）。
+	// Num 是矩阵行号（1..50 连续，**逐字**，不得重排；1..43 为合同 §2，44..50 为 Schema v2 §3.3）。
 	Num int
 	// Object 是对象类（七值封闭枚举）。
 	Object Object
@@ -187,7 +214,7 @@ func (r MatrixRow) String() string {
 	return fmt.Sprintf("#%d %s · %s（P-A=%s / P-U=%s）", r.Num, r.Object, r.Field, r.Auto, r.User)
 }
 
-// Matrix 返回写权限矩阵的**全部 43 行**，Num 逐字 1..43 连续。
+// Matrix 返回写权限矩阵的**全部 50 行**，Num 逐字 1..50 连续（1..43 合同 §2，44..50 Schema v2 §3.3）。
 //
 // 逐行取值直接抄自合同 §2.1–§2.7，**一格都不得自行改动**：
 // 任何一次符号翻转都会改变 §2.8 的三个计数，由 TestWritePermissionMatrix 双向兜住。
@@ -212,16 +239,21 @@ func Matrix() []MatrixRow {
 		{11, ObjectCard, FieldRelationsRemove, deny, allow,
 			"eg rel remove / remove_relation；Agent 自动路径不得删关系（N-3）"},
 		{12, ObjectCard, SectionField(store.SecKnowledge), Cell{VerdictDeny, VerdictAllow}, allow,
-			"**唯一的条件解锁行**：P-A 对已有卡 🔴、create_card 新建 ✅；" +
+			"**条件解锁行之一**（另一行是 #46「观点」，同口径）：P-A 对已有卡 🔴、" +
+				"create_knowledge（含兼容别名 create_card）新建 ✅；" +
 				"P-U ✅ 的载体是 eg edit（A-13），属 T-…-045"},
-		{13, ObjectCard, SectionField(store.SecRationale), allow, allow, "P-A 只追加块"},
+		{13, ObjectCard, SectionField(store.SecRationale), allow, allow,
+			"P-A 只追加块；v2 起该分区已移出 Knowledge 模板（D-7），自动路径被模板白名单 AND 掉，" +
+				"P-U 仍可经 eg edit 修改存量文件"},
 		{14, ObjectCard, SectionField(store.SecBoundary), allow, allow, "P-A 只追加块"},
 		{15, ObjectCard, SectionField(store.SecUserAppend), deny, deny,
 			"CLI 写入路径永不写（B2 / E6「任何时候」）；仅用户直接编辑 Markdown"},
 		// —— §2.2 知识卡 k- 续（3 行）——
-		{16, ObjectCard, FieldSelfCheckAppend, allow, allow, "只追加"},
+		{16, ObjectCard, FieldSelfCheckAppend, allow, allow,
+			"只追加；v2 起「理解自检」已移出模板（D-7），自动路径的分区追加被模板白名单 AND 掉"},
 		{17, ObjectCard, FieldSelfCheckReplace, allow, allow,
-			"M3 起允许：replace_block op + base_block_hash；历史记录块只追加、永不改写"},
+			"M3 起允许：replace_block op + base_block_hash；历史记录块只追加、永不改写。" +
+				"v2 起口径收敛为**仅存量文件适用**：新建的 v2 卡不含该分区，替换目标自然不存在"},
 		{18, ObjectCard, FieldSixthH2, deny, allow, "用户自建分区原样保留：不报错、不删除、不重排、不写入其中"},
 		// —— §2.3 材料笔记 n-（9 行）——
 		{19, ObjectNote, FieldID, allow, deny, "P-A 仅 write_note 新建时；改已有 ID 不行（N-2）"},
@@ -263,15 +295,37 @@ func Matrix() []MatrixRow {
 			"eg init 生成；用户可编辑但不得承载状态或数据（🟡：允许但必须进报告提示）"},
 		{42, ObjectProject, FieldUnprocessed, allow, allow, "add_source 登记 / write_note 成功即移出"},
 		{43, ObjectGit, FieldGitHistory, allow, allow, "CLI 一次 apply 一次 commit；用户可自行 git add / commit"},
+		// —— Schema v2 §3.3 新增（7 行）：Note v2 两个分区 + Opinion 五个分区 ——
+		//
+		// 为什么是「新增」而不是「改名」#23/#24/#27：v1 的 `材料提炼` / `Agent 分析` /
+		// `产出知识卡` 在存量笔记里仍然存在（模板切换只改新建落位，不改存量字节），
+		// 对它们的写权限规则仍需可查。把旧行改名会让 LookupRow 对存量分区查无此格，
+		// 而 matrixGate 的「查不到即拒绝」会立刻把存量文件的合法追加拦死。
+		{44, ObjectNote, SectionField(store.SecNoteBody), allow, allow,
+			"write_note.blocks[]（§4.2）：数组序即落盘序，P-A 只追加不重排"},
+		{45, ObjectNote, SectionField(store.SecExtraction), allow, allow,
+			"write_note.output_cards 按 ID 前缀分两组列出（§5.1）"},
+		{46, ObjectOpinion, SectionField(store.SecOpinionClaim), Cell{VerdictDeny, VerdictAllow}, allow,
+			"**第二个条件解锁行**，与 #12 同口径（§3.3「同 知识内容 口径」）：" +
+				"P-A 对已有观点 🔴、create_opinion 新建 ✅（观点必写，否则 op 不成立）；" +
+				"P-U ✅ 的载体是 eg edit（A-13），属 T-…-045"},
+		{47, ObjectOpinion, SectionField(store.SecArgument), allow, allow, "P-A 只追加块（append_opinion）"},
+		{48, ObjectOpinion, SectionField(store.SecCounter), allow, allow, "P-A 只追加块（append_opinion）"},
+		{49, ObjectOpinion, SectionField(store.SecToVerify), allow, allow, "P-A 只追加块（append_opinion）"},
+		{50, ObjectOpinion, SectionField(store.SecUserAppend), deny, deny,
+			"与 #15 同：CLI 写入路径永不写（B2 / NeverWriteSections 对四类实体一律生效）。" +
+				"§3.3 表格该行 P-U 记作 allow，指的是**用户直接编辑 Markdown**——" +
+				"CLI 没有写它的载体（editSectionGate 无条件判 E6），" +
+				"按「只加严不放宽」保留 🔴 / 🔴"},
 	}
 }
 
-// MatrixCells 是判定格总数 = 行数 × 路径数（合同 §2.8：43 × 2 = 86）。
-// 由两个集合的长度相乘得到，**不写死 86**。
+// MatrixCells 是判定格总数 = 行数 × 路径数（合同 §2.8 的读法；Schema v2 下为 50 × 2 = 100）。
+// 由两个集合的长度相乘得到，**不写死任何常数**。
 func MatrixCells() int { return len(Matrix()) * len(Paths()) }
 
-// MatrixObjects 返回矩阵覆盖的对象类（按首次出现顺序去重；合同 §2.8：恰 7）。
-// 由行数据派生，**不另维护一份七值清单**——两份清单必然有一天对不上。
+// MatrixObjects 返回矩阵覆盖的对象类（按首次出现顺序去重；Schema v2 下恰 8）。
+// 由行数据派生，**不另维护一份对象清单**——两份清单必然有一天对不上。
 func MatrixObjects() []Object {
 	seen := map[Object]bool{}
 	var out []Object
@@ -288,7 +342,7 @@ func MatrixObjects() []Object {
 // StrictUnlockRows 是**严格解锁行**：P-A 格含 🔴 **且不含** ✅ **且** P-U 格含 ✅
 // （合同 §2.8 计数规则逐字）。
 //
-// 注意 #41 的 P-U 是 🟡 不是 ✅，**不计入**；#12 的 P-A 同时含 🔴 与 ✅，
+// 注意 #41 的 P-U 是 🟡 不是 ✅，**不计入**；#12 / #46 的 P-A 同时含 🔴 与 ✅，
 // 归 ConditionalUnlockRows，也**不计入**。
 func StrictUnlockRows() []MatrixRow {
 	var out []MatrixRow
@@ -301,7 +355,10 @@ func StrictUnlockRows() []MatrixRow {
 }
 
 // ConditionalUnlockRows 是**条件解锁行**：P-A 格**同时**含 🔴 与 ✅（按子情形分叉）
-// **且** P-U 格含 ✅（合同 §2.8）。这一行才是 §16.1 M3 判据的唯一落点。
+// **且** P-U 格含 ✅（合同 §2.8）。这些行才是 §16.1 M3 判据的落点。
+//
+// Schema v2 起恰两行：#12「知识内容」与 #46「观点」——两者是同一条口径在两类实体上的
+// 落地（核心主张由创建者一次写定，此后自动路径不得改写），不是两套规则。
 func ConditionalUnlockRows() []MatrixRow {
 	var out []MatrixRow
 	for _, row := range Matrix() {
@@ -326,7 +383,7 @@ func BothDeniedRows() []MatrixRow {
 }
 
 // LookupRow 按「对象 + 字段逐字」精确查表。查不到返回 false——
-// 调用方**必须**按「拒绝」处理（矩阵是封闭 43 行，查不到说明调用点与合同脱节）。
+// 调用方**必须**按「拒绝」处理（矩阵是封闭的 50 行，查不到说明调用点与合同脱节）。
 func LookupRow(obj Object, field string) (MatrixRow, bool) {
 	for _, row := range Matrix() {
 		if row.Object == obj && row.Field == field {

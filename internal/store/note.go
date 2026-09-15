@@ -7,7 +7,10 @@ package store
 //     （EG-NOTE-05）——返回 Reused 且目标文件字节不变。
 //   - 笔记 frontmatter 恰 `id` / `source`（单值）/ `created_at` / `updated_at`（+ 可选
 //     `title` / `tags`）：**没有 status**，正文**没有「理解自检」**（EG-NOTE-01）。
-//   - 「产出知识卡」是本次加工快照（`- k-…（新建｜复用｜补充）`），此后不随卡片演进回写（EG-SRC-03）。
+//   - Schema v2 起正文是固定**四**分区（`整理正文` / `提取结果` / `存疑与待验证` /
+//     `用户补充`）：`整理正文` 由 plan 侧的有序 `blocks[]` 渲染而来（NoteBlockBytes），
+//     `提取结果` 按 Knowledge / Opinion 两组列出本次产出（NoteExtraction.Render）。
+//   - 「提取结果」是本次加工快照（`- k-…（新建｜复用｜补充）`），此后不随卡片演进回写（EG-SRC-03）。
 //   - 笔记写成功后在同一次调用里把收件区条目移出（EG-SRC-02，键为 `source_id`）；
 //     S1 不保证两次写入强原子：条目未成功移出时**如实返回** InboxSkip（*SkipError），
 //     调用方必须据此进报告（退 3），不得静默。
@@ -35,16 +38,23 @@ type InboxSpec struct {
 // Date / Stamp 分别落到 frontmatter 的 `created_at`（YYYY-MM-DD）与
 // `updated_at`（RFC3339）——字段名避开 B1 的写形态命名黑名单（Create* / Update*，故不用 CreatedAt / UpdatedAt）。
 type NoteSpec struct {
-	Rel         string
-	ID          model.NoteID
-	SourceID    model.SourceID
-	Title       string
-	Date        model.Date
-	Stamp       model.Stamp
-	Tags        []string
-	Sections    []SectionAppend
-	OutputCards []string // 「产出知识卡」列表项文本，如 `k-20260901-x（新建）`
-	Inbox       InboxSpec
+	Rel      string
+	ID       model.NoteID
+	SourceID model.SourceID
+	Title    string
+	Date     model.Date
+	Stamp    model.Stamp
+	Tags     []string
+	Sections []SectionAppend
+
+	// Extraction 是「提取结果」的两组清单（Schema v2 §5.1）。
+	//
+	// 取**已分好组**的结构而不是一个扁平的 []string：按 ID 前缀分组会产出诊断
+	// （前缀既非 `k-` 也非 `o-` 的条目要记一条 I1），而本包不产出 plan 诊断。
+	// 让 writer 自己再分一次组，等于把同一份前缀规则写在两处，且其中一处永远无法发声。
+	Extraction *NoteExtraction
+
+	Inbox InboxSpec
 }
 
 // NoteOutcome 是 write_note 的显式结果：笔记本体 + 是否复用 + 收件区条目移出情况。
@@ -90,14 +100,13 @@ func noteContent(spec NoteSpec) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(spec.OutputCards) > 0 {
-		var list []byte
-		for _, item := range spec.OutputCards {
-			list = append(list, "- "...)
-			list = append(list, item...)
-			list = append(list, '\n')
+	// 「提取结果」：两组清单接在该分区**既有载荷之后**（v1 plan 的兼容映射可能已经
+	// 往同一个分区写过一段原样字节，两者按「先分区载荷、后本次产出」的顺序相接）。
+	if list := spec.Extraction.Bytes(); len(list) > 0 {
+		if existing := sections[mdfile.SecExtraction]; len(existing) > 0 {
+			sections[mdfile.SecExtraction] = append(existing, '\n')
 		}
-		sections[mdfile.SecOutputCards] = append(sections[mdfile.SecOutputCards], list...)
+		sections[mdfile.SecExtraction] = append(sections[mdfile.SecExtraction], list...)
 	}
 
 	var fm []byte

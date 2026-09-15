@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/index"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
@@ -1135,15 +1136,34 @@ func TestWriteCommandNeverBuildsOrRepairsIndex(t *testing.T) {
 	if n := gitLogCount(t, dir); n != commitsBefore+1 {
 		t.Fatalf("commit 数 %d → %d，期望恰 +1（索引不是写命令的前置）", commitsBefore, n)
 	}
-	var codes []string
+	// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：报告的 warnings[] 是
+	// **warning 与 info 共用**的一个篮子（分级由 level 表达）。v2 兼容期起，同一次 apply
+	// 会多出 info 级的兼容交代（例如 `plan_version 1 已进入兼容期`），原断言把整篮子
+	// 的码拼成字符串比对，等于让「有没有 info 级提示」也变成本用例的判据 —— 而本用例
+	// 钉的是「坏索引只产恰一条 W24，且不自动修」。
+	//
+	// 因此按 level 分流后再断言：**warning 及以上**恰一条且逐字为 W24（判据没放宽，
+	// 仍然禁止第二条 warning 混进来），info 级另外单独复核「不含任何索引码」——
+	// 否则把索引诊断降级成 info 就能绕过本判据。
+	var warnCodes, infoCodes []string
 	for _, w := range applyReport(t, env).Warnings {
-		if w.Code != "" {
-			codes = append(codes, w.Code)
+		if w.Code == "" {
+			continue
 		}
+		if w.Level == report.LevelInfo {
+			infoCodes = append(infoCodes, w.Code)
+			continue
+		}
+		warnCodes = append(warnCodes, w.Code)
 	}
-	if strings.Join(codes, ",") != index.CodeIndexCorrupt {
-		t.Fatalf("warnings 码集合 = %v，期望恰一条 %s（不静默跳过，也不自动修）",
-			codes, index.CodeIndexCorrupt)
+	if strings.Join(warnCodes, ",") != index.CodeIndexCorrupt {
+		t.Fatalf("warning 级码集合 = %v，期望恰一条 %s（不静默跳过，也不自动修）",
+			warnCodes, index.CodeIndexCorrupt)
+	}
+	for _, c := range infoCodes {
+		if c == index.CodeIndexCorrupt || c == index.CodeIndexStale || c == index.CodeIndexMissing {
+			t.Fatalf("索引诊断不得降级为 info：%v", infoCodes)
+		}
 	}
 	if _, err := index.Digest(index.DirPath(dir)); err == nil {
 		t.Fatal("写命令自动修好了坏索引：自动修复会掩盖「库为什么坏了」（修复走 eg index rebuild）")

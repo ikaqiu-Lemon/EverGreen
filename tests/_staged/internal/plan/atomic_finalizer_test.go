@@ -9,6 +9,12 @@ package plan
 //
 // 本文件因此逐条钉住：钩子的写入进 write-set；钩子期间实盘仍零变化；钩子恰被调用一次；
 // 预演失败时钩子**不**被调用；钩子自己造成的失败同样导致整事务放弃（write-set 不导出）。
+//
+// **Schema v2 · T-…-003 夹具重钉（事实变了，判据形态不变）**：本文件的写 op 原先落在
+// Card 的 `解释与依据` 分区。契约 D-7 把 Knowledge 收敛为三分区、移除该分区，它在 v2 下
+// 只作为存量文件的 `UnknownSections` 存在、且不在自动路径写白名单内（矩阵 #13 的 P-A 为
+// deny），因此再拿它做写目标会被 E5 拦在原子性判据之前 —— 那考的就不是原子性了。
+// 改用同样「只追加块」语义的 v2 分区 `条件与边界`（矩阵 P-A allow），事务判据一格未动。
 
 import (
 	"os"
@@ -37,7 +43,7 @@ targets: []
 func TestExecuteAtomicFinalizerJoinsSameWriteSet(t *testing.T) {
 	files, ids := atomicCards(1)
 	res := m3Run(t, files, `{"op":"append_card","card":"`+ids[0]+`",
-"sections":{"解释与依据":"钩子同事务反证。"}}`)
+"sections":{"条件与边界":"钩子同事务反证。"}}`)
 	if res.Failed() {
 		t.Fatalf("plan 不应 error：%v", codes(res.Errors))
 	}
@@ -115,10 +121,10 @@ func TestExecuteAtomicFinalizerSkippedOnFailure(t *testing.T) {
 
 	res := &Result{Verb: "process", Domain: "ai-infra", Actions: []Action{
 		{Kind: ActCardAppend, OpIndex: 0, ID: ids[0], Path: okRel, ExpectedHash: okHash,
-			Sections: []SectionWrite{{Section: "解释与依据", Payload: []byte("- 会 stage\n")}}},
+			Sections: []SectionWrite{{Section: "条件与边界", Payload: []byte("- 会 stage\n")}}},
 		{Kind: ActCardAppend, OpIndex: 1, ID: "k-20260901-missing",
 			Path:     "domains/ai-infra/knowledge/k-20260901-missing.md",
-			Sections: []SectionWrite{{Section: "解释与依据", Payload: []byte("- 读失败\n")}}},
+			Sections: []SectionWrite{{Section: "条件与边界", Payload: []byte("- 读失败\n")}}},
 	}}
 	called := false
 	ar, err := ExecuteAtomicFinal(store.New(dir), res, ExecOptions{Stamp: mustStamp(t)},
@@ -140,7 +146,7 @@ func TestExecuteAtomicFinalizerSkippedOnFailure(t *testing.T) {
 func TestExecuteAtomicFinalizerFailureAbortsWholeTxn(t *testing.T) {
 	files, ids := atomicCards(1)
 	res := m3Run(t, files, `{"op":"append_card","card":"`+ids[0]+`",
-"sections":{"解释与依据":"钩子失败反证。"}}`)
+"sections":{"条件与边界":"钩子失败反证。"}}`)
 	if res.Failed() {
 		t.Fatalf("plan 不应 error：%v", codes(res.Errors))
 	}
@@ -152,7 +158,7 @@ func TestExecuteAtomicFinalizerFailureAbortsWholeTxn(t *testing.T) {
 			// 读一个不存在的卡去追加 —— 与 ops[] 的普通写失败同一条记账路径。
 			_, werr := fs.ApplyCardAppend(store.CardAppendSpec{
 				Rel:      "domains/ai-infra/knowledge/k-20260901-nowhere.md",
-				Sections: []store.SectionAppend{{Section: "解释与依据", Payload: []byte("- x\n")}},
+				Sections: []store.SectionAppend{{Section: "条件与边界", Payload: []byte("- x\n")}},
 			})
 			if werr == nil {
 				t.Fatal("前置不成立：对不存在的卡追加本应失败")

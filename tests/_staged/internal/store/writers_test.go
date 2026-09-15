@@ -61,10 +61,9 @@ func noteSpecFixture(t *testing.T) NoteSpec {
 		Stamp:    stamp(t, "2026-09-01T10:00:00+08:00"),
 		Tags:     []string{"s1"},
 		Sections: []SectionAppend{
-			{Section: mdfile.SecDigest, Payload: []byte("要点：注意力是加权求和。\n")},
-			{Section: mdfile.SecAgentReview, Payload: []byte("与 RNN 的差别在并行度。\n")},
+			{Section: mdfile.SecNoteBody, Payload: []byte("要点：注意力是加权求和。\n\n> **[Agent 补充]** 与 RNN 的差别在并行度。\n")},
 		},
-		OutputCards: []string{"k-20260901-attention（新建）"},
+		Extraction: &NoteExtraction{Knowledge: []string{"k-20260901-attention（新建）"}},
 	}
 }
 
@@ -81,8 +80,7 @@ func cardSpecFixture(t *testing.T) CardSpec {
 			Rel: "support", Reason: "原文第 3 节"}},
 		Sections: []SectionAppend{
 			{Section: mdfile.SecKnowledge, Payload: []byte("注意力是对值的加权求和。\n")},
-			{Section: mdfile.SecRationale, Payload: []byte("原文给出了 softmax 推导。\n")},
-			{Section: mdfile.SecSelfCheck, Payload: []byte("- [ ] 能写出打分函数\n")},
+			{Section: mdfile.SecBoundary, Payload: []byte("仅适用于可并行的序列建模。\n")},
 		},
 	}
 }
@@ -177,7 +175,7 @@ func TestCardCreateWithoutSourcesIsRejected(t *testing.T) {
 func TestCardCreateWithoutKnowledgeSectionIsRejected(t *testing.T) {
 	s, root := newVault(t)
 	spec := cardSpecFixture(t)
-	spec.Sections = []SectionAppend{{Section: mdfile.SecRationale, Payload: []byte("只有依据。\n")}}
+	spec.Sections = []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("只有边界。\n")}}
 	res, err := s.ApplyCard(spec)
 	if err == nil || res.Written {
 		t.Fatalf("缺「%s」必须拒绝建卡：%v / %+v", mdfile.SecKnowledge, err, res)
@@ -253,7 +251,7 @@ func TestNoteWriteDetachesInboxEntry(t *testing.T) {
 	}
 	note := mustBytes(t, filepath.Join(root, out.Note.Path))
 	if !bytes.Contains(note, []byte("- k-20260901-attention（新建）\n")) {
-		t.Fatalf("「产出知识卡」应含新建卡 ID 与括注：\n%s", note)
+		t.Fatalf("「%s」应含新建卡 ID 与括注：\n%s", mdfile.SecExtraction, note)
 	}
 	assertNoTmp(t, root)
 }
@@ -321,7 +319,7 @@ func TestNoteReprocessPreservesUserBytesVerbatim(t *testing.T) {
 	}
 
 	res, err := s.sectionEdit("notes/n.md", "", mdfile.KindNote, model.Stamp{},
-		[]SectionAppend{{Section: mdfile.SecDigest, Payload: []byte("重新加工补充的要点。\n")}})
+		[]SectionAppend{{Section: mdfile.SecNoteBody, Payload: []byte("重新加工补充的要点。\n")}})
 	if err != nil || !res.Written {
 		t.Fatalf("重新加工应写入：%v / %+v", err, res)
 	}
@@ -426,20 +424,36 @@ func TestSectionAppendOnlyAddsBytes(t *testing.T) {
 	}
 }
 
-func TestCardSelfCheckHistoryIsAppendOnly(t *testing.T) {
+// TestLegacyCardSelfCheckIsNeverRewrittenByAutoPath 钉住 EG-CHK-06 在 **Schema v2** 下的形态。
+//
+// v1 时代「历史块只追加、永不改写」靠的是 `理解自检` 可被自动追加；v2 起该分区
+// 已不是固定分区（D-7），自动路径对它一律拒写——保证从「只能追加」升级为「一个字都不动」。
+// 存量卡里的历史问题因此必须逐字留在原处：既不被追加、也不被折叠为引用，
+// 且对同一份卡的合法追加（`条件与边界`）不得连带触碰它。
+// 「换当前有效问题块」的唯一入口仍是 `replace_block`（见 merge_test.go），只对存量文件适用。
+func TestLegacyCardSelfCheckIsNeverRewrittenByAutoPath(t *testing.T) {
 	s, root := newVault(t)
 	abs := writeSeed(t, root, "cards/messy.md", messyCard)
-	for _, payload := range []string{"- [ ] 新问题二\n", "- [ ] 新问题三\n"} {
-		if _, err := s.ApplyCardAppend(CardAppendSpec{Rel: "cards/messy.md",
-			Sections: []SectionAppend{{Section: mdfile.SecSelfCheck, Payload: []byte(payload)}}}); err != nil {
-			t.Fatalf("理解自检追加应成功：%v", err)
-		}
+	before := mustBytes(t, abs)
+	res, err := s.ApplyCardAppend(CardAppendSpec{Rel: "cards/messy.md",
+		Sections: []SectionAppend{{Section: mdfile.SecSelfCheck, Payload: []byte("- [ ] 新问题二\n")}}})
+	if err == nil || res.Written {
+		t.Fatalf("存量分区「%s」对自动路径必须拒写：%v / %+v", mdfile.SecSelfCheck, err, res)
+	}
+	if !bytes.Equal(mustBytes(t, abs), before) {
+		t.Fatal("拒写后字节必须逐字不变")
+	}
+	if _, err := s.ApplyCardAppend(CardAppendSpec{Rel: "cards/messy.md",
+		Stamp:    stamp(t, "2026-09-02T09:00:00+08:00"),
+		Sections: []SectionAppend{{Section: mdfile.SecBoundary, Payload: []byte("仅限 S1。\n")}}}); err != nil {
+		t.Fatalf("同一份存量卡的「%s」追加应成功：%v", mdfile.SecBoundary, err)
 	}
 	got := mustBytes(t, abs)
-	for _, keep := range []string{"- [ ] 旧问题一\n", "- [ ] 新问题二\n", "- [ ] 新问题三\n"} {
-		if !bytes.Contains(got, []byte(keep)) {
-			t.Fatalf("历史块只追加、问题文本原样保留，丢了 %q", keep)
-		}
+	if !bytes.Contains(got, []byte("## "+mdfile.SecSelfCheck+"\n\n- [ ] 旧问题一\n")) {
+		t.Fatalf("历史问题必须逐字留在原处：\n%s", got)
+	}
+	if bytes.Contains(got, []byte("- [ ] 新问题二")) {
+		t.Fatal("被拒的追加不得以任何形式落盘")
 	}
 	if bytes.Contains(got, []byte("> - [ ] 旧问题一")) {
 		t.Fatal("历史问题不得折叠为引用")
