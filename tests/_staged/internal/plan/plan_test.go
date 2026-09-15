@@ -437,6 +437,41 @@ func TestW5ConvergenceRelation(t *testing.T) {
 			t.Fatalf("relation 异常一律并入 W5 warning：%+v", d)
 		}
 	}
+
+	t.Run("material_rel_to_card_created_in_same_plan", func(t *testing.T) {
+		res := run(t, env, `{"plan_version":1,"verb":"process","domain":"ai-infra",
+ "reason":"新建卡并关联同一材料","requirement_ids":[],"convergence":[],"base":{},
+ "ops":[
+  {"op":"create_card","card_id":"k-20260915-new-card","title":"同计划新建卡",
+   "sources":[{"source":"s-20260901-attention","note":"n-20260901-attention",
+   "rel":"support","reason":"原文直接支持该卡"}],
+   "sections":{"知识内容":"新知识\n"}},
+  {"op":"add_material_rel","card":"k-20260915-new-card",
+   "source":"s-20260901-attention","note":"n-20260901-attention",
+   "rel":"support","reason":"原文直接支持该卡"}]}`)
+		if res.Failed() {
+			t.Fatalf("同计划新建卡的标准 op 组合不应失败：%v", res.Errors)
+		}
+		if d, ok := find(res.Warnings, W5); ok {
+			t.Fatalf("同计划 create_card + add_material_rel 不涉及已有卡，不应产生 W5：%+v", d)
+		}
+		if len(res.Actions) != 2 {
+			t.Fatalf("两条合法 op 应完整展开：%+v", res.Actions)
+		}
+	})
+
+	t.Run("material_rel_to_existing_card", func(t *testing.T) {
+		res := run(t, env, `{"plan_version":1,"verb":"process","domain":"ai-infra",
+ "reason":"给已有卡补材料","requirement_ids":[],"convergence":[],
+ "base":{"k-20260901-attention":"sha256:x"},
+ "ops":[{"op":"add_material_rel","card":"k-20260901-attention",
+ "source":"s-20260901-attention","note":"n-20260901-attention",
+ "rel":"against","reason":"补充该卡的反向材料"}]}`)
+		d := requireWarning(t, res, W5)
+		if d.Path != "convergence" {
+			t.Fatalf("已有卡缺 convergence 的 W5 路径必须保持不变：%+v", d)
+		}
+	})
 }
 
 func TestW5ConvergenceDedicatedRelationPlanException(t *testing.T) {
