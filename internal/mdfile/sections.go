@@ -1,10 +1,22 @@
 package mdfile
 
-// 五分区固定名与顺序（冻结合同 F5；技术方案 §4.2 / §4.3）。
+// 固定分区名与顺序（冻结合同 F5；技术方案 §4.2 / §4.3；Schema v2 契约 §3.2）。
 //
-// 名称**逐字固定**、顺序**固定**；缺失分区按空处理；第六个及以后的 H2 是用户自建分区，
+// 名称**逐字固定**、顺序**固定**；缺失分区按空处理；固定分区之外的 H2 是用户自建分区，
 // 一律原样保留——不报错、不删除、不重排、**不写入其中**。
 // 分区改名即解析失败（EG-NOTE-01：分区是内容归属与合并单元，改名等于重切正文）。
+//
+// Schema v2 的分区模板分两步落地：
+//   - 本次（观点基座）：**纯加性**——新增 Opinion 与它的固定五分区。
+//     Knowledge / Note 的固定分区保持 v1 口径不动。
+//   - 下一步（ChangePlan v2 写口）：Knowledge 收敛为三分区、Note 合并为四分区，
+//     与授权矩阵、`plan` 校验、writers、读路径文案**同一提交**切换。
+//
+// 为什么不在这里就把 Knowledge / Note 模板改掉：`AutoWritableSections` 与
+// `RequiredSection` 是 `internal/plan` 授权矩阵与 `write_note` / `append_card`
+// 校验的唯一口径来源。单独改这里会让写口在「模板已是 v2、校验仍是 v1」的状态下
+// 自相矛盾，落到测试上就是一批必然失败的用例——那等于把红留给下一个提交。
+// 模板与它的执行者一起切，才能保证每个提交都是自洽且全绿的。
 
 import (
 	"fmt"
@@ -19,6 +31,10 @@ const (
 	KindCard   Kind = "card"
 	KindNote   Kind = "note"
 	KindSource Kind = "source"
+
+	// KindOpinion 是观点（Schema v2）。与 KindCard **同级**，不是它的子类型：
+	// 观点不是「带倾向的知识卡」，两者的正文结构、写权限与生命周期都不同。
+	KindOpinion Kind = "opinion"
 )
 
 // 知识卡五分区（顺序固定）。
@@ -34,9 +50,30 @@ const (
 	SecOutputCards = "产出知识卡"
 )
 
+// 观点固定五分区（顺序固定；Schema v2 契约 §3.2）。
+//
+// 「用户补充」与知识卡共用同一个常量：它在任何实体上都是同一条安全底线（B2），
+// 复制一份新常量只会让 NeverWriteSections 需要按类型分支。
+const (
+	SecOpinionClaim = "观点"
+	SecArgument     = "论据与推理"
+	SecCounter      = "条件与反例"
+	SecToVerify     = "待验证"
+)
+
 // CardSections 是知识卡五分区，顺序固定（F5）。
 func CardSections() []string {
 	return []string{SecKnowledge, SecRationale, SecBoundary, SecUserAppend, SecSelfCheck}
+}
+
+// OpinionSections 是观点的固定五分区，顺序固定（契约 §3.2）。
+//
+// 与知识卡的差别不在数量而在职责：`论据与推理` 承接论证，
+// `条件与反例` 记「在什么条件下成立、已知反例是什么」，
+// `待验证` 记「还需要什么证据才能定论」——后两段是观点独有，
+// 稳定知识不需要回答「还缺什么证据」。
+func OpinionSections() []string {
+	return []string{SecOpinionClaim, SecArgument, SecCounter, SecToVerify, SecUserAppend}
 }
 
 // NoteSections 是材料笔记五分区，顺序固定（F5）。
@@ -50,6 +87,8 @@ func KnownSections(kind Kind) []string {
 	switch kind {
 	case KindCard:
 		return CardSections()
+	case KindOpinion:
+		return OpinionSections()
 	case KindNote:
 		return NoteSections()
 	default:
@@ -58,12 +97,15 @@ func KnownSections(kind Kind) []string {
 }
 
 // RequiredSection 返回该类型**必须存在**的分区：知识卡「知识内容」必写；
+// 观点「观点」必写——没有主张就不成其为观点；
 // 材料笔记「材料提炼」是加工产出的落点。分区改名会导致这一必需分区缺失，
 // 从而在 ValidateSections 处报错。
 func RequiredSection(kind Kind) string {
 	switch kind {
 	case KindCard:
 		return SecKnowledge
+	case KindOpinion:
+		return SecOpinionClaim
 	case KindNote:
 		return SecDigest
 	default:
@@ -72,15 +114,20 @@ func RequiredSection(kind Kind) string {
 }
 
 // NeverWriteSections 是**任何时候都不得写入**的分区（安全底线 B2 / §4.2）。
+// 对知识卡、观点、材料笔记一致生效：三张模板都以「用户补充」收尾。
 func NeverWriteSections() []string { return []string{SecUserAppend} }
 
-// AutoWritableSections 返回对**已有**产物允许自动追加的分区（§4.2）。
+// AutoWritableSections 返回对**已有**产物允许自动追加的分区（§4.2 / 契约 §3.3）。
 // 知识卡：只允许「解释与依据」「条件与边界」「理解自检」；「用户补充」永不写。
+// 观点：只允许「论据与推理」「条件与反例」「待验证」——论证与反例是可以持续补充的；
+// 「观点」本身沿用「知识内容」的口径：创建时写定，已有观点不得由自动路径改写主张。
 // 材料笔记：允许「材料提炼」「Agent 分析」「存疑与待验证」「产出知识卡」。
 func AutoWritableSections(kind Kind) []string {
 	switch kind {
 	case KindCard:
 		return []string{SecRationale, SecBoundary, SecSelfCheck}
+	case KindOpinion:
+		return []string{SecArgument, SecCounter, SecToVerify}
 	case KindNote:
 		return []string{SecDigest, SecAgentReview, SecOpenQuest, SecOutputCards}
 	default:

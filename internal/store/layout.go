@@ -20,6 +20,12 @@ const (
 	DirNotes = "notes"
 	// DirKnowledge 是领域内的知识卡目录。
 	DirKnowledge = "knowledge"
+	// DirOpinions 是领域内的观点目录（Schema v2 §3.1）。
+	//
+	// 与 knowledge/ **平级**而非其子目录：观点不是知识的一个子类，
+	// 而是另一类产物。目录同时承担类型判别职责——类型只由 ID 前缀 + 目录表达，
+	// 不进 frontmatter（见 model/blacklist.go 的 opinion.type 一条）。
+	DirOpinions = "opinions"
 )
 
 // SourceRel 是原文的落位路径：`sources/<s-id>.md`。
@@ -33,6 +39,11 @@ func NoteRel(domain, id string) string {
 // CardRel 是知识卡的落位路径：`domains/<domain>/knowledge/<k-id>.md`。
 func CardRel(domain, id string) string {
 	return path.Join(DirDomains, domain, DirKnowledge, id+".md")
+}
+
+// OpinionRel 是观点的落位路径：`domains/<domain>/opinions/<o-id>.md`。
+func OpinionRel(domain, id string) string {
+	return path.Join(DirDomains, domain, DirOpinions, id+".md")
 }
 
 // DomainOf 从 vault 内相对路径反推领域名；不在 `domains/<d>/` 下时返回空串

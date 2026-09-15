@@ -73,6 +73,90 @@ func (s *Status) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// —— 观点验证状态（Schema v2 §6.1）——
+//
+// Validation 是 Opinion 唯一新增的 frontmatter 键的取值域，封闭三值。
+// 它与 Status 是**两个正交维度**：Status 说「这条产物还算不算数」（active / deprecated），
+// Validation 说「这个判断的论证走到哪一步」（pending / validated / rejected）。
+// 一条被验证为不成立的观点仍然可以是 active——记录「已确认不成立」本身就是知识资产，
+// 因此 rejected 绝不等于 deprecated，两者不得互相推导。
+//
+// 第四值（如 confirmed / partial）一律反序列化即报错：多一档就必然要回答
+// 「它与另外三档的边界在哪」，而契约没有给出可机械判定的边界。
+type Validation string
+
+const (
+	// ValidationPending 是新建观点的默认值：论据已记录，但尚未定论。
+	ValidationPending Validation = "pending"
+	// ValidationValidated 表示经用户显式确认成立。
+	ValidationValidated Validation = "validated"
+	// ValidationRejected 表示经用户显式确认不成立。
+	ValidationRejected Validation = "rejected"
+)
+
+// ValidValidations 返回全部合法验证状态（顺序稳定：pending → validated / rejected，
+// 与状态机的推进方向一致，供错误信息与文档使用）。
+func ValidValidations() []Validation {
+	return []Validation{ValidationPending, ValidationValidated, ValidationRejected}
+}
+
+// Valid 报告 v 是否为合法验证状态。
+func (v Validation) Valid() bool {
+	switch v {
+	case ValidationPending, ValidationValidated, ValidationRejected:
+		return true
+	}
+	return false
+}
+
+func (v Validation) String() string { return string(v) }
+
+// Settled 报告论证是否已定论（validated 或 rejected）。
+// pending 之外的两档都算已定论——「确认不成立」同样是结论。
+func (v Validation) Settled() bool {
+	return v == ValidationValidated || v == ValidationRejected
+}
+
+// ParseValidation 严格解析验证状态。
+func ParseValidation(raw string) (Validation, error) {
+	v := Validation(raw)
+	if !v.Valid() {
+		names := make([]string, 0, 3)
+		for _, x := range ValidValidations() {
+			names = append(names, string(x))
+		}
+		return "", fmt.Errorf("非法 validation %q：合法取值仅 %s（封闭三值，不接受第四档）",
+			raw, strings.Join(names, " / "))
+	}
+	return v, nil
+}
+
+func (v *Validation) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var raw string
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+	got, err := ParseValidation(raw)
+	if err != nil {
+		return err
+	}
+	*v = got
+	return nil
+}
+
+func (v *Validation) UnmarshalJSON(b []byte) error {
+	var raw string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	got, err := ParseValidation(raw)
+	if err != nil {
+		return err
+	}
+	*v = got
+	return nil
+}
+
 // —— 关系类型两组（冻结合同 F4）——
 
 // MaterialRel 是材料关系：知识卡 sources[].rel 的取值。

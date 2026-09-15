@@ -20,9 +20,11 @@ const (
 	KindSource = mdfile.KindSource
 	KindNote   = mdfile.KindNote
 	KindCard   = mdfile.KindCard
+	// KindOpinion 是观点（Schema v2）。plan 层按此 Kind 取分区口径。
+	KindOpinion = mdfile.KindOpinion
 )
 
-// 固定分区名（知识卡五分区 + 材料笔记五分区）。
+// 固定分区名（知识卡五分区 + 材料笔记五分区 + 观点五分区）。
 const (
 	SecKnowledge   = mdfile.SecKnowledge
 	SecRationale   = mdfile.SecRationale
@@ -33,6 +35,12 @@ const (
 	SecAgentReview = mdfile.SecAgentReview
 	SecOpenQuest   = mdfile.SecOpenQuest
 	SecOutputCards = mdfile.SecOutputCards
+
+	// —— 观点固定五分区（Schema v2 §3.2）——
+	SecOpinionClaim = mdfile.SecOpinionClaim
+	SecArgument     = mdfile.SecArgument
+	SecCounter      = mdfile.SecCounter
+	SecToVerify     = mdfile.SecToVerify
 )
 
 // KnownSections 返回该类型的固定分区名（按 F5 固定顺序）。
@@ -43,6 +51,15 @@ func CardSections() []string { return mdfile.CardSections() }
 
 // NoteSections 返回材料笔记五分区（顺序固定）。
 func NoteSections() []string { return mdfile.NoteSections() }
+
+// OpinionSections 返回观点的固定五分区（顺序固定）。
+func OpinionSections() []string { return mdfile.OpinionSections() }
+
+// NeverWriteSections 返回任何路径都不得写入的分区（安全底线 B2）。
+//
+// 转发的意义在于让 plan 层的授权判定与 mdfile 共用同一份口径：
+// 新增观点后仍然只有「用户补充」一条，不因实体变多而分叉。
+func NeverWriteSections() []string { return mdfile.NeverWriteSections() }
 
 // AutoWritableSections 返回自动路径允许追加的分区（「用户补充」「存疑与待验证」除外）。
 func AutoWritableSections(kind Kind) []string { return mdfile.AutoWritableSections(kind) }

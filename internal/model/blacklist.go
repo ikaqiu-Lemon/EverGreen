@@ -8,8 +8,14 @@ package model
 
 // DeprecatedFieldPaths 是按字段路径判定的废弃字段黑名单。
 //
-// 覆盖：知识卡 / 材料笔记 frontmatter **顶层**的 domain、type、candidate、source_check，
-// 以及任何观点倾向（lean）字段。领域由目录唯一决定（EG-DOM-01），故 domain 不进产物。
+// 覆盖：知识 / 观点 / 材料笔记 frontmatter **顶层**的 domain、type、candidate、
+// source_check，以及任何观点倾向（lean / stance / tendency）字段。
+// 领域由目录唯一决定（EG-DOM-01），故 domain 不进产物。
+//
+// Opinion 的七条是**对称沿用**而非新规则（Schema v2 §3.1）：新增 `o-` 实体后，
+// 「用一个 frontmatter 字段表达类型或立场」这条已废弃设计有了新的复活入口——
+// 例如给 Knowledge 写 `type: opinion`、或给 Opinion 写 `stance: pro`。
+// 类型只由 ID 前缀 + 目录表达，立场由 `观点` 分区的正文表达，都不进 frontmatter。
 var DeprecatedFieldPaths = []string{
 	// 知识卡 frontmatter 顶层
 	"card.domain",
@@ -19,6 +25,14 @@ var DeprecatedFieldPaths = []string{
 	"card.lean",
 	"card.stance",
 	"card.tendency",
+	// 观点 frontmatter 顶层（与 card 对称；`opinion.validation` 是合法键，不在此列）
+	"opinion.domain",
+	"opinion.type",
+	"opinion.candidate",
+	"opinion.source_check",
+	"opinion.lean",
+	"opinion.stance",
+	"opinion.tendency",
 	// 材料笔记 frontmatter 顶层
 	"note.domain",
 	"note.type",
@@ -38,6 +52,7 @@ var DeprecatedFieldPaths = []string{
 var AllowedFieldPaths = []string{
 	"relations[].type",          // 论证关系类型（冻结合同 F4）
 	"sources[].rel",             // 材料关系类型（冻结合同 F4）
+	"opinion.validation",        // 观点的论证进度（Schema v2 §3.4 唯一新增键）
 	"plan.domain",               // ChangePlan 的本次加工领域
 	"--domain",                  // CLI flag
 	"unprocessed.target_domain", // 收件区条目的目标领域

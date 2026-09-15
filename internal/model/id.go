@@ -9,18 +9,26 @@ import (
 
 // 稳定 ID（冻结合同 F2）：
 //
-//	原文 s-<yyyymmdd>-<slug>   笔记 n-<yyyymmdd>-<slug>   知识卡 k-<yyyymmdd>-<slug>
-//	综述 r-（S2）              提案 p-<yyyymmdd>-<seq>（S2）
+//	原文 s-<yyyymmdd>-<slug>   笔记 n-<yyyymmdd>-<slug>   知识 k-<yyyymmdd>-<slug>
+//	观点 o-<yyyymmdd>-<slug>   综述 r-（S2）              提案 p-<yyyymmdd>-<seq>（S2）
 //
-// 三个 ID 类型**互不可赋值**（各自是独立的命名类型，跨类型赋值是编译期错误），
+// 四个 ID 类型**互不可赋值**（各自是独立的命名类型，跨类型赋值是编译期错误），
 // 构造入口一律做前缀校验。`slug` **仅供人眼可读，不参与任何判定**：解析结果里的
 // 领域判定、关系定位、去重全部只看前缀 + 日期 + ID 全串本身。
+//
+// **类型只由 ID 前缀 + 目录表达**（Schema v2 §3.1）：Knowledge 与 Opinion 的区分靠
+// `k-` / `o-` 与 `knowledge/` / `opinions/`，不靠 frontmatter 里的 type 字段——
+// 冗余元数据会让真源漂移（同 EG-DOM-01 对 domain 的处置）。
 //
 // 关系一律引用 ID、不引用路径，因此文件允许被重命名或移动（id → path 由扫描完成）。
 const (
 	PrefixSource = "s-"
 	PrefixNote   = "n-"
 	PrefixCard   = "k-"
+
+	// PrefixOpinion 是观点前缀（Schema v2）。观点与知识是**同级**产物，
+	// 不是知识的子类型，因此拿到独立前缀而非 `k-` 上的一个字段。
+	PrefixOpinion = "o-"
 
 	// S2 预留（本阶段只留常量，不实现业务）。
 	PrefixReview   = "r-"
@@ -36,20 +44,33 @@ type NoteID string
 // CardID 是知识卡 ID（前缀 k-）。
 type CardID string
 
-func (id SourceID) String() string { return string(id) }
-func (id NoteID) String() string   { return string(id) }
-func (id CardID) String() string   { return string(id) }
+// OpinionID 是观点 ID（前缀 o-）。
+type OpinionID string
+
+func (id SourceID) String() string  { return string(id) }
+func (id NoteID) String() string    { return string(id) }
+func (id CardID) String() string    { return string(id) }
+func (id OpinionID) String() string { return string(id) }
 
 // ParsedID 是 ID 的结构化解析结果。Slug 只作人眼可读信息随附，不参与任何判定。
 type ParsedID struct {
-	Prefix string // "s-" / "n-" / "k-" / "r-" / "p-"
+	Prefix string // "s-" / "n-" / "k-" / "o-" / "r-" / "p-"
 	Date   string // yyyymmdd
 	Slug   string // 仅供人眼可读
 }
 
+// KnownPrefixes 返回全部已纳管的 ID 前缀（顺序稳定，供解析与错误信息共用）。
+//
+// 单一定义点：ParseID 的遍历与错误信息都读它，新增实体只需在此登记一次，
+// 不会出现「解析认了但错误信息没提」这种半纳管状态。
+func KnownPrefixes() []string {
+	return []string{PrefixSource, PrefixNote, PrefixCard, PrefixOpinion,
+		PrefixReview, PrefixProposal}
+}
+
 // ParseID 解析任意产物 ID：`<prefix>-<yyyymmdd>-<slug>`。
 func ParseID(raw string) (ParsedID, error) {
-	for _, p := range []string{PrefixSource, PrefixNote, PrefixCard, PrefixReview, PrefixProposal} {
+	for _, p := range KnownPrefixes() {
 		if !strings.HasPrefix(raw, p) {
 			continue
 		}
@@ -68,8 +89,9 @@ func ParseID(raw string) (ParsedID, error) {
 		return ParsedID{Prefix: p, Date: date, Slug: slug}, nil
 	}
 	return ParsedID{}, fmt.Errorf(
-		"非法 ID %q：前缀必须是 %s / %s / %s（S2 预留 %s / %s）",
-		raw, PrefixSource, PrefixNote, PrefixCard, PrefixReview, PrefixProposal)
+		"非法 ID %q：前缀必须是 %s / %s / %s / %s（S2 预留 %s / %s）",
+		raw, PrefixSource, PrefixNote, PrefixCard, PrefixOpinion,
+		PrefixReview, PrefixProposal)
 }
 
 func allDigits(s string) bool {
@@ -87,7 +109,7 @@ func parseWithPrefix(raw, want string) (ParsedID, error) {
 		return ParsedID{}, err
 	}
 	if p.Prefix != want {
-		return ParsedID{}, fmt.Errorf("ID %q 的前缀是 %q，期望 %q（三类 ID 互不可混用，冻结合同 F2）",
+		return ParsedID{}, fmt.Errorf("ID %q 的前缀是 %q，期望 %q（四类 ID 互不可混用，冻结合同 F2）",
 			raw, p.Prefix, want)
 	}
 	return p, nil
@@ -117,6 +139,14 @@ func ParseCardID(raw string) (CardID, error) {
 	return CardID(raw), nil
 }
 
+// ParseOpinionID 解析并校验前缀，防止 k-/n-/s- 串被当成观点 ID 使用。
+func ParseOpinionID(raw string) (OpinionID, error) {
+	if _, err := parseWithPrefix(raw, PrefixOpinion); err != nil {
+		return "", err
+	}
+	return OpinionID(raw), nil
+}
+
 // Valid 报告 ID 前缀与形态是否合法。
 func (id SourceID) Valid() bool {
 	_, err := parseWithPrefix(string(id), PrefixSource)
@@ -129,10 +159,19 @@ func (id NoteID) Valid() bool { _, err := parseWithPrefix(string(id), PrefixNote
 // Valid 报告 ID 前缀与形态是否合法。
 func (id CardID) Valid() bool { _, err := parseWithPrefix(string(id), PrefixCard); return err == nil }
 
-// NewSourceID / NewNoteID / NewCardID 生成稳定 ID。同一 (日期, 标题) 幂等。
+// Valid 报告 ID 前缀与形态是否合法。
+func (id OpinionID) Valid() bool {
+	_, err := parseWithPrefix(string(id), PrefixOpinion)
+	return err == nil
+}
+
+// NewSourceID / NewNoteID / NewCardID / NewOpinionID 生成稳定 ID。同一 (日期, 标题) 幂等。
 func NewSourceID(d Date, title string) SourceID { return SourceID(newID(PrefixSource, d, title)) }
 func NewNoteID(d Date, title string) NoteID     { return NoteID(newID(PrefixNote, d, title)) }
 func NewCardID(d Date, title string) CardID     { return CardID(newID(PrefixCard, d, title)) }
+func NewOpinionID(d Date, title string) OpinionID {
+	return OpinionID(newID(PrefixOpinion, d, title))
+}
 
 func newID(prefix string, d Date, title string) string {
 	return prefix + d.Compact() + "-" + Slug(title)

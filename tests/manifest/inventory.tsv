@@ -81,8 +81,11 @@ tests/_staged/internal/index/watermark_test.go	unit	go	index-search	unit.interna
 tests/_staged/internal/mdfile/block_merge_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	5329
 tests/_staged/internal/mdfile/fuzz_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	3911
 tests/_staged/internal/mdfile/mdfile_test.go	unit	go	storage-markdown	unit.internal.mdfile	12	17178
+tests/_staged/internal/mdfile/opinion_sections_test.go	unit	go	storage-markdown	unit.internal.mdfile	6	9416
 tests/_staged/internal/model/frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	1	4202
 tests/_staged/internal/model/model_test.go	unit	go	storage-markdown	unit.internal.model	16	14486
+tests/_staged/internal/model/opinion_frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	4	5158
+tests/_staged/internal/model/opinion_test.go	unit	go	storage-markdown	unit.internal.model	8	5690
 tests/_staged/internal/model/stale_test.go	unit	go	storage-markdown	unit.internal.model	3	8034
 tests/_staged/internal/model/status_values_test.go	unit	go	storage-markdown	unit.internal.model	1	1229
 tests/_staged/internal/plan/atomic_finalizer_test.go	unit	go	proposal	unit.internal.plan	3	7117
@@ -143,6 +146,7 @@ tests/_staged/internal/rules/rules_test.go	unit	go	capture-ingest	unit.internal.
 tests/_staged/internal/store/atomic_test.go	unit	go	storage-markdown	unit.internal.store	7	8525
 tests/_staged/internal/store/b3_authorization_test.go	unit	go	storage-markdown	unit.internal.store	1	2885
 tests/_staged/internal/store/merge_test.go	unit	go	storage-markdown	unit.internal.store	3	6746
+tests/_staged/internal/store/opinion_layout_test.go	unit	go	storage-markdown	unit.internal.store	3	3071
 tests/_staged/internal/store/proposal_test.go	unit	go	storage-markdown	unit.internal.store	2	4976
 tests/_staged/internal/store/receipt_test.go	unit	go	storage-markdown	unit.internal.store	1	2691
 tests/_staged/internal/store/relations_test.go	unit	go	storage-markdown	unit.internal.store	15	16673
@@ -360,7 +364,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24038
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24058
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

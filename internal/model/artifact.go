@@ -31,6 +31,37 @@ type Card struct {
 	Extra map[string]interface{} `yaml:",inline" json:"-"`
 }
 
+// Opinion 是观点（Schema v2 §3.4）。
+//
+// 与 Card 的**唯一**结构差异是多一个 `validation` 键；其余字段逐一对齐，
+// 因为观点同样需要状态、材料来源、论证关系与生命周期字段。
+// 刻意**不加** type / stance / lean：类型由 ID 前缀 + 目录表达（见 blacklist.go）。
+//
+// Validation 与 Status 正交：rejected 的观点仍可为 active——「已确认不成立」本身是资产。
+type Opinion struct {
+	ID        OpinionID   `yaml:"id" json:"id"`
+	Status    Status      `yaml:"status" json:"status"`
+	CreatedAt Date        `yaml:"created_at" json:"created_at"`
+	UpdatedAt Stamp       `yaml:"updated_at" json:"updated_at"`
+	Sources   []SourceRef `yaml:"sources" json:"sources"`
+
+	// Validation 是论证进度（pending / validated / rejected）。
+	// 只经用户显式路径 P-U 改写；Agent 自动路径新建时恒为 pending。
+	Validation Validation `yaml:"validation" json:"validation"`
+
+	Tags      []string   `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Relations []Relation `yaml:"relations,omitempty" json:"relations,omitempty"`
+
+	// —— 生命周期字段（读到即原样保留，口径同 Card）——
+	ReviewedAt    *Stamp      `yaml:"reviewed_at,omitempty" json:"reviewed_at,omitempty"`
+	DeletedAt     *Stamp      `yaml:"deleted_at,omitempty" json:"deleted_at,omitempty"`
+	DeletedReason string      `yaml:"deleted_reason,omitempty" json:"deleted_reason,omitempty"`
+	ReplacedBy    *ReplacedBy `yaml:"replaced_by,omitempty" json:"replaced_by,omitempty"`
+
+	// Extra 承接未知 frontmatter 字段（原样透传容器）。
+	Extra map[string]interface{} `yaml:",inline" json:"-"`
+}
+
 // ReplacedBy 是失效卡上的替代指针（提案合同 §8.1 第 3 行）。
 //
 // 为什么是结构体而不是裸 ID：替代关系必须自带**为什么替代**的理由，否则读者只能

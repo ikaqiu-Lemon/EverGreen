@@ -58,6 +58,16 @@ const (
 	FMKeyStaleReason = "stale_reason"
 )
 
+// FMKeyValidation 是 `validation` 的 frontmatter 顶层键名（Schema v2 §3.4）。
+//
+// 与上面两组键同一条纪律：键名只有一处字面量，写入侧（`internal/store` 的受守卫写口）、
+// op 侧（`internal/plan`）与读路径共用它。
+//
+// 该键是**观点专属**：不得出现在知识卡 / 材料笔记 / 原文 / 提案 / 综述上。
+// 取值是封闭三值 `Validation`（见 enums.go），本文件同样只给键名、不给判定——
+// 「谁有权改它、能从哪一档流转到哪一档」属用户显式路径的授权判定，不在本层。
+const FMKeyValidation = "validation"
+
 // StaleReason 是 `stale_reason` 的**封闭三值**（对账合同 §9 逐字）。
 //
 // 为什么做成封闭枚举而不是自由文本：合同要求「多因并存按固定顺序取**第一个**命中值」，
