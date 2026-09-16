@@ -101,3 +101,53 @@ func readRelationsFrom(db *sql.DB) ([]Relation, error) {
 	}
 	return out, nil
 }
+
+// CountByKind 按 `cards.kind` **现算**分型行数，返回 kind → 行数。
+//
+// 三条刻意的取舍：
+//
+//   - **现算，不落第七个 meta 键**：`index_meta` 的键集合是封闭的六键（schema.go 的
+//     MetaKeys 是唯一真源）。分型计数是一个可以由派生表在 O(行数) 内精确导出的量，
+//     一旦把它也存进 meta，就多出一处必须与 `cards` 保持同步的冗余事实 —— 而任何一次
+//     漏同步（增量重写、外力篡改）都会让摘要里的数字与库里的行对不上，且这种谎连
+//     行级核对都抓不到（它只比对 cards / cards_fts 与权威，不比对 meta 里的派生计数）。
+//   - **返回全部出现过的 kind，而不是只返回封闭二值**：库里若真出现了第三种 kind
+//     （CHECK 约束被外力绕过），调用方能看见它、并据此判定异常；预先按 CardKinds()
+//     过滤会把这类事实吞掉。同时对**没有任何行**的合法分型显式补 0（见下），
+//     使「分型计数之和 == cards 总行数」在任何语料上都成立。
+//   - **只读**：`mode=ro` 打开，与本文件其余读 API 同口径。
+//
+// 打不开库（缺失 / 截断 / 无权限）时返回 error：调用方**必须**据此把这一格从输出里
+// 拿掉，而不是拿 0 冒充「库里确实没有这种卡」—— 那两件事对用户完全不同。
+func CountByKind(dir string) (map[string]int, error) {
+	db, err := openDB(dbPathIn(dir), true)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.Query(`SELECT kind, count(*) FROM ` + TableCards + ` GROUP BY kind ORDER BY kind`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	// 合法分型先各补一个 0：空语料 / 只有一种卡的语料下，缺席的那一格是「确有 0 行」
+	// 这个可读事实，与「读不到」不同（后者已由上面的 error 表达）。
+	out := make(map[string]int, len(CardKinds())+1)
+	for _, k := range CardKinds() {
+		out[k] = 0
+	}
+	for rows.Next() {
+		var (
+			kind string
+			n    int
+		)
+		if err := rows.Scan(&kind, &n); err != nil {
+			return nil, err
+		}
+		out[kind] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

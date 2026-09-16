@@ -3,7 +3,7 @@
 #
 # 判据来源：`docs/specs/2026-12-19-m5-index-architecture-contract.md`
 #   §3（`.index/` 派生物布局：允许文件恰 eg.db / eg.db-wal / eg.db-shm，整目录进 .gitignore）
-#   §4（固定 Schema：schema_version=1、六张表、index_meta 六键、tokenizer 三档、确定性构建）
+#   §4（固定 Schema：schema_version = IndexSchemaVersion、六张表、index_meta 六键、tokenizer 三档、确定性构建）
 #   §5（水位线 `(head, files_hash)` 由权威 Markdown 复算）
 #   §7（A-41 纯 Go modernc.org/sqlite + CGO_ENABLED=0 静态构建）
 #   §8.1（`eg index build` 三支语义 / `status` 恒退 0 / 只写 `.index/`）
@@ -16,7 +16,8 @@
 #      依赖图含 `modernc.org/sqlite`、全仓 `mattn/go-sqlite3` 恒 0 命中；
 #   ② 空索引态：`status` 退 0、health=missing、W23 在场，且 status **自己不建**索引；
 #   ③ 全量构建：`build` 退 0、action=built、health=healthy、计数与语料对得上、
-#      `index_meta` 六键齐全且 schema_version=1 / tokenizer_mode 在三档内；
+#      `index_meta` 六键齐全且 schema_version 为十进制正整数（真值单点 = 二进制的
+#      IndexSchemaVersion，随 Schema 演进抬升）/ tokenizer_mode 在三档内；
 #   ④ 幂等 no-op：再跑 `build` → action=noop，且 `eg.db` 的 size + mtime + sha256 **逐字不变**，
 #      输出里**没有**本次写入计数（零写入就不许造 0）；
 #   ⑤ 水位线可复算：`head` == `git rev-parse HEAD`；`files_hash` 在库不变时两次读取相同；
@@ -222,13 +223,21 @@ grep -Fq 'broken.md' "${WORK}/build.json" ||
 for k in schema_version head files_hash tokenizer_mode built_at_unix card_count; do
   jhas "${WORK}/build.json" "${k}" || die "data.index 缺 index_meta 键 ${k}"
 done
-[ "$(jnum "${WORK}/build.json" schema_version)" = "1" ] ||
-  die "schema_version = $(jnum "${WORK}/build.json" schema_version)，期望 1（永不迁移，只整库重建）"
+# schema_version 的**真值单点**是二进制里的 `IndexSchemaVersion`（合同 §4.2 逐字如此写：
+# 「`IndexSchemaVersion` 的十进制字符串」），并不是某个具体数字 —— 它会随 Schema 演进抬升
+# （T-005-A 的 kind / validation 两列就把它从 1 抬到了 2）。因此这里**不再抄写字面量**，
+# 改为按合同实际约束的三件事验：① 是十进制正整数；② 全脚本各观测点逐字同一个值
+# （见第 8 节复原构建）；③ 版本不匹配时**永不迁移、只整库重建**（那条语义由
+# index_corrupt_rebuild.sh 的 schema_version_mismatch 分支与单测 / CLI 合同覆盖）。
+# 抄字面量正是 v1→v2 抬升后本脚本假红的成因：它锁住的是「当时是几」，而不是合同。
+SCHEMA_V="$(jnum "${WORK}/build.json" schema_version)"
+printf '%s' "${SCHEMA_V}" | grep -Eqx '[1-9][0-9]*' ||
+  die "schema_version = ${SCHEMA_V}，期望十进制正整数（真值单点 = 二进制的 IndexSchemaVersion）"
 [ "$(jnum "${WORK}/build.json" card_count)" = "3" ] || die "index_meta.card_count 应为 3"
 TOK="$(jstr "${WORK}/build.json" tokenizer_mode)"
 printf '%s\n' ${TOKENIZERS} | grep -qx "${TOK}" || die "tokenizer_mode = ${TOK}，不在三档 ${TOKENIZERS} 内"
 no_stale_codes "${WORK}/build.json" "build 输出"
-ok "action=built、cards=3 / relations=1、坏文件走 Q1、schema_version=1、tokenizer_mode=${TOK}"
+ok "action=built、cards=3 / relations=1、坏文件走 Q1、schema_version=${SCHEMA_V}、tokenizer_mode=${TOK}"
 
 # ---------------------------------------------------------------- 5. 幂等 no-op：零写入
 step "再跑 eg index build：action=noop，且 eg.db 的 size + mtime + sha256 逐字不变"
@@ -350,7 +359,10 @@ rm -rf "${VAULT}/${IDX_REL}"
 [ "$(eg_code index build --json)" = "0" ] || die "复原构建应退 0"
 cp "${WORK}/out.txt" "${WORK}/rebuilt.json"
 [ "$(jstr "${WORK}/rebuilt.json" action)" = "built" ] || die "复原后的 action 应为 built"
-[ "$(jnum "${WORK}/rebuilt.json" schema_version)" = "1" ] || die "复原后的 schema_version 应为 1"
+# 与第 4 节同一个观测量逐字比对：复原不是「又建了一份新 Schema」，而是把**同一版**
+# Schema 的库重新算出来（真值单点仍是二进制里的 IndexSchemaVersion，见第 4 节注释）。
+[ "$(jnum "${WORK}/rebuilt.json" schema_version)" = "${SCHEMA_V}" ] ||
+  die "复原后的 schema_version = $(jnum "${WORK}/rebuilt.json" schema_version)，期望与首建逐字相同（${SCHEMA_V}）"
 [ "$(jstr "${WORK}/rebuilt.json" head)" = "${NEW_HEAD}" ] ||
   die "复原后的 head 应是当前 git HEAD（水位线由权威 Markdown 复算）"
 [ "$(jnum "${WORK}/rebuilt.json" cards)" = "3" ] || die "复原后的 cards 应仍是 3"

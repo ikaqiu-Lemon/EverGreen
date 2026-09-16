@@ -33,6 +33,7 @@ tests/_staged/internal/cli/index_opinion_sync_test.go	internal/cli/index_opinion
 tests/_staged/internal/cli/index_reserved_read_test.go	internal/cli/index_reserved_read_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_rowlevel_test.go	internal/cli/index_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_test.go	internal/cli/index_test.go	evergreen	unit	go
+tests/_staged/internal/cli/index_v2_rebuild_status_test.go	internal/cli/index_v2_rebuild_status_test.go	evergreen	unit	go
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/markers_test.go	internal/cli/markers_test.go	evergreen	unit	go

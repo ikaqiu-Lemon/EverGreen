@@ -44,6 +44,28 @@ package index
 // 撒谎」＝真损坏。content_hash 不等的卡属陈旧域，排除在行级核对之外（不误报、不漏报：
 // 陈旧由水位线在 `--strict` 下自然抓到）。I-…-024 的全部篡改场景都不动权威 Markdown，
 // 故其 content_hash 恒与 files 基线相等，一律落在作用域内、逐个被抓。
+//
+// # 集合核对先于逐列比对（T-005-D 补的孤儿 / 残留空白）
+//
+// 上面那个「按权威投影收窄作用域」的动作本身留了一个洞：**权威里根本不存在**的派生行
+// （卡文件已删、`cards` 里的行没跟着删）的 path 天生不在 stablePaths 里，于是它在收窄
+// 那一步被静默滤掉，逐列比对永远碰不到它 —— 水位线不动、`card_count` 可自洽，Check
+// 一路判 fresh，读路径会拿一个磁盘上不存在的卡去回权威。同理，`cards_fts` 里一条
+// `cards` 已无对应行的残留检索行也会被作用域滤掉。
+//
+// 因此在收窄之前先做两次**集合层**核对，判据都不依赖作用域：
+//
+//	① `cards` 行的 path 既不在权威投影、也不在 `files` 表  ⇒ 孤儿行；
+//	② `cards_fts` 行的 id 不在 `cards` 表                  ⇒ 残留检索行。
+//
+// ① 为什么必须「两边都不认识」才算孤儿：fresh 候选态意味着 files_hash 判等，即 `files`
+// 表与磁盘权威文件集合逐项相等，故「path 不在 files」＝「磁盘上没有这个文件」，是不依赖
+// 作用域的硬事实；而「path 在 files 表在册、只是权威投影这次没带上它」还有正当来路
+// （本次扫描把该文件判进 `skipped`），把它算成损坏就会误报。② 为什么不设作用域：写入侧
+// 每张卡恰写一行 FTS（build.go 的 writeAll），两表 id 集合恒相等，故「FTS 有、cards 没有」
+// 在任何 freshness 下都只能是外力残留。
+//
+// 两者一律收在既有 `W24 / row_level_divergence` 之下：不新增诊断码，也不新增第 11 个子因。
 
 import (
 	"fmt"
@@ -100,6 +122,12 @@ func checkRowLevel(dir string, authoritative []Card) (string, bool) {
 	for _, f := range baseline {
 		baseHash[f.Path] = f.ContentHash
 	}
+	// 权威路径全集（**不分**稳定 / 陈旧）：孤儿判定问的是「权威这次到底认不认识这条
+	// path」，与 content_hash 是否相等无关，所以它必须独立于下面的稳定作用域构造。
+	authPaths := make(map[string]bool, len(authoritative))
+	for _, c := range authoritative {
+		authPaths[c.Path] = true
+	}
 	// 作用域：只留「文件字节确未变」的卡（权威 content_hash == files 基线）。
 	stablePaths := make(map[string]bool, len(authoritative))
 	stable := make([]Card, 0, len(authoritative))
@@ -116,6 +144,11 @@ func checkRowLevel(dir string, authoritative []Card) (string, bool) {
 	gotCards, err := ReadCards(dir)
 	if err != nil {
 		return fmt.Sprintf("cards 表读取失败：%v", err), true
+	}
+	// 集合核对①：孤儿行必须在收窄之前抓 —— 它的 path 天生不在 stablePaths 里，
+	// 一旦先收窄，它就被静默滤掉，后面逐列比对再严也永远碰不到它。
+	if detail, ok := diffOrphanCards(authPaths, baseHash, gotCards); ok {
+		return detail, true
 	}
 	gotStable := make([]Card, 0, len(gotCards))
 	for _, c := range gotCards {
@@ -136,10 +169,48 @@ func checkRowLevel(dir string, authoritative []Card) (string, bool) {
 	for _, c := range gotStable {
 		checkIDs[c.ID] = true
 	}
-	if detail, ok := diffCardsFTS(dir, want, checkIDs); ok {
+	// cards 表当前在册的 id 全集：集合核对② 用它判「FTS 行挂不挂得上一张 cards 行」。
+	// 与 checkIDs 刻意分开：checkIDs 是**作用域**（谁参与逐列比对），cardIDs 是**事实**
+	// （cards 表里到底有哪些 id）；把残留判据挂到作用域上，残留行就又被滤掉了。
+	cardIDs := make(map[string]bool, len(gotCards))
+	for _, c := range gotCards {
+		cardIDs[c.ID] = true
+	}
+	if detail, ok := diffCardsFTS(dir, want, checkIDs, cardIDs); ok {
 		return detail, true
 	}
 	return "", false
+}
+
+// diffOrphanCards 抓 `cards` 里**权威投影与 `files` 表都不认识**的行（孤儿行）。
+//
+// 判据刻意是「两边都不认识」而不是「权威不认识」：后者会把「本次扫描把该文件判进
+// `skipped`（如 user_block_unsafe），故权威投影没带上它，但 `files` 表仍在册」这条
+// 正当来路误报成损坏。而 fresh 候选态下 files_hash 已判等（`files` 表 == 磁盘权威文件
+// 集合），因此「path 不在 `files`」就等于「磁盘上没有这个文件」—— 派生行在对一份根本
+// 不存在的权威撒谎。
+//
+// 报文点名第一处（按 id 全序，定位稳定可复算）并给出总行数：孤儿往往是成批的
+// （删掉一个域的若干卡），只报一条会让复核以为「就坏了一行」。
+func diffOrphanCards(authPaths map[string]bool, baseHash map[string]string, got []Card) (string, bool) {
+	orphans := make(map[string]Card, 0)
+	for _, c := range got {
+		if authPaths[c.Path] {
+			continue
+		}
+		if _, known := baseHash[c.Path]; known {
+			continue // files 表在册：属陈旧 / skipped 域，不是孤儿
+		}
+		orphans[c.ID] = c
+	}
+	if len(orphans) == 0 {
+		return "", false
+	}
+	ids := sortedCardIDs(orphans)
+	first := orphans[ids[0]]
+	return fmt.Sprintf("cards 表存在权威 Markdown 不存在的孤儿行 id=%s path=%s"+
+		"（该 path 既不在权威投影、也不在 files 表；共 %d 行）",
+		first.ID, first.Path, len(orphans)), true
 }
 
 // diffCardSets 按 id 建集合逐列比对（纯函数，便于单测；不碰 DB）。
@@ -195,10 +266,27 @@ func diffCardSets(want, got []Card) (string, bool) {
 // checkIDs 是本次行级核对的 FTS 作用域（稳定卡的 id 并集）：作用域外的 FTS 行——例如
 // 内容已改（陈旧域）卡的检索行——一律跳过，不参与幽灵 / 缺失 / 逐列比对，避免把陈旧误报成
 // W24。want 已由 checkRowLevel 收窄到作用域内，其 id 必属 checkIDs。
-func diffCardsFTS(dir string, want []Card, checkIDs map[string]bool) (string, bool) {
+//
+// presentCardIDs 是 `cards` 表在册 id 的**全集**（不是作用域），只服务集合核对②：
+// 写入侧每张卡恰写一行 FTS，两表 id 集合恒相等，故「FTS 有、cards 没有」在任何 freshness
+// 下都是外力残留，必须先于作用域过滤抓出来 —— 否则残留行会在上面那个 `continue` 里被滤掉。
+func diffCardsFTS(dir string, want []Card, checkIDs, presentCardIDs map[string]bool) (string, bool) {
 	got, err := readFTSRows(dir)
 	if err != nil {
 		return fmt.Sprintf("cards_fts 表读取失败：%v", err), true
+	}
+	// 集合核对②：残留检索行（`cards` 里已无此 id）。
+	residual := make([]string, 0, len(got))
+	for _, r := range got {
+		if !presentCardIDs[r.id] {
+			residual = append(residual, r.id)
+		}
+	}
+	if len(residual) > 0 {
+		sort.Strings(residual)
+		return fmt.Sprintf("cards_fts 表存在 cards 表里没有对应行的残留检索行 id=%s"+
+			"（写入侧每张卡恰一行检索行，两表 id 集合恒相等；共 %d 行）",
+			residual[0], len(residual)), true
 	}
 	gotByID := make(map[string]ftsRow, len(got))
 	for _, r := range got {

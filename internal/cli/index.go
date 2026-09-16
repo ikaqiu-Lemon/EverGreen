@@ -216,15 +216,52 @@ func (r *Root) runIndexStatus(inv *Invocation) (*Result, error) {
 	}
 	con := index.Check(dir, cur)
 
+	// 分型计数**现算**（T-005-D）：只从派生表按 `cards.kind` 数，不落 `index_meta` 第七键。
+	// 读不到就整格缺席 —— 见 indexKindCounts 的注释。
+	kinds, kindsOK := indexKindCounts(dir)
+
 	rep := report.New()
 	addConsistencyDiagnosis(&rep, con)
 	rep.AddInfo("eg index status", report.NonOp, "%s", IndexAuthorityNotice)
 	rep.AddInfo("eg index status", report.NonOp, "%s", IndexNotDoneNotice)
 
-	res := proposalResult(rep, []string{indexStatusSummary(con, strict)})
-	res.Data["index"] = indexConsistencyData(con, strict)
+	res := proposalResult(rep, []string{indexStatusSummary(con, strict, kinds, kindsOK)})
+	data := indexConsistencyData(con, strict)
+	addIndexKindCounts(data, kinds, kindsOK)
+	res.Data["index"] = data
 	res.DataOrder = []string{"index", "report"}
 	return res, nil
+}
+
+// indexKindCounts 现算 `cards.kind` 的分型行数，第二个返回值表示「这份事实读到了没有」。
+//
+// 为什么不用 `con.Diagnosis.Health` 当门闸而是直接试读：健康度是**结论**，可读性是
+// **事实**，两者并不等价 —— 行级不一致（W24 / row_level_divergence）下库结构完全合法、
+// 派生表照样读得出来，此时如实报出分型计数比整格消失更有用（它正是用户判断「坏了多少」
+// 的依据）；而索引缺失 / 库被截断时连打开都失败，事实确实不存在。因此门闸就取
+// 「这次读成不成功」本身。
+//
+// 读失败**不产诊断码、不改退出码**：status 恒退 0，且库不可读这件事已经由体检结论
+// （missing / corrupt）如实说清楚了，再补一条码只会重复计数同一个事实。
+func indexKindCounts(dir string) (map[string]int, bool) {
+	counts, err := index.CountByKind(dir)
+	if err != nil {
+		return nil, false
+	}
+	return counts, true
+}
+
+// addIndexKindCounts 把分型计数摊成两个稳定键（读不到就一格都不摊）。
+//
+// 键名 `knowledge_count` / `opinion_count` 与 `card_count` 同构，且分型令牌逐字取自
+// index.CardKind*（不另抄字面量）：`knowledge_count + opinion_count == card_count`
+// 因此是一条可由机器逐格复算的守恒式。
+func addIndexKindCounts(data map[string]interface{}, counts map[string]int, ok bool) {
+	if !ok {
+		return
+	}
+	data[index.CardKindKnowledge+"_count"] = counts[index.CardKindKnowledge]
+	data[index.CardKindOpinion+"_count"] = counts[index.CardKindOpinion]
 }
 
 // `eg index sync` 的实现落在 internal/cli/index_sync.go（Task code_paths 逐字点名的文件）：
@@ -611,7 +648,12 @@ func addIndexMeta(data map[string]interface{}, diag index.Diagnosis) {
 }
 
 // indexStatusSummary 是 status 的人类可读摘要（事实全部能从 data.index 复述）。
-func indexStatusSummary(con index.Consistency, strict bool) string {
+//
+// kinds / kindsOK 是现算的分型计数：读到了就与机器输出**同源同事实**地一并显示
+// （人读一侧少一格，用户就得去翻 JSON 才能知道库里知识卡与观点各有多少）；读不到
+// 则一个字都不提 —— 与 data 侧「整格缺席」的口径一致，不在摘要里拿 0 兜底。
+func indexStatusSummary(con index.Consistency, strict bool,
+	kinds map[string]int, kindsOK bool) string {
 	diag := con.Diagnosis
 	head := fmt.Sprintf("索引体检：%s / %s", diag.Health, con.Freshness)
 	if con.Code != "" {
@@ -621,6 +663,11 @@ func indexStatusSummary(con index.Consistency, strict bool) string {
 	if diag.MetaReadable {
 		head += fmt.Sprintf("；schema_version=%d、card_count=%d、tokenizer_mode=%s",
 			diag.Meta.SchemaVersion, diag.Meta.CardCount, diag.Meta.TokenizerMode)
+	}
+	if kindsOK {
+		head += fmt.Sprintf("；%s_count=%d、%s_count=%d",
+			index.CardKindKnowledge, kinds[index.CardKindKnowledge],
+			index.CardKindOpinion, kinds[index.CardKindOpinion])
 	}
 	if strict {
 		head += "；--strict：已忽略 (size, mtime) 快路径，全部文件重算 content_hash"

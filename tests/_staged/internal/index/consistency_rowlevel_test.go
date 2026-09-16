@@ -181,6 +181,142 @@ func TestCheckDetectsRowLevelLies(t *testing.T) {
 	}
 }
 
+// —— T-005-D 补的完整性空白：孤儿 / 残留派生行（权威 Markdown 根本不存在）——
+//
+// C 批（观点增量收敛）在负控里登记过一个洞：人为在 `cards` 里留下一行「权威 Markdown
+// 不存在、`files` 表也没有该 path」的孤儿（观点文件删掉后残留的形态），此时水位线
+// (head, files_hash) 仍与现态一致、`card_count` 与实际行数也一致，于是 `index.Check`
+// 判 healthy/fresh —— 读路径一旦按索引出候选集，就会拿一个磁盘上根本不存在的卡去回权威。
+//
+// 洞的成因不在「有没有比对」，而在**作用域**：checkRowLevel 的作用域 stablePaths 由
+// **权威投影**构造，孤儿行的 path 天生不在其中，于是它在收窄那一步被静默滤掉。修法是在
+// 作用域收窄**之前**先做一次集合层核对（不新增诊断码、不新增第 11 个 reason）：
+//
+//	① `cards` 里 path 不在 `files` 表的行     ⇒ 权威里没有这个文件 ⇒ 孤儿；
+//	② `cards_fts` 里 id 不在 `cards` 表的行   ⇒ 检索行残留（删卡后 FTS 没跟着删）。
+//
+// 两者都统一收在既有 W24 / row_level_divergence 之下。
+//
+// 为什么孤儿判据用 `files` 表而不是权威投影：fresh 候选态的前提就是 files_hash 判等，
+// 即 `files` 表与磁盘权威文件集合逐项相等。因此「path 不在 files」= 「磁盘上没有这个
+// 文件」，是一个**不依赖作用域**的硬事实；而「path 在 files、内容却变了」属陈旧域
+// （见下面 TestCheckQuickPathRewriteStaysStaleNotCorrupt），一格都不许被误判成损坏。
+func TestCheckDetectsOrphanDerivedRows(t *testing.T) {
+	cases := []struct {
+		name   string
+		tamper func(t *testing.T, dir string)
+	}{
+		{
+			// 「cards 有孤儿且 files 无该路径」：card_count 同步跟上，否则先撞
+			// watermark_self_contradiction（那是**另一类**损坏，会把本判据的红染成假红）。
+			name: "cards 残留权威不存在的孤儿行（files 表无该 path）",
+			tamper: func(t *testing.T, dir string) {
+				execFixture(t, dir, `INSERT INTO `+index.TableCards+
+					` (id, path, domain, title, status, deprecated, deleted, replaced_by,
+					   content_hash, mtime_unix, kind, validation)
+					  VALUES (?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?)`,
+					"o-orphan", "domains/ai/opinions/o-orphan.md", "ai", "已被删除的观点",
+					"active", "sha256:orphan", 1_600_000_900,
+					index.CardKindOpinion, index.ValidationPending)
+				execFixture(t, dir, `UPDATE `+index.TableIndexMeta+
+					` SET value = (SELECT count(*) FROM `+index.TableCards+`) WHERE key = ?`,
+					index.MetaCardCount)
+			},
+		},
+		{
+			// FTS 相关残留：检索行还在，`cards` 里已无此 id。card_count 不受影响
+			// （cards 行数没变），水位线也不动 —— 结构自检全过，只有集合核对能抓到。
+			name: "cards_fts 残留检索行（cards 表无此 id）",
+			tamper: func(t *testing.T, dir string) {
+				execFixture(t, dir, `INSERT INTO `+index.TableCardsFTS+
+					` (id, title, body, bigram_text, kind, validation) VALUES (?, ?, ?, ?, ?, ?)`,
+					"o-residual", "残留检索行", "正文残留", " zz zz ",
+					index.CardKindOpinion, index.ValidationValidated)
+			},
+		},
+		{
+			// 孤儿 + 残留同时存在（真实世界里「删文件后派生表没同步」的完整形态）。
+			name: "cards 孤儿与 cards_fts 残留并存",
+			tamper: func(t *testing.T, dir string) {
+				execFixture(t, dir, `INSERT INTO `+index.TableCards+
+					` (id, path, domain, title, status, deprecated, deleted, replaced_by,
+					   content_hash, mtime_unix, kind, validation)
+					  VALUES (?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?)`,
+					"k-orphan", "domains/ai/knowledge/k-orphan.md", "ai", "已被删除的卡",
+					"active", "sha256:orphan2", 1_600_000_950,
+					index.CardKindKnowledge, "")
+				execFixture(t, dir, `INSERT INTO `+index.TableCardsFTS+
+					` (id, title, body, bigram_text, kind, validation) VALUES (?, ?, ?, ?, ?, ?)`,
+					"k-orphan", "已被删除的卡", "正文残留", " zz zz ",
+					index.CardKindKnowledge, "")
+				execFixture(t, dir, `UPDATE `+index.TableIndexMeta+
+					` SET value = (SELECT count(*) FROM `+index.TableCards+`) WHERE key = ?`,
+					index.MetaCardCount)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := buildFixture(t, sampleSnapshot())
+			if c := index.Check(dir, currentWithCards(sampleSnapshot())); !c.Fresh() || c.Code != "" {
+				t.Fatalf("篡改前应 fresh + 零码，实得 %s / %q", c.Freshness, c.Code)
+			}
+			tc.tamper(t, dir)
+
+			// 自证「结构自检全过」：孤儿 / 残留不是 Inspect 那四类结构损坏，
+			// 只有行级核对能抓到 —— 否则本用例证明的就不是它要证的那件事。
+			if d := index.Inspect(dir); d.Health != index.HealthHealthy {
+				t.Fatalf("前置：孤儿 / 残留必须结构自检全过（Inspect=healthy），"+
+					"实得 %s / %s（%s）", d.Health, d.Reason, d.Message)
+			}
+
+			c := index.Check(dir, currentWithCards(sampleSnapshot()))
+			if !c.Unusable() {
+				t.Fatalf("权威不存在的孤儿 / 残留行必须判 unusable，实得 %s（%s）",
+					c.Freshness, c.Message)
+			}
+			if c.Code != index.CodeIndexCorrupt {
+				t.Fatalf("码应为既有 %s（不新增诊断码），实得 %q", index.CodeIndexCorrupt, c.Code)
+			}
+			if c.Reason != index.ReasonRowLevelDivergence {
+				t.Fatalf("子因应为既有 %s（不新增第 11 个 reason），实得 %q（%s）",
+					index.ReasonRowLevelDivergence, c.Reason, c.Message)
+			}
+			if c.Diagnosis.Health != index.HealthCorrupt || c.Diagnosis.Usable() {
+				t.Fatalf("体检结论应降为 corrupt/不可用，实得 %s / usable=%v",
+					c.Diagnosis.Health, c.Diagnosis.Usable())
+			}
+		})
+	}
+}
+
+// TestCheckQuickPathRewriteStaysStaleNotCorrupt 钉住上面那条修复的**反向边界**：
+// 真正的「内容被改写」（默认快路径按 (size, mtime) 沿用了 files 表旧 content_hash，
+// 而权威投影带的是新内容的真 hash）必须**照旧**落在行级核对作用域之外 —— 那是陈旧
+// （归 `--strict` / `eg index sync`），不是损坏。孤儿检测按 `files` 表**有没有这个 path**
+// 判定，与「path 在册但内容变了」正交，因此这一格一格未松。
+func TestCheckQuickPathRewriteStaysStaleNotCorrupt(t *testing.T) {
+	snap := sampleSnapshot()
+	dir := buildFixture(t, snap)
+
+	// 权威投影：k-alpha 的正文 / 标题 / content_hash 全变了（等长原地改写 + 还原 mtime，
+	// 于是快路径判「未变」，Files 仍沿用旧 hash ⇒ 水位线判等 ⇒ fresh 候选态）。
+	rewritten := sampleSnapshot()
+	for i := range rewritten.Cards {
+		if rewritten.Cards[i].ID == "k-alpha" {
+			rewritten.Cards[i].Title = "改写后的标题"
+			rewritten.Cards[i].Body = "改写后的正文"
+			rewritten.Cards[i].ContentHash = "sha256:aaaa-rewritten"
+		}
+	}
+	cur := index.Current{Head: snap.Head, Files: snap.Files, Cards: rewritten.Cards}
+	if c := index.Check(dir, cur); !c.Fresh() || c.Code != "" {
+		t.Fatalf("快路径等长改写属陈旧域，不得误报成损坏：实得 %s / %q（%s）",
+			c.Freshness, c.Code, c.Message)
+	}
+}
+
 // TestCheckRowLevelSkippedWithoutAuthoritativeCards 钉住语义边界：
 // 调用方**不提供**权威投影（Current.Cards == nil）时，Check 不做行级核对（走老口径），
 // 以免把「没提供权威」误当成「索引撒谎」。这不是放行撒谎——真实读路径恒提供 Cards。
