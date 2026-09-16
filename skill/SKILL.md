@@ -430,13 +430,14 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 新增命令**几乎全部属于用户显式路径**，本节写清 Agent 的边界；越界的 plan 会被退 `2`，不是被容忍。
 （**M4 起顶层命令是 20 个**：在这 18 条之上新增 S3 对账面的 `reconcile` 与 `check`，规程见 §9；
 **M5 起是 22 个**：再新增 S4 的 `index`（派生索引）与 `bench`（性能采样），规程见 §10；
+**读路径拆分批次起是 23 个**：再新增 `eg opinion`（观点子系统顶层命令，**当前仅命令骨架、行为尚未落地**，口径见 §8.5.1）；
 本节的 S2 / M3 口径一字不变。）
 
-**M5 起 22 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
+**当前 23 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费；末条 `eg opinion` 为读路径拆分批次新增的**命令骨架**——已注册、行为尚未落地，口径见 §8.5.1）：
 `eg init`、`eg config`、`eg capture`、`eg context`、`eg apply`、`eg search`、`eg card show`、
 `eg rel`、`eg report --last`、`eg deprecate`、`eg restore`、`eg replaced-by`、`eg proposal`、
 `eg delete`、`eg undelete`、`eg mark-reviewed`、`eg unreviewed`、`eg edit`、`eg reconcile`、`eg check`、
-`eg index`、`eg bench`。
+`eg index`、`eg bench`、`eg opinion`。
 
 ### 8.1 三个正交维度：改一个绝不碰另两个
 
@@ -495,6 +496,15 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 - `eg search` 新增 `--include-deleted`；**默认视图排除已删除项**。转述检索结果时别把默认视图说成「全库」。
 - `eg edit` 的可编辑分区白名单**恰三个**：知识内容 / 解释与依据 / 条件与边界；它是用户命令，
   缺 `--user-request` → 退 `2` 零写入，`content_hash` 过期 → 跳过退 `3`，**不产生** `6`。
+
+### 8.5.1 `eg opinion`：已注册的命令骨架（当前禁止当作能力使用）
+
+读路径拆分批次新增了顶层命令 `eg opinion`，子命令**恰四条、顺序固定**：`search` / `show` / `validate` / `reject`。**本阶段这四条子命令全部只是命令骨架，行为尚未落地**：
+
+- 合法调用（`search` 恰 1 个查询词；`show` / `validate` / `reject` 恰 1 个合法 `o-` 前缀观点 ID）一律退 `1`——业务实现尚未挂载，**零文件变化、零 commit**。
+- 缺 / 未知子命令、位置参数个数不符、观点 ID 形态非法（非 `o-` 前缀）同样退 `1`、**零写入**。
+
+**Agent 硬约束**：在业务实现落地前，**不得**调用 `eg opinion` 的任何子命令去检索 / 查看 / 采纳 / 驳回观点，**不得**把它当作一个可用能力，**更不得**在报告里声称它返回了结果——它此刻只有命令表面、没有任何行为，任何合法调用只会得到退 `1`。观点检索、五分区渲染、支持 / 限制 / 反对关系视图与验证生命周期（`validate` / `reject` 状态机）的完整规程，随后续行为批次与文档同步批次落地，届时本节替换为正式口径。
 
 ### 8.6 可跑示例
 

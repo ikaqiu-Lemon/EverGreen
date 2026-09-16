@@ -634,7 +634,7 @@ omissions, and the agent must not invent points to fill it.
 
 ## Command reference
 
-The CLI exposes 22 top-level commands（顶层命令共 22 个）. Run `eg <command> --help` for the
+The CLI exposes 23 top-level commands（顶层命令共 23 个）. Run `eg <command> --help` for the
 authoritative argument list — every help page documents its own exit codes.
 
 **Setup**
@@ -660,6 +660,7 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg search <query>` | Ranked, paginated card search |
 | `eg card show <k-id>` | One card: five sections, sources, both link directions |
 | `eg rel <k-id>` | Argument relationships; `--replaced-by` switches to replacement pointers |
+| `eg opinion search\|show\|validate\|reject` | Registered skeleton only: the four subcommands are wired but unimplemented — every legal invocation exits `1` with zero writes and zero commit; the actual retrieve/inspect/validate/reject behavior lands in later batches. |
 
 **Editing and lifecycle** (all user-initiated)
 
