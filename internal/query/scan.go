@@ -63,6 +63,12 @@ type CardEntry struct {
 	// Score / MatchedFields 由 Filter 填写（合同 §1.3 的匹配分与命中字段）。
 	Score         int
 	MatchedFields []string
+
+	// opinionMeta 是**观点候选**的专属投影事实（validation + 三类关系确定性计数），由
+	// opinionAsCandidate 折入、Search 投影时搬到 SearchHit.Opinion。知识卡候选恒为 nil
+	// （知识元数据为空）。**不导出、无 json tag**：它只在包内从「候选」流到「命中」，
+	// 既不进扫描/索引的落盘快照，也绝不进 `eg search` 的 JSON 合同（SearchHit.Opinion 自身 json:"-"）。
+	opinionMeta *OpinionHitMeta
 }
 
 // Body 返回正文全文（frontmatter 之后的原始字节）。

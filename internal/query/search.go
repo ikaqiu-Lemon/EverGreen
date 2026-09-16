@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 )
 
 // ErrInvalidQuery 是 search 的**参数非法**族（合同 §1.1 / §1.6 → 退 1，零输出内容）：
@@ -68,6 +70,64 @@ type SearchHit struct {
 	// 过目维度的 `unreviewed` 刻意**不进** hits[]：ADR-20 只允许那个信号出现在筛选条件里
 	// （入口是 eg unreviewed），检索这条排序路径不得携带它。
 	Deleted bool `json:"deleted"`
+	// Opinion 是**观点命中**的专属投影事实（validation 论证进度 + 该观点自身 relations[] 中
+	// supports/limits/opposing 三类的确定性计数），供后续 `eg opinion` 专用 CLI 批映射专用 DTO。
+	// 知识命中恒为 nil（知识元数据为空）。**`json:"-"` 是硬约束**：`eg search` 的 JSON 合同
+	// （SearchHitKeys / SearchDataKeys，合同 §1.2）一字不改，观点专属事实一个键都不进 search 输出。
+	Opinion *OpinionHitMeta `json:"-"`
+}
+
+// OpinionHitMeta 承载一条观点命中的专属投影事实。
+//
+// Validation 取 frontmatter 的逐字原值（pending|validated|rejected 三态都召回，
+// validation 绝不作隐式过滤）；Relations 是该观点**自身** relations[] 的确定性摘要。
+type OpinionHitMeta struct {
+	Validation string
+	Relations  OpinionRelationSummary
+}
+
+// OpinionRelationSummary 是观点自身 relations[] 中 supports/limits/opposing 三类的确定性计数。
+//
+// 只数这三类论证关系；derives（以及 replaced_by 等生命周期字段）一律不计入。字段本身即固定
+// 次序 supports → limits → opposing 的承载面，供 CLI 零分支渲染（见 Ordered）。
+type OpinionRelationSummary struct {
+	Supports int
+	Limits   int
+	Opposing int
+}
+
+// OpinionRelationCount 是「关系类型 + 计数」的一对，供 Ordered 输出固定次序序列。
+type OpinionRelationCount struct {
+	Type  string
+	Count int
+}
+
+// Ordered 以**固定次序** supports → limits → opposing 交出三类计数，供 CLI 零分支渲染。
+func (s OpinionRelationSummary) Ordered() []OpinionRelationCount {
+	return []OpinionRelationCount{
+		{Type: string(model.RelationSupports), Count: s.Supports},
+		{Type: string(model.RelationLimits), Count: s.Limits},
+		{Type: string(model.RelationOpposing), Count: s.Opposing},
+	}
+}
+
+// summarizeOpinionRelations 数一条观点自身 relations[] 中的 supports/limits/opposing。
+//
+// 只认这三类论证关系（derives / 未知类型一律跳过）；计数确定性只取决于输入切片，
+// 与顺序无关（次序由 OpinionRelationSummary.Ordered 固定）。
+func summarizeOpinionRelations(rels []model.Relation) OpinionRelationSummary {
+	var s OpinionRelationSummary
+	for _, r := range rels {
+		switch r.Type {
+		case model.RelationSupports:
+			s.Supports++
+		case model.RelationLimits:
+			s.Limits++
+		case model.RelationOpposing:
+			s.Opposing++
+		}
+	}
+	return s
 }
 
 // SearchHitKeys 是 hits[] 元素键的合同次序（合同 §1.2 表行序），供逐字反证。
@@ -189,6 +249,9 @@ func Search(root string, req SearchRequest) (*SearchResult, error) {
 			UpdatedAt: c.UpdatedAt, CreatedAt: c.CreatedAt, Path: c.Path,
 			MatchedFields: stringsOrEmpty(c.MatchedFields), Score: c.Score,
 			Deleted: c.Deleted,
+			// 观点候选带 opinionMeta（validation + 三类计数），知识卡候选恒为 nil：
+			// 知识元数据为空这条合同因此**由投影层**落实，与打分/排序/分页正交。
+			Opinion: c.opinionMeta,
 		})
 	}
 	// 分页施加在**排序之后**（合同 §8.2）：切片区间 [offset, offset+limit) 因此与
@@ -239,8 +302,9 @@ func opinionCandidates(ops []OpinionEntry) []CardEntry {
 // opinionAsCandidate 把一条 OpinionEntry 折成 CardEntry：只搬检索面用得到的字段
 // （ID / 路径 / 领域 / 标题 / tags / 时间戳 / 失效·删除位 / relations / sources /
 // Raw / Doc），使它与知识卡在 Filter（title/tags/body 打分）与 SortEntries（四级全序）
-// 里**完全同构**。观点独有的 validation 至少在本批**不参与过滤**（与 kind 正交），因此
-// 不投影到候选面 —— 候选面只承载「怎么打分 / 怎么排序 / 是否已删除」这几件事。
+// 里**完全同构**。观点独有的 validation 仍**不参与过滤 / 排序**（与打分口径正交），
+// 只随候选带一份 opinionMeta 投影事实（validation + 三类关系确定性计数）到命中侧：
+// 后续 `eg opinion` 专用 CLI 批据此映射专用 DTO，而 `eg search` 的 JSON 合同一字不改。
 func opinionAsCandidate(o OpinionEntry) CardEntry {
 	return CardEntry{
 		ID: o.ID, Path: o.Path, Domain: o.Domain, Title: o.Title,
@@ -248,6 +312,10 @@ func opinionAsCandidate(o OpinionEntry) CardEntry {
 		CreatedAt: o.CreatedAt, UpdatedAt: o.UpdatedAt,
 		Deleted: o.Deleted, Relations: o.Relations, Sources: o.Sources,
 		ReplacedByTarget: o.ReplacedByTarget, Raw: o.Raw, Doc: o.Doc,
+		opinionMeta: &OpinionHitMeta{
+			Validation: o.Validation,
+			Relations:  summarizeOpinionRelations(o.Relations),
+		},
 	}
 }
 

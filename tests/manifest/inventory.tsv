@@ -136,6 +136,7 @@ tests/_staged/internal/query/relation_test.go	unit	go	card-query	unit.internal.q
 tests/_staged/internal/query/reverse_test.go	unit	go	card-query	unit.internal.query	4	13259
 tests/_staged/internal/query/scan_test.go	unit	go	card-query	unit.internal.query	10	15063
 tests/_staged/internal/query/search_kind_test.go	unit	go	card-query	unit.internal.query	10	25715
+tests/_staged/internal/query/search_opinion_meta_test.go	unit	go	card-query	unit.internal.query	6	12046
 tests/_staged/internal/query/search_test.go	unit	go	card-query	unit.internal.query	10	13985
 tests/_staged/internal/query/visibility_test.go	unit	go	card-query	unit.internal.query	7	17822
 tests/_staged/internal/reconcile/check_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	7	16558
@@ -378,7 +379,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24539
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24559
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568
