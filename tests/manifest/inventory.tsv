@@ -129,7 +129,7 @@ tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.i
 tests/_staged/internal/query/fuzz_test.go	unit	go	card-query	unit.internal.query	2	3912
 tests/_staged/internal/query/index_backed_opinion_test.go	unit	go	card-query	unit.internal.query	1	13287
 tests/_staged/internal/query/markers_test.go	unit	go	card-query	unit.internal.query	3	17160
-tests/_staged/internal/query/opinion_show_test.go	unit	go	card-query	unit.internal.query	8	22354
+tests/_staged/internal/query/opinion_show_test.go	unit	go	card-query	unit.internal.query	9	29386
 tests/_staged/internal/query/page_test.go	unit	go	card-query	unit.internal.query	8	17376
 tests/_staged/internal/query/proposal_test.go	unit	go	card-query	unit.internal.query	3	10957
 tests/_staged/internal/query/queryset/queryset_test.go	unit	go	queryset	unit.internal.query.queryset	3	5239

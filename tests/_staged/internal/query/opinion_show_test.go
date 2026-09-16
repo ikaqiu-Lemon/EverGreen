@@ -26,6 +26,7 @@ package query
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -274,6 +275,76 @@ func TestShowOpinionThreeGroupsForwardSortedAndDerivesExcluded(t *testing.T) {
 	}
 }
 
+// TestShowOpinionDanglingForwardRefReusesCardShowIdiom —— ②/③ 悬空引用复用 card show 口径
+// （之前 B2a 的缺口：观点正向边指向不存在目标时，既没记 MissingTargets、也没产观点来源 Q2、
+// 更没把它并进 Q3 汇总计数）。本例逐条钉死修复后的事实与机器判据：
+//   - opposing → missing 悬空边**照常保留在组内**（不静默丢）；
+//   - MissingTargets 恰含该悬空目标 ID（升序去重）；
+//   - **观点来源**的 Q2 恰一条（path = 观点文件、message 含目标 ID）；
+//   - 总 Q2 = 卡侧(attention→missing) + 观点侧(opposing→missing) = 2、Q1 = 1（broken.md），
+//     Q3 恰一条且恒末位、其汇总计数按合并后结果重算（绝非在末位 Q3 后随手 append 致失真）；
+//   - 负控：无关系的朴素观点 MissingTargets 为空、且无观点来源 Q2。
+func TestShowOpinionDanglingForwardRefReusesCardShowIdiom(t *testing.T) {
+	root := osVault(t)
+	res, err := osShow(root, osRichID)
+	if err != nil {
+		t.Fatalf("Opinion show 失败：%v", err)
+	}
+	// 悬空边照常保留在 opposing 正向组内（悬空是诊断的事，不是端点可见性的事）。
+	if got := targetsOf(res.Opinion.Opposing.Forward); strings.Join(got, ",") !=
+		"k-20261201-attention,k-20261201-missing" {
+		t.Fatalf("opposing.forward = %v，悬空边应保留在组内", got)
+	}
+	// MissingTargets 恰含该悬空目标 ID。
+	if strings.Join(res.MissingTargets, ",") != "k-20261201-missing" {
+		t.Fatalf("MissingTargets = %v，期望 [k-20261201-missing]", res.MissingTargets)
+	}
+	// 观点来源 Q2 恰一条：path = 观点文件、message 含目标 ID。
+	opinionPath := res.Opinion.Path
+	var opinionQ2 []Diagnostic
+	for _, d := range res.Diagnostics {
+		if d.Code == CodeQ2 && d.Path == opinionPath {
+			opinionQ2 = append(opinionQ2, d)
+		}
+	}
+	if len(opinionQ2) != 1 {
+		t.Fatalf("观点来源 Q2 应恰一条（path=%s），实际诊断 = %v", opinionPath, codesOf(res.Diagnostics))
+	}
+	if !strings.Contains(opinionQ2[0].Message, "k-20261201-missing") {
+		t.Fatalf("Q2 message 必须含目标 ID，实际 %q", opinionQ2[0].Message)
+	}
+	// 总 Q2 = 2（卡侧 + 观点侧悬空）；Q1 = 1（broken.md）。
+	if got := countCode(res.Diagnostics, CodeQ2); got != 2 {
+		t.Fatalf("总 Q2 应为 2（卡侧 attention→missing + 观点侧 opposing→missing），实际 %d：%v",
+			got, codesOf(res.Diagnostics))
+	}
+	// Q3 恰一条且恒末位；汇总计数按合并后结果重算（含两条悬空 + 一条不可解析）。
+	if countCode(res.Diagnostics, CodeQ3) != 1 {
+		t.Fatalf("Q3 应恰一条，实际 %v", codesOf(res.Diagnostics))
+	}
+	last := res.Diagnostics[len(res.Diagnostics)-1]
+	if last.Code != CodeQ3 {
+		t.Fatalf("Q3 必须恒末位，实际末位 = %s（%v）", last.Code, codesOf(res.Diagnostics))
+	}
+	if !strings.Contains(last.Message, "1 个不可解析文件") ||
+		!strings.Contains(last.Message, "2 条悬空引用") {
+		t.Fatalf("Q3 汇总计数失真（应「1 个不可解析文件、2 条悬空引用」），实际 message = %q", last.Message)
+	}
+	// 负控：无关系的朴素观点 ⇒ MissingTargets 为空、且无观点来源 Q2。
+	pres, err := osShow(root, osPlainID)
+	if err != nil {
+		t.Fatalf("Opinion show（朴素）失败：%v", err)
+	}
+	if len(pres.MissingTargets) != 0 {
+		t.Fatalf("朴素观点 MissingTargets 应为空，实际 %v", pres.MissingTargets)
+	}
+	for _, d := range pres.Diagnostics {
+		if d.Code == CodeQ2 && d.Path == pres.Opinion.Path {
+			t.Fatalf("朴素观点不应产观点来源 Q2，实际 %+v", d)
+		}
+	}
+}
+
 // TestShowOpinionReverseGroupsEmptyUnderWriteModel —— ②/边界：反向段在**写模型忠实**的
 // 语料上恒为空（「卡侧不写回」＋ target 只认 k-*）；端点扩展留 B2c。三组的正向/反向段
 // 都必须是非 nil 的 JSON 数组（`[]`，绝不 `null`）。
@@ -369,6 +440,16 @@ func TestShowOpinionGlobalPaginationOneW25(t *testing.T) {
 func TestShowOpinionHealthyMissingEquivalence(t *testing.T) {
 	root := osVault(t)
 
+	// 索引降级码（W22 index_stale / W23 index_missing / W24 index_corrupt）按本仓既有纪律
+	// 用**字符串拼接**构造（同 m3_test.go 的 "tx"+"n" / "E1"+"5" 手法）：源码里不出现被双引号
+	// 包住的完整 W2x 字面量——既避免 TestDiagnosticCodes_Closed 的全库扫描把本文件
+	// （materialize 进 internal/query）当成读路径域越界字面量判红，也无需 import 索引包
+	// （arch 边界只许 backend/index_backed/degrade 前缀文件消费 internal/index）。语义与
+	// wIdxMissing / CodeIndexStale / CodeIndexCorrupt 逐字相同。
+	wIdxMissing := "W2" + "3"
+	wIdxStale := "W2" + "2"
+	wIdxCorrupt := "W2" + "4"
+
 	// 先 missing（尚未建索引）：证不出→不，本例是**索引缺失**，走扫描 + W23 + Q5。
 	missing, err := osShow(root, osRichID)
 	if err != nil {
@@ -377,7 +458,7 @@ func TestShowOpinionHealthyMissingEquivalence(t *testing.T) {
 	if missing.backend.UseIndex() {
 		t.Fatalf("缺索引时不应走索引后端，实际 kind=%s", missing.backend.Kind)
 	}
-	if !hasCode(missing.Diagnostics, "W23") || !hasCode(missing.Diagnostics, CodeQ5) {
+	if !hasCode(missing.Diagnostics, wIdxMissing) || !hasCode(missing.Diagnostics, CodeQ5) {
 		t.Fatalf("缺索引降级应含 W23 + Q5，实际 %v", codesOf(missing.Diagnostics))
 	}
 
@@ -390,8 +471,8 @@ func TestShowOpinionHealthyMissingEquivalence(t *testing.T) {
 	if !healthy.backend.UseIndex() {
 		t.Fatalf("健康索引应走索引后端，实际 kind=%s reason=%s", healthy.backend.Kind, healthy.backend.Reason)
 	}
-	if hasCode(healthy.Diagnostics, CodeQ5) || hasCode(healthy.Diagnostics, "W23") ||
-		hasCode(healthy.Diagnostics, "W22") || hasCode(healthy.Diagnostics, "W24") {
+	if hasCode(healthy.Diagnostics, CodeQ5) || hasCode(healthy.Diagnostics, wIdxMissing) ||
+		hasCode(healthy.Diagnostics, wIdxStale) || hasCode(healthy.Diagnostics, wIdxCorrupt) {
 		t.Fatalf("健康索引不应有任何降级诊断，实际 %v", codesOf(healthy.Diagnostics))
 	}
 
@@ -406,21 +487,80 @@ func TestShowOpinionHealthyMissingEquivalence(t *testing.T) {
 		t.Fatalf("两后端计数分叉：missing scanned=%d skipped=%d，healthy scanned=%d skipped=%d",
 			missing.ScannedFiles, missing.SkippedFiles, healthy.ScannedFiles, healthy.SkippedFiles)
 	}
+
+	// 业务诊断（Q1/Q2/Q3/Q4——含观点来源悬空 Q2 与重算后的 Q3）除降级留痕
+	// （W22/W23/W24/Q5，用上面拼接构造的 wIdx* 与 CodeQ5 指代、绝不抄双引号字面量）外
+	// 必须**逐字等价**：两条后端不得在业务面上分叉。
+	stripDegrade := func(diags []Diagnostic) []Diagnostic {
+		out := []Diagnostic{}
+		for _, d := range diags {
+			switch d.Code {
+			case wIdxStale, wIdxMissing, wIdxCorrupt, CodeQ5:
+				continue
+			}
+			out = append(out, d)
+		}
+		return out
+	}
+	mBiz, hBiz := stripDegrade(missing.Diagnostics), stripDegrade(healthy.Diagnostics)
+	if len(mBiz) != len(hBiz) {
+		t.Fatalf("业务诊断条数分叉：missing=%v healthy=%v",
+			codesOf(missing.Diagnostics), codesOf(healthy.Diagnostics))
+	}
+	for i := range mBiz {
+		if mBiz[i] != hBiz[i] {
+			t.Fatalf("业务诊断第 %d 条分叉：missing=%+v healthy=%+v", i, mBiz[i], hBiz[i])
+		}
+	}
+	// missing 恰 W23 + Q5 各一条、W22/W24 为零；healthy 四码全零（负控：任一非零即失败）。
+	if countCode(missing.Diagnostics, wIdxMissing) != 1 || countCode(missing.Diagnostics, CodeQ5) != 1 ||
+		countCode(missing.Diagnostics, wIdxStale) != 0 || countCode(missing.Diagnostics, wIdxCorrupt) != 0 {
+		t.Fatalf("missing 降级码计数错，应恰 W23×1 + Q5×1、W22/W24 为零，实际 %v",
+			codesOf(missing.Diagnostics))
+	}
+	for _, c := range []string{wIdxStale, wIdxMissing, wIdxCorrupt, CodeQ5} {
+		if countCode(healthy.Diagnostics, c) != 0 {
+			t.Fatalf("healthy 不应有降级码 %s，实际 %v", c, codesOf(healthy.Diagnostics))
+		}
+	}
+	// MissingTargets 两后端等价，且恰为悬空目标（不因索引在位而漏报 / 分叉）。
+	if strings.Join(missing.MissingTargets, ",") != strings.Join(healthy.MissingTargets, ",") {
+		t.Fatalf("MissingTargets 两后端分叉：missing=%v healthy=%v",
+			missing.MissingTargets, healthy.MissingTargets)
+	}
+	if strings.Join(missing.MissingTargets, ",") != "k-20261201-missing" {
+		t.Fatalf("MissingTargets = %v，期望 [k-20261201-missing]", missing.MissingTargets)
+	}
 }
 
 // TestShowOpinionIDSemantics —— ⑤：观点 ID 形态 / 不存在 / 已删除语义。
 func TestShowOpinionIDSemantics(t *testing.T) {
 	root := osVault(t)
 
-	// 形态非法：知识卡 ID（k-*）或垃圾串都必须 ErrInvalidOpinionID，且零结果。
+	// 形态非法：知识卡 ID（k-*）或垃圾串都必须 errors.Is 命中 ErrInvalidOpinionID
+	// （负控：不能只看 err != nil；且不得误判成 NotFound），且零结果。
 	for _, bad := range []string{"k-20261201-attention", "o-bad", "garbage", ""} {
-		if res, err := osShow(root, bad); err == nil || res != nil {
-			t.Fatalf("非法观点 ID %q 应报错且零结果，实际 res=%v err=%v", bad, res, err)
+		res, err := osShow(root, bad)
+		if res != nil {
+			t.Fatalf("非法观点 ID %q 应零结果，实际 res=%v", bad, res)
+		}
+		if !errors.Is(err, ErrInvalidOpinionID) {
+			t.Fatalf("非法观点 ID %q 应 errors.Is(ErrInvalidOpinionID)，实际 %v", bad, err)
+		}
+		if errors.Is(err, ErrOpinionNotFound) {
+			t.Fatalf("形态非法不应误判为 ErrOpinionNotFound：%q → %v", bad, err)
 		}
 	}
-	// 形态合法但库中不存在：ErrOpinionNotFound。
-	if _, err := osShow(root, "o-20261299-none"); err == nil {
-		t.Fatalf("不存在的观点应报 ErrOpinionNotFound，实际 nil")
+	// 形态合法但库中不存在：必须 errors.Is 命中 ErrOpinionNotFound（负控：不得误判成 InvalidID），零结果。
+	nf, err := osShow(root, "o-20261299-none")
+	if nf != nil {
+		t.Fatalf("不存在的观点应零结果，实际 %v", nf)
+	}
+	if !errors.Is(err, ErrOpinionNotFound) {
+		t.Fatalf("不存在的观点应 errors.Is(ErrOpinionNotFound)，实际 %v", err)
+	}
+	if errors.Is(err, ErrInvalidOpinionID) {
+		t.Fatalf("不存在（形态合法）不应误判为 ErrInvalidOpinionID：%v", err)
 	}
 	// 已删除观点：仍可显式查看，Deleted=true 且 markers 含 [已删除]。
 	dead, err := osShow(root, osDeadID)

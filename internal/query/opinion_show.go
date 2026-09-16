@@ -38,6 +38,7 @@ package query
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
@@ -154,6 +155,11 @@ type OpinionShowResult struct {
 	// 关系条目数（正 + 反合计，供 Q4）与已展示条目里对端为 deprecated 的对端 ID（升序去重）。
 	HiddenDeprecated int
 	DeprecatedPeers  []string
+	// MissingTargets 是观点自身 relations[] 里**目标不存在**的对端 ID（升序去重）：与 card show
+	// 的 CardShowResult.MissingTargets 同义——悬空边本身照常保留在三组内（VisibleEndpoints 不因
+	// 悬空丢条目），人类可读渲染据此标注「目标不存在」，同时按关系事实产 Q2（见 Diagnostics）。
+	// **仅供文本渲染**：不进 OpinionDetail / OpinionDataKeys / 既有 JSON data（键集合零扩张）。
+	MissingTargets []string
 	// Page 是本次分页事实（三组 × 正反共六段的一个全局分页）；不进 data。
 	Page Page
 	// backend 是本次取数实际走的后端。**不进 data**：降级事实经 warnings[] 承载
@@ -245,6 +251,18 @@ func ShowOpinionPaged(root string, id model.OpinionID, deps IndexDeps, page Page
 		deprecatedPeerSet(universe, shownFwd, func(e RelationEdge) string { return e.Target }),
 		deprecatedPeerSet(universe, shownRev, func(e RelationEdge) string { return e.From }))
 
+	// 悬空引用（复用 card show 口径，见 scan.go danglingDiagnostics / card.go missingTargets）：
+	// 观点自身 relations[] 中 target 在 Knowledge ∪ Opinion 存在宇宙里都找不到的边——边照常
+	// 保留在三组内（上面的 VisibleEndpoints 不因悬空丢条目），只把目标 ID 记进 MissingTargets
+	// （升序去重、仅供文本渲染，不进 data），并按**关系事实**逐条产 Q2（derives 也算：悬空是
+	// 关系事实，与是否进三组无关；path = 观点文件、message 含目标 ID）。合并进已 finalize 的
+	// scan.Diagnostics 时**先 dropQ3 再 finalizeDiagnostics**：Q3 汇总计数 / 次序按合并后结果
+	// 重算（同 context.go 口径），绝不在末位 Q3 之后随手 append 导致计数失真 / Q3 错位。
+	// 这些事实在**分页之前**就从 *target 取定（与 segs 无关），分页只切三组视图、绝不吞掉
+	// Q2 / MissingTargets。
+	missing, danglingQ2 := opinionDanglingRefs(*target, knownIDSet(scan))
+	base := finalizeDiagnostics(append(dropQ3(scan.Diagnostics), danglingQ2...))
+
 	res := &OpinionShowResult{
 		Opinion: OpinionDetail{
 			ID: target.ID, Title: target.Title, Domain: target.Domain,
@@ -262,13 +280,14 @@ func ShowOpinionPaged(root string, id model.OpinionID, deps IndexDeps, page Page
 		},
 		backend: backend,
 		Diagnostics: withTruncationDiagnostic(withIndexDegradedDiagnostics(
-			withDeprecatedHiddenDiagnostic(scan.Diagnostics, hidden, pol.IncludeDeprecated),
+			withDeprecatedHiddenDiagnostic(base, hidden, pol.IncludeDeprecated),
 			degradeDiagnostics(backend)), pg.Truncated, pg, "关系条目"),
 		Page:             pg,
 		ScannedFiles:     scan.ScannedFiles,
 		SkippedFiles:     scan.SkippedFiles,
 		HiddenDeprecated: hidden,
 		DeprecatedPeers:  depPeers,
+		MissingTargets:   missing,
 	}
 	return res, nil
 }
@@ -362,4 +381,48 @@ func opinionSections(o OpinionEntry) OpinionSections {
 		vals[name] = strings.TrimSpace(string(o.Raw[span.Body:span.End]))
 	}
 	return NewOpinionSections(vals)
+}
+
+// knownIDSet 收集 Knowledge ∪ Opinion 的**存在宇宙**（只判 ID 是否在库，与 deleted /
+// deprecated 可见性无关——那是 VisibleEndpoints 的维度）。悬空引用判定以此为准，与 card.go
+// missingTargets / scan.go danglingDiagnostics 的「target 在全库中不存在」同口径，只是把观点
+// 也纳入存在性来源（观点 ID 亦是合法对端）。
+func knownIDSet(scan *ScanResult) map[string]bool {
+	known := make(map[string]bool, len(scan.Cards)+len(scan.Opinions))
+	for _, c := range scan.Cards {
+		known[c.ID] = true
+	}
+	for _, o := range scan.Opinions {
+		known[o.ID] = true
+	}
+	return known
+}
+
+// opinionDanglingRefs 复用 card show 的悬空引用口径，处理**观点自身 relations[]**：遍历全部
+// 关系（**含 derives**——悬空是关系事实，与是否进 supports / limits / opposing 三组无关），
+// target 在存在宇宙里找不到的：
+//   - 记入 missing（升序去重）——仅供文本渲染标注「目标不存在」，不进 data；
+//   - 逐条产一条 Q2（path = 观点文件、message 含目标 ID / type / from），与 scan.go
+//     danglingDiagnostics 对知识卡的做法逐字同构（只是持有方是观点）。
+//
+// 条目本身**不隐藏**（与合同 §5.1「悬空条目照常保留、只附诊断」一致：可见性与悬空是两件事）。
+func opinionDanglingRefs(o OpinionEntry, known map[string]bool) (missing []string, q2 []Diagnostic) {
+	missing = []string{}
+	q2 = []Diagnostic{}
+	seen := map[string]bool{}
+	for _, rel := range o.Relations {
+		target := string(rel.Target)
+		if target == "" || known[target] {
+			continue
+		}
+		q2 = append(q2, newQ2(o.Path,
+			"悬空引用：relations[] 指向的目标卡 %s 在库中不存在（关系 type=%s，from=%s）",
+			target, rel.Type, o.ID))
+		if !seen[target] {
+			seen[target] = true
+			missing = append(missing, target)
+		}
+	}
+	sort.Strings(missing)
+	return missing, q2
 }
