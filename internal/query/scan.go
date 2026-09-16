@@ -107,6 +107,13 @@ type OpinionEntry struct {
 	// Title 取 frontmatter 的 title（可选键，落在 Extra），缺失时退化为 ID——
 	// 与 CardEntry.Title 走**同一个** entryTitle，写入侧与读路径投影口径不分叉。
 	Title string
+	// Tags / CreatedAt / UpdatedAt 是**检索面**（T-…-006-A）需要的三项：kind=opinion|all 的
+	// `eg search` 把观点折成与知识卡同构的候选，Filter 用 tags 打分、SortEntries 用
+	// updated_at / created_at 做第 ②③ 级全序键。缺省即空 / 空串（不回填默认值），口径与
+	// CardEntry 的同名字段逐字相同（同一 entryTags / Stamp.String / Date.String）。
+	Tags      []string
+	CreatedAt string
+	UpdatedAt string
 	// Status 是 `status` 的逐字原值；Deprecated 是 `status.Deprecated()` 的展开
 	// （与知识卡同口径：状态是一个维度，删除是另一个正交维度）。
 	Status     string
@@ -338,6 +345,9 @@ func OpinionEntryFrom(rel, domain string, raw []byte) (OpinionEntry, Diagnostic,
 	return OpinionEntry{
 		ID: string(op.ID), Path: rel, Domain: domain,
 		Title:      entryTitle(op.Extra, string(op.ID)),
+		Tags:       op.Tags,
+		CreatedAt:  op.CreatedAt.String(),
+		UpdatedAt:  op.UpdatedAt.String(),
 		Status:     string(op.Status),
 		Deprecated: op.Status.Deprecated(),
 		Deleted:    DeletedFromStamp(stampText(op.DeletedAt)),

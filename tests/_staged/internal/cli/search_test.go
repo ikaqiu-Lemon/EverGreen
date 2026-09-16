@@ -433,3 +433,127 @@ func vaultSnapshot(t *testing.T, root string) string {
 	sort.Strings(lines)
 	return strings.Join(lines, "\n")
 }
+
+// —— T-…-006-A：`eg search --kind` 的真 CLI 合同 ——
+//
+// 真实 vault 同时含可匹配的 k-* 与 o-*（不 mock 扫描结果）；逐个覆盖默认 / knowledge /
+// opinion / all，并钉非法值退 1、文案列出封闭值，以及默认口径 == knowledge。
+// 两后端等价（healthy 索引 vs 强制 fallback）由 internal/query 的 search_kind_test.go
+// 在取数层逐字反证；本层只钉命令面参数口径与不泄漏。
+
+// seedOpinion 写一条最小合法观点（测试脚手架，非产品写路径；与 seedCard 同构）。
+func seedOpinion(t *testing.T, root, domain, id, title, validation, created, updated string,
+	tags []string, body string) {
+	t.Helper()
+	fm := "---\nid: " + id + "\nstatus: active\ncreated_at: '" + created +
+		"'\nupdated_at: '" + updated + "'\ntitle: " + title +
+		"\nvalidation: " + validation + "\nsources: []\n"
+	if len(tags) > 0 {
+		fm += "tags:\n"
+		for _, tag := range tags {
+			fm += "  - " + tag + "\n"
+		}
+	}
+	fm += "---\n\n## 观点\n\n" + body + "\n"
+	writeFileMk(t, filepath.Join(root, "domains", domain, "opinions", id+".md"), fm)
+}
+
+// searchKindVault 造同时含可匹配 k-* 与 o-* 的 vault：令牌 quota，两类各两条。
+//
+//	k1 title 命中 / k2 body 命中 / o1 title 命中 / o2 tags 命中
+func searchKindVault(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ConfigFileName),
+		"version: 1\ndomains:\n  - ai-infra\ndefault_domain: ai-infra\n")
+	seedCard(t, dir, "ai-infra", "k-20260901-x", "quota 的知识卡", "active",
+		"2026-09-01", "2026-09-01T10:00:00+08:00", nil, "正文占位。")
+	seedCard(t, dir, "ai-infra", "k-20260902-y", "无关标题", "active",
+		"2026-09-02", "2026-09-02T10:00:00+08:00", nil, "正文里写了 quota。")
+	seedOpinion(t, dir, "ai-infra", "o-20260903-p", "quota 的观点", "validated",
+		"2026-09-03", "2026-09-03T10:00:00+08:00", nil, "主张占位。")
+	seedOpinion(t, dir, "ai-infra", "o-20260904-q", "另一个观点", "pending",
+		"2026-09-04", "2026-09-04T10:00:00+08:00", []string{"quota"}, "主张占位。")
+	return dir
+}
+
+// TestSearchKindCLIDefaultAndKnowledgeExcludeOpinions —— 默认与 --kind knowledge 都不含 o-*。
+func TestSearchKindCLIDefaultAndKnowledgeExcludeOpinions(t *testing.T) {
+	dir := searchKindVault(t)
+	for _, args := range [][]string{{"quota"}, {"quota", "--kind", "knowledge"}} {
+		code, env, _ := runSearchJSON(t, dir, args...)
+		if code != ExitOK {
+			t.Fatalf("eg search %v 退出码 = %d，期望 0", args, code)
+		}
+		ids := searchHitIDs(t, env)
+		if len(ids) != 2 {
+			t.Fatalf("eg search %v 命中 = %v，期望 2 张知识卡", args, ids)
+		}
+		for _, id := range ids {
+			if strings.HasPrefix(id, "o-") {
+				t.Fatalf("eg search %v 泄漏观点 %s（命中 = %v）", args, id, ids)
+			}
+		}
+	}
+}
+
+// TestSearchKindCLIOpinionAndAll —— --kind opinion 只 o-*；--kind all 两类都在。
+func TestSearchKindCLIOpinionAndAll(t *testing.T) {
+	dir := searchKindVault(t)
+	code, env, _ := runSearchJSON(t, dir, "quota", "--kind", "opinion")
+	if code != ExitOK {
+		t.Fatalf("--kind opinion 退出码 = %d，期望 0", code)
+	}
+	ids := searchHitIDs(t, env)
+	if len(ids) != 2 {
+		t.Fatalf("--kind opinion 命中 = %v，期望 2 条观点", ids)
+	}
+	for _, id := range ids {
+		if !strings.HasPrefix(id, "o-") {
+			t.Fatalf("--kind opinion 混入非观点 %s（命中 = %v）", id, ids)
+		}
+	}
+	code, envAll, _ := runSearchJSON(t, dir, "quota", "--kind", "all")
+	if code != ExitOK {
+		t.Fatalf("--kind all 退出码 = %d，期望 0", code)
+	}
+	all := searchHitIDs(t, envAll)
+	var nk, no int
+	for _, id := range all {
+		if strings.HasPrefix(id, "o-") {
+			no++
+		} else {
+			nk++
+		}
+	}
+	if nk != 2 || no != 2 {
+		t.Fatalf("--kind all 命中 = %v，期望 2 张知识卡 + 2 条观点", all)
+	}
+}
+
+// TestSearchKindCLIDefaultKindIsKnowledge —— 不给 --kind 与显式 --kind knowledge 逐字相同。
+func TestSearchKindCLIDefaultKindIsKnowledge(t *testing.T) {
+	dir := searchKindVault(t)
+	_, a, _ := runSearchJSON(t, dir, "quota")
+	_, b, _ := runSearchJSON(t, dir, "quota", "--kind", "knowledge")
+	if got, want := strings.Join(searchHitIDs(t, a), ","),
+		strings.Join(searchHitIDs(t, b), ","); got != want {
+		t.Fatalf("默认口径与 --kind knowledge 不一致：%q vs %q", got, want)
+	}
+}
+
+// TestSearchKindCLIInvalidExit1 —— 非法 kind 退 1，stderr 列出封闭值 knowledge|opinion|all。
+func TestSearchKindCLIInvalidExit1(t *testing.T) {
+	dir := searchKindVault(t)
+	// 严格逐字：大小写 / 前后空白 / 复数 / 缩写一律非法（空串 "" 是默认口径，不在此列）。
+	for _, bad := range []string{"Knowledge", "opinions", "all ", " opinion", "foo", "k"} {
+		r := newTestRoot(t, dir)
+		code, _, errOut := runCLI(t, r, "--vault", dir, "search", "quota", "--kind", bad)
+		if code != ExitUsage {
+			t.Errorf("--kind %q 退出码 = %d，期望 1", bad, code)
+		}
+		if !strings.Contains(errOut, "knowledge|opinion|all") {
+			t.Errorf("--kind %q 的 stderr 未列出封闭值 knowledge|opinion|all：%q", bad, errOut)
+		}
+	}
+}

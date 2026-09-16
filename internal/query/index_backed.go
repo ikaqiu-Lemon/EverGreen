@@ -428,10 +428,27 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 		entries = append(entries, entry)
 	}
 	need := map[string]bool{}
+	// parsedOpinions 承接 plan.all（`eg search`）下**回权威解析**的观点全条目。
+	// 默认读路径（plan.focus：card show / rel）不投观点，因此这个 map 恒空、观点保持摘要态；
+	// 只有 search 需要观点的 tags / created_at / updated_at / 正文来打分与四级全序（kind
+	// 收窄属 T-…-006-A），此时**必须**读观点字节 —— 摘要 stub 的这些字段是空的，用它
+	// 直接检索会与扫描后端分叉（打分 0、时间戳空导致排序错位）。
+	parsedOpinions := map[string]OpinionEntry{}
 	if plan.all {
 		for _, f := range present {
-			if unparsable[f.Path] || opinionPaths[f.Path] {
-				continue // 已记 Q1（跳过）或是观点行（默认读不投观点）：口径与扫描后端一致
+			if unparsable[f.Path] {
+				continue // 已记 Q1（跳过）：口径与扫描后端一致
+			}
+			if opinionPaths[f.Path] {
+				// 观点行：回权威解析成与 VaultScan 逐字同构的 OpinionEntry（同一 OpinionEntryFrom）。
+				oe, _, ok := parseOpinionAt(root, f.Path)
+				if !ok {
+					// 索引说这里有一条可解析的观点，现在解析不了 ⇒ 索引与权威不一致：
+					// 整体退回扫描后端（degrade.go 的 loadVault 留痕 W22 + Q5），不半索引半扫描。
+					return nil, fmt.Errorf("索引记录的观点文件 %s 现在解析不了", f.Path)
+				}
+				parsedOpinions[f.Path] = oe
+				continue
 			}
 			need[f.Path] = true
 		}
@@ -475,6 +492,13 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 	res.Cards = entries
 	// 观点摘要同样按 path 升序（与 VaultScan 的 res.Opinions 排序口径逐字相同）；它们不参与
 	// 卡面的重复 / 悬空诊断（那两条只在 Cards 上判），仅用于把守恒式与计数对齐扫描后端。
+	// plan.all（search）下用回权威解析的全条目覆盖同路径摘要：观点候选因此带齐 tags /
+	// 时间戳 / 正文，kind 收窄检索与扫描后端逐字一致（同一路径只留一条，优先「真读过字节」）。
+	for i := range opinions {
+		if full, ok := parsedOpinions[opinions[i].Path]; ok {
+			opinions[i] = full
+		}
+	}
 	sort.SliceStable(opinions, func(i, j int) bool { return opinions[i].Path < opinions[j].Path })
 	res.Opinions = opinions
 	res.Diagnostics = append(res.Diagnostics, duplicateIDDiagnostics(res.Cards)...)
@@ -526,6 +550,19 @@ func parseCardAt(root, rel string) (CardEntry, Diagnostic, bool) {
 		return CardEntry{}, newQ1(rel, "知识卡不可解析，已跳过：%v", err), false
 	}
 	return CardEntryFrom(rel, domainOfPath(rel), raw)
+}
+
+// parseOpinionAt 读一个观点文件并折成 OpinionEntry（领域名由 vault 内相对路径推出）。
+//
+// 字节 → 条目的映射复用全包唯一的 OpinionEntryFrom，因此 tags / 时间戳 / 正文 / Q1 文案
+// 与扫描后端逐字相同。只在 plan.all（`eg search` 的 kind=opinion|all）下调用：默认读路径
+// 不投观点，不会走到这里。读不动 / 解析不动即 ok=false，调用方据此整体降级为扫描后端。
+func parseOpinionAt(root, rel string) (OpinionEntry, Diagnostic, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return OpinionEntry{}, newQ1(rel, "观点不可解析，已跳过：%v", err), false
+	}
+	return OpinionEntryFrom(rel, domainOfPath(rel), raw)
 }
 
 // domainOfPath 从 `domains/<d>/knowledge/<file>.md` 取领域名（取不到即空串）。

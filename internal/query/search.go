@@ -34,6 +34,10 @@ type SearchRequest struct {
 	Tags   []string
 	Since  string
 	Until  string
+	// Kind 是检索面收窄口径（封闭三值 knowledge|opinion|all，单点定义见 kind.go）。
+	// **零值兼容**：空串 == knowledge —— M1–M5 的库内调用方不设此字段即默认只搜知识卡，
+	// 行为一字不变（默认 `eg search` 绝不返回 o-*）。非法值 wrap ErrInvalidQuery → 退 1。
+	Kind SearchKind
 	// IncludeDeleted 是「可显式查看」这一列的显式开关（提案与状态合同 §5.1 第 3 / 4 行）：
 	// **默认 false = 默认视图不返回已删除项**，置 true 才把它们带回结果并标 [已删除]。
 	// 用开关而不是新命令：删除维度只是过滤条件，记录不动、排序算法不动。
@@ -120,15 +124,25 @@ func ValidateSearchRequest(req SearchRequest) error {
 		return fmt.Errorf("%w：--since=%s 晚于 --until=%s（闭区间为空）",
 			ErrInvalidQuery, req.Since, req.Until)
 	}
+	// kind 收窄口径校验走**单点** normalizeSearchKind（kind.go）：零值兼容为 knowledge，
+	// 非法值 wrap ErrInvalidQuery（文案列出封闭值）。这里只判形态，不改 req。
+	if _, err := normalizeSearchKind(req.Kind); err != nil {
+		return err
+	}
 	return nil
 }
 
-// Search 执行一次检索：扫描 → 过滤打分 → 四级全序排序 → 组装命中列表 + 诊断。
+// Search 执行一次检索：扫描 → 按 kind 合并候选集 → 过滤打分 → 四级全序排序 →
+// 组装命中列表 + 诊断。
 //
-// 搜索面 = 知识卡（`domains/<d>/knowledge/**.md`）：材料笔记与原文**不进 hits[]**
-// （合同 §1.1；因此 IncludeNotes 为 false，笔记既不扫也不计数）。
-// 失效卡**同等可见**（合同 §1.5）：照常进结果集、参与同一套排序，不降权不后置，
-// 也没有任何隐藏它们的开关。
+// 搜索面由 req.Kind 收窄（封闭三值，单点定义见 kind.go）：
+//   - knowledge（默认 / 零值）= 知识卡（`domains/<d>/knowledge/**.md`）；
+//   - opinion = 观点（`domains/<d>/opinions/**.md`）；
+//   - all = 两类合并成**统一候选集**后同序同页。
+//
+// 材料笔记与原文**不进 hits[]**（合同 §1.1；因此 IncludeNotes 为 false，笔记既不扫也不
+// 计数）。失效卡 / 失效观点**同等可见**（合同 §1.5）：照常进结果集、参与同一套排序，
+// 不降权不后置，也没有任何隐藏它们的开关。
 func Search(root string, req SearchRequest) (*SearchResult, error) {
 	if err := ValidateSearchRequest(req); err != nil {
 		return nil, err
@@ -149,7 +163,14 @@ func Search(root string, req SearchRequest) (*SearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	cards := Filter(scan.Cards, FilterSpec{
+	// kind 收窄发生在**合并候选集这一层**：先按封闭口径把 knowledge / opinion 折成
+	// **同构的统一候选集**（candidatesForKind，见下），再复用同一套 Filter（§1.3 打分）、
+	// 删除过滤（dropDeleted）、四级 SortEntries（§1.4 全序）与 ApplyPage（§8.2 分页）。
+	// 因此 `all` 是「统一全序后切片」而非「分组各自排序分页再拼接」，两条后端也天然同口径
+	// （scan 与 index 都只是喂给这一层同一份 ScanResult）。normalizeSearchKind 已在
+	// ValidateSearchRequest 过关，这里的零值兼容与三值收窄不会再出错。
+	kind, _ := normalizeSearchKind(req.Kind)
+	cards := Filter(candidatesForKind(scan, kind), FilterSpec{
 		Query: req.Query, Domain: req.Domain, Tags: req.Tags,
 		Since: req.Since, Until: req.Until,
 	})
@@ -181,6 +202,53 @@ func Search(root string, req SearchRequest) (*SearchResult, error) {
 		Page:        pg,
 		backend:     backend,
 	}, nil
+}
+
+// candidatesForKind 按封闭 kind 口径把扫描产物折成**统一候选集**（[]CardEntry）。
+//
+// 单点收窄的关键：knowledge 与 opinion 在这里就被投影成同一种 CardEntry，之后 Filter /
+// dropDeleted / SortEntries / ApplyPage 只见到一个同构切片，因此
+//   - `all` 的四级全序是**跨两类**的一次全序（不是各排各页再拼接）；
+//   - 两条取数后端只要给出同一份 ScanResult（scan.Cards / scan.Opinions 计数与字段同口径），
+//     kind 收窄后的结果就必然逐字一致。
+//
+// 观点投影走 opinionAsCandidate（保留 Raw / Doc 供 Filter 取正文全文与打分）。
+func candidatesForKind(scan *ScanResult, kind SearchKind) []CardEntry {
+	switch kind {
+	case SearchKindOpinion:
+		return opinionCandidates(scan.Opinions)
+	case SearchKindAll:
+		out := make([]CardEntry, 0, len(scan.Cards)+len(scan.Opinions))
+		out = append(out, scan.Cards...)
+		out = append(out, opinionCandidates(scan.Opinions)...)
+		return out
+	default: // SearchKindKnowledge（含零值兼容）
+		return scan.Cards
+	}
+}
+
+// opinionCandidates 把观点条目投影成检索候选（同构 CardEntry）。
+func opinionCandidates(ops []OpinionEntry) []CardEntry {
+	out := make([]CardEntry, 0, len(ops))
+	for _, o := range ops {
+		out = append(out, opinionAsCandidate(o))
+	}
+	return out
+}
+
+// opinionAsCandidate 把一条 OpinionEntry 折成 CardEntry：只搬检索面用得到的字段
+// （ID / 路径 / 领域 / 标题 / tags / 时间戳 / 失效·删除位 / relations / sources /
+// Raw / Doc），使它与知识卡在 Filter（title/tags/body 打分）与 SortEntries（四级全序）
+// 里**完全同构**。观点独有的 validation 至少在本批**不参与过滤**（与 kind 正交），因此
+// 不投影到候选面 —— 候选面只承载「怎么打分 / 怎么排序 / 是否已删除」这几件事。
+func opinionAsCandidate(o OpinionEntry) CardEntry {
+	return CardEntry{
+		ID: o.ID, Path: o.Path, Domain: o.Domain, Title: o.Title,
+		Tags: o.Tags, Status: o.Status, Deprecated: o.Deprecated,
+		CreatedAt: o.CreatedAt, UpdatedAt: o.UpdatedAt,
+		Deleted: o.Deleted, Relations: o.Relations, Sources: o.Sources,
+		ReplacedByTarget: o.ReplacedByTarget, Raw: o.Raw, Doc: o.Doc,
+	}
 }
 
 // dropDeleted 剔除已删除的卡（保序，不重排）。

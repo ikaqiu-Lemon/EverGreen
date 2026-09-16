@@ -134,6 +134,7 @@ tests/_staged/internal/query/rank_test.go	internal/query/rank_test.go	evergreen	
 tests/_staged/internal/query/relation_test.go	internal/query/relation_test.go	evergreen	unit	go
 tests/_staged/internal/query/reverse_test.go	internal/query/reverse_test.go	evergreen	unit	go
 tests/_staged/internal/query/scan_test.go	internal/query/scan_test.go	evergreen	unit	go
+tests/_staged/internal/query/search_kind_test.go	internal/query/search_kind_test.go	evergreen	unit	go
 tests/_staged/internal/query/search_test.go	internal/query/search_test.go	evergreen	unit	go
 tests/_staged/internal/query/visibility_test.go	internal/query/visibility_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/check_test.go	internal/reconcile/check_test.go	evergreen	unit	go

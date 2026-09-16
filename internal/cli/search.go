@@ -27,10 +27,12 @@ func searchCommand() *Command {
 		Summary:  "按关键词检索知识卡（只读；失效卡同等可见并标 [失效]）",
 		Owner:    "T-evergreen.s1_main_flow-158614-021",
 		ReadOnly: true,
-		Usage: `eg search <query> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--include-deleted] [--json]
+		Usage: `eg search <query> [--kind knowledge|opinion|all] [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--include-deleted] [--json]
 
 参数（M2 查询合同 §1.1）：
   <query>                是；关键词串，空串 / 只含空白 → 退 1、零输出内容
+  --kind <k>             否，默认 knowledge；封闭值 knowledge|opinion|all，非法值退 1（文案列出封闭值）
+                         knowledge=只知识卡；opinion=只观点卡；all=两类并入同一候选集统一排序分页
   --domain <d>           否，默认全库；值不在 evergreen.yml 的 domains 内 → 退 1（eg 绝不自选领域）
   --tag <t>              否，可重复；多次给出为 AND（卡须同时含全部标签），逐字相等比较
   --since <YYYY-MM-DD>   否；updated_at 的日期部分 ≥ 该值（闭区间）
@@ -58,6 +60,8 @@ func searchCommand() *Command {
 			fs.Var(&tags, "tag", "标签过滤（可重复，AND）")
 			fs.String("since", "", "updated_at 日期下界（YYYY-MM-DD，闭区间）")
 			fs.String("until", "", "updated_at 日期上界（YYYY-MM-DD，闭区间）")
+			fs.String(SearchKindFlag, string(query.SearchKindKnowledge),
+				"检索面收窄：knowledge|opinion|all（默认 knowledge；非法值退 1）")
 			fs.Bool(SearchIncludeDeletedFlag, false, "显式把已删除项带回结果（默认视图不返回）")
 			// 分页（S4 · T-…-068，合同 §8.2）：注册点唯一，见 page.go。
 			pageFlags(fs)
@@ -85,11 +89,14 @@ func (r *Root) runSearch(inv *Invocation) (*Result, error) {
 		return nil, err
 	}
 	req := query.SearchRequest{
-		Query:          inv.Args[0],
-		Domain:         inv.String("domain"),
-		Tags:           captureTags(inv),
-		Since:          inv.String("since"),
-		Until:          inv.String("until"),
+		Query:  inv.Args[0],
+		Domain: inv.String("domain"),
+		Tags:   captureTags(inv),
+		Since:  inv.String("since"),
+		Until:  inv.String("until"),
+		// kind 收窄口径直接把 flag 值交给 query 层的**单点**枚举 / 校验（kind.go）：
+		// CLI 不重复判 knowledge|opinion|all，非法值经 ErrInvalidQuery 翻成退出码 1（下方）。
+		Kind:           query.SearchKind(inv.String(SearchKindFlag)),
 		IncludeDeleted: includeDeleted,
 		// S4：注入 A-44 水位线口径（B3 content_hash + Git HEAD），读路径据此判索引可用性。
 		Index: readIndexDeps(inv.VaultRoot),
@@ -146,6 +153,11 @@ func (r *Root) runSearch(inv *Invocation) (*Result, error) {
 // SearchIncludeDeletedFlag 是「可显式查看已删除项」的开关名（提案与状态合同 §5.1 第五列）。
 // 默认视图**不返回**已删除项，因此这个开关是唯一入口，名字只有一处字面量。
 const SearchIncludeDeletedFlag = "include-deleted"
+
+// SearchKindFlag 是 `eg search --kind` 的开关名（T-…-006-A）。封闭值 knowledge|opinion|all
+// 与零值兼容、非法值文案都由 query 层单点定义（query.SearchKind / SearchKindList），
+// 命令层只持有开关名字面量这一处，不重复实现口径判定。
+const SearchKindFlag = "kind"
 
 // searchHitLine 渲染一条命中（合同 §1.2 末段的形态）。
 // `<标记>` 的顺序与字面量一律走 render.go（唯一渲染落点），本函数不自己拼标记。

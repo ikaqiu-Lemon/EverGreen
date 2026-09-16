@@ -9,7 +9,7 @@ tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	10	20078
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24284
-tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	51972
+tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	52724
 tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	10	15510
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
@@ -62,7 +62,7 @@ tests/_staged/internal/cli/report_test.go	unit	go	cli-core	unit.internal.cli	10	
 tests/_staged/internal/cli/reserved_runtime_exit5_test.go	unit	go	cli-core	unit.internal.cli	3	12074
 tests/_staged/internal/cli/reviewed_test.go	unit	go	cli-core	unit.internal.cli	9	20407
 tests/_staged/internal/cli/root_help_contract_test.go	unit	go	cli-core	unit.internal.cli	5	13551
-tests/_staged/internal/cli/search_test.go	unit	go	cli-core	unit.internal.cli	9	16270
+tests/_staged/internal/cli/search_test.go	unit	go	cli-core	unit.internal.cli	13	21350
 tests/_staged/internal/cli/skill_test.go	unit	go	cli-core	unit.internal.cli	12	35234
 tests/_staged/internal/cli/t061_final_review_test.go	unit	go	cli-core	unit.internal.cli	3	5144
 tests/_staged/internal/cli/undelete_test.go	unit	go	cli-core	unit.internal.cli	4	10339
@@ -134,6 +134,7 @@ tests/_staged/internal/query/rank_test.go	unit	go	card-query	unit.internal.query
 tests/_staged/internal/query/relation_test.go	unit	go	card-query	unit.internal.query	10	12358
 tests/_staged/internal/query/reverse_test.go	unit	go	card-query	unit.internal.query	4	13259
 tests/_staged/internal/query/scan_test.go	unit	go	card-query	unit.internal.query	10	15063
+tests/_staged/internal/query/search_kind_test.go	unit	go	card-query	unit.internal.query	8	14565
 tests/_staged/internal/query/search_test.go	unit	go	card-query	unit.internal.query	10	13985
 tests/_staged/internal/query/visibility_test.go	unit	go	card-query	unit.internal.query	7	17822
 tests/_staged/internal/reconcile/check_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	7	16558

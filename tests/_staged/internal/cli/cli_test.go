@@ -79,6 +79,11 @@ var contractUnregisteredFlags = map[string]string{
 	// 「换一个视图」需要一个显式开关，否则就得改 M2 §3.1 里 relations_out/in 的语义
 	// （那是冻结口径，本 task 一格不碰）。如实登记参数名未在合同正文出现这一事实。
 	"replaced-by": "M5 索引架构合同 §8.4 replaced_by 正反双向可见（合同正文未给出参数名）",
+	// T-…-006-A：`eg search --kind knowledge|opinion|all` 的出处是读路径检索拆分设计 §5.2
+	// （scan/index 两后端一致的 kind 收窄，默认 knowledge 绝不泄漏 o-*）。本判据只读 M1~M3 的
+	// 四份冻结合同，该设计不在其中，故与 strict/limit/offset 同例具名登记这一事实，
+	// 不整体放宽其余参数的逐字可查判据。
+	"kind": "读路径检索拆分设计 §5.2 kind 收窄 knowledge|opinion|all（M1~M3 冻结合同表未给出参数名）",
 }
 
 // 命令展示名（S1 九命令按合同 §1 表格行序，之后是 M3 的三条用户显式状态命令，T-…-039）。
@@ -148,7 +153,9 @@ var wantFlags = map[string][]string{
 	// search 的 --include-deleted（T-…-043）：默认视图不返回已删除项，显式开关才带回。
 	// S4（T-…-068，M5 合同 §8.2 A-47）：三条读命令各追加封闭的两个分页参数 --limit / --offset；
 	// 写命令一律不声明，`eg rel add --limit 1` 由 rel 的 Validate 当场判用法错 → 退 1、零写入。
-	"search": {"domain", "tag", "since", "until", "include-deleted", "limit", "offset"},
+	// T-…-006-A：search 追加 --kind knowledge|opinion|all（读路径检索面收窄）；封闭值与非法值
+	// 文案由 query 层单点定义（query.SearchKind / SearchKindList），命令层只持有开关名字面量。
+	"search": {"kind", "domain", "tag", "since", "until", "include-deleted", "limit", "offset"},
 	"card":   {"include-deprecated", "limit", "offset"},
 	// rel 的 --replaced-by（M5 合同 §8.4）：只作用于读路径的视图开关。
 	"rel":    {"reason", "to", "domain", "include-deprecated", "replaced-by", "limit", "offset", "strict"},
