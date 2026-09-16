@@ -555,8 +555,10 @@ func parseCardAt(root, rel string) (CardEntry, Diagnostic, bool) {
 // parseOpinionAt 读一个观点文件并折成 OpinionEntry（领域名由 vault 内相对路径推出）。
 //
 // 字节 → 条目的映射复用全包唯一的 OpinionEntryFrom，因此 tags / 时间戳 / 正文 / Q1 文案
-// 与扫描后端逐字相同。只在 plan.all（`eg search` 的 kind=opinion|all）下调用：默认读路径
-// 不投观点，不会走到这里。读不动 / 解析不动即 ok=false，调用方据此整体降级为扫描后端。
+// 与扫描后端逐字相同。**所有** `eg search` 都走 plan.all（与 --kind 无关），因此每次 search
+// 都会在此回权威解析观点字节；kind 收窄发生在下游（candidatesForKind）——默认 kind=knowledge
+// 只是不把解析出的观点投进 hits，而不是不解析。card show / rel 走 plan.focus，不解析观点，
+// 不会走到这里。读不动 / 解析不动即 ok=false，调用方据此整体降级为扫描后端。
 func parseOpinionAt(root, rel string) (OpinionEntry, Diagnostic, bool) {
 	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 	if err != nil {

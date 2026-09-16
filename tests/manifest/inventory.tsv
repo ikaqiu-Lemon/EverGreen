@@ -134,7 +134,7 @@ tests/_staged/internal/query/rank_test.go	unit	go	card-query	unit.internal.query
 tests/_staged/internal/query/relation_test.go	unit	go	card-query	unit.internal.query	10	12358
 tests/_staged/internal/query/reverse_test.go	unit	go	card-query	unit.internal.query	4	13259
 tests/_staged/internal/query/scan_test.go	unit	go	card-query	unit.internal.query	10	15063
-tests/_staged/internal/query/search_kind_test.go	unit	go	card-query	unit.internal.query	8	14565
+tests/_staged/internal/query/search_kind_test.go	unit	go	card-query	unit.internal.query	10	25715
 tests/_staged/internal/query/search_test.go	unit	go	card-query	unit.internal.query	10	13985
 tests/_staged/internal/query/visibility_test.go	unit	go	card-query	unit.internal.query	7	17822
 tests/_staged/internal/reconcile/check_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	7	16558

@@ -24,7 +24,7 @@ func searchCommand() *Command {
 	return &Command{
 		Name:     "search",
 		Display:  "search",
-		Summary:  "按关键词检索知识卡（只读；失效卡同等可见并标 [失效]）",
+		Summary:  "按关键词检索知识资产（默认只知识卡，--kind 可显式收窄到 opinion / all；只读；失效卡同等可见并标 [失效]）",
 		Owner:    "T-evergreen.s1_main_flow-158614-021",
 		ReadOnly: true,
 		Usage: `eg search <query> [--kind knowledge|opinion|all] [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--include-deleted] [--json]
@@ -44,7 +44,8 @@ func searchCommand() *Command {
   --limit <n>            否，默认 50；最多返回条数，0 = 不限量；截断产恰一条 W25（total 仍为截断前总数）
   --offset <n>           否，默认 0；跳过的条数；超出总数返回空结果且仍退 0；两者为负 / 非整 → 退 1（参数非法；I-…-008 改判，原写 4）
 
-搜索面 = 知识卡（domains/<d>/knowledge/**.md）；材料笔记与原文不进 hits[]。
+搜索面随 --kind 定：默认 knowledge = 知识卡（domains/<d>/knowledge/**.md）；opinion = 观点卡
+（domains/<d>/opinions/**.md）；all = 两类并入同一候选集。材料笔记与原文始终不进 hits[]。
 匹配分（§1.3）：命中 title +3 / tags +2 / 正文 +1，每词每字段至多一次。
 排序（§1.4 四级全序）：匹配分降序 → updated_at 倒序 → created_at 倒序 → id 升序。
 分页（M5 索引架构合同 §8.2，S4 起）：在排序**之后**施加，翻页无重无漏；total 恒为分页前总数。

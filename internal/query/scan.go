@@ -94,12 +94,14 @@ type NoteEntry struct {
 // OpinionEntry 是一条被扫描到的观点（schema v2 的第三类领域产物，落在
 // `domains/<d>/opinions/o-*.md`）。
 //
-// 字段集是**对账域**与**派生索引投影**（T-…-066-B）两个消费者的公共集合：前者只需
-// ID / 路径 / 领域三个定位事实与三个引用承载面（`relations[]` / `sources[]` /
-// `replaced_by.target`）；后者要把观点折成与知识卡同口径的 index.Card 行，因此还需要
-// 标题 / 状态 / 失效·删除位 / `validation` 论证进度键，以及原始字节与解析文档（供算
-// content_hash 与取正文全文）。检索面的 tags / 计分字段仍不在这里——观点默认不进
-// `eg search` 结果集（收窄检索属 T-…-067），先加进来只会得到无人消费的字段。
+// 字段集是**对账域**、**派生索引投影**（T-…-066-B）与**检索面**（T-…-006-A）三个消费者
+// 的公共集合：对账域只需 ID / 路径 / 领域三个定位事实与三个引用承载面（`relations[]` /
+// `sources[]` / `replaced_by.target`）；派生索引投影要把观点折成与知识卡同口径的 index.Card
+// 行，因此还需要标题 / 状态 / 失效·删除位 / `validation` 论证进度键，以及原始字节与解析
+// 文档（供算 content_hash 与取正文全文）。检索面（`eg search --kind opinion|all`）把观点折
+// 成与知识卡同构的候选，因此 tags / created_at / updated_at 三项检索 / 计分 / 排序字段也在
+// 这里——它们由下面的 Tags / CreatedAt / UpdatedAt 承载（默认 `kind=knowledge` 不把观点投进
+// 结果，但字段本身对 opinion|all 收窄是有消费者的）。
 type OpinionEntry struct {
 	ID     string
 	Path   string // vault 内相对路径（/ 分隔）

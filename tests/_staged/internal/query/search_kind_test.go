@@ -101,6 +101,26 @@ func skScores(res *SearchResult) map[string]int {
 	return out
 }
 
+// skDiagCounts 按诊断 code 计数（用于「恰一条 W2x + 恰一条 Q5」这类逐码判据）。
+// 返回 code → 出现次数；未出现的 code 取 map 零值 0，判据因此可直接比数。
+func skDiagCounts(res *SearchResult) map[string]int {
+	out := map[string]int{}
+	for _, d := range res.Diagnostics {
+		out[d.Code]++
+	}
+	return out
+}
+
+// skHas 报告结果集里是否含某个 ID（正交性判据里做成员存在性断言，避免依赖顺序）。
+func skHas(res *SearchResult, id string) bool {
+	for _, h := range res.Hits {
+		if h.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // skKindReq 组装一次 kind 检索请求（Index 口径注入交由 bkSearch）。
 func skKindReq(kind SearchKind) SearchRequest {
 	return SearchRequest{Query: "zeta", Kind: kind}
@@ -231,12 +251,13 @@ func skStale(t *testing.T, root string) {
 func TestSearchKindBackendEquivalence(t *testing.T) {
 	kinds := []SearchKind{"", SearchKindKnowledge, SearchKindOpinion, SearchKindAll}
 	fallbacks := []struct {
-		name   string
-		break_ func(*testing.T, string)
+		name     string
+		break_   func(*testing.T, string)
+		wantCode string // 该降级原因**唯一**应产出的 W 码（missing→W23 / corrupt→W24 / stale→W22）
 	}{
-		{"missing", bkDropIndex},
-		{"corrupt", bkCorruptIndex},
-		{"stale", skStale},
+		{"missing", bkDropIndex, "W23"},
+		{"corrupt", bkCorruptIndex, "W24"},
+		{"stale", skStale, "W22"},
 	}
 	for _, kind := range kinds {
 		// 权威（healthy 索引）结果：本 kind 的唯一真值。
@@ -248,6 +269,12 @@ func TestSearchKindBackendEquivalence(t *testing.T) {
 		}
 		if healthy.backend.Kind != BackendIndex {
 			t.Fatalf("kind=%q 前置：healthy 必须走索引后端，实际 %s", kind, healthy.backend.Kind)
+		}
+		// healthy 索引下：本 kind **恰无**任何降级诊断（合同 §6.3：健康索引不产 W22/W23/W24/Q5）。
+		// 逐 kind 断言，避免「只测 knowledge 就宣称所有 kind 都干净」。
+		if hc := skDiagCounts(healthy); hc["W22"]+hc["W23"]+hc["W24"]+hc[CodeQ5] != 0 {
+			t.Fatalf("kind=%q healthy 不应出现降级诊断，实际 W22=%d W23=%d W24=%d Q5=%d（全部=%v）",
+				kind, hc["W22"], hc["W23"], hc["W24"], hc[CodeQ5], healthy.Diagnostics)
 		}
 		for _, fb := range fallbacks {
 			root := skVault(t)
@@ -280,6 +307,32 @@ func TestSearchKindBackendEquivalence(t *testing.T) {
 				t.Fatalf("kind=%q fallback=%s scanned/skipped 分叉：scan=%d/%d vs index=%d/%d",
 					kind, fb.name, got.ScannedFiles, got.SkippedFiles,
 					healthy.ScannedFiles, healthy.SkippedFiles)
+			}
+			// —— 降级诊断逐码判据（本批补强：不再仅靠旧 default-search 测试间接宣称）——
+			//
+			// clean 语料（skVault 无坏卡、无悬空引用）下，每个 kind 在**扫描 fallback** 上
+			// 都必须恰好留痕「一条原因码 + 一条 Q5」，且原因码与降级成因严格对应：
+			//   missing→W23、corrupt→W24、stale→W22（合同 §6.3 / degrade.go 的成对留痕）。
+			// 逐 kind × 逐成因断言，才能证明 opinion / all 也保留了同一套诊断、既不漏也不泄。
+			dc := skDiagCounts(got)
+			if dc[fb.wantCode] != 1 {
+				t.Fatalf("kind=%q fallback=%s 期望恰一条 %s，实际 %d（全部诊断=%v）",
+					kind, fb.name, fb.wantCode, dc[fb.wantCode], got.Diagnostics)
+			}
+			if dc[CodeQ5] != 1 {
+				t.Fatalf("kind=%q fallback=%s 期望恰一条 Q5，实际 %d（全部诊断=%v）",
+					kind, fb.name, dc[CodeQ5], got.Diagnostics)
+			}
+			for _, other := range []string{"W22", "W23", "W24"} {
+				if other != fb.wantCode && dc[other] != 0 {
+					t.Fatalf("kind=%q fallback=%s 多出无关原因码 %s（应仅 %s）：%v",
+						kind, fb.name, other, fb.wantCode, got.Diagnostics)
+				}
+			}
+			// clean 语料下诊断总数**恰 2**（W2x + Q5）：证明 kind 收窄没有顺带吞掉或伪造其它诊断。
+			if len(got.Diagnostics) != 2 {
+				t.Fatalf("kind=%q fallback=%s clean 语料降级诊断应恰 2 条(%s+Q5)，实际 %d 条：%v",
+					kind, fb.name, fb.wantCode, len(got.Diagnostics), got.Diagnostics)
 			}
 		}
 	}
@@ -382,4 +435,197 @@ func TestSearchKindNegativeControls(t *testing.T) {
 			t.Fatalf("负控 B：扫描 fallback 下 knowledge 检索泄漏观点 %s", id)
 		}
 	}
+}
+
+// —— ⑦ query 级正交性：kind 收窄与 validation / domain / tag / since / until /
+//    include-deleted 相互正交，观点复用与知识卡**同一套** Filter / dropDeleted 口径 ——
+//
+// 本批补强：证明「收窄到观点」不会顺带引入任何隐式过滤（validation 三态都在），且五个
+// 过滤维度对 kind=opinion 的取舍与知识卡逐字同口径。每条判据都先证 baseline 命中、再证
+// 过滤后**确实**移除应移除的那条（非空断言）。
+
+// skoOpinion 造一条最小合法观点，令 domain / updated_at / validation / tags / deleted_at
+// 成为唯一变量：检索令牌 "orthtok" 一律落在 title（score 3、稳定命中），正文不含令牌，
+// 因此命中与否只由过滤维度决定，排除「令牌命中面差异」这一混淆变量。
+func skoOpinion(domain, id, title, updated, validation, tagsBlock, deletedAt string) (rel, body string) {
+	fm := "---\nid: " + id + "\nstatus: active\ncreated_at: '2026-09-01'\nupdated_at: '" +
+		updated + "'\ntitle: " + title + "\nvalidation: " + validation + "\nsources: []\n"
+	if tagsBlock != "" {
+		fm += "tags:\n" + tagsBlock
+	}
+	if deletedAt != "" {
+		fm += "deleted_at: '" + deletedAt + "'\ndeleted_reason: 用例造的逻辑删除\n"
+	}
+	return "domains/" + domain + "/opinions/" + id + ".md", fm + "---\n\n## 观点\n\n占位主张，无检索令牌。\n"
+}
+
+// skoWrite 把一条 skoOpinion 写进 vault（复用 bkWrite；不建索引，读路径经 SelectBackend 走扫描）。
+func skoWrite(t *testing.T, root, domain, id, title, updated, validation, tagsBlock, deletedAt string) {
+	t.Helper()
+	rel, body := skoOpinion(domain, id, title, updated, validation, tagsBlock, deletedAt)
+	bkWrite(t, root, rel, body)
+}
+
+// skoReq 组装一次 kind=opinion 的正交性检索（令牌 orthtok；过滤维度由调用方填 req 其余字段）。
+func skoReq() SearchRequest { return SearchRequest{Query: "orthtok", Kind: SearchKindOpinion} }
+
+func TestSearchKindOpinionValidationIsOrthogonal(t *testing.T) {
+	root := t.TempDir()
+	// validation 三态齐备（提案与状态合同 §5：validation 是论证进度，与「是否可检索」正交）。
+	skoWrite(t, root, "ai-infra", "o-20260910-vpend", "orthtok pending",
+		"2026-09-10T10:00:00+08:00", "pending", "", "")
+	skoWrite(t, root, "ai-infra", "o-20260909-vval", "orthtok validated",
+		"2026-09-09T10:00:00+08:00", "validated", "", "")
+	skoWrite(t, root, "ai-infra", "o-20260908-vrej", "orthtok rejected",
+		"2026-09-08T10:00:00+08:00", "rejected", "", "")
+	res, err := bkSearch(root, skoReq())
+	if err != nil {
+		t.Fatalf("opinion 检索：%v", err)
+	}
+	// 三态**都**必须召回：kind 收窄绝不把 validation 当隐式过滤器（否则 rejected/pending 会被吞）。
+	for _, id := range []string{"o-20260910-vpend", "o-20260909-vval", "o-20260908-vrej"} {
+		if !skHas(res, id) {
+			t.Fatalf("validation 正交性：%s 未召回 —— validation 被当成隐式过滤器；实际 = %v", id, skIDs(res))
+		}
+	}
+	if len(res.Hits) != 3 {
+		t.Fatalf("期望恰 3 条(pending/validated/rejected)，实际 %d：%v", len(res.Hits), skIDs(res))
+	}
+}
+
+func TestSearchKindOpinionFilterOrthogonality(t *testing.T) {
+	// domain：--domain 对观点沿用 Filter 的 domain 口径（scan 面收窄 + Filter 复核）。
+	t.Run("domain", func(t *testing.T) {
+		root := t.TempDir()
+		skoWrite(t, root, "alpha", "o-20260910-da", "orthtok a", "2026-09-10T10:00:00+08:00", "pending", "", "")
+		skoWrite(t, root, "beta", "o-20260909-db", "orthtok b", "2026-09-09T10:00:00+08:00", "pending", "", "")
+		base, err := bkSearch(root, skoReq())
+		if err != nil {
+			t.Fatalf("baseline：%v", err)
+		}
+		if !skHas(base, "o-20260910-da") || !skHas(base, "o-20260909-db") {
+			t.Fatalf("domain baseline：两域观点都应命中，实际 %v", skIDs(base))
+		}
+		req := skoReq()
+		req.Domain = "alpha"
+		only, err := bkSearch(root, req)
+		if err != nil {
+			t.Fatalf("--domain alpha：%v", err)
+		}
+		if !skHas(only, "o-20260910-da") {
+			t.Fatalf("--domain alpha 应保留 alpha 观点，实际 %v", skIDs(only))
+		}
+		if skHas(only, "o-20260909-db") {
+			t.Fatalf("--domain alpha 未过滤掉 beta 观点，实际 %v", skIDs(only))
+		}
+		if len(only.Hits) != 1 {
+			t.Fatalf("--domain alpha 期望恰 1 条，实际 %v", skIDs(only))
+		}
+	})
+	// tag：--tag 对观点沿用 Filter 的 hasAllTags（多值 AND、逐字相等）。
+	t.Run("tag", func(t *testing.T) {
+		root := t.TempDir()
+		skoWrite(t, root, "ai-infra", "o-20260910-tt", "orthtok tagged",
+			"2026-09-10T10:00:00+08:00", "pending", "  - kept\n", "")
+		skoWrite(t, root, "ai-infra", "o-20260909-tn", "orthtok notag",
+			"2026-09-09T10:00:00+08:00", "pending", "", "")
+		base, err := bkSearch(root, skoReq())
+		if err != nil {
+			t.Fatalf("baseline：%v", err)
+		}
+		if !skHas(base, "o-20260910-tt") || !skHas(base, "o-20260909-tn") {
+			t.Fatalf("tag baseline：两条都应命中，实际 %v", skIDs(base))
+		}
+		req := skoReq()
+		req.Tags = []string{"kept"}
+		only, err := bkSearch(root, req)
+		if err != nil {
+			t.Fatalf("--tag kept：%v", err)
+		}
+		if !skHas(only, "o-20260910-tt") {
+			t.Fatalf("--tag kept 应保留带标签观点，实际 %v", skIDs(only))
+		}
+		if skHas(only, "o-20260909-tn") {
+			t.Fatalf("--tag kept 未过滤掉无标签观点，实际 %v", skIDs(only))
+		}
+		if len(only.Hits) != 1 {
+			t.Fatalf("--tag kept 期望恰 1 条，实际 %v", skIDs(only))
+		}
+	})
+	// since / until：对观点沿用 Filter 的 dateOf(updated_at) 闭区间口径。
+	t.Run("since_until", func(t *testing.T) {
+		root := t.TempDir()
+		skoWrite(t, root, "ai-infra", "o-20260905-old", "orthtok old",
+			"2026-09-05T10:00:00+08:00", "pending", "", "")
+		skoWrite(t, root, "ai-infra", "o-20260915-new", "orthtok new",
+			"2026-09-15T10:00:00+08:00", "pending", "", "")
+		base, err := bkSearch(root, skoReq())
+		if err != nil {
+			t.Fatalf("baseline：%v", err)
+		}
+		if !skHas(base, "o-20260905-old") || !skHas(base, "o-20260915-new") {
+			t.Fatalf("since/until baseline：两条都应命中，实际 %v", skIDs(base))
+		}
+		sinceReq := skoReq()
+		sinceReq.Since = "2026-09-10"
+		since, err := bkSearch(root, sinceReq)
+		if err != nil {
+			t.Fatalf("--since：%v", err)
+		}
+		if !skHas(since, "o-20260915-new") || skHas(since, "o-20260905-old") || len(since.Hits) != 1 {
+			t.Fatalf("--since 2026-09-10 应只留 new(09-15)，实际 %v", skIDs(since))
+		}
+		untilReq := skoReq()
+		untilReq.Until = "2026-09-10"
+		until, err := bkSearch(root, untilReq)
+		if err != nil {
+			t.Fatalf("--until：%v", err)
+		}
+		if !skHas(until, "o-20260905-old") || skHas(until, "o-20260915-new") || len(until.Hits) != 1 {
+			t.Fatalf("--until 2026-09-10 应只留 old(09-05)，实际 %v", skIDs(until))
+		}
+	})
+	// include-deleted：对观点沿用 dropDeleted 口径（默认剔除，显式开关带回，且带回项标 Deleted）。
+	t.Run("include_deleted", func(t *testing.T) {
+		root := t.TempDir()
+		skoWrite(t, root, "ai-infra", "o-20260910-live", "orthtok live",
+			"2026-09-10T10:00:00+08:00", "pending", "", "")
+		skoWrite(t, root, "ai-infra", "o-20260909-del", "orthtok dead",
+			"2026-09-09T10:00:00+08:00", "pending", "", "2026-09-09T12:00:00+08:00")
+		def, err := bkSearch(root, skoReq())
+		if err != nil {
+			t.Fatalf("default：%v", err)
+		}
+		if !skHas(def, "o-20260910-live") {
+			t.Fatalf("默认视图应保留未删除观点，实际 %v", skIDs(def))
+		}
+		if skHas(def, "o-20260909-del") {
+			t.Fatalf("默认视图未 dropDeleted 掉已删除观点，实际 %v", skIDs(def))
+		}
+		if len(def.Hits) != 1 {
+			t.Fatalf("默认视图期望恰 1 条，实际 %v", skIDs(def))
+		}
+		req := skoReq()
+		req.IncludeDeleted = true
+		inc, err := bkSearch(root, req)
+		if err != nil {
+			t.Fatalf("--include-deleted：%v", err)
+		}
+		if !skHas(inc, "o-20260910-live") || !skHas(inc, "o-20260909-del") {
+			t.Fatalf("--include-deleted 应把已删除观点带回，实际 %v", skIDs(inc))
+		}
+		// 带回的已删除观点必须标 Deleted（与知识卡同一 deleted 维度：DeletedFromStamp）。
+		var sawDel bool
+		for _, h := range inc.Hits {
+			if h.ID == "o-20260909-del" {
+				sawDel = true
+				if !h.Deleted {
+					t.Fatalf("已删除观点 %s 未标 Deleted（deleted 维度未沿用知识卡口径）", h.ID)
+				}
+			}
+		}
+		if !sawDel {
+			t.Fatal("--include-deleted 未召回已删除观点，无法证明 deleted 维度口径")
+		}
+	})
 }
