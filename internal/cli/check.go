@@ -117,8 +117,7 @@ func checkCommand() *Command {
 
 检查面：**恰** R3 + R4 七个 check —— 重复 ID / 悬空引用 / 孤儿 /
 关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复。
-悬空引用（dangling_ref / E12）覆盖 frontmatter **全部**引用承载字段（恰四类）：
-note.source→原文 / card.sources[].note→材料笔记 / card.sources[].source→原文 / replaced_by.target→知识卡；
+悬空引用（dangling_ref / E12）覆盖 frontmatter **全部**引用承载字段（` + checkDanglingHelpLine() + `）；
 指向原文的两类只在 sources/ 分区已采样时判定（不把「没采样」说成「不存在」）。
 关系条目的 target 缺失**不进** E12，走 R3 的关系目标缺失（E13）/ 关系前缀非法（E14）。
 事务态披露（默认就给，--strict 不影响）：库被事务扫描阻断时（损坏事务，或未闭合事务多于 1 个），
@@ -183,6 +182,17 @@ func checkScopeSet() map[string]bool {
 		set[c] = true
 	}
 	return set
+}
+
+// checkDanglingHelpLine 渲染帮助文本里 E12 的覆盖面：**类别数与名单都从真源取**。
+//
+// 与本文件「排除集合由真源取补集、不抄名单」是同一条纪律（见文件头注释）：
+// 帮助文本里一旦出现手抄的类别数或字段名单，覆盖面变动时它就会静默失真——
+// 用户读到的帮助与运行时 detail 说的不是一件事，而这种假话没有任何机器判据拦得住。
+// 因此这里只做渲染，事实全部来自 `reconcile.DanglingRefKinds()` / `DanglingRefKindCount`。
+func checkDanglingHelpLine() string {
+	kinds := reconcile.DanglingRefKinds()
+	return fmt.Sprintf("恰 %d 类：%s", reconcile.DanglingRefKindCount, strings.Join(kinds, " / "))
 }
 
 // checkExitCode 是本命令退出码的**唯一**判定点：只有两个出口。

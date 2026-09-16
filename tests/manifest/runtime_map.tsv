@@ -34,6 +34,7 @@ tests/_staged/internal/cli/index_test.go	internal/cli/index_test.go	evergreen	un
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/markers_test.go	internal/cli/markers_test.go	evergreen	unit	go
+tests/_staged/internal/cli/opinion_reconcile_cli_test.go	internal/cli/opinion_reconcile_cli_test.go	evergreen	unit	go
 tests/_staged/internal/cli/page_test.go	internal/cli/page_test.go	evergreen	unit	go
 tests/_staged/internal/cli/precheck_wire_test.go	internal/cli/precheck_wire_test.go	evergreen	unit	go
 tests/_staged/internal/cli/proposal_approve_test.go	internal/cli/proposal_approve_test.go	evergreen	unit	go

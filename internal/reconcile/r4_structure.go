@@ -397,6 +397,20 @@ const (
 	danglingOpinionSource = "opinion.sources[].source→原文"
 )
 
+// DanglingRefKinds 返回本码覆盖的六类引用机器串（冻结顺序的副本，调用方改不动内部状态）。
+//
+// 为什么要导出这份名单：命令层的帮助文本要向用户交代「E12 到底覆盖哪些字段」。
+// 在此之前 `eg check` 的 Usage 里**抄了一份**写死的四类名单，覆盖面从四类扩到六类之后
+// 那份抄本当场失真——帮助里说四类、运行时 detail 说六类，用户读到的是假话。
+// 有了这个出口，命令层只描述真源、不再复述；覆盖面再变也没有第二处需要人工同步。
+// 顺序与 DanglingRefKindCount 同源冻结（用例复算 len == DanglingRefKindCount）。
+func DanglingRefKinds() []string {
+	return []string{
+		danglingNoteSource, danglingCardNote, danglingCardSource,
+		danglingReplacedBy, danglingOpinionNote, danglingOpinionSource,
+	}
+}
+
 // refFact 是一条待判定的引用事实（引用方 / 目标 / 类别 / 引用方落盘路径）。
 type refFact struct{ from, to, kind, path string }
 

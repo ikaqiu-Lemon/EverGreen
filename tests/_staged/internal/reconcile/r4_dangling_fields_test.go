@@ -1,10 +1,13 @@
 package reconcile
 
 // I-evergreen.system_assurance-158614-019 的实现侧完整修复反证：`dangling_ref`（E12）
-// 覆盖 frontmatter **全部**引用承载字段（恰四类），而不是历史 M4 合同 §6.2 的「恰两类」。
+// 覆盖 frontmatter **全部**引用承载字段，而不是历史 M4 合同 §6.2 的「恰两类」。
 //
-// 逐字段各注入一个悬空目标，必须各报**恰一条** E12；四类字段的目标都存在时零 E12；
-// 关系条目的 target 仍归 R3（E13/E14），一个字节都不进 E12（一件事一码）。
+// 本文件钉**知识卡 / 笔记侧的四类**：逐字段各注入一个悬空目标，必须各报**恰一条** E12；
+// 四类字段的目标都存在时零 E12；关系条目的 target 仍归 R3（E13/E14），
+// 一个字节都不进 E12（一件事一码）。
+// 观点侧的另两类（`opinion.sources[].note` / `opinion.sources[].source`）由
+// `opinion_reconcile_test.go` 承载，覆盖面总数（DanglingRefKindCount）在下面逐字复算。
 //
 // 本文件是 T-…-004 批次3 的**先红**证据：实现补齐前，`card.sources[].source` 与
 // `replaced_by.target` 两类会红。
@@ -33,7 +36,7 @@ func withReplacedBy(c query.CardEntry, target string) query.CardEntry {
 	return c
 }
 
-// TestR4DanglingRefAllReferenceFields：E12 覆盖四类引用承载字段，逐字段先红后绿。
+// TestR4DanglingRefAllReferenceFields：E12 覆盖知识卡 / 笔记侧四类引用承载字段，逐字段先红后绿。
 func TestR4DanglingRefAllReferenceFields(t *testing.T) {
 	existingSources := []SourceFact{{ID: "s-ok", Path: "sources/s-ok.md"}}
 	okNote := note("n-ok", "domains/ai/notes/n-ok.md", "s-ok")

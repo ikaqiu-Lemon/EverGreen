@@ -34,6 +34,7 @@ tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	5
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
+tests/_staged/internal/cli/opinion_reconcile_cli_test.go	unit	go	cli-core	unit.internal.cli	6	21391
 tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6572
 tests/_staged/internal/cli/precheck_wire_test.go	unit	go	cli-core	unit.internal.cli	5	7676
 tests/_staged/internal/cli/proposal_approve_test.go	unit	go	cli-core	unit.internal.cli	4	8818
@@ -136,7 +137,7 @@ tests/_staged/internal/reconcile/opinion_reconcile_test.go	unit	go	reconcile-tak
 tests/_staged/internal/reconcile/r1_git_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	4	12488
 tests/_staged/internal/reconcile/r2_reviewed_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	5	17247
 tests/_staged/internal/reconcile/r3_relation_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	32299
-tests/_staged/internal/reconcile/r4_dangling_fields_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	2	4989
+tests/_staged/internal/reconcile/r4_dangling_fields_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	2	5241
 tests/_staged/internal/reconcile/r4_structure_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	8	28941
 tests/_staged/internal/reconcile/r5_domain_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	23777
 tests/_staged/internal/reconcile/r6_recap_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	36106
