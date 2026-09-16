@@ -122,6 +122,11 @@ var wantCommands = []string{
 	// 命令数复算 20 + 1 + 1 = 22）。判据一字未变，仍是「注册表与 --help 命令区逐行相等」，
 	// 只是行数按实测从 21 变成 22。参数面恰 [--json]（无命令私有 flag）。
 	"bench",
+	// 读路径 CLI 拆分（T-…-006 批次 B1a）：注册表总量随之 22 → 23（设计 §5.4 命令名册）。
+	// 判据一字未变，仍是「注册表与 --help 命令区逐行相等」，只是行数按实测从 22 变成 23。
+	// 子命令**恰四个** search|show|validate|reject，由 TestOpinionSubcommandsExactlyFour
+	// 正面钉住；本批四条均为未实现骨架，参数面恰 [--json]（无命令私有 flag）。
+	"opinion search|show|validate|reject",
 }
 
 // wantCommandCount 是注册命令总数：S1 九条 + M3 状态三条（deprecate / restore / replaced-by）
@@ -141,7 +146,10 @@ var wantCommands = []string{
 // + M5 性能采样一条（bench，T-…-068）：21 → 22（M5 **终值**）。
 // 加法等式 21 + 1 = 22 由 TestCommandCountTwentyTwo 逐项复算；过程值 21 那一格
 // **原样保留**在 TestCommandCountTwentyOne 里（它改证「摘掉 bench 后恰 21」，结论不删）。
-const wantCommandCount = 22
+// + 读路径 opinion 命令一条（opinion，T-…-006 批次 B1a）：22 → 23（设计 §5.4 名册）。
+// 加法等式 22 + 1 = 23 由 TestCommandCountTwentyThree 逐项复算；终值 22 那一格
+// **原样保留**在 TestCommandCountTwentyTwo 里（它改证「摘掉 opinion 后恰 22」，结论不删）。
+const wantCommandCount = 23
 
 // 每个命令的 flag 集合（逐项对齐合同 §1.1–§1.9；全局 flag 另计）。
 var wantFlags = map[string][]string{
@@ -194,6 +202,11 @@ var wantFlags = map[string][]string{
 	// 全量重算 content_hash」只读开关，且只对 status 有语义）；`--limit` 等分页参数属
 	// T-…-068，仍不声明 → 传入即由参数解析当场判非法 → 退 1、零写入。
 	"index": {"strict"},
+	// 读路径 opinion 命令（T-…-006 批次 B1a）：本批只落骨架、只钉位置参数，
+	// **恰 0 个**命令私有 flag。不暴露 --kind（opinion 检索面天然只搜观点）；
+	// domain/tag/since/until/include-deleted/limit/offset 等检索参数属后续批次的 search 实现，
+	// 本批不声明 → 传入即由参数解析当场判非法 → 退 1、零写入。
+	"opinion": {},
 }
 
 var globalFlagNames = []string{"json", "vault", "help", "h"}
@@ -1044,20 +1057,23 @@ func TestCommandCountNineteen(t *testing.T) {
 	// M5 阶段 B（T-…-068）追加的命令名：同理摘掉后再复算 19。
 	// **19 这个历史结论一个字不删**，只是「要摘掉的后来者」从两条变成三条。
 	const m5LaterAdded2 = "bench"
+	// T-…-006 批次 B1a 追加的命令名：同理摘掉后再复算 19。
+	// **19 这个历史结论一个字不删**，只是「要摘掉的后来者」从三条变成四条。
+	const m5LaterAdded3 = "opinion"
 
 	if len(m3Baseline) != 18 {
 		t.Fatalf("M3 基线清单写错了：%d 条，M3 收口时恰 18 条", len(m3Baseline))
 	}
-	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1; want != wantCommandCount {
-		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）= %d，"+
+	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1; want != wantCommandCount {
+		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）+ 1（006-B1a 的 %s）= %d，"+
 			"但 wantCommandCount = %d",
-			len(m3Baseline), m4AddedCount, m4LaterAdded, m5LaterAdded, m5LaterAdded2, want, wantCommandCount)
+			len(m3Baseline), m4AddedCount, m4LaterAdded, m5LaterAdded, m5LaterAdded2, m5LaterAdded3, want, wantCommandCount)
 	}
 
 	got := New().Commands()
-	if len(got)-3 != 19 {
-		t.Fatalf("摘掉后来新增的 %q / %q / %q 后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
-			m4LaterAdded, m5LaterAdded, m5LaterAdded2, len(got)-3)
+	if len(got)-4 != 19 {
+		t.Fatalf("摘掉后来新增的 %q / %q / %q / %q 后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
+			m4LaterAdded, m5LaterAdded, m5LaterAdded2, m5LaterAdded3, len(got)-4)
 	}
 
 	// ③ 前 18 条逐字等于 M3 基线（次序与名称都不许动）。
@@ -1074,14 +1090,14 @@ func TestCommandCountNineteen(t *testing.T) {
 	}
 	var added []string
 	for _, c := range got {
-		if base[c.Name] || c.Name == m4LaterAdded || c.Name == m5LaterAdded || c.Name == m5LaterAdded2 {
+		if base[c.Name] || c.Name == m4LaterAdded || c.Name == m5LaterAdded || c.Name == m5LaterAdded2 || c.Name == m5LaterAdded3 {
 			continue
 		}
 		added = append(added, c.Name)
 	}
 	if len(added) != m4AddedCount {
-		t.Fatalf("相对 M3 基线、摘掉 %q / %q / %q 后新增 %v（%d 条），期望恰 %d 条",
-			m4LaterAdded, m5LaterAdded, m5LaterAdded2, added, len(added), m4AddedCount)
+		t.Fatalf("相对 M3 基线、摘掉 %q / %q / %q / %q 后新增 %v（%d 条），期望恰 %d 条",
+			m4LaterAdded, m5LaterAdded, m5LaterAdded2, m5LaterAdded3, added, len(added), m4AddedCount)
 	}
 	if added[0] != m4Added {
 		t.Fatalf("新增命令名 = %q，期望逐字 %q", added[0], m4Added)
@@ -1127,8 +1143,9 @@ func TestCommandCountTwenty(t *testing.T) {
 	// M4 期新增命令名，逐字且**有序**（注册次序 = 交付次序）。
 	m4Added := []string{"reconcile", "check"}
 	// M5 期新增命令名：本用例只负责 M4 收口那一条等式，摘掉后再复算 20。
-	// T-…-068 追加 `bench` 后这份清单从一条变两条 —— **20 这个 M4 收口结论一个字不删**。
-	m5Added := []string{"index", "bench"}
+	// T-…-068 追加 `bench`、T-…-006-B1a 追加 `opinion` 后这份清单从一条变三条 ——
+	// **20 这个 M4 收口结论一个字不删**。
+	m5Added := []string{"index", "bench", "opinion"}
 
 	want := len(m3Baseline) + len(m4Added)
 	if want != 20 {

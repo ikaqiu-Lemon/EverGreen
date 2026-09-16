@@ -4,12 +4,12 @@ tests/_staged/cmd/eg/main_test.go	unit	go	cli-core	unit.cmd.eg	3	1723
 tests/_staged/internal/cli/apply_inplan_test.go	unit	go	cli-core	unit.internal.cli	2	4340
 tests/_staged/internal/cli/apply_opinion_transaction_test.go	unit	go	cli-core	unit.internal.cli	1	7252
 tests/_staged/internal/cli/apply_test.go	unit	go	cli-core	unit.internal.cli	13	29913
-tests/_staged/internal/cli/bench_test.go	unit	go	cli-core	unit.internal.cli	8	15521
+tests/_staged/internal/cli/bench_test.go	unit	go	cli-core	unit.internal.cli	8	15946
 tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12	13626
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	10	20078
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24284
-tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	52724
+tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	54311
 tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	10	15510
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
@@ -32,11 +32,12 @@ tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	uni
 tests/_staged/internal/cli/index_opinion_sync_test.go	unit	go	cli-core	unit.internal.cli	1	33789
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	2	12817
-tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54284
+tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54387
 tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit.internal.cli	4	30095
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
+tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	7	10171
 tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6572
 tests/_staged/internal/cli/precheck_wire_test.go	unit	go	cli-core	unit.internal.cli	5	7676
 tests/_staged/internal/cli/proposal_approve_test.go	unit	go	cli-core	unit.internal.cli	4	8818
@@ -377,7 +378,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24210
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24539
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

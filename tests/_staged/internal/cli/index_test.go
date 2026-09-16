@@ -327,8 +327,9 @@ func TestCommandCountTwentyOne(t *testing.T) {
 		"reconcile", "check",
 	}
 	m5Added := []string{"index"}
-	// M5 更晚新增（T-…-068 阶段 B）：本用例只负责 065 那一条等式，摘掉后再复算 21。
-	m5LaterAdded := []string{"bench"}
+	// M5 更晚新增（T-…-068 阶段 B 的 `bench`、T-…-006-B1a 的 `opinion`）：本用例只负责
+	// 065 那一条等式，摘掉后再复算 21。**21 这个过程值结论一个字不删**。
+	m5LaterAdded := []string{"bench", "opinion"}
 
 	if len(m4Baseline) != 20 {
 		t.Fatalf("M4 基线清单写错了：%d 条，M4 收口时恰 20 条", len(m4Baseline))

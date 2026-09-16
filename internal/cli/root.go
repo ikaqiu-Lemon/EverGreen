@@ -243,6 +243,10 @@ func (r *Root) wireImplemented() {
 	// 处理函数在本仓的唯一落点）。性能采样**不作为任何命令的前置**，因此除 bench*.go 之外，
 	// internal/cli 里不得再出现对该处理函数的引用。
 	r.wireBench()
+	// 读路径 CLI 拆分（T-…-006 批次 B1a）：`eg opinion` 挂上壳处理器 runOpinion（使
+	// 「注册面 == 挂载面」成立）。四条子命令本批均为未实现骨架，runOpinion 对任一合法
+	// 子命令一律返回 NotWiredError（退 1、零写入）——不提前实现任何 search/show/状态机行为。
+	_ = r.Wire("opinion", r.runOpinion)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

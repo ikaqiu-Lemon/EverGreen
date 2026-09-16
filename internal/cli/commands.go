@@ -56,6 +56,12 @@ func commands() []*Command {
 		// 20 + 1（index）+ 1（bench）= 22）。判据一字未变，仍是「注册表与 --help
 		// 命令区逐行相等」，只是行数按实测从 21 变成 22。
 		benchCommand(),
+		// 读路径 CLI 拆分（T-…-006 批次 B1a）：`eg opinion search|show|validate|reject`
+		// 一次性注册。注册表总量随之 22 → 23（设计 §5.4）。本批四条子命令**均为未实现
+		// 骨架**：命令挂上壳处理器 runOpinion（见 root.go，使「注册面 == 挂载面」成立），
+		// 该壳对任一合法子命令一律返回 NotWiredError（退 1、零写入）。
+		// 子命令按 `eg config get|set` / `eg proposal …` 的既有惯例**不单独计数**。
+		opinionCommand(),
 	}
 }
 

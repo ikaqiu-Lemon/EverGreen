@@ -398,6 +398,9 @@ func TestCommandCountTwentyTwo(t *testing.T) {
 		"reconcile", "check", "index",
 	}
 	added := []string{"bench"}
+	// T-…-006-B1a 更晚新增（`opinion`）：本用例只负责 068 那一条「M5 终值 22」等式，
+	// 摘掉后再复算 22。**22 这个 M5 终值结论一个字不删**，只是多了一条要摘掉的后来者。
+	laterAdded := []string{"opinion"}
 
 	if len(m5Baseline) != 21 {
 		t.Fatalf("M5 过程基线写错了：%d 条，T-…-065 收口时恰 21 条", len(m5Baseline))
@@ -407,21 +410,23 @@ func TestCommandCountTwentyTwo(t *testing.T) {
 		t.Fatalf("加法等式不成立：%d + %d = %d，期望 22（合同 §8.1：20 + 1 + 1）",
 			len(m5Baseline), len(added), want)
 	}
-	if want != wantCommandCount {
-		t.Fatalf("加法等式 %d 与 wantCommandCount = %d 不一致", want, wantCommandCount)
+	if want+len(laterAdded) != wantCommandCount {
+		t.Fatalf("M5 终值 %d + 更晚新增 %d 与 wantCommandCount = %d 不一致",
+			want, len(laterAdded), wantCommandCount)
 	}
 
 	got := New().Commands()
-	if len(got) != 22 {
-		t.Fatalf("注册命令数 = %d，期望 22（M5 终值）", len(got))
+	if len(got)-len(laterAdded) != 22 {
+		t.Fatalf("摘掉更晚新增 %v 后命令数 = %d，期望 22（M5 终值）", laterAdded, len(got)-len(laterAdded))
 	}
 	for i, w := range m5Baseline {
 		if got[i].Name != w {
 			t.Fatalf("第 %d 条命令 = %q，期望 %q（只准在尾部追加，不准重排既有条目）", i+1, got[i].Name, w)
 		}
 	}
-	if got[len(got)-1].Name != "bench" {
-		t.Fatalf("注册表尾条 = %q，期望 %q（新命令一律追加在尾部）", got[len(got)-1].Name, "bench")
+	if n := len(got) - len(laterAdded); got[n-1].Name != "bench" {
+		t.Fatalf("摘掉 %v 后的注册表尾条 = %q，期望 %q（新命令一律追加在尾部）",
+			laterAdded, got[n-1].Name, "bench")
 	}
 	// `eg index` 的四个子命令按既有惯例**不单独计数**（与 `eg config get|set` 同型）：
 	// 若哪天它们被计成 4 条，这里的 22 会立刻变成 25，等式当场红。
