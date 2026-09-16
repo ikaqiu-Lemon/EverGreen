@@ -1,16 +1,18 @@
 package cli
 
-// `eg opinion` 命令**骨架**的机器判据（读路径 CLI 拆分设计 §5.4；T-…-006 批次 B1a）。
+// `eg opinion` 命令面的机器判据（读路径 CLI 拆分设计 §5.4；T-…-006 批次 B1a 起，B1b-cli 接通 search）。
 //
-// 本批只落骨架：一次性注册 opinion 顶层命令，子命令集合与顺序**恰**为
-// search|show|validate|reject，顶层名册 22 → 23。四条子命令本批**全部未实现**——
-// 合法形态一律走框架既有的 NotWiredError（退 1、零文件变化、零 commit），非法形态
-// （缺/未知子命令、位置参数个数不符、<o-id> 形态非法）一律 UsageError（退 1、零写入）。
+// 命令面不变量（跨批次恒成立）：一次性注册 opinion 顶层命令，子命令集合与顺序**恰**为
+// search|show|validate|reject，顶层名册 22 → 23。非法形态（缺/未知子命令、位置参数个数不符、
+// <o-id> 形态非法）一律 UsageError（退 1、零写入）。
+//
+// B1b-cli 起：`search` 子命令**已接通**只读检索（退 0、零副作用；行为判据见 opinion_search_test.go），
+// 其余三条 show/validate/reject **仍是未挂载骨架**（合法形态走 NotWiredError，退 1、零写入零 commit）。
 //
 // 覆盖：① 子命令封闭集与顺序；② --help 恰列 23 条且 opinion 恰一行；③ 命令数 22+1=23
 // 加法等式；④ 缺/未知子命令退 1；⑤ search/show/validate/reject 位置参数个数校验；
-// ⑥ <o-id> 形态校验（必须经 model.OpinionID.Valid）；⑦ 四个合法形态确定性 NotWired、
-// 退 1、零写入零 commit。**本批不断言任何 search/show/状态机行为**（属后续批次）。
+// ⑥ <o-id> 形态校验（必须经 model.OpinionID.Valid）；⑦ search 已接通退 0、其余三条确定性
+// NotWired、退 1、零写入零 commit。
 
 import (
 	"strings"
@@ -61,9 +63,11 @@ func TestOpinionSubcommandsExactlyFour(t *testing.T) {
 	if cmd.Handler == nil {
 		t.Fatal("eg opinion 必须挂上壳处理器 runOpinion（注册面须等于挂载面）")
 	}
-	// 本批**不注册任何命令私有 flag**（不暴露 --kind 等检索参数）。
-	if cmd.Flags != nil {
-		t.Fatal("B1a 阶段 eg opinion 不得声明命令私有 flag（只钉位置参数）")
+	// B1b-cli：`eg opinion search` 接通后，父命令**必须**注册 search-only 检索 / 分页 flag
+	// （domain/tag/since/until/include-deleted/limit/offset，恰不含 --kind）——具体集合与
+	// 「合同可查」由 cli_test.go 的 flag-vs-contract 判据逐格反证，这里只钉「不再是空 flag 面」。
+	if cmd.Flags == nil {
+		t.Fatal("B1b-cli 阶段 eg opinion 必须注册 search-only flag（search 复用 eg search 口径）")
 	}
 	if cmd.Validate == nil {
 		t.Fatal("eg opinion 必须挂 Validate（钉位置参数与 <o-id> 形态）")
@@ -224,18 +228,27 @@ func TestOpinionIDShapeRejected(t *testing.T) {
 	}
 }
 
-// —— ⑦ 四个合法形态：确定性 NotWired、退 1、零写入零 commit ——
+// —— ⑦ search 已接通、show/validate/reject 仍确定性 NotWired（退 1、零写入零 commit）——
 
-func TestOpinionSkeletonLegalFormsNotWired(t *testing.T) {
+func TestOpinionSearchWiredOthersNotWired(t *testing.T) {
 	dir := captureVault(t)
 	statusBefore, logBefore := opinionVaultSnapshot(t, dir)
 
+	// search 已接通：合法查询词 → 退 0（空库零命中仍合法），零文件变化、零 commit。
+	scode, _, serr := runOpinionCLI(t, dir, "search", "语言模型")
+	if scode != ExitOK {
+		t.Fatalf("eg opinion search 已接通，应退 0（空库零命中仍合法），实得 %d：%s", scode, serr)
+	}
+	if statusAfter, logAfter := opinionVaultSnapshot(t, dir); statusAfter != statusBefore || logAfter != logBefore {
+		t.Fatal("eg opinion search 是只读检索：不得改动工作区或产生 commit")
+	}
+
+	// 其余三条仍是未挂载骨架：合法形态一律 NotWired（退 1、零写入零 commit）。
 	const validID = "o-20260101-demo"
 	for _, tc := range []struct {
 		name string
 		args []string
 	}{
-		{"search <q>", []string{"search", "语言模型"}},
 		{"show <o-id>", []string{"show", validID}},
 		{"validate <o-id>", []string{"validate", validID}},
 		{"reject <o-id>", []string{"reject", validID}},

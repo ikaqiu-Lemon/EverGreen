@@ -9,7 +9,7 @@ tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	10	20078
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24284
-tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	54311
+tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	54902
 tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	10	15510
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
@@ -37,8 +37,9 @@ tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
-tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	7	10171
-tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6572
+tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	7	11130
+tests/_staged/internal/cli/opinion_search_test.go	unit	go	cli-core	unit.internal.cli	17	24928
+tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6989
 tests/_staged/internal/cli/precheck_wire_test.go	unit	go	cli-core	unit.internal.cli	5	7676
 tests/_staged/internal/cli/proposal_approve_test.go	unit	go	cli-core	unit.internal.cli	4	8818
 tests/_staged/internal/cli/proposal_approve_transaction_test.go	unit	go	cli-core	unit.internal.cli	6	33680

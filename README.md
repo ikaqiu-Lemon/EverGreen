@@ -660,7 +660,8 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg search <query>` | Ranked, paginated card search |
 | `eg card show <k-id>` | One card: five sections, sources, both link directions |
 | `eg rel <k-id>` | Argument relationships; `--replaced-by` switches to replacement pointers |
-| `eg opinion search\|show\|validate\|reject` | Registered skeleton only: the four subcommands are wired but unimplemented — every legal invocation exits `1` with zero writes and zero commit; the actual retrieve/inspect/validate/reject behavior lands in later batches. |
+| `eg opinion search <q>` | Read-only opinion search: like `eg search` but fixed to opinions (`o-*`), with the same domain/tag/since/until/include-deleted/limit/offset flags (no `--kind`). Every hit carries `validation` (pending/validated/rejected, all returned — never implicitly filtered) plus `relation_summary` counts (`supports`/`limits`/`opposing`). Zero writes, zero commit. |
+| `eg opinion show\|validate\|reject <o-id>` | Registered skeleton only: still unimplemented — every legal invocation exits `1` with zero writes and zero commit; the actual inspect/validate/reject behavior lands in later batches. |
 
 **Editing and lifecycle** (all user-initiated)
 

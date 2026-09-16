@@ -4,8 +4,9 @@ package cli
 //
 // 三件事，逐条对应合同：
 //
-//	① 作用面恰三条读命令（search / card show / rel）：其余命令**不声明**这两个 flag，
-//	   传入即由参数解析当场判非法 → 退 1、零写入（既有反证一条不放宽）；
+//	① 作用面恰四处读路径（search / card show / rel，外加 T-…-006 B1b-cli 起 opinion 的 search
+//	   子命令复用同一套分页口径）：其余命令**不声明**这两个 flag，传入即由参数解析当场判非法
+//	   → 退 1、零写入（既有反证一条不放宽；opinion 是按事实新增的第四处，不是放宽封闭集）；
 //	② 负数 / 非整数 → 退出码 **4**（合同 §8.2 末行），且不新增第七个退出码；
 //	③ `--replaced-by` 与分页只作用于读路径：`rel add` / `rel remove` 传入即退 1。
 //
@@ -18,8 +19,10 @@ import (
 	"testing"
 )
 
-// pgReadCommands 是分页参数的**封闭作用面**（合同 §8.2 末段逐字：三条读命令）。
-var pgReadCommands = map[string]bool{"search": true, "card": true, "rel": true}
+// pgReadCommands 是分页参数的**封闭作用面**（合同 §8.2 末段：三条读命令 search / card show /
+// rel；T-…-006 B1b-cli 起再加 opinion —— 其 search 子命令复用 eg search 同一套分页口径，
+// 分页 flag 因此注册在 opinion 父命令上）。
+var pgReadCommands = map[string]bool{"search": true, "card": true, "rel": true, "opinion": true}
 
 // pgFlagNames 收集一个命令注册的私有 flag 名集合。
 func pgFlagNames(c *Command) map[string]bool {
@@ -33,7 +36,7 @@ func pgFlagNames(c *Command) map[string]bool {
 	return got
 }
 
-// —— ① 作用面恰三条读命令 ——
+// —— ① 作用面恰 search / card / rel / opinion 四处读路径 ——
 
 func TestPageFlagsOnlyOnThreeReadCommands(t *testing.T) {
 	seen := map[string]bool{}
@@ -45,7 +48,7 @@ func TestPageFlagsOnlyOnThreeReadCommands(t *testing.T) {
 				c.Display, hasLimit, hasOffset)
 		}
 		if hasLimit != pgReadCommands[c.Name] {
-			t.Fatalf("eg %s 的分页参数注册与合同作用面不符：实际 %t，期望 %t（恰三条读命令）",
+			t.Fatalf("eg %s 的分页参数注册与合同作用面不符：实际 %t，期望 %t（恰 search / card / rel / opinion 四处读路径）",
 				c.Display, hasLimit, pgReadCommands[c.Name])
 		}
 		if hasLimit {
