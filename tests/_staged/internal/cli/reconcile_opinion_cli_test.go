@@ -1,7 +1,13 @@
 package cli
 
-// [S3] opinion_reconcile_cli_test.go —— T-004-C2：`eg reconcile` / `eg check` 两条命令
+// [S3] reconcile_opinion_cli_test.go —— T-004-C2：`eg reconcile` / `eg check` 两条命令
 // 对 schema v2 观点的**端到端**判据，以及 R2 / R6 修复与观点**共存**的边界。
+//
+// # 文件名前缀不是随手取的
+//
+// 本文件 import 了对账包，而 TestStage3ReconcilePackageBoundary 的**文件级位置锁**
+// 规定 `internal/cli/` 下只有 `reconcile*` / `check*` 前缀的文件可以消费它 ——
+// 这是「对账不作为写命令前置」（合同 §0.1 第 3 条）的机器形态。故前缀必须为 `reconcile`。
 //
 // # 与 C1 的分工（一条也不重复）
 //

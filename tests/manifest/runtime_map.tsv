@@ -34,7 +34,6 @@ tests/_staged/internal/cli/index_test.go	internal/cli/index_test.go	evergreen	un
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/markers_test.go	internal/cli/markers_test.go	evergreen	unit	go
-tests/_staged/internal/cli/opinion_reconcile_cli_test.go	internal/cli/opinion_reconcile_cli_test.go	evergreen	unit	go
 tests/_staged/internal/cli/page_test.go	internal/cli/page_test.go	evergreen	unit	go
 tests/_staged/internal/cli/precheck_wire_test.go	internal/cli/precheck_wire_test.go	evergreen	unit	go
 tests/_staged/internal/cli/proposal_approve_test.go	internal/cli/proposal_approve_test.go	evergreen	unit	go
@@ -45,6 +44,7 @@ tests/_staged/internal/cli/proposal_new_transaction_test.go	internal/cli/proposa
 tests/_staged/internal/cli/proposal_reject_transaction_test.go	internal/cli/proposal_reject_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/proposal_test.go	internal/cli/proposal_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reconcile_commit_test.go	internal/cli/reconcile_commit_test.go	evergreen	unit	go
+tests/_staged/internal/cli/reconcile_opinion_cli_test.go	internal/cli/reconcile_opinion_cli_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reconcile_repair_reviewed_test.go	internal/cli/reconcile_repair_reviewed_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reconcile_repair_stale_test.go	internal/cli/reconcile_repair_stale_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reconcile_report_field_test.go	internal/cli/reconcile_report_field_test.go	evergreen	unit	go

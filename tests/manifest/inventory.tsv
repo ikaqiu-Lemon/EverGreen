@@ -34,7 +34,6 @@ tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	5
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
-tests/_staged/internal/cli/opinion_reconcile_cli_test.go	unit	go	cli-core	unit.internal.cli	6	21391
 tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6572
 tests/_staged/internal/cli/precheck_wire_test.go	unit	go	cli-core	unit.internal.cli	5	7676
 tests/_staged/internal/cli/proposal_approve_test.go	unit	go	cli-core	unit.internal.cli	4	8818
@@ -45,6 +44,7 @@ tests/_staged/internal/cli/proposal_new_transaction_test.go	unit	go	cli-core	uni
 tests/_staged/internal/cli/proposal_reject_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	25494
 tests/_staged/internal/cli/proposal_test.go	unit	go	cli-core	unit.internal.cli	1	10553
 tests/_staged/internal/cli/reconcile_commit_test.go	unit	go	cli-core	unit.internal.cli	4	14064
+tests/_staged/internal/cli/reconcile_opinion_cli_test.go	unit	go	cli-core	unit.internal.cli	6	21759
 tests/_staged/internal/cli/reconcile_repair_reviewed_test.go	unit	go	cli-core	unit.internal.cli	6	22124
 tests/_staged/internal/cli/reconcile_repair_stale_test.go	unit	go	cli-core	unit.internal.cli	5	28458
 tests/_staged/internal/cli/reconcile_report_field_test.go	unit	go	cli-core	unit.internal.cli	2	4915
