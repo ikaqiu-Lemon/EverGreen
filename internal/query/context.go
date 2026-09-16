@@ -36,6 +36,10 @@ const (
 	dirDomains      = "domains"
 	dirNotes        = "notes"
 	dirKnowledge    = "knowledge"
+	// dirOpinions 是 schema v2 新增的观点分区（`domains/<d>/opinions/`）。
+	// `eg init` 的骨架里没有它：一个领域的第一条观点才会创建该目录，
+	// 因此遍历侧「目录缺失不是错误」这一口径对它同样成立。
+	dirOpinions = "opinions"
 )
 
 // CandidateLimit 是候选相似卡的输出上限（S1 不做分页 / 四级排序 / 截断标记，那是 S4）。

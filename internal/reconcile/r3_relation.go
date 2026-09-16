@@ -146,45 +146,68 @@ func NormalizeOpposingPair(from, target string) (string, string) {
 
 // relationFact 是一条待判定的关系落盘事实（逐字原值，不做任何补默认）。
 type relationFact struct {
-	// from 是持有该条关系的知识卡 ID（`relations[]` 落在来源卡，单向一条）。
+	// from 是持有该条关系的对象 ID（`relations[]` 落在来源侧，单向一条）。
 	from string
+	// fromKind 是持有方的对象类别（KindCard 或 KindOpinion，与 R4 的类别串同源）。
+	// 只影响 detail 里的称呼与 `opposing` 规范化的适用范围，**不参与**存在性 / 形态判定。
+	fromKind string
 	// typ 是关系类型的逐字原值（封闭四值之一；集合外取值在扫描层就已被拒收）。
 	typ string
 	// target 是关系目标的逐字原值（可能非法、可能为空、可能指向不存在的对象）。
 	target string
-	// path 是持有卡的 vault 相对路径（进 detail，供逐条定位复算）。
+	// path 是持有方的 vault 相对路径（进 detail，供逐条定位复算）。
 	path string
-	// seq 是该条关系在持有卡 `relations[]` 内的 1-based 序号（进 detail）。
+	// seq 是该条关系在持有方 `relations[]` 内的 1-based 序号（进 detail）。
 	seq int
 }
 
 // isOpposing 报告本条关系是否是 `opposing`（取值来自 model 的封闭枚举）。
 func (f relationFact) isOpposing() bool { return f.typ == string(model.RelationOpposing) }
 
+// opposingNormalizable 报告本条 `opposing` 是否适用 A-24 的「按两端 ID 字典序规范化」。
+//
+// 只有**两端都是知识卡**时适用：那时两端都能承载 `relations[]`，「取小者为写入端」
+// 才是一条可复算的落盘不变量。观点持有的 `opposing` 不适用 —— 关系 target 的落盘类型
+// 恒是知识卡 ID，卡侧结构上写不回指向观点的条目，于是记录**必然**只落在观点这一端；
+// 若照卡侧口径规范化，每一条合法的「观点反对某卡」都会被 W15 误报成「方向不对称」。
+func (f relationFact) opposingNormalizable() bool {
+	return f.isOpposing() && f.fromKind == KindCard && ValidRelationTarget(f.from)
+}
+
 // collectRelationFacts 把扫描快照折成关系事实序列（纯函数：不改入参、零 IO）。
 //
-// 顺序 = 卡的扫描序（query 侧已按 path 升序稳定排序）→ 卡内 `relations[]` 落盘序，
-// 因此同一份快照恒得同一序列。缺 id 的卡在扫描层已记 Q1 并计入 SkippedFiles，
-// 这里只丢弃空 ID 的持有卡（对账域不给无法定位的引用方发 finding）。
+// 顺序 = 知识卡的扫描序 → 观点的扫描序（query 侧两个切片各按 path 升序稳定排序）
+// → 各自 `relations[]` 的落盘序，因此同一份快照恒得同一序列。
+// 缺 id 的文件在扫描层已记 Q1 并计入 SkippedFiles，这里只丢弃空 ID 的持有方
+// （对账域不给无法定位的引用方发 finding）。
 func collectRelationFacts(scan *query.ScanResult) []relationFact {
 	if scan == nil {
 		return nil
 	}
 	out := make([]relationFact, 0)
-	for _, c := range scan.Cards {
-		from := strings.TrimSpace(c.ID)
+	appendRels := func(id, kind, path string, rels []model.Relation) {
+		from := strings.TrimSpace(id)
 		if from == "" {
-			continue
+			return
 		}
-		for i, rel := range c.Relations {
+		for i, rel := range rels {
 			out = append(out, relationFact{
-				from:   from,
-				typ:    strings.TrimSpace(string(rel.Type)),
-				target: strings.TrimSpace(string(rel.Target)),
-				path:   strings.TrimSpace(c.Path),
-				seq:    i + 1,
+				from:     from,
+				fromKind: kind,
+				typ:      strings.TrimSpace(string(rel.Type)),
+				target:   strings.TrimSpace(string(rel.Target)),
+				path:     strings.TrimSpace(path),
+				seq:      i + 1,
 			})
 		}
+	}
+	for _, c := range scan.Cards {
+		appendRels(c.ID, KindCard, c.Path, c.Relations)
+	}
+	// 观点同样承载 `relations[]`（schema v2 的「支持 / 限制 / 反对」三组视图就落在这里），
+	// 因此同样进 R3 的判定面：target 仍必须是知识卡 ID，形态与存在性两码逐字同口径。
+	for _, o := range scan.Opinions {
+		appendRels(o.ID, KindOpinion, o.Path, o.Relations)
 	}
 	return out
 }
@@ -252,12 +275,12 @@ func checkR3TargetMissingAndPrefix(facts []relationFact, x StructureIndex) []Fin
 // targetMissingDetail 渲染 E13 的 detail（引用方 + 缺失目标 + 条目数 + 类型 + 落盘路径）。
 func targetMissingDetail(agg *targetAgg) string {
 	return fmt.Sprintf(
-		"关系 target 不存在：知识卡 %s 的 relations[] 指向 %s，该目标在 vault 内查无此对象"+
-			"（共 %d 条条目，类型 %s；持有卡落盘于 %s）。存在性只看落盘事实，不做 status / "+
+		"关系 target 不存在：%s %s 的 relations[] 指向 %s，该目标在 vault 内查无此对象"+
+			"（共 %d 条条目，类型 %s；持有方落盘于 %s）。存在性只看落盘事实，不做 status / "+
 			"deleted_at / 可见性过滤；本码只报告——不自动补建目标卡、不移除该关系条目，"+
 			"修复走 `eg rel remove` / `eg rel add`。关系条目的 target 缺失只走本码，"+
 			"**不走** R4 的 dangling_ref（E12），避免两码重复计一件事（合同 §6.2 末句）",
-		agg.fact.from, agg.fact.target, agg.entries,
+		labelOf(agg.fact.fromKind), agg.fact.from, agg.fact.target, agg.entries,
 		strings.Join(NormalizeTargets(agg.types), "、"),
 		strings.Join(NormalizeTargets(agg.paths), "、"))
 }
@@ -265,12 +288,12 @@ func targetMissingDetail(agg *targetAgg) string {
 // prefixInvalidDetail 渲染 E14 的 detail（引用方 + 非法 target 原值 + 条目序号 + 路径）。
 func prefixInvalidDetail(agg *targetAgg) string {
 	return fmt.Sprintf(
-		"关系 target 的 ID 前缀 / 形态不合法：知识卡 %s 的 relations[] 第 %d 条 target = %q"+
-			"（共 %d 条同目标条目，类型 %s），不满足既有 ID 规则（知识卡 ID 恒 `k-` + 8 位 "+
-			"yyyymmdd + 非空 slug；判定直接调用 internal/model 的现成校验，本检查零新造规则）；"+
-			"持有卡落盘于 %s。形态非法时不再判 target 存在性（E13），一件事只报一码；"+
-			"只报告——不自动改写 target、不移除该条目",
-		agg.fact.from, agg.fact.seq, agg.fact.target, agg.entries,
+		"关系 target 的 ID 前缀 / 形态不合法：%s %s 的 relations[] 第 %d 条 target = %q"+
+			"（共 %d 条同目标条目，类型 %s），不满足既有 ID 规则（关系只连知识卡，target 恒 "+
+			"`k-` + 8 位 yyyymmdd + 非空 slug；判定直接调用 internal/model 的现成校验，"+
+			"本检查零新造规则）；持有方落盘于 %s。形态非法时不再判 target 存在性（E13），"+
+			"一件事只报一码；只报告——不自动改写 target、不移除该条目",
+		labelOf(agg.fact.fromKind), agg.fact.from, agg.fact.seq, agg.fact.target, agg.entries,
 		strings.Join(NormalizeTargets(agg.types), "、"),
 		strings.Join(NormalizeTargets(agg.paths), "、"))
 }
@@ -298,10 +321,12 @@ func opposingPairs(facts []relationFact, x StructureIndex) (map[string]*opposing
 	pairs := map[string]*opposingPair{}
 	keys := make([]string, 0, len(facts))
 	for _, f := range facts {
-		if !f.isOpposing() {
+		if !f.opposingNormalizable() {
+			// 非 opposing、或持有方不是知识卡（观点侧无规范方向可言，见
+			// opposingNormalizable 的说明）：本码整体不判。
 			continue
 		}
-		if !ValidRelationTarget(f.from) || !ValidRelationTarget(f.target) {
+		if !ValidRelationTarget(f.target) {
 			continue
 		}
 		if !x.Has(f.target, KindCard) {
@@ -433,7 +458,7 @@ func checkR3Duplicate(facts []relationFact) []Finding {
 			continue
 		}
 		from, target := f.from, f.target
-		if f.isOpposing() {
+		if f.opposingNormalizable() {
 			from, target = NormalizeOpposingPair(f.from, f.target)
 		}
 		key := f.typ + "\x00" + from + "\x00" + target
@@ -447,11 +472,11 @@ func checkR3Duplicate(facts []relationFact) []Finding {
 		g.paths = append(g.paths, f.path)
 		// 方向位只对 `opposing` 有意义（有向三类的 from 恒是持有卡，方向恒一致）。
 		dir := "0"
-		if f.isOpposing() && f.from != from {
+		if f.opposingNormalizable() && f.from != from {
 			dir = "1"
 		}
 		g.perFile[f.path+"\x00"+dir]++
-		if f.isOpposing() {
+		if f.opposingNormalizable() {
 			if f.from == from {
 				g.forward++
 			} else {

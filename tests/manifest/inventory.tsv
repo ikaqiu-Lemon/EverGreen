@@ -132,10 +132,11 @@ tests/_staged/internal/query/search_test.go	unit	go	card-query	unit.internal.que
 tests/_staged/internal/query/visibility_test.go	unit	go	card-query	unit.internal.query	7	17822
 tests/_staged/internal/reconcile/check_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	7	16558
 tests/_staged/internal/reconcile/finding_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	4	10261
+tests/_staged/internal/reconcile/opinion_reconcile_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	21628
 tests/_staged/internal/reconcile/r1_git_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	4	12488
 tests/_staged/internal/reconcile/r2_reviewed_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	5	17247
 tests/_staged/internal/reconcile/r3_relation_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	32299
-tests/_staged/internal/reconcile/r4_dangling_fields_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	2	4755
+tests/_staged/internal/reconcile/r4_dangling_fields_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	2	4989
 tests/_staged/internal/reconcile/r4_structure_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	8	28941
 tests/_staged/internal/reconcile/r5_domain_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	23777
 tests/_staged/internal/reconcile/r6_recap_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	36106
@@ -369,7 +370,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24146
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24194
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

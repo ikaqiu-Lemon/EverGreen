@@ -34,11 +34,12 @@ package reconcile
 //     **一个字节都不读**，也不复制、不改写、不透传它（用例逐字 grep 反证）；
 //   - 同一个重复 ID 恒产**一条** finding（全部冲突文件进 targets），不按文件产多条。
 //
-// # 判定面（对账域 = 三类落盘对象）
+// # 判定面（对账域 = 四类落盘对象）
 //
-// vault 五分区里，`sources/` + `domains/<d>/notes/` + `domains/<d>/knowledge/` 三个分区是
-// **对象 ID 域**；`proposals/**` 与 `unprocessed.md` 不在内（与 R2 判定第 1 条同口径：
-// 提案是控制面、收件区是条目而不是对象）。判定**不做任何 status / deleted_at 过滤**：
+// vault 五分区里，`sources/` + `domains/<d>/notes/` + `domains/<d>/knowledge/` +
+// `domains/<d>/opinions/` 四个分区是**对象 ID 域**；`proposals/**` 与 `unprocessed.md`
+// 不在内（与 R2 判定第 1 条同口径：提案是控制面、收件区是条目而不是对象）。
+// 判定**不做任何 status / deleted_at 过滤**：
 // 「排除失效 / 已删除对象」本身就是一种展示面过滤，与 §6.3 末段的解耦要求相悖。
 
 import (
@@ -46,6 +47,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
 )
 
@@ -90,18 +92,24 @@ func IsKnownOrphanSubtype(s string) bool {
 	return false
 }
 
-// 对象类别（对账域三类落盘对象的机器串；中文标签只作 detail 事实，不参与判定）。
+// 对象类别（对账域落盘对象的机器串；中文标签只作 detail 事实，不参与判定）。
+//
+// KindOpinion 是 schema v2 追加的第四类：观点与知识卡分居两个目录、ID 前缀不同，
+// 因此**必须**是独立类别 —— 若混进 KindCard，关系 target 的存在性判定（R3 的 E13）
+// 就会把「指向一条观点」当成「指向一张存在的卡」放过去。
 const (
-	KindCard   = "card"
-	KindNote   = "note"
-	KindSource = "source"
+	KindCard    = "card"
+	KindNote    = "note"
+	KindSource  = "source"
+	KindOpinion = "opinion"
 )
 
 // kindLabel 是类别的中文标签（只用于 detail 渲染，不参与任何判定）。
 var kindLabel = map[string]string{
-	KindCard:   "知识卡",
-	KindNote:   "材料笔记",
-	KindSource: "原文",
+	KindCard:    "知识卡",
+	KindNote:    "材料笔记",
+	KindSource:  "原文",
+	KindOpinion: "观点",
 }
 
 // SourceFact 是 `sources/` 分区一条原文的只读落盘事实。
@@ -172,20 +180,20 @@ func NewStructureIndex(in Input) StructureIndex {
 	if in.Scan != nil {
 		for _, c := range in.Scan.Cards {
 			x.add(c.ID, KindCard, c.Path)
-			for _, rel := range c.Relations {
-				target := strings.TrimSpace(string(rel.Target))
-				if target == "" {
-					continue // 空 target 不是一条可判定的边（形态问题归 R3）
-				}
-				x.outDegree[strings.TrimSpace(c.ID)]++
-				x.RelationsIn[target] = append(x.RelationsIn[target], strings.TrimSpace(c.ID))
-			}
+			x.addRelations(c.ID, c.Relations)
 		}
 		for _, n := range in.Scan.Notes {
 			x.add(n.ID, KindNote, n.Path)
 			if src := strings.TrimSpace(n.Source); src != "" {
 				x.NotesBySource[src] = append(x.NotesBySource[src], strings.TrimSpace(n.ID))
 			}
+		}
+		// 观点同样是落盘对象，其 `relations[]` 同样是落盘出边：
+		// 「只被观点引用的知识卡」在落盘事实上并非孤立，因此入边表必须收下这些边 ——
+		// 漏收的直接后果是这类卡被 W17 的 card_without_relation 误报。
+		for _, o := range in.Scan.Opinions {
+			x.add(o.ID, KindOpinion, o.Path)
+			x.addRelations(o.ID, o.Relations)
 		}
 	}
 	for _, s := range in.Sources {
@@ -215,6 +223,24 @@ func (x StructureIndex) add(id, kind, path string) {
 	}
 	x.ObjectPaths[id] = append(x.ObjectPaths[id], strings.TrimSpace(path))
 	x.ObjectKinds[id] = append(x.ObjectKinds[id], kind)
+}
+
+// addRelations 登记一个关系持有方的落盘出边（知识卡与观点共用，口径逐字相同）。
+//
+// 空 target 不是一条可判定的边（形态问题归 R3），因此既不计出度也不进入边表。
+func (x StructureIndex) addRelations(holder string, rels []model.Relation) {
+	from := strings.TrimSpace(holder)
+	if from == "" {
+		return // 无法定位的持有方不产生任何边（同 add 的口径）
+	}
+	for _, rel := range rels {
+		target := strings.TrimSpace(string(rel.Target))
+		if target == "" {
+			continue
+		}
+		x.outDegree[from]++
+		x.RelationsIn[target] = append(x.RelationsIn[target], from)
+	}
 }
 
 // sortedIDs 返回索引内全部对象 ID 的升序副本（map 迭代序不得泄漏到输出）。
@@ -349,36 +375,73 @@ func labelOf(kind string) string {
 
 // —— dangling_ref（E12 / error，合同 §6.2）——
 
-// DanglingRefKindCount 是本码覆盖的引用类别数：**恰四类**。
+// DanglingRefKindCount 是本码覆盖的引用类别数：**恰六类**。
 //
 // 历史 M4 合同 §6.2 只冻结了前两类（note.source / card.sources[].note）；
-// I-evergreen.system_assurance-158614-019 的实现侧完整修复枚举并冻结了 frontmatter
-// **全部**引用承载字段：另外两类 `card.sources[].source→原文` 与 `replaced_by.target→知识卡`
-// 此前逃逸出 E12（前者一度落到 R7 的 W20、后者压根无人判），一件事因此被 error + warning
-// 双报或彻底漏报。四类合一后，R7 对「原文端缺失」这一件事整体让位给 E12（见 r7_support.go
-// 的 yieldsToDanglingRef），关系条目的 target 仍归 R3（E13 / E14），互不重叠。
-const DanglingRefKindCount = 4
+// I-evergreen.system_assurance-158614-019 的实现侧完整修复枚举并冻结了知识卡 / 笔记侧
+// **全部**引用承载字段（另加 `card.sources[].source→原文` 与 `replaced_by.target→知识卡`）。
+// schema v2 的观点带来第三个引用承载方，于是本码在**同一件事同一码**的原则下追加两类：
+// `opinion.sources[].note→材料笔记` 与 `opinion.sources[].source→原文`；
+// 观点的 `replaced_by.target` 与知识卡是同一个字段键、同一个目标类型（知识卡），
+// 因此**复用第四类**、不另立类别。观点 `relations[]` 的 target 仍归 R3（E13 / E14），
+// 一件事不许两码重复计。
+const DanglingRefKindCount = 6
 
-// 四类引用的机器串（进 detail，供逐条复算）。
+// 六类引用的机器串（进 detail，供逐条复算）。
 const (
-	danglingNoteSource = "note.source→原文"
-	danglingCardNote   = "card.sources[].note→材料笔记"
-	danglingCardSource = "card.sources[].source→原文"
-	danglingReplacedBy = "replaced_by.target→知识卡"
+	danglingNoteSource    = "note.source→原文"
+	danglingCardNote      = "card.sources[].note→材料笔记"
+	danglingCardSource    = "card.sources[].source→原文"
+	danglingReplacedBy    = "replaced_by.target→知识卡"
+	danglingOpinionNote   = "opinion.sources[].note→材料笔记"
+	danglingOpinionSource = "opinion.sources[].source→原文"
 )
 
 // refFact 是一条待判定的引用事实（引用方 / 目标 / 类别 / 引用方落盘路径）。
 type refFact struct{ from, to, kind, path string }
 
-// checkR4DanglingRef 覆盖**恰四类**引用承载字段：
+// materialRefs 归集一个引用承载方（知识卡或观点）的 `sources[]` 两端与 `replaced_by.target`
+// 三处引用事实。两类产物的字段键与目标类型逐字相同，因此判定只有这一份实现；
+// 类别串由调用方按引用方传入，detail 里不会把观点的字段说成卡的字段。
+//
+// 三处判定口径：
+//   - 来源笔记端：存在性看落盘事实（不做删除过滤，删除维度归 R7 的 W20）；
+//   - 原文端：仅在 `sources/` 已采样时判定（不把「没采样」说成「不存在」）；
+//   - 替代指针：`replaced_by.target` 必须指向一张真实存在的**知识卡**，
+//     类别串两类产物共用（同一字段键、同一目标类型）。
+func materialRefs(x StructureIndex, holder, path string, sources []model.SourceRef,
+	replacedBy, noteKind, sourceKind string) []refFact {
+	from := strings.TrimSpace(holder)
+	if from == "" {
+		return nil // 无法定位的引用方不发 finding（同 StructureIndex.add 的口径）
+	}
+	var out []refFact
+	for _, s := range sources {
+		if note := strings.TrimSpace(string(s.Note)); note != "" && !x.Has(note, KindNote) {
+			out = append(out, refFact{from: from, to: note, kind: noteKind, path: path})
+		}
+		if src := strings.TrimSpace(string(s.Source)); src != "" &&
+			x.SourcesSampled && !x.Has(src, KindSource) {
+			out = append(out, refFact{from: from, to: src, kind: sourceKind, path: path})
+		}
+	}
+	if tgt := strings.TrimSpace(replacedBy); tgt != "" && !x.Has(tgt, KindCard) {
+		out = append(out, refFact{from: from, to: tgt, kind: danglingReplacedBy, path: path})
+	}
+	return out
+}
+
+// checkR4DanglingRef 覆盖**恰六类**引用承载字段：
 //
 //	① 材料笔记 frontmatter 的 `source` 指向的原文不存在；
 //	② 知识卡 frontmatter `sources[].note` 指向的来源笔记不存在；
 //	③ 知识卡 frontmatter `sources[].source` 指向的原文不存在；
-//	④ 知识卡 frontmatter `replaced_by.target` 指向的替代卡不存在。
+//	④ 知识卡 / 观点 frontmatter `replaced_by.target` 指向的替代卡不存在；
+//	⑤ 观点 frontmatter `sources[].note` 指向的来源笔记不存在；
+//	⑥ 观点 frontmatter `sources[].source` 指向的原文不存在。
 //
 // `targets[]` = `[引用方 ID, 缺失的目标 ID]`。两元素经 NormalizeTargets 去重升序。
-// 指向**原文**的两类（① / ③）只在 `sources/` 分区已采样时判定：绝不把「没采样」
+// 指向**原文**的三类（① / ③ / ⑥）只在 `sources/` 分区已采样时判定：绝不把「没采样」
 // 说成「不存在」（与 R7 / query 侧 Q2 逐字同源的诚实性口径）。
 //
 // **关系条目的 target 缺失不走这条**：那属 R3 的 relation_target_missing（E13，归 T-…-053）——
@@ -400,25 +463,14 @@ func checkR4DanglingRef(x StructureIndex, in Input) []Finding {
 				kind: danglingNoteSource, path: n.Path})
 		}
 		for _, c := range in.Scan.Cards {
-			cid := strings.TrimSpace(c.ID)
-			for _, s := range c.Sources {
-				// ② 来源笔记端：存在性看落盘事实（不做删除过滤，删除维度归 R7 的 W20）。
-				if note := strings.TrimSpace(string(s.Note)); note != "" && !x.Has(note, KindNote) {
-					refs = append(refs, refFact{from: cid, to: note,
-						kind: danglingCardNote, path: c.Path})
-				}
-				// ③ 原文端：与笔记的 source 同口径，仅在 sources/ 已采样时判定。
-				if src := strings.TrimSpace(string(s.Source)); src != "" &&
-					x.SourcesSampled && !x.Has(src, KindSource) {
-					refs = append(refs, refFact{from: cid, to: src,
-						kind: danglingCardSource, path: c.Path})
-				}
-			}
-			// ④ 替代指针：失效卡的 replaced_by.target 必须指向一张真实存在的知识卡。
-			if tgt := strings.TrimSpace(c.ReplacedByTarget); tgt != "" && !x.Has(tgt, KindCard) {
-				refs = append(refs, refFact{from: cid, to: tgt,
-					kind: danglingReplacedBy, path: c.Path})
-			}
+			refs = append(refs, materialRefs(x, c.ID, c.Path, c.Sources,
+				c.ReplacedByTarget, danglingCardNote, danglingCardSource)...)
+		}
+		// 观点的引用承载字段与知识卡同构（`sources[]` 两端 + `replaced_by.target`），
+		// 因此复用同一段判定：类别串按引用方如实取，避免把观点的字段说成卡的字段。
+		for _, o := range in.Scan.Opinions {
+			refs = append(refs, materialRefs(x, o.ID, o.Path, o.Sources,
+				o.ReplacedByTarget, danglingOpinionNote, danglingOpinionSource)...)
 		}
 	}
 	// 去重：同一 (引用方, 缺失目标) 只报一条（一张卡的 sources[] 两条指向同一缺失笔记
@@ -464,6 +516,12 @@ func danglingDetail(from, to, kind, path string) string {
 //
 // `targets[]` = `[对象 ID]`（恰一个可定位标识；路径与子类型进 detail）。
 // 产出顺序 = 子类型表行序 → 对象 ID 升序，可逐字复算。
+//
+// **观点不在本码的判定面内**：合同 §6.3 的子类型集合封闭为三值，三者的判定对象分别是
+// 材料笔记 / 原文 / 知识卡；给观点造第四个子类型会改动这个封闭基数，不属结构一致性
+// 这一格能自证的事（「观点该不该孤立存在」是论证进度问题，归 validation 生命周期批次）。
+// 观点的出边**仍然**参与判定：它们已进入落盘入边表，因此「只被观点引用的知识卡」
+// 不会被误判成 card_without_relation。
 //
 // 判定一律看**落盘事实**：
 //   - 不看展示面过滤结果（唯一邻居是 deprecated / 已逻辑删除的卡**不算**孤儿）；

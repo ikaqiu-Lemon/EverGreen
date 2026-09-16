@@ -132,6 +132,7 @@ tests/_staged/internal/query/search_test.go	internal/query/search_test.go	evergr
 tests/_staged/internal/query/visibility_test.go	internal/query/visibility_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/check_test.go	internal/reconcile/check_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/finding_test.go	internal/reconcile/finding_test.go	evergreen	unit	go
+tests/_staged/internal/reconcile/opinion_reconcile_test.go	internal/reconcile/opinion_reconcile_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r1_git_test.go	internal/reconcile/r1_git_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r2_reviewed_test.go	internal/reconcile/r2_reviewed_test.go	evergreen	unit	go
 tests/_staged/internal/reconcile/r3_relation_test.go	internal/reconcile/r3_relation_test.go	evergreen	unit	go

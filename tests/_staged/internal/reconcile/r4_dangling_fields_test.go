@@ -106,9 +106,12 @@ func TestR4DanglingRefAllReferenceFields(t *testing.T) {
 		t.Fatalf("四类引用目标都存在时不得报 E12：%+v", got)
 	}
 
-	// 覆盖面基数冻结为 4：多一类 / 少一类都要改这里，防止边界被静默改动。
-	if DanglingRefKindCount != 4 {
-		t.Fatalf("dangling_ref 覆盖面应恰 4 类，DanglingRefKindCount = %d", DanglingRefKindCount)
+	// 覆盖面基数冻结：多一类 / 少一类都要改这里，防止边界被静默改动。
+	// 本文件钉的是知识卡 / 笔记侧的四类；schema v2 的观点又带来两类
+	// （`opinion.sources[]` 的两端），逐字段反证由 opinion_reconcile_test.go 承载。
+	if DanglingRefKindCount != 6 {
+		t.Fatalf("dangling_ref 覆盖面应恰 6 类（卡 / 笔记侧 4 类 + 观点侧 2 类），"+
+			"DanglingRefKindCount = %d", DanglingRefKindCount)
 	}
 }
 

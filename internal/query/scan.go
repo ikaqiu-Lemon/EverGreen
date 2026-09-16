@@ -91,6 +91,28 @@ type NoteEntry struct {
 	Doc       *mdfile.Doc
 }
 
+// OpinionEntry 是一条被扫描到的观点（schema v2 的第三类领域产物，落在
+// `domains/<d>/opinions/o-*.md`）。
+//
+// 字段集**只有对账域当前真正消费的那几格**：观点的 ID / 路径 / 领域三个定位事实，
+// 加上三个引用承载面（`relations[]`、`sources[]`、`replaced_by.target`）。
+// 检索面用得到的标题 / 标签 / 计分字段，以及 `validation` 这一论证进度键，
+// 都不在这里 —— 它们各有归属批次，先加进来只会得到无人消费的字段。
+type OpinionEntry struct {
+	ID     string
+	Path   string // vault 内相对路径（/ 分隔）
+	Domain string
+	// Relations 是 `relations[]` 的逐字原值。观点是关系的**持有方**，
+	// 而 target 的落盘类型仍是知识卡 ID（model.Relation.Target 是 CardID）：
+	// 「观点支持 / 限制 / 反对某张卡」写在观点这一侧，卡侧不写回。
+	Relations []model.Relation
+	// Sources 是 `sources[]` 的逐字原值（材料层引用：原文 + 来源笔记）。
+	Sources []model.SourceRef
+	// ReplacedByTarget 是 `replaced_by.target` 的逐字原值（缺省即空串，不回填默认值），
+	// 口径与 CardEntry.ReplacedByTarget 逐字相同（同一字段键、同一目标类型）。
+	ReplacedByTarget string
+}
+
 // ScanOptions 是一次扫描的输入。
 type ScanOptions struct {
 	// Domains 限定扫描的领域；**空 = 全库**（rel 反向查询必须走全库）。
@@ -106,11 +128,20 @@ type ScanOptions struct {
 
 // ScanResult 是一次扫描的产物。
 //
-// 计数守恒（合同 §5.3）：ScannedFiles == len(Cards)+len(Notes)+SkippedFiles，
+// 计数守恒（合同 §5.3）：
+// ScannedFiles == len(Cards)+len(Notes)+len(Opinions)+SkippedFiles，
 // 这是「没有第三条静默路径」的机器判据。
 type ScanResult struct {
-	Cards        []CardEntry
-	Notes        []NoteEntry
+	Cards []CardEntry
+	Notes []NoteEntry
+	// Opinions 是观点分区的条目（schema v2）。
+	//
+	// 为什么**不设开关**、恒随扫描带出：观点是 vault 里真实存在的落盘对象，
+	// 对账域要在它上面判关系与结构一致性；若做成可选采样，「没采样」与「不存在」
+	// 在下游就不可区分 —— 最直接的后果是「只被观点引用的知识卡」会被误判成零关系孤儿。
+	// 它自成一个切片，不与 Cards 合流：检索面读 Cards，因此按 kind 收窄检索
+	// （归读路径批次）与本字段互不干扰。
+	Opinions     []OpinionEntry
 	Diagnostics  []Diagnostic
 	ScannedFiles int
 	SkippedFiles int
@@ -124,13 +155,17 @@ func (r *ScanResult) HasQ() bool { return len(r.Diagnostics) > 0 }
 // **禁止静默跳过**：任何读不动 / 解析不了的 .md 都记一条 Q1 并计入 SkippedFiles，
 // 其余合法文件照常返回（一个坏文件不丢全部结果）。
 func VaultScan(root string, opt ScanOptions) (*ScanResult, error) {
-	res := &ScanResult{Cards: []CardEntry{}, Notes: []NoteEntry{}, Diagnostics: []Diagnostic{}}
+	res := &ScanResult{Cards: []CardEntry{}, Notes: []NoteEntry{},
+		Opinions: []OpinionEntry{}, Diagnostics: []Diagnostic{}}
 	domains, err := resolveDomains(root, opt.Domains)
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range domains {
 		if err := scanCardDir(root, d, res); err != nil {
+			return nil, err
+		}
+		if err := scanOpinionDir(root, d, res); err != nil {
 			return nil, err
 		}
 		if opt.IncludeNotes {
@@ -141,6 +176,9 @@ func VaultScan(root string, opt ScanOptions) (*ScanResult, error) {
 	}
 	sort.SliceStable(res.Cards, func(i, j int) bool { return res.Cards[i].Path < res.Cards[j].Path })
 	sort.SliceStable(res.Notes, func(i, j int) bool { return res.Notes[i].Path < res.Notes[j].Path })
+	sort.SliceStable(res.Opinions, func(i, j int) bool {
+		return res.Opinions[i].Path < res.Opinions[j].Path
+	})
 	res.Diagnostics = append(res.Diagnostics, duplicateIDDiagnostics(res.Cards)...)
 	if len(opt.Domains) == 0 {
 		// 悬空引用只在**全库**扫描面上判定：受限扫描面看不见他域的卡，
@@ -223,7 +261,7 @@ func CardEntryFrom(rel, domain string, raw []byte) (CardEntry, Diagnostic, bool)
 		DeletedAt:  stampText(card.DeletedAt), DeletedReason: card.DeletedReason,
 		Deleted:   DeletedFromStamp(stampText(card.DeletedAt)),
 		Relations: card.Relations, Sources: card.Sources,
-		ReplacedByTarget: replacedByTargetOf(card), Raw: raw, Doc: doc,
+		ReplacedByTarget: replacedByTargetOf(card.ReplacedBy), Raw: raw, Doc: doc,
 	}, Diagnostic{}, true
 }
 
@@ -231,11 +269,52 @@ func CardEntryFrom(rel, domain string, raw []byte) (CardEntry, Diagnostic, bool)
 //
 // 与 internal/reverse.go 的 replacedByOf 同一份落盘事实、同一个解码结果：这里在扫描解码
 // 时顺手带出，让下游（对账 R4 / 索引构建）**共用**同一个字段而不各自再解码一次 frontmatter。
-func replacedByTargetOf(card model.Card) string {
-	if card.ReplacedBy == nil {
+// 知识卡与观点共用本函数：`replaced_by` 是同一个字段键、同一个目标类型（知识卡 ID），
+// 两类产物不该各写一份取值实现。
+func replacedByTargetOf(rb *model.ReplacedBy) string {
+	if rb == nil {
 		return ""
 	}
-	return card.ReplacedBy.Target
+	return rb.Target
+}
+
+// scanOpinionDir 扫描单个领域的 opinions/（schema v2 的观点分区）。
+func scanOpinionDir(root, domain string, res *ScanResult) error {
+	dir := filepath.Join(root, dirDomains, domain, dirOpinions)
+	return walkMarkdown(dir, root, func(rel string, raw []byte) error {
+		res.ScannedFiles++
+		entry, bad, ok := OpinionEntryFrom(rel, domain, raw)
+		if !ok {
+			res.skip(bad) // 已记 Q1 并计入 SkippedFiles，继续遍历（禁止静默跳过）
+			return nil
+		}
+		res.Opinions = append(res.Opinions, entry)
+		return nil // 正常收录：无 Diagnostic
+	})
+}
+
+// OpinionEntryFrom 把一个观点文件的原始字节折成 OpinionEntry，**是全包唯一的
+// 「观点 Markdown → OpinionEntry」映射**（口径同 CardEntryFrom：全量扫描与按需解析共用它）。
+//
+// 返回值语义与 CardEntryFrom 逐字一致：ok=false 时第二个返回值是该文件的 Q1 诊断，
+// 调用方必须**同时**记录诊断与计入跳过计数（见 ScanResult.skip）。
+func OpinionEntryFrom(rel, domain string, raw []byte) (OpinionEntry, Diagnostic, bool) {
+	doc, err := mdfile.Parse(raw)
+	if err != nil {
+		return OpinionEntry{}, newQ1(rel, "观点不可解析，已跳过：%v", err), false
+	}
+	var op model.Opinion
+	if err := doc.DecodeFM(&op); err != nil {
+		return OpinionEntry{}, newQ1(rel, "观点 frontmatter 解码失败，已跳过：%v", err), false
+	}
+	if op.ID == "" {
+		return OpinionEntry{}, newQ1(rel, "观点缺 id，无法定位，已跳过"), false
+	}
+	return OpinionEntry{
+		ID: string(op.ID), Path: rel, Domain: domain,
+		Relations: op.Relations, Sources: op.Sources,
+		ReplacedByTarget: replacedByTargetOf(op.ReplacedBy),
+	}, Diagnostic{}, true
 }
 
 // scanNoteDir 扫描单个领域的 notes/。
