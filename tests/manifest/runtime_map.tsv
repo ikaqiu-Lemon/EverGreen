@@ -129,6 +129,7 @@ tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unr
 tests/_staged/internal/query/fuzz_test.go	internal/query/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_opinion_test.go	internal/query/index_backed_opinion_test.go	evergreen	unit	go
 tests/_staged/internal/query/markers_test.go	internal/query/markers_test.go	evergreen	unit	go
+tests/_staged/internal/query/opinion_show_test.go	internal/query/opinion_show_test.go	evergreen	unit	go
 tests/_staged/internal/query/page_test.go	internal/query/page_test.go	evergreen	unit	go
 tests/_staged/internal/query/proposal_test.go	internal/query/proposal_test.go	evergreen	unit	go
 tests/_staged/internal/query/queryset/queryset_test.go	internal/query/queryset/queryset_test.go	evergreen	unit	go

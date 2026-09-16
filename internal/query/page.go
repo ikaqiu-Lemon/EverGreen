@@ -180,6 +180,59 @@ func ApplyPagePair(out, in []RelationEdge, p PageSpec) ([]RelationEdge, []Relati
 	return outPage, inPage, pg
 }
 
+// ApplyPageGroups 把 ApplyPagePair 的「正 + 反两段」推广到**任意 N 段**，施加的仍是
+// **一个**全局 limit/offset（口径与 ApplyPagePair 逐字一致，只是段数从 2 变 N）。
+//
+// 用途：`opinion show` 的关系视图有六段（supports / limits / opposing 三组 × 正 / 反两向），
+// 而合同 §8.2 的 `--limit` 说的是「**最多返回的条数**」——**一个**全局上限，不是「每段各自
+// 的上限」。把六段按**调用方给定的固定次序**拼成一条确定序列，全局取 [offset, offset+limit)
+// 区间后再按各段原长切回。
+//
+// 与合同的等价性是**构造性**的，可机器证明（`TestApplyPageGroupsEqualsGlobalApplyPage`）：
+// 拼接（concat）各返回段 == `ApplyPage(concat(输入各段), p)` 的第一个返回值，且 Page 事实
+// 逐格等于后者的第二个返回值。由此三条语义自动成立：
+//
+//	Returned ≤ limit（limit > 0 时）—— 全局上限，**不会**出现 N*limit；
+//	Total = Σ 各段长 —— 分页前的合计，不受 limit/offset 影响；
+//	Truncated ⇔ Total > offset+limit —— 只判一次，故只产恰一条 W25。
+//
+// 段间次序由调用方给定且**固定**（opinion show 取 group-major、正向在前：supports.fwd →
+// supports.rev → limits.fwd → limits.rev → opposing.fwd → opposing.rev）；段内次序已由
+// 上游 SortEdges 的四级全序决定。因此结果与输入顺序、与后端选择无关。
+//
+// 每个返回段恒为**非 nil** 空切片（JSON 里是 `[]` 而不是 `null`），即使被整段截断。
+func ApplyPageGroups(segs [][]RelationEdge, p PageSpec) ([][]RelationEdge, Page) {
+	merged := []RelationEdge{}
+	bounds := make([]int, len(segs)+1)
+	for i, s := range segs {
+		bounds[i] = len(merged)
+		merged = append(merged, s...)
+		bounds[i+1] = len(merged)
+	}
+	paged, pg := ApplyPage(merged, p)
+	lo := p.Offset
+	if lo > pg.Total {
+		lo = pg.Total
+	}
+	hi := lo + len(paged) // ApplyPage 取的就是 [lo, lo+Returned)
+	out := make([][]RelationEdge, len(segs))
+	for i := range segs {
+		a, b := bounds[i], bounds[i+1]
+		if a < lo {
+			a = lo
+		}
+		if b > hi {
+			b = hi
+		}
+		seg := []RelationEdge{}
+		if a < b {
+			seg = append(seg, merged[a:b]...)
+		}
+		out[i] = seg
+	}
+	return out, pg
+}
+
 // newW25 记一条「结果被截断」的诊断（path 逐字「(汇总)」：截断不属于某一个文件）。
 //
 // 文案说三件事：库里一共多少条、这一页给了多少条、怎么拿到其余的 ——
