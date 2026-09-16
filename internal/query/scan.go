@@ -94,14 +94,28 @@ type NoteEntry struct {
 // OpinionEntry 是一条被扫描到的观点（schema v2 的第三类领域产物，落在
 // `domains/<d>/opinions/o-*.md`）。
 //
-// 字段集**只有对账域当前真正消费的那几格**：观点的 ID / 路径 / 领域三个定位事实，
-// 加上三个引用承载面（`relations[]`、`sources[]`、`replaced_by.target`）。
-// 检索面用得到的标题 / 标签 / 计分字段，以及 `validation` 这一论证进度键，
-// 都不在这里 —— 它们各有归属批次，先加进来只会得到无人消费的字段。
+// 字段集是**对账域**与**派生索引投影**（T-…-066-B）两个消费者的公共集合：前者只需
+// ID / 路径 / 领域三个定位事实与三个引用承载面（`relations[]` / `sources[]` /
+// `replaced_by.target`）；后者要把观点折成与知识卡同口径的 index.Card 行，因此还需要
+// 标题 / 状态 / 失效·删除位 / `validation` 论证进度键，以及原始字节与解析文档（供算
+// content_hash 与取正文全文）。检索面的 tags / 计分字段仍不在这里——观点默认不进
+// `eg search` 结果集（收窄检索属 T-…-067），先加进来只会得到无人消费的字段。
 type OpinionEntry struct {
 	ID     string
 	Path   string // vault 内相对路径（/ 分隔）
 	Domain string
+	// Title 取 frontmatter 的 title（可选键，落在 Extra），缺失时退化为 ID——
+	// 与 CardEntry.Title 走**同一个** entryTitle，写入侧与读路径投影口径不分叉。
+	Title string
+	// Status 是 `status` 的逐字原值；Deprecated 是 `status.Deprecated()` 的展开
+	// （与知识卡同口径：状态是一个维度，删除是另一个正交维度）。
+	Status     string
+	Deprecated bool
+	// Deleted 是 `deleted_at != null` 的展开（口径同 CardEntry：DeletedFromStamp）。
+	Deleted bool
+	// Validation 是 `validation` 论证进度键的逐字原值（观点独有；派生索引的判别行需要它，
+	// 且 schema v2 的 CHECK 要求 opinion 行 validation ∈ {pending,validated,rejected}）。
+	Validation string
 	// Relations 是 `relations[]` 的逐字原值。观点是关系的**持有方**，
 	// 而 target 的落盘类型仍是知识卡 ID（model.Relation.Target 是 CardID）：
 	// 「观点支持 / 限制 / 反对某张卡」写在观点这一侧，卡侧不写回。
@@ -111,6 +125,17 @@ type OpinionEntry struct {
 	// ReplacedByTarget 是 `replaced_by.target` 的逐字原值（缺省即空串，不回填默认值），
 	// 口径与 CardEntry.ReplacedByTarget 逐字相同（同一字段键、同一目标类型）。
 	ReplacedByTarget string
+	// Raw 保留原始字节（供调用方算 content_hash）；Doc 供取分区正文——扫描层不改写字节。
+	Raw []byte
+	Doc *mdfile.Doc
+}
+
+// Body 返回正文全文（frontmatter 之后的原始字节），口径与 CardEntry.Body 逐字相同。
+func (o OpinionEntry) Body() string {
+	if o.Doc == nil || o.Doc.BodyFrom > len(o.Raw) {
+		return ""
+	}
+	return string(o.Raw[o.Doc.BodyFrom:])
 }
 
 // ScanOptions 是一次扫描的输入。
@@ -312,8 +337,14 @@ func OpinionEntryFrom(rel, domain string, raw []byte) (OpinionEntry, Diagnostic,
 	}
 	return OpinionEntry{
 		ID: string(op.ID), Path: rel, Domain: domain,
-		Relations: op.Relations, Sources: op.Sources,
+		Title:      entryTitle(op.Extra, string(op.ID)),
+		Status:     string(op.Status),
+		Deprecated: op.Status.Deprecated(),
+		Deleted:    DeletedFromStamp(stampText(op.DeletedAt)),
+		Validation: string(op.Validation),
+		Relations:  op.Relations, Sources: op.Sources,
 		ReplacedByTarget: replacedByTargetOf(op.ReplacedBy),
+		Raw:              raw, Doc: doc,
 	}, Diagnostic{}, true
 }
 

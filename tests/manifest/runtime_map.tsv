@@ -28,6 +28,7 @@ tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	internal/cli/
 tests/_staged/internal/cli/index_after_write_proposal_test.go	internal/cli/index_after_write_proposal_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_undelete_test.go	internal/cli/index_after_write_undelete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_lock_test.go	internal/cli/index_lock_test.go	evergreen	unit	go
+tests/_staged/internal/cli/index_opinion_projection_test.go	internal/cli/index_opinion_projection_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_reserved_read_test.go	internal/cli/index_reserved_read_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_rowlevel_test.go	internal/cli/index_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_test.go	internal/cli/index_test.go	evergreen	unit	go

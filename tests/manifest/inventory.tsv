@@ -28,6 +28,7 @@ tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	unit	go	cli-c
 tests/_staged/internal/cli/index_after_write_proposal_test.go	unit	go	cli-core	unit.internal.cli	3	8880
 tests/_staged/internal/cli/index_after_write_undelete_test.go	unit	go	cli-core	unit.internal.cli	1	4408
 tests/_staged/internal/cli/index_lock_test.go	unit	go	cli-core	unit.internal.cli	1	22172
+tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	unit.internal.cli	4	19963
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	1	6626
 tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54284
@@ -372,7 +373,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24194
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24197
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

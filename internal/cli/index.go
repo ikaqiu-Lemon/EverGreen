@@ -417,6 +417,41 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 			})
 		}
 	}
+	// 观点投影（Schema v2·T-…-066-B）：`domains/<域>/opinions/o-*` 与知识卡**同批同口径**
+	// 进 cards / cards_fts / files / relations。判别列显式给值——`kind=opinion`、
+	// `validation` 取 frontmatter 真值（scan 已解出 OpinionEntry.Validation），不做任何兜底：
+	// 索引层的 CHECK 要求 opinion 行 validation ∈ 三值、knowledge 行必空，谁在哪个扫描面上
+	// 取到的行就在取数处写明分型（与上面知识卡面的 knowledge/空串对称）。
+	//
+	// 为什么必须与知识卡面共用同一套 (size, mtime, content_hash) 口径：读路径的
+	// `index.Check` 会把 files 表水位线与 cards 行级投影一起对账，若写入侧观点的 content_hash
+	// 与读路径投影不同源，含观点的库会被误判成陈旧 / 行级撒谎，`eg search` 每次都降级。
+	for _, o := range scan.Opinions {
+		size, mtime := fileStat(filepath.Join(root, filepath.FromSlash(o.Path)))
+		trueHash := store.ContentHash(o.Raw)
+		fileHash := trueHash
+		if quick {
+			if prev, ok := indexed[o.Path]; ok &&
+				index.QuickUnchanged(prev, index.File{Path: o.Path, Size: size, MTimeUnix: mtime}) {
+				fileHash = prev.ContentHash
+			}
+		}
+		snap.Cards = append(snap.Cards, index.Card{
+			ID: o.ID, Path: o.Path, Domain: o.Domain, Title: o.Title, Status: o.Status,
+			Deprecated: o.Deprecated, Deleted: o.Deleted,
+			ReplacedBy: o.ReplacedByTarget, Body: o.Body(),
+			ContentHash: trueHash, MTimeUnix: mtime,
+			Kind: index.CardKindOpinion, Validation: o.Validation,
+		})
+		snap.Files = append(snap.Files, index.File{
+			Path: o.Path, ContentHash: fileHash, Size: size, MTimeUnix: mtime,
+		})
+		for _, rel := range o.Relations {
+			snap.Relations = append(snap.Relations, index.Relation{
+				SrcID: o.ID, Verb: string(rel.Type), DstID: string(rel.Target), SrcPath: o.Path,
+			})
+		}
+	}
 	return snap, warnings, nil
 }
 

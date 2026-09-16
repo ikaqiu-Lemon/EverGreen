@@ -191,8 +191,8 @@ func currentWatermarkInput(root string, deps IndexDeps, indexed map[string]index
 		if err != nil {
 			return nil, err
 		}
-		if _, _, ok := CardEntryFrom(cur.Path, domainOfPath(cur.Path), raw); !ok {
-			continue // 解析不动 ⇒ 不进水位线（与 status 侧的 scan.Cards 口径一致）
+		if !parseableAt(cur.Path, raw) {
+			continue // 解析不动 ⇒ 不进水位线（与 status 侧的扫描收录口径一致，按分区分流解析器）
 		}
 		files = append(files, index.File{Path: cur.Path, ContentHash: deps.Hash(raw),
 			Size: cur.Size, MTimeUnix: cur.MTimeUnix})
@@ -223,6 +223,23 @@ func currentCardsInput(root string, deps IndexDeps, present []index.File) ([]ind
 		if err != nil {
 			return nil, err
 		}
+		// 按分区分流解析器（与写入侧快照逐字对称）：观点走 OpinionEntryFrom 折出
+		// kind=opinion、validation 取真值的投影；知识卡走 CardEntryFrom、kind=knowledge、
+		// validation 恒空。两侧都用全包唯一的映射与注入的 B3 hash，绝不自造第二套。
+		if isOpinionPath(cur.Path) {
+			entry, _, ok := OpinionEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
+			if !ok {
+				continue // 解析不动 ⇒ 不进权威投影（与 cards 表的收录口径一致）
+			}
+			cards = append(cards, index.Card{
+				ID: entry.ID, Path: entry.Path, Domain: entry.Domain, Title: entry.Title,
+				Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
+				ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
+				ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
+				Kind: index.CardKindOpinion, Validation: entry.Validation,
+			})
+			continue
+		}
 		entry, _, ok := CardEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
 		if !ok {
 			continue // 解析不动 ⇒ 不进权威投影（与 cards 表的收录口径一致）
@@ -232,29 +249,31 @@ func currentCardsInput(root string, deps IndexDeps, present []index.File) ([]ind
 			Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
 			ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
 			ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
-			// 分型显式给值（Schema v2）：present 恒来自知识卡扫描面（statCardFiles），
-			// 故逐张 knowledge、validation 恒空。行级核对会把这两列也逐列对账，因此这里
-			// **必须**与写入侧同口径 —— 留空会让每一行都被判成「判别列对权威撒谎」。
+			// 分型显式给值（Schema v2）：知识卡面逐张 knowledge、validation 恒空。行级核对会把
+			// 这两列也逐列对账，因此这里**必须**与写入侧同口径 —— 留空会让每一行都被判成
+			// 「判别列对权威撒谎」。
 			Kind: index.CardKindKnowledge, Validation: "",
 		})
 	}
 	return cards, nil
 }
 
-// statCardFiles 走查**知识卡扫描面**上的全部 `.md`（只 stat 不读字节），按 path 升序。
+// statCardFiles 走查**索引对象扫描面**上的全部 `.md`（只 stat 不读字节），按 path 升序。
 //
-// 扫描面与 VaultScan 的卡面逐字相同（`domains/<d>/knowledge/**`，跳 `.git` / `.index` /
-// `proposals`）：两者共用 resolveDomains + walkMarkdownPaths 这一处遍历实现，
-// 因此「哪些文件算在内」不可能在两条后端上分叉。
+// 扫描面 = 知识卡（`domains/<d>/knowledge/**`）**并集**观点（`domains/<d>/opinions/**`）：
+// 与 VaultScan 的对象面逐字相同（两类都进 cards / cards_fts / files / relations，
+// schema v2·T-…-066-B）。三处遍历共用 resolveDomains + walkMarkdownPaths 这一处实现，
+// 因此「哪些文件算在内」不可能在写入侧快照与读路径投影之间分叉——这正是含观点索引仍判
+// healthy 的前提：若读路径的 `present` 少了观点，files 表里的 o-* 行在水位线核对时就成了
+// 「有行无现态文件」，含观点的库每次读都会被误判成陈旧而降级。
 func statCardFiles(root string) ([]index.File, error) {
 	domains, err := resolveDomains(root, nil)
 	if err != nil {
 		return nil, err
 	}
 	out := []index.File{}
-	for _, d := range domains {
-		dir := filepath.Join(root, dirDomains, d, dirKnowledge)
-		err := walkMarkdownPaths(dir, root, func(rel, full string) error {
+	statInto := func(dir string) error {
+		return walkMarkdownPaths(dir, root, func(rel, full string) error {
 			st, err := os.Stat(full)
 			if err != nil {
 				return err
@@ -264,7 +283,12 @@ func statCardFiles(root string) ([]index.File, error) {
 			})
 			return nil
 		})
-		if err != nil {
+	}
+	for _, d := range domains {
+		if err := statInto(filepath.Join(root, dirDomains, d, dirKnowledge)); err != nil {
+			return nil, err
+		}
+		if err := statInto(filepath.Join(root, dirDomains, d, dirOpinions)); err != nil {
 			return nil, err
 		}
 	}
@@ -340,12 +364,34 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 		})
 	}
 	indexedPaths := make(map[string]bool, len(cards))
+	// opinionPaths 是索引在册的**观点**行路径集合。默认读路径（`eg search` / `card show` /
+	// `rel`）只投知识卡：观点不进 res.Cards，业务 search 因此不泄漏 o-*（按 kind 收窄的
+	// 检索语义与 opinion 检索属 T-…-067，本批不提前实现）。但它们的路径仍要登记进
+	// indexedPaths —— 否则下面「present 里有、cards 里没有」的新增判定会把观点文件当成
+	// 未收录的知识卡去解析，既做无用功又可能把观点误当卡带进结果。
+	opinionPaths := make(map[string]bool)
 	entries := make([]CardEntry, 0, len(cards))
+	// opinions 是从索引在册的观点行折回的 OpinionEntry 摘要（口径同知识卡 stub：
+	// 只带 relations 表里已有的定位事实与正向边，不读观点字节）。它们**不进** res.Cards
+	// （默认读路径不泄漏观点），但必须进 res.Opinions —— 否则 ScanResult 的守恒式
+	// `ScannedFiles == len(Cards)+len(Notes)+len(Opinions)+SkippedFiles` 在含观点库上不成立，
+	// 且与扫描后端（VaultScan 把观点计入 ScannedFiles 又放进 Opinions）的计数分叉。
+	opinions := make([]OpinionEntry, 0)
 	for _, c := range cards {
 		if !inDomains(c.Path, plan.domains) {
 			continue
 		}
 		indexedPaths[c.Path] = true
+		if c.Kind == index.CardKindOpinion {
+			opinionPaths[c.Path] = true
+			opinions = append(opinions, OpinionEntry{
+				ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title,
+				Status: c.Status, Deprecated: c.Deprecated, Deleted: c.Deleted,
+				Validation: c.Validation, ReplacedByTarget: c.ReplacedBy,
+				Relations: relBySrc[c.ID],
+			})
+			continue // 观点不进默认读结果集（不泄漏）；与 VaultScan 把观点放在 res.Opinions 对称
+		}
 		entries = append(entries, CardEntry{
 			ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title,
 			Status: c.Status, Deprecated: c.Deprecated, Deleted: c.Deleted,
@@ -384,8 +430,8 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 	need := map[string]bool{}
 	if plan.all {
 		for _, f := range present {
-			if unparsable[f.Path] {
-				continue // 已记 Q1、已计入跳过：口径与扫描后端逐字相同
+			if unparsable[f.Path] || opinionPaths[f.Path] {
+				continue // 已记 Q1（跳过）或是观点行（默认读不投观点）：口径与扫描后端一致
 			}
 			need[f.Path] = true
 		}
@@ -397,7 +443,9 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 			}
 		}
 		for _, r := range rels {
-			if r.DstID == plan.focus && inDomains(r.SrcPath, plan.domains) {
+			// 观点→知识卡的边在 relations 表里在册（relations 纳管观点），但默认读路径不投
+			// 观点：反向来源不解析观点文件（否则会把观点当卡解析后又丢弃，做无用功且语义含糊）。
+			if r.DstID == plan.focus && inDomains(r.SrcPath, plan.domains) && !opinionPaths[r.SrcPath] {
 				need[r.SrcPath] = true
 			}
 		}
@@ -425,6 +473,10 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 	// ③ 归一化：与 VaultScan 逐字同序（按 path 升序稳定排序），再走同一套诊断组装。
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	res.Cards = entries
+	// 观点摘要同样按 path 升序（与 VaultScan 的 res.Opinions 排序口径逐字相同）；它们不参与
+	// 卡面的重复 / 悬空诊断（那两条只在 Cards 上判），仅用于把守恒式与计数对齐扫描后端。
+	sort.SliceStable(opinions, func(i, j int) bool { return opinions[i].Path < opinions[j].Path })
+	res.Opinions = opinions
 	res.Diagnostics = append(res.Diagnostics, duplicateIDDiagnostics(res.Cards)...)
 	if len(plan.domains) == 0 {
 		// 悬空引用（Q2）只在**全库**面上判定：与 VaultScan 逐字同一条件
@@ -484,4 +536,24 @@ func domainOfPath(rel string) string {
 		return parts[1]
 	}
 	return ""
+}
+
+// isOpinionPath 判一个 vault 内相对路径是否落在观点分区 `domains/<d>/opinions/**`。
+// 领域产物的类型是**目录事实**（与 domainOfPath 同源口径），不从 frontmatter 的 id 前缀猜——
+// 读路径据此决定该走 CardEntryFrom 还是 OpinionEntryFrom，与写入侧快照的分流逐字对称。
+func isOpinionPath(rel string) bool {
+	parts := strings.Split(path.Clean(rel), "/")
+	return len(parts) >= 3 && parts[0] == dirDomains && parts[2] == dirOpinions
+}
+
+// parseableAt 判一个现态文件在其分区口径下能否解析成领域对象（知识卡或观点）。
+// 与写入侧快照的收录口径逐字一致：解析不动的文件既不进水位线也不进权威投影
+// （它们本就不该在 cards / files 表里，扫描后端对它们记 Q1、计入 skipped）。
+func parseableAt(rel string, raw []byte) bool {
+	if isOpinionPath(rel) {
+		_, _, ok := OpinionEntryFrom(rel, domainOfPath(rel), raw)
+		return ok
+	}
+	_, _, ok := CardEntryFrom(rel, domainOfPath(rel), raw)
+	return ok
 }
