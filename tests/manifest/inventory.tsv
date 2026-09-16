@@ -28,7 +28,7 @@ tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	unit	go	cli-c
 tests/_staged/internal/cli/index_after_write_proposal_test.go	unit	go	cli-core	unit.internal.cli	3	8880
 tests/_staged/internal/cli/index_after_write_undelete_test.go	unit	go	cli-core	unit.internal.cli	1	4408
 tests/_staged/internal/cli/index_lock_test.go	unit	go	cli-core	unit.internal.cli	1	22172
-tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	unit.internal.cli	4	19963
+tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	unit.internal.cli	4	30203
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	1	6626
 tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54284
@@ -123,6 +123,7 @@ tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	uni
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350
 tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.internal.query.filter	3	4972
 tests/_staged/internal/query/fuzz_test.go	unit	go	card-query	unit.internal.query	2	3912
+tests/_staged/internal/query/index_backed_opinion_test.go	unit	go	card-query	unit.internal.query	1	13287
 tests/_staged/internal/query/markers_test.go	unit	go	card-query	unit.internal.query	3	17160
 tests/_staged/internal/query/page_test.go	unit	go	card-query	unit.internal.query	8	17376
 tests/_staged/internal/query/proposal_test.go	unit	go	card-query	unit.internal.query	3	10957

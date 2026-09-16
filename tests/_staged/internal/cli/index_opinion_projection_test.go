@@ -16,6 +16,7 @@ package cli
 
 import (
 	"database/sql"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -165,6 +166,115 @@ func opnValidationByID(t *testing.T, dir string) map[string]string {
 			t.Fatalf("scan 失败：%v", err)
 		}
 		out[id] = v
+	}
+	return out
+}
+
+// opnRow 是一条派生行的**判别事实**（供 cards 与 cards_fts 两侧逐条互校，以及与磁盘真值互校）。
+type opnRow struct {
+	kind       string
+	validation string
+}
+
+// opnCardRowsByID 取 cards 表全部行的 id → (kind, validation)，另带 id → path。
+//
+// 为什么要把 path 一起取出来：本文件的判据是「派生行集**恰等于**磁盘文件全集」，
+// 而 cards_fts 只有 id 没有 path（FTS 六列里没有 path），故必须由 cards 建立
+// id ↔ path 的桥，才能把 cards_fts 的 id 集合与磁盘路径全集对上，不留「用 id 抽样
+// 代替全集对账」的口子。
+func opnCardRowsByID(t *testing.T, dir string) (map[string]opnRow, map[string]string) {
+	t.Helper()
+	db := opnOpenDB(t, dir)
+	defer func() { _ = db.Close() }()
+	rows, err := db.Query(`SELECT id, path, kind, validation FROM ` + index.TableCards + ` ORDER BY id`)
+	if err != nil {
+		t.Fatalf("查询 cards 判别列失败：%v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	facts := map[string]opnRow{}
+	paths := map[string]string{}
+	for rows.Next() {
+		var id, p, kind, val string
+		if err := rows.Scan(&id, &p, &kind, &val); err != nil {
+			t.Fatalf("scan 失败：%v", err)
+		}
+		facts[id] = opnRow{kind: kind, validation: val}
+		paths[id] = p
+	}
+	return facts, paths
+}
+
+// opnFTSRowsByID 取 cards_fts 全部行的 id → (kind, validation)。
+//
+// 判别两列在 FTS 里是 UNINDEXED（不进倒排，避免裸 MATCH 'opinion' 命中每条观点），
+// 但**仍然逐行存储**，因此可以直接 SELECT 出来做全集对账 —— 这正是「不靠两个 MATCH
+// 令牌抽样」的关键：抽样只能证明某几行在，全集对账才能同时证明**无遗漏且无越界**。
+func opnFTSRowsByID(t *testing.T, dir string) map[string]opnRow {
+	t.Helper()
+	db := opnOpenDB(t, dir)
+	defer func() { _ = db.Close() }()
+	rows, err := db.Query(`SELECT id, kind, validation FROM ` + index.TableCardsFTS + ` ORDER BY id`)
+	if err != nil {
+		t.Fatalf("查询 cards_fts 判别列失败：%v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]opnRow{}
+	for rows.Next() {
+		var id, kind, val string
+		if err := rows.Scan(&id, &kind, &val); err != nil {
+			t.Fatalf("scan 失败：%v", err)
+		}
+		out[id] = opnRow{kind: kind, validation: val}
+	}
+	return out
+}
+
+// opnAllIDs 取 id → 判别事实映射的全部 id（升序）。
+func opnAllIDs(facts map[string]opnRow) []string {
+	out := make([]string, 0, len(facts))
+	for id := range facts {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// opnIDsOfKind 从 id → 判别事实的映射里筛出某个 kind 的 id 集合（升序）。
+func opnIDsOfKind(facts map[string]opnRow, kind string) []string {
+	var out []string
+	for id, f := range facts {
+		if f.kind == kind {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// opnIDsFromDiskPaths 把磁盘 .md 路径折成 ID 集合（basename 去掉 .md）。
+//
+// 这是**磁盘事实**一侧的锚：产物 ID 与文件名在本仓的落盘约定里逐字相同
+// （`domains/<域>/{knowledge,opinions}/<id>.md`），因此可以用文件名反推应有的 ID 全集，
+// 而不是把期望值抄成常量后自证。
+func opnIDsFromDiskPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		base := path.Base(p)
+		out = append(out, strings.TrimSuffix(base, ".md"))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// opnDiskTruth 给出**磁盘 frontmatter 真值**一侧的判别事实：知识卡恒 (knowledge, "")，
+// 三条观点各自的 validation 取 opnSeeds() 里写死的落盘值。
+func opnDiskTruth() map[string]opnRow {
+	out := map[string]opnRow{
+		applyCardID:  {kind: string(index.CardKindKnowledge), validation: ""},
+		applyCard2ID: {kind: string(index.CardKindKnowledge), validation: ""},
+	}
+	for _, s := range opnSeeds() {
+		out[s.id] = opnRow{kind: string(index.CardKindOpinion), validation: s.validation}
 	}
 	return out
 }
@@ -402,10 +512,77 @@ func TestIndexBuildProjectsOpinionRowsMatchDisk(t *testing.T) {
 	if n := opnTableCount(t, dir); n != len(index.TableNames()) {
 		t.Fatalf("表数 = %d，期望恰 %d（不得分表）", n, len(index.TableNames()))
 	}
+
+	// ⑥ cards_fts 也要**按 kind 分别做全集对账**（不是靠几个 MATCH 令牌抽样）。
+	//    抽样只能证明「某几行在」，全集对账才能同时证明**无遗漏且无越界**：
+	//    检索面走的是 cards_fts，若它漏了观点行则按 kind 收窄检索天生查不到，
+	//    若它多出行（例如把 proposals/ 或已删文件也写进去）则会凭空召回不存在的产物。
+	cardsFacts, cardsPaths := opnCardRowsByID(t, dir)
+	ftsFacts := opnFTSRowsByID(t, dir)
+
+	wantKnowIDs := opnIDsFromDiskPaths(wantKnow)
+	wantOpnIDs := opnIDsFromDiskPaths(wantOpn)
+	if !opnEqualStrSets(wantKnowIDs, opnIDsOfKind(ftsFacts, string(index.CardKindKnowledge))) {
+		t.Fatalf("cards_fts.knowledge 行集与磁盘 k-* 不符：期望 %v，实得 %v",
+			wantKnowIDs, opnIDsOfKind(ftsFacts, string(index.CardKindKnowledge)))
+	}
+	if !opnEqualStrSets(wantOpnIDs, opnIDsOfKind(ftsFacts, string(index.CardKindOpinion))) {
+		t.Fatalf("cards_fts.opinion 行集与磁盘 o-* 不符：期望 %v，实得 %v",
+			wantOpnIDs, opnIDsOfKind(ftsFacts, string(index.CardKindOpinion)))
+	}
+	// cards_fts 的 id 全集也必须恰等于磁盘全集与 cards 全集（两张表不许一侧多一侧少）。
+	allWantIDs := append(opnSortedCopy(wantKnowIDs), wantOpnIDs...)
+	if !opnEqualStrSets(allWantIDs, opnAllIDs(ftsFacts)) {
+		t.Fatalf("cards_fts 的 id 全集与磁盘不符：期望 %v，实得 %v", allWantIDs, opnAllIDs(ftsFacts))
+	}
+	if !opnEqualStrSets(allWantIDs, opnAllIDs(cardsFacts)) {
+		t.Fatalf("cards 的 id 全集与磁盘不符：期望 %v，实得 %v", allWantIDs, opnAllIDs(cardsFacts))
+	}
+
+	// ⑦ 逐条互校：cards_fts 的 kind/validation 必须与 cards **同行相等**，
+	//    且两者都等于磁盘 frontmatter 真值（三方一致，任一侧漂移都当场红）。
+	truth := opnDiskTruth()
+	if len(truth) != len(allWantIDs) {
+		t.Fatalf("前置：磁盘真值表 %d 条与磁盘文件 %d 条不匹配", len(truth), len(allWantIDs))
+	}
+	for _, id := range allWantIDs {
+		want, ok := truth[id]
+		if !ok {
+			t.Fatalf("磁盘上出现未登记进真值表的产物 %s（语料与判据脱节）", id)
+		}
+		cf, ok := cardsFacts[id]
+		if !ok {
+			t.Fatalf("cards 缺 id=%s 的行（磁盘上存在）", id)
+		}
+		ff, ok := ftsFacts[id]
+		if !ok {
+			t.Fatalf("cards_fts 缺 id=%s 的行（磁盘上存在）", id)
+		}
+		if cf != want {
+			t.Fatalf("cards[%s] 判别列与磁盘真值不符：实得 (kind=%q, validation=%q)，期望 (kind=%q, validation=%q)",
+				id, cf.kind, cf.validation, want.kind, want.validation)
+		}
+		if ff != want {
+			t.Fatalf("cards_fts[%s] 判别列与磁盘真值不符：实得 (kind=%q, validation=%q)，期望 (kind=%q, validation=%q)",
+				id, ff.kind, ff.validation, want.kind, want.validation)
+		}
+		if ff != cf {
+			t.Fatalf("cards_fts[%s] 与 cards[%s] 判别列不一致：%+v vs %+v", id, id, ff, cf)
+		}
+		// id ↔ path 的桥也要落回磁盘：cards 里这条 id 的 path 必须真的在磁盘全集里。
+		p, ok := cardsPaths[id]
+		if !ok || !contains(append(opnSortedCopy(wantKnow), wantOpn...), p) {
+			t.Fatalf("cards[%s].path = %q 不在磁盘文件全集内", id, p)
+		}
+	}
 }
 
 // TestIndexRebuildOpinionEqualsBuild —— 删 .index/ 后 rebuild 与 build 在 kind/validation/
 // FTS 命中集三者对账一致（索引是可重建派生）。
+//
+// 等价性必须是**逐值**的：只比 `len(validation 映射)` 是假等价——两库都是 5 条、
+// 但把 pending 写成 rejected 时长度照样相等，恰恰漏掉论证进度这一格。FTS 侧同理，
+// 只验 pending 一个令牌等于只抽样了三分之一，validated / rejected 两条掉了也不会红。
 func TestIndexRebuildOpinionEqualsBuild(t *testing.T) {
 	dir := idxVaultWithOpinions(t)
 	if code, _, errOut := runIndexCLI(t, dir, "build"); code != ExitOK {
@@ -416,22 +593,99 @@ func TestIndexRebuildOpinionEqualsBuild(t *testing.T) {
 		t.Fatalf("前置：build 后 opinion 行应有 3 条，实得 %v", buildOpn)
 	}
 	buildVal := opnValidationByID(t, dir)
-	buildFTS := opnFTSMatchIDs(t, dir, opnPendingToken)
-	if len(buildFTS) == 0 {
-		t.Fatalf("前置：build 后 FTS 应能按观点令牌召回，实得空")
+	buildCards, buildPaths := opnCardRowsByID(t, dir)
+	buildFTS := opnFTSRowsByID(t, dir)
+
+	// 前置：三条观点的令牌都必须各自召回**恰**它自己那一行，否则下面的等价比较会在空集上假绿。
+	tokenOf := map[string]string{
+		opnPendingID:   opnPendingToken,
+		opnValidatedID: opnValidatedToken,
+		opnRejectedID:  opnRejectedToken,
+	}
+	buildMatch := map[string][]string{}
+	for id, tok := range tokenOf {
+		got := opnFTSMatchIDs(t, dir, tok)
+		if !opnEqualStrSets(got, []string{id}) {
+			t.Fatalf("前置：build 后令牌 %q 应恰召回 %s，实得 %v", tok, id, got)
+		}
+		buildMatch[tok] = got
 	}
 
 	if code, _, errOut := runIndexCLI(t, dir, "rebuild"); code != ExitOK {
 		t.Fatalf("rebuild 退出码非 0：%s", errOut)
 	}
+
 	if !opnEqualStrSets(buildOpn, opnPathsByKind(t, dir, string(index.CardKindOpinion))) {
-		t.Fatal("rebuild 后 opinion 行集与 build 不一致")
+		t.Fatalf("rebuild 后 opinion 行集与 build 不一致：build %v，rebuild %v",
+			buildOpn, opnPathsByKind(t, dir, string(index.CardKindOpinion)))
 	}
-	if got := opnValidationByID(t, dir); len(got) != len(buildVal) {
-		t.Fatal("rebuild 后 validation 映射与 build 不一致")
+
+	// validation 逐 key/value 深等（不是比长度）：键集合与每个键的值都必须逐字相同。
+	reVal := opnValidationByID(t, dir)
+	if len(reVal) != len(buildVal) {
+		t.Fatalf("rebuild 后 validation 键数 %d != build 的 %d", len(reVal), len(buildVal))
 	}
-	if !opnEqualStrSets(buildFTS, opnFTSMatchIDs(t, dir, opnPendingToken)) {
-		t.Fatal("rebuild 后 FTS 命中集与 build 不一致")
+	for id, want := range buildVal {
+		got, ok := reVal[id]
+		if !ok {
+			t.Fatalf("rebuild 后缺 validation 键 %s（build 有，值 %q）", id, want)
+		}
+		if got != want {
+			t.Fatalf("rebuild 后 validation[%s] = %q，build 为 %q（逐值必须相同）", id, got, want)
+		}
+	}
+	for id := range reVal {
+		if _, ok := buildVal[id]; !ok {
+			t.Fatalf("rebuild 后多出 validation 键 %s（build 没有）", id)
+		}
+	}
+
+	// cards / cards_fts 的判别事实也逐条深等（键集合 + 每行 kind/validation）。
+	reCards, rePaths := opnCardRowsByID(t, dir)
+	reFTS := opnFTSRowsByID(t, dir)
+	opnAssertFactsEqual(t, "cards", buildCards, reCards)
+	opnAssertFactsEqual(t, "cards_fts", buildFTS, reFTS)
+	if len(rePaths) != len(buildPaths) {
+		t.Fatalf("rebuild 后 cards 行数 %d != build 的 %d", len(rePaths), len(buildPaths))
+	}
+	for id, want := range buildPaths {
+		if got := rePaths[id]; got != want {
+			t.Fatalf("rebuild 后 cards[%s].path = %q，build 为 %q", id, got, want)
+		}
+	}
+
+	// FTS 等价覆盖**全部三条**观点的命中集，而不是只验 pending。
+	for id, tok := range tokenOf {
+		got := opnFTSMatchIDs(t, dir, tok)
+		if !opnEqualStrSets(buildMatch[tok], got) {
+			t.Fatalf("rebuild 后令牌 %q（%s）的 FTS 命中集与 build 不一致：build %v，rebuild %v",
+				tok, id, buildMatch[tok], got)
+		}
+		if !opnEqualStrSets(got, []string{id}) {
+			t.Fatalf("rebuild 后令牌 %q 应恰召回 %s，实得 %v", tok, id, got)
+		}
+	}
+}
+
+// opnAssertFactsEqual 逐条比较两侧 id → 判别事实映射（键集合与每个值都必须相同）。
+func opnAssertFactsEqual(t *testing.T, table string, want, got map[string]opnRow) {
+	t.Helper()
+	if len(want) != len(got) {
+		t.Fatalf("%s 行数不等价：build %d，rebuild %d", table, len(want), len(got))
+	}
+	for id, w := range want {
+		g, ok := got[id]
+		if !ok {
+			t.Fatalf("%s rebuild 后缺 id=%s（build 有 %+v）", table, id, w)
+		}
+		if g != w {
+			t.Fatalf("%s[%s] 判别列不等价：build %+v，rebuild %+v", table, id, w, g)
+		}
+	}
+	for id := range got {
+		if _, ok := want[id]; !ok {
+			t.Fatalf("%s rebuild 后多出 id=%s（build 没有）", table, id)
+		}
 	}
 }
 
