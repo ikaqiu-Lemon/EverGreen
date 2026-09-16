@@ -29,7 +29,7 @@ tests/_staged/internal/cli/index_after_write_proposal_test.go	unit	go	cli-core	u
 tests/_staged/internal/cli/index_after_write_undelete_test.go	unit	go	cli-core	unit.internal.cli	1	4408
 tests/_staged/internal/cli/index_lock_test.go	unit	go	cli-core	unit.internal.cli	1	22172
 tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	unit.internal.cli	4	30203
-tests/_staged/internal/cli/index_opinion_sync_test.go	unit	go	cli-core	unit.internal.cli	1	33497
+tests/_staged/internal/cli/index_opinion_sync_test.go	unit	go	cli-core	unit.internal.cli	1	33789
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	1	6626
 tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54284
