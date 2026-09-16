@@ -55,6 +55,7 @@ func editedSnapshot() index.Snapshot {
 		ID: "k-delta", Path: pathDelta, Domain: "ai", Title: "新卡",
 		Status: "active", Body: "新卡正文 retrieval augmented",
 		ContentHash: "sha256:dddd", MTimeUnix: 1_600_000_300,
+		Kind: index.CardKindKnowledge, Validation: "",
 	})
 	// 删掉 k-gamma 的卡片行与它作为源的关系行（它的文件已不存在）。
 	snap.Cards = dropCardsByPath(snap.Cards, pathGamma)

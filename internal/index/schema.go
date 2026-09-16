@@ -17,8 +17,15 @@ import (
 // 语义**唯一**：`index_meta.schema_version != IndexSchemaVersion` ⇒ 索引判为不可用
 // （`W24 index_corrupt` 家族的 `schema_version_mismatch` 子因），处置 = **整库重建**。
 // **永不写迁移脚本**：迁移会引入「旧库半迁移」这一不可验证态，而重建的代价是
-// O(全量 build)，已有性能门槛兜底。M5 首版取 1。
-const IndexSchemaVersion = 1
+// O(全量 build)，已有性能门槛兜底。
+//
+// 版本沿革：
+//
+//	1  M5 首版（cards 十列，cards_fts 四列）。
+//	2  Schema v2 knowledge / opinion 分型：`cards` 与 `cards_fts` 各加 `kind` 与
+//	   `validation` 两列（设计 §7 决策记录 D-4 —— 加判别列，不分表）。v1 旧库遇到 v2
+//	   二进制即判 schema_version_mismatch 并整库重建：这正是「不写迁移脚本」的兑现方式。
+const IndexSchemaVersion = 2
 
 // 目录与文件布局（合同 §3.2 封闭清单）。
 const (
@@ -41,6 +48,69 @@ func DBPath(vaultRoot string) string { return filepath.Join(DirPath(vaultRoot), 
 // 出现集合外的文件视为外部污染，按 `W24 index_corrupt` 处理（只报不改）。
 func AllowedFiles() []string {
 	return []string{DBFileName, DBFileName + walSuffix, DBFileName + shmSuffix}
+}
+
+// —— 产物分型：`cards.kind` 与 `cards.validation` 的取值域（Schema v2 §7 / D-4）——
+//
+// 判别列的存在理由：知识卡与观点共用 `cards` / `cards_fts` 两张表（**不**分表），
+// 排序全序、分页、`relations` 跨类型 join 因此只需要一份实现，检索面收窄退化为
+// 一个 `WHERE kind = ?`。表数量保持恰 6 张。
+//
+// 与 `SkippedKinds()` 同一处理：字面量在本包**逐字写死**而不是 import `internal/model`
+// 的枚举 —— `Card` 是中性 DTO（字段全是标量，不引本仓任何结构体），且 §13 依赖禁令要求
+// 索引层不长出对上游包的依赖。两边字面量若有分叉，调用方把观点喂进来的第一刻就会被
+// 下面的 CHECK 当场拒绝（不会静默漂移），判据见 tests/…/index/schema_v2_kind_test.go。
+const (
+	// CardKindKnowledge 是知识卡（`domains/<域>/knowledge/k-*.md`）：validation 恒为空串。
+	CardKindKnowledge = "knowledge"
+	// CardKindOpinion 是观点（`domains/<域>/opinions/o-*.md`）：validation 必为封闭三值之一。
+	CardKindOpinion = "opinion"
+)
+
+// CardKinds 返回封闭的产物分型集合（恰 2 个；第三值属独立里程碑变更）。
+func CardKinds() []string { return []string{CardKindKnowledge, CardKindOpinion} }
+
+// 观点的论证进度（Schema v2 §6.1，封闭三值；与 `internal/model` 的 Validation 枚举
+// 逐字同值同序）。它与 `status` 是两个**正交**维度：rejected 的观点仍可以是 active
+// （「已确认不成立」本身是知识资产），因此索引层不做任何 status ↔ validation 的推导。
+const (
+	ValidationPending   = "pending"
+	ValidationValidated = "validated"
+	ValidationRejected  = "rejected"
+)
+
+// CardValidations 返回封闭的论证进度集合（恰 3 个，次序与状态机推进方向一致）。
+func CardValidations() []string {
+	return []string{ValidationPending, ValidationValidated, ValidationRejected}
+}
+
+// validCardKind / validCardValidation 是**唯一**的取值域判定（写入口与 DDL 共用同一名单）。
+func validCardKind(kind string) bool {
+	for _, k := range CardKinds() {
+		if kind == k {
+			return true
+		}
+	}
+	return false
+}
+
+// validCardValidation 判 (kind, validation) 这一**组合**是否合法：
+// knowledge 恒空串、opinion 恒封闭三值之一（空串亦非法）。
+//
+// 交叉判定写成一个函数而不是两条独立规则：validation 的合法性离开 kind 无从谈起，
+// 拆成两处必然出现「各自都通过、组合却自相矛盾」的行。
+func validCardValidation(kind, validation string) bool {
+	switch kind {
+	case CardKindKnowledge:
+		return validation == ""
+	case CardKindOpinion:
+		for _, v := range CardValidations() {
+			if validation == v {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // 表名常量（恰 6 张，合同 §4.1，本 task 不得增删）。
@@ -145,11 +215,28 @@ func baseDDL() []string {
   deleted      INTEGER NOT NULL,
   replaced_by  TEXT NOT NULL,
   content_hash TEXT NOT NULL,
-  mtime_unix   INTEGER NOT NULL
+  mtime_unix   INTEGER NOT NULL,
+  kind         TEXT NOT NULL,
+  validation   TEXT NOT NULL,
+  CHECK (kind IN (` + quotedList(CardKinds()) + `)),
+  CHECK ((kind = '` + CardKindKnowledge + `' AND validation = '')
+      OR (kind = '` + CardKindOpinion + `' AND validation IN (` +
+			quotedList(CardValidations()) + `)))
 )`,
+		// 两条 CHECK 分开写而不是合成一条：第一条单独钉住 kind 取值域，
+		// 即便将来 validation 的规则调整，「kind 恰两值」这一格也不会跟着松。
+		// 约束落在**库上**而不只是 Go 侧：绕过 writeAll 的任何写入（外部进程、将来的
+		// 第二条写路径）都不得留下 kind 缺失或 (kind, validation) 自相矛盾的行。
+		//
+		// 新列一律**追加在尾部**：既有列的序号是显式 rowid 插入与各处 SELECT 列序的
+		// 共同前提，插队会让「同一快照两次构建逐字等价」以最难查的方式变红。
+		//
 		// `replaced_by` 反向查询由本索引 + 一次反查实现，**不新增第 7 张表**（合同 §8.4）。
 		`CREATE INDEX cards_replaced_by_idx ON ` + TableCards + `(replaced_by)`,
 		`CREATE INDEX cards_path_idx ON ` + TableCards + `(path)`,
+		// 按分型收窄检索面（`WHERE kind = ?`，设计 §7 理由 (c)）的支撑索引：
+		// 没有它，「只搜观点 / 只搜知识」会退化成全表扫。
+		`CREATE INDEX cards_kind_idx ON ` + TableCards + `(kind)`,
 		`CREATE TABLE ` + TableRelations + ` (
   src_id   TEXT NOT NULL,
   verb     TEXT NOT NULL,
@@ -174,11 +261,17 @@ func baseDDL() []string {
 }
 
 // quotedSkippedKinds 把封闭的 2 值折成 SQL 字面量清单（单一真源，不抄第二份名单）。
-func quotedSkippedKinds() string {
-	kinds := SkippedKinds()
-	out := make([]string, 0, len(kinds))
-	for _, k := range kinds {
-		out = append(out, "'"+k+"'")
+func quotedSkippedKinds() string { return quotedList(SkippedKinds()) }
+
+// quotedList 把一个封闭取值域折成 `'a', 'b'` 形态的 SQL 字面量清单。
+//
+// 所有 CHECK 约束的取值域都经这里生成：DDL 里**不允许**出现第二份手抄名单，
+// 否则「Go 常量」与「库上约束」会各自演化，而两者不一致时最先撞上的是用户的库。
+// 取值域成员本身是本包内的常量（不含单引号），因此不做转义。
+func quotedList(vals []string) string {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		out = append(out, "'"+v+"'")
 	}
 	return strings.Join(out, ", ")
 }
@@ -191,23 +284,34 @@ func quotedSkippedKinds() string {
 //	unicode61_bigram → FTS5 虚表，tokenize='unicode61'（降级 D1，中文靠 bigram_text 列）
 //	like_scan        → 普通表（降级 D2，FTS5 不可用；表集合仍恰 6 张）
 //
-// 四列固定：`id UNINDEXED` / `title` / `body` / `bigram_text`。
+// 六列固定（Schema v2）：`id UNINDEXED` / `title` / `body` / `bigram_text` /
+// `kind UNINDEXED` / `validation UNINDEXED`。
+//
+// 判别两列**必须 UNINDEXED**：一旦进倒排，裸 `MATCH 'opinion'` 会命中每一条观点、
+// `MATCH 'pending'` 会命中每一条待验证观点 —— 检索结果被判别值污染，而且是那种
+// 「看着像相关命中」的污染。按分型收窄检索面靠 `WHERE kind = ?`（UNINDEXED 列照样可
+// 比较、可取回），不靠把判别值塞进全文索引。三档形态都带这两列：降级档位不得因为
+// 「反正是退化路径」而少一列，否则 D2 下的读路径拿不到分型，只能重新回权威文件。
 func ftsDDL(mode string) string {
 	switch mode {
 	case TokenizerTrigram:
 		return fmt.Sprintf(`CREATE VIRTUAL TABLE %s USING fts5(
-  id UNINDEXED, title, body, bigram_text, tokenize='trigram'
+  id UNINDEXED, title, body, bigram_text, kind UNINDEXED, validation UNINDEXED,
+  tokenize='trigram'
 )`, TableCardsFTS)
 	case TokenizerUnicode61Bigram:
 		return fmt.Sprintf(`CREATE VIRTUAL TABLE %s USING fts5(
-  id UNINDEXED, title, body, bigram_text, tokenize='unicode61'
+  id UNINDEXED, title, body, bigram_text, kind UNINDEXED, validation UNINDEXED,
+  tokenize='unicode61'
 )`, TableCardsFTS)
 	default:
 		return fmt.Sprintf(`CREATE TABLE %s (
   id          TEXT NOT NULL,
   title       TEXT NOT NULL,
   body        TEXT NOT NULL,
-  bigram_text TEXT NOT NULL
+  bigram_text TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  validation  TEXT NOT NULL
 )`, TableCardsFTS)
 	}
 }

@@ -8,7 +8,7 @@ dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2
 git-integrity	3	0	0	0	0	3
-index-search	11	0	9	0	0	20
+index-search	12	0	9	0	0	21
 lifecycle	0	2	8	0	0	10
 ops-diagnostics	4	1	5	0	0	10
 perf	0	0	0	0	3	3

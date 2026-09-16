@@ -128,6 +128,8 @@ func bkBuildIndex(t *testing.T, root string) {
 			ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title, Status: c.Status,
 			Deprecated: c.Deprecated, Deleted: c.Deleted, Body: c.Body(),
 			ContentHash: hash, MTimeUnix: st.ModTime().Unix(),
+			// Schema v2：判别列显式给值，扫描面是知识卡故 knowledge + 空 validation。
+			Kind: index.CardKindKnowledge, Validation: "",
 		})
 		snap.Files = append(snap.Files, index.File{
 			Path: c.Path, ContentHash: hash, Size: st.Size(), MTimeUnix: st.ModTime().Unix(),

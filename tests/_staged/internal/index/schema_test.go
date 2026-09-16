@@ -24,12 +24,14 @@ import (
 
 // TestSchemaVersionConstant 钉住版本常量本体与它的**语义唯一性**。
 //
-// M5 首版取 1（合同 §4.3）。这条断言不是形式主义：schema_version 的唯一处置是
-// 「不匹配 ⇒ 整库重建」，一旦有人顺手 +1 而不改 rebuild 语义，旧库会被判 corrupt
-// 而用户拿不到任何迁移路径 —— 所以改动必须显式落在合同上，先在这里失败。
+// M5 首版取 1；Schema v2（knowledge / opinion 分型，`cards` / `cards_fts` 各加 `kind` 与
+// `validation` 两列，设计 §7 决策记录 D-4）起取 **2**。这条断言不是形式主义：
+// schema_version 的唯一处置是「不匹配 ⇒ 整库重建」，一旦有人顺手 +1 而不改列形态，
+// 旧库会被判 corrupt 而用户拿不到任何迁移路径 —— 所以改动必须显式落在合同上，
+// 先在这里失败。反向同理：加了列却不升版本，旧库会被当成 v2 直接读，缺列即崩。
 func TestSchemaVersionConstant(t *testing.T) {
-	if index.IndexSchemaVersion != 1 {
-		t.Fatalf("IndexSchemaVersion = %d，M5 首版应为 1（改版必须同步改合同 §4.3）",
+	if index.IndexSchemaVersion != 2 {
+		t.Fatalf("IndexSchemaVersion = %d，Schema v2 应为 2（改版必须同步改合同 §4.3 与设计 §7）",
 			index.IndexSchemaVersion)
 	}
 	// 版本必须真的落进库里（而不是只活在 Go 常量里）：否则「不匹配即重建」无从判定。
@@ -113,7 +115,8 @@ func TestMetaKeysClosed(t *testing.T) {
 }
 
 // TestFTS5VirtualTableCreated 反证主路 D0 真的生效：`cards_fts` 是 FTS5 **虚表**，
-// tokenize 恰为 `trigram`，四列固定（id UNINDEXED / title / body / bigram_text），
+// tokenize 恰为 `trigram`，六列固定（id UNINDEXED / title / body / bigram_text /
+// kind UNINDEXED / validation UNINDEXED，Schema v2 设计 §7），
 // 且落库的 `tokenizer_mode` 与建表形态一致。
 //
 // 这条断言同时是「纯 Go 驱动带 FTS5」的运行期证据（合同 A-41 / A-42 的前提）：
@@ -138,7 +141,8 @@ func TestFTS5VirtualTableCreated(t *testing.T) {
 	}
 	lower := strings.ToLower(ddl)
 	for _, must := range []string{"virtual table", "fts5", "tokenize='trigram'",
-		"id unindexed", "title", "body", "bigram_text"} {
+		"id unindexed", "title", "body", "bigram_text",
+		"kind unindexed", "validation unindexed"} {
 		if !strings.Contains(lower, must) {
 			t.Fatalf("%s 的 DDL 缺少 %q：\n%s", index.TableCardsFTS, must, ddl)
 		}

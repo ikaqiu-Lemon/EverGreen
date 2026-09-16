@@ -401,6 +401,12 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 			Deprecated: c.Deprecated, Deleted: c.Deleted,
 			ReplacedBy: c.ReplacedByTarget, Body: c.Body(),
 			ContentHash: trueHash, MTimeUnix: mtime,
+			// 分型显式给值（Schema v2）：`scan.Cards` 的扫描面恰是知识卡面
+			// （`domains/<域>/knowledge/**`），因此这里逐张都是 knowledge、validation 恒空。
+			// 索引层不接受空 kind（也不会替调用方兜底成 knowledge），所以「谁在什么扫描面上
+			// 取到的行」这件事必须在**取数处**写明 —— 观点面接进快照属后续批次，
+			// 那时这里会多出一段 opinion 投影，而不是把本行改成"看情况"。
+			Kind: index.CardKindKnowledge, Validation: "",
 		})
 		snap.Files = append(snap.Files, index.File{
 			Path: c.Path, ContentHash: fileHash, Size: size, MTimeUnix: mtime,

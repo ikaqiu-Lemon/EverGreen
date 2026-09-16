@@ -394,6 +394,12 @@ type dbState struct {
 //
 // 卡片正文（Body）只存在于 `cards_fts`，因此从那里读回；`bigram_text` **不读** ——
 // 它由 writeAll 用 BigramText(title+"\n"+body) 确定性派生，读回来反而会多一份可漂移的真源。
+//
+// **无损往返合同**：除上述确定性派生列之外，`cards` 的每一个语义列都必须在这里读回来。
+// 理由在 applyDelta 的形态里：它把「库内现态 − 受影响路径」当作**保留行**，与 Delta 里的
+// 现态行合并后**整体重写**六张表。任何漏读的列，都会在重写时被写成零值 ——
+// 未受影响的行明明没人碰过，却在增量之后丢了字段。加列时这里是必改点之一
+// （另外三处：writeAll 的两条 INSERT、exportRows 的等价口径、rowlevel 的逐列核对）。
 func readStateTx(tx *sql.Tx) (dbState, error) {
 	var st dbState
 	meta, err := readMetaTx(tx)
@@ -420,7 +426,8 @@ func readStateTx(tx *sql.Tx) (dbState, error) {
 	}
 
 	rows, err = tx.Query(`SELECT id, path, domain, title, status, deprecated, deleted,
-		replaced_by, content_hash, mtime_unix FROM ` + TableCards + ` ORDER BY rowid`)
+		replaced_by, content_hash, mtime_unix, kind, validation FROM ` + TableCards +
+		` ORDER BY rowid`)
 	if err != nil {
 		return st, fmt.Errorf("读 %s 失败：%w", TableCards, err)
 	}
@@ -428,7 +435,8 @@ func readStateTx(tx *sql.Tx) (dbState, error) {
 		var c Card
 		var dep, del int
 		if err := rows.Scan(&c.ID, &c.Path, &c.Domain, &c.Title, &c.Status,
-			&dep, &del, &c.ReplacedBy, &c.ContentHash, &c.MTimeUnix); err != nil {
+			&dep, &del, &c.ReplacedBy, &c.ContentHash, &c.MTimeUnix,
+			&c.Kind, &c.Validation); err != nil {
 			_ = rows.Close()
 			return st, err
 		}

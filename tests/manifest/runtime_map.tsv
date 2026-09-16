@@ -78,6 +78,7 @@ tests/_staged/internal/index/purge_test.go	internal/index/purge_test.go	evergree
 tests/_staged/internal/index/rebuild_test.go	internal/index/rebuild_test.go	evergreen	unit	go
 tests/_staged/internal/index/reserved_test.go	internal/index/reserved_test.go	evergreen	unit	go
 tests/_staged/internal/index/schema_test.go	internal/index/schema_test.go	evergreen	unit	go
+tests/_staged/internal/index/schema_v2_kind_test.go	internal/index/schema_v2_kind_test.go	evergreen	unit	go
 tests/_staged/internal/index/scratch_test.go	internal/index/scratch_test.go	evergreen	unit	go
 tests/_staged/internal/index/watermark_test.go	internal/index/watermark_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/block_merge_test.go	internal/mdfile/block_merge_test.go	evergreen	unit	go

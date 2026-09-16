@@ -1176,8 +1176,11 @@ func TestWriteCommandNeverBuildsOrRepairsIndex(t *testing.T) {
 // 就会因为「现态里查不到这些行」而被误判成删除。这条用例把过滤器钉在形态层面。
 func TestIndexAfterWriteFiltersNonCardPaths(t *testing.T) {
 	snap := index.Snapshot{
-		Head:  "cafebabe",
-		Cards: []index.Card{{ID: applyCardID, Path: store.CardRel("ai-infra", applyCardID)}},
+		Head: "cafebabe",
+		Cards: []index.Card{{
+			ID: applyCardID, Path: store.CardRel("ai-infra", applyCardID),
+			Kind: index.CardKindKnowledge, Validation: "",
+		}},
 		Files: []index.File{{Path: store.CardRel("ai-infra", applyCardID), ContentHash: "h1"}},
 	}
 	d := indexDeltaFor(snap, []string{

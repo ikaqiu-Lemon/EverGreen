@@ -232,6 +232,10 @@ func currentCardsInput(root string, deps IndexDeps, present []index.File) ([]ind
 			Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
 			ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
 			ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
+			// 分型显式给值（Schema v2）：present 恒来自知识卡扫描面（statCardFiles），
+			// 故逐张 knowledge、validation 恒空。行级核对会把这两列也逐列对账，因此这里
+			// **必须**与写入侧同口径 —— 留空会让每一行都被判成「判别列对权威撒谎」。
+			Kind: index.CardKindKnowledge, Validation: "",
 		})
 	}
 	return cards, nil

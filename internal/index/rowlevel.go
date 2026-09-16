@@ -55,18 +55,28 @@ import (
 // 刻意**不含** `mtime_unix`：它是文件系统事实、不进权威语义（改一次 mtime 不改卡内容），
 // 且 content_hash 已经承载「内容变没变」。核对面只盯**权威语义列**：撒谎一旦发生在
 // 这几列（假删 / 假失效 / 幽灵 hash / 替换 id / 改标题指针），逐列比对必然抓到。
+//
+// `kind` / `validation`（Schema v2）在册：判别列上的撒谎（把观点伪装成知识卡、把
+// pending 改成 validated）在权威 Markdown 面前同样是谎 —— 而且是会直接改变读路径
+// 返回集与 `eg check` 结论的谎，比改标题更该被抓。
+//
+// 每加一列都必须同时在 cardColumn 里加一个 case：那个函数是 `switch` + `default: ""`
+// 形态，漏加时期望值与实得值双双取空串、逐列比对恒相等 —— 核对面看着扩了，实际一格未扩。
+// 判据见 TestCheckDetectsKindAndValidationLies（它要求诊断信息指名到列）。
 var cardsCheckedColumns = []string{
 	"id", "path", "domain", "title", "status",
 	"deprecated", "deleted", "replaced_by", "content_hash",
+	"kind", "validation",
 }
 
 // ftsCheckedColumns 是 `cards_fts` 表逐行核对的列（合同 I-…-024 的最小集合）。
-var ftsCheckedColumns = []string{"id", "title", "body", "bigram_text"}
+var ftsCheckedColumns = []string{"id", "title", "body", "bigram_text", "kind", "validation"}
 
-// ftsRow 是 `cards_fts` 一行里参与核对的四列（body / bigram_text 是 FTS 召回口径，
-// 权威值分别是正文全文与 build.go 的 BigramText 补路串）。
+// ftsRow 是 `cards_fts` 一行里参与核对的六列（body / bigram_text 是 FTS 召回口径，
+// 权威值分别是正文全文与 build.go 的 BigramText 补路串；kind / validation 是判别列，
+// 权威值直接取权威投影 —— 它们在 FTS 侧是 UNINDEXED 存储列，只服务收窄与取回）。
 type ftsRow struct {
-	id, title, body, bigram string
+	id, title, body, bigram, kind, validation string
 }
 
 // checkRowLevel 逐行核对 `cards` / `cards_fts` 与权威卡投影是否逐列相等。
@@ -162,7 +172,12 @@ func diffCardSets(want, got []Card) (string, bool) {
 	for _, id := range sortedCardIDs(wantByID) {
 		w, g := wantByID[id], gotByID[id]
 		for _, col := range cardsCheckedColumns {
-			wv, gv := cardColumn(w, col), cardColumn(g, col)
+			wv, wok := cardColumn(w, col)
+			gv, gok := cardColumn(g, col)
+			if !wok || !gok {
+				return fmt.Sprintf("cards 表核对列 %s 没有取值实现"+
+					"（核对面配置错误：cardsCheckedColumns 与 cardColumn 不同步）", col), true
+			}
 			if wv != gv {
 				return fmt.Sprintf("cards 表 id=%s 的 %s 与权威不符：期望 %q，实得 %q",
 					id, col, wv, gv), true
@@ -199,7 +214,9 @@ func diffCardsFTS(dir string, want []Card, checkIDs map[string]bool) (string, bo
 	for _, c := range want {
 		wantByID[c.ID] = ftsRow{
 			id: c.ID, title: c.Title, body: c.Body,
-			bigram: BigramText(c.Title + "\n" + c.Body),
+			bigram:     BigramText(c.Title + "\n" + c.Body),
+			kind:       c.Kind,
+			validation: c.Validation,
 		}
 	}
 	for _, id := range sortedFTSIDs(gotByID) {
@@ -214,7 +231,12 @@ func diffCardsFTS(dir string, want []Card, checkIDs map[string]bool) (string, bo
 		}
 		exp := wantByID[id]
 		for _, col := range ftsCheckedColumns {
-			ev, gv := ftsColumn(exp, col), ftsColumn(w, col)
+			ev, eok := ftsColumn(exp, col)
+			gv, gok := ftsColumn(w, col)
+			if !eok || !gok {
+				return fmt.Sprintf("cards_fts 表核对列 %s 没有取值实现"+
+					"（核对面配置错误：ftsCheckedColumns 与 ftsColumn 不同步）", col), true
+			}
 			if ev != gv {
 				return fmt.Sprintf("cards_fts 表 id=%s 的 %s 与权威不符：期望 %q，实得 %q",
 					id, col, ev, gv), true
@@ -224,14 +246,14 @@ func diffCardsFTS(dir string, want []Card, checkIDs map[string]bool) (string, bo
 	return "", false
 }
 
-// readFTSRows 只读读回 `cards_fts` 全部行的四个核对列（按 rowid 升序）。
+// readFTSRows 只读读回 `cards_fts` 全部行的六个核对列（按 rowid 升序）。
 func readFTSRows(dir string) ([]ftsRow, error) {
 	db, err := openDB(dbPathIn(dir), true)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = db.Close() }()
-	rows, err := db.Query(`SELECT id, title, body, bigram_text FROM ` +
+	rows, err := db.Query(`SELECT id, title, body, bigram_text, kind, validation FROM ` +
 		TableCardsFTS + ` ORDER BY rowid`)
 	if err != nil {
 		return nil, err
@@ -240,7 +262,8 @@ func readFTSRows(dir string) ([]ftsRow, error) {
 	out := []ftsRow{}
 	for rows.Next() {
 		var r ftsRow
-		if err := rows.Scan(&r.id, &r.title, &r.body, &r.bigram); err != nil {
+		if err := rows.Scan(&r.id, &r.title, &r.body, &r.bigram,
+			&r.kind, &r.validation); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -249,44 +272,58 @@ func readFTSRows(dir string) ([]ftsRow, error) {
 }
 
 // cardColumn 取一张卡在某个核对列上的**规范字符串值**（布尔按 0/1，与 SQLite 存储口径一致）。
-func cardColumn(c Card, col string) string {
+//
+// 第二个返回值是「这一列有没有取值实现」。它存在的唯一目的是封掉一个假绿：本函数是
+// `switch col` 形态，若有人往 cardsCheckedColumns 里加了列却忘了在这里加 case，
+// 那么期望侧与实得侧会**双双**落到同一个兜底值上，逐列比对恒相等 —— 核对面看着扩大了，
+// 实际一格未扩。返回哨兵字符串同样救不了（两侧哨兵也相等），所以必须把「无取值实现」
+// 这件事本身当成一次核对失败上报，由调用方判成不一致。
+func cardColumn(c Card, col string) (string, bool) {
 	switch col {
 	case "id":
-		return c.ID
+		return c.ID, true
 	case "path":
-		return c.Path
+		return c.Path, true
 	case "domain":
-		return c.Domain
+		return c.Domain, true
 	case "title":
-		return c.Title
+		return c.Title, true
 	case "status":
-		return c.Status
+		return c.Status, true
 	case "deprecated":
-		return fmt.Sprintf("%d", boolInt(c.Deprecated))
+		return fmt.Sprintf("%d", boolInt(c.Deprecated)), true
 	case "deleted":
-		return fmt.Sprintf("%d", boolInt(c.Deleted))
+		return fmt.Sprintf("%d", boolInt(c.Deleted)), true
 	case "replaced_by":
-		return c.ReplacedBy
+		return c.ReplacedBy, true
 	case "content_hash":
-		return c.ContentHash
+		return c.ContentHash, true
+	case "kind":
+		return c.Kind, true
+	case "validation":
+		return c.Validation, true
 	default:
-		return ""
+		return "", false
 	}
 }
 
-// ftsColumn 取一行 FTS 在某个核对列上的值。
-func ftsColumn(r ftsRow, col string) string {
+// ftsColumn 取一行 FTS 在某个核对列上的值（第二个返回值同 cardColumn：有无取值实现）。
+func ftsColumn(r ftsRow, col string) (string, bool) {
 	switch col {
 	case "id":
-		return r.id
+		return r.id, true
 	case "title":
-		return r.title
+		return r.title, true
 	case "body":
-		return r.body
+		return r.body, true
 	case "bigram_text":
-		return r.bigram
+		return r.bigram, true
+	case "kind":
+		return r.kind, true
+	case "validation":
+		return r.validation, true
 	default:
-		return ""
+		return "", false
 	}
 }
 

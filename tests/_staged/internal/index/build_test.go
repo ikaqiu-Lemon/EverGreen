@@ -40,18 +40,21 @@ func sampleSnapshot() index.Snapshot {
 				ID: "k-beta", Path: "domains/ai/knowledge/k-beta.md", Domain: "ai",
 				Title: "分词与索引", Status: "active", Body: "这是正文 attention 机制",
 				ContentHash: "sha256:bbbb", MTimeUnix: 1_600_000_100,
+				Kind: index.CardKindKnowledge, Validation: "",
 			},
 			{
 				ID: "k-alpha", Path: "domains/ai/knowledge/k-alpha.md", Domain: "ai",
 				Title: "Attention", Status: "deprecated", Deprecated: true,
 				ReplacedBy: "k-beta", Body: "body one\nsecond line",
 				ContentHash: "sha256:aaaa", MTimeUnix: 1_600_000_000,
+				Kind: index.CardKindKnowledge, Validation: "",
 			},
 			{
 				ID: "k-gamma", Path: "domains/ops/knowledge/k-gamma.md", Domain: "ops",
 				Title: "运维", Status: "active", Deleted: true,
 				Body:        "已删除卡片仍然入索引，删除语义由读路径过滤",
 				ContentHash: "sha256:cccc", MTimeUnix: 1_600_000_200,
+				Kind: index.CardKindKnowledge, Validation: "",
 			},
 		},
 		Relations: []index.Relation{
@@ -201,6 +204,7 @@ func TestBuildReportsDroppedDuplicates(t *testing.T) {
 	snap.Cards = append(snap.Cards, index.Card{
 		ID: "k-alpha", Path: "domains/dup/knowledge/k-alpha.md", Domain: "dup",
 		Title: "重复 ID", Status: "active", ContentHash: "sha256:dddd",
+		Kind: index.CardKindKnowledge, Validation: "",
 	})
 	snap.Relations = append(snap.Relations, index.Relation{
 		SrcID: "k-alpha", Verb: "refines", DstID: "k-beta",

@@ -30,7 +30,7 @@ tests/_staged/internal/cli/index_after_write_undelete_test.go	unit	go	cli-core	u
 tests/_staged/internal/cli/index_lock_test.go	unit	go	cli-core	unit.internal.cli	1	22172
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	1	6626
-tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54227
+tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54284
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
@@ -69,15 +69,16 @@ tests/_staged/internal/cli/visibility_matrix_test.go	unit	go	cli-core	unit.inter
 tests/_staged/internal/git/exitcode_test.go	unit	go	git-integrity	unit.internal.git	1	1048
 tests/_staged/internal/git/git_test.go	unit	go	git-integrity	unit.internal.git	12	12460
 tests/_staged/internal/git/log_test.go	unit	go	git-integrity	unit.internal.git	4	6849
-tests/_staged/internal/index/build_test.go	unit	go	index-search	unit.internal.index	10	15387
+tests/_staged/internal/index/build_test.go	unit	go	index-search	unit.internal.index	10	15589
 tests/_staged/internal/index/consistency_rowlevel_test.go	unit	go	index-search	unit.internal.index	2	7900
 tests/_staged/internal/index/consistency_test.go	unit	go	index-search	unit.internal.index	8	9627
 tests/_staged/internal/index/corrupt_test.go	unit	go	index-search	unit.internal.index	11	14600
-tests/_staged/internal/index/incremental_test.go	unit	go	index-search	unit.internal.index	12	23541
+tests/_staged/internal/index/incremental_test.go	unit	go	index-search	unit.internal.index	12	23590
 tests/_staged/internal/index/purge_test.go	unit	go	index-search	unit.internal.index	4	13002
 tests/_staged/internal/index/rebuild_test.go	unit	go	index-search	unit.internal.index	5	10840
 tests/_staged/internal/index/reserved_test.go	unit	go	index-search	unit.internal.index	1	16390
-tests/_staged/internal/index/schema_test.go	unit	go	index-search	unit.internal.index	8	9678
+tests/_staged/internal/index/schema_test.go	unit	go	index-search	unit.internal.index	8	10026
+tests/_staged/internal/index/schema_v2_kind_test.go	unit	go	index-search	unit.internal.index	13	28168
 tests/_staged/internal/index/scratch_test.go	unit	go	index-search	unit.internal.index	6	13897
 tests/_staged/internal/index/watermark_test.go	unit	go	index-search	unit.internal.index	6	6875
 tests/_staged/internal/mdfile/block_merge_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	5329
@@ -113,7 +114,7 @@ tests/_staged/internal/proposal/state_test.go	unit	go	proposal	unit.internal.pro
 tests/_staged/internal/proposal/store_test.go	unit	go	proposal	unit.internal.proposal	4	8841
 tests/_staged/internal/proposal/superseded_test.go	unit	go	proposal	unit.internal.proposal	7	27507
 tests/_staged/internal/query/adr20_isolation_test.go	unit	go	card-query	unit.internal.query	1	5746
-tests/_staged/internal/query/backend_test.go	unit	go	card-query	unit.internal.query	21	39171
+tests/_staged/internal/query/backend_test.go	unit	go	card-query	unit.internal.query	21	39318
 tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query	12	15157
 tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	11	21279
 tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6609

@@ -27,6 +27,11 @@ import (
 // 返回的 Card 里 `Body` 恒为空串（见本文件顶部「不含正文」），其余列逐字带出：
 // 调用方据此判可见性（`deprecated` / `deleted`）、做 `replaced_by` 反查、拿到 `path`
 // 之后再决定要不要回 Markdown 解析那一个文件。
+//
+// `kind` / `validation`（Schema v2）也在带出之列：读路径要按分型收窄（只看知识 / 只看
+// 观点）、要按论证进度过滤，靠的就是这两列。它们**必须**在这里读回来 ——
+// 增量更新用本包读回的现态行重写派生表（incremental.go），漏读一列就等于把未受影响
+// 的行悄悄清空成非法值，这条链路由行级核对与「增量 == 全量」两条判据同时钉住。
 func ReadCards(dir string) ([]Card, error) {
 	db, err := openDB(dbPathIn(dir), true)
 	if err != nil {
@@ -34,7 +39,7 @@ func ReadCards(dir string) ([]Card, error) {
 	}
 	defer func() { _ = db.Close() }()
 	rows, err := db.Query(`SELECT id, path, domain, title, status, deprecated, deleted,
-  replaced_by, content_hash, mtime_unix FROM ` + TableCards + ` ORDER BY id`)
+  replaced_by, content_hash, mtime_unix, kind, validation FROM ` + TableCards + ` ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +51,8 @@ func ReadCards(dir string) ([]Card, error) {
 			deprecated, delet int
 		)
 		if err := rows.Scan(&c.ID, &c.Path, &c.Domain, &c.Title, &c.Status,
-			&deprecated, &delet, &c.ReplacedBy, &c.ContentHash, &c.MTimeUnix); err != nil {
+			&deprecated, &delet, &c.ReplacedBy, &c.ContentHash, &c.MTimeUnix,
+			&c.Kind, &c.Validation); err != nil {
 			return nil, err
 		}
 		c.Deprecated = deprecated != 0

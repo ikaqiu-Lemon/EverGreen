@@ -42,7 +42,7 @@ const driverName = "sqlite"
 // （覆盖语义归 Rebuild —— 先删再全量建，语义显式）。
 var ErrIndexExists = errors.New("索引库已存在")
 
-// Card 是快照里的一张知识卡（**中性 DTO**：字段都是标量，不引本仓任何结构体）。
+// Card 是快照里的一张知识卡或观点（**中性 DTO**：字段都是标量，不引本仓任何结构体）。
 type Card struct {
 	ID          string
 	Path        string // vault 内相对路径（/ 分隔）
@@ -55,6 +55,17 @@ type Card struct {
 	Body        string // frontmatter 之后的正文全文（喂 FTS）
 	ContentHash string // 与 M1 store 的 B3 同源同算法（由调用方算）
 	MTimeUnix   int64
+	// Kind 是产物分型（Schema v2 §7）：必为 CardKinds() 之一，**没有默认值**。
+	//
+	// 调用方必须显式给值：空串一律被写入口拒绝，绝不按 knowledge 兜底 —— 「忘记设分型」
+	// 与「这确实是一张知识卡」是两件事，用默认值把前者伪装成后者，漂移就只能等到
+	// 读路径把观点当知识卡返回时才暴露。
+	Kind string
+	// Validation 是观点的论证进度（Schema v2 §6.1）：
+	// Kind == CardKindOpinion 时必为 CardValidations() 之一；knowledge 恒为空串。
+	//
+	// 与 Status 正交：rejected 的观点仍可以是 active，索引层不做任何互相推导。
+	Validation string
 }
 
 // Relation 是一条正向关系边（`relations` 只存正向边，合同 §4.1）。
@@ -339,8 +350,14 @@ func stampFiles(files []File, at int64) []fileRow {
 //
 // 这是**唯一**的写入口：全量构建（buildInto）与增量更新（applyDelta）共用它，
 // 因此「增量结果与全量重建逐字等价」不依赖两套写入代码保持同步 —— 它们本来就是一套。
+//
+// 分型校验（Schema v2）也因此只需要一处：任何路径想把 kind 缺失 / (kind, validation)
+// 自相矛盾的行写进库，都必须先过这里。
 func writeAll(tx *sql.Tx, meta Meta, cards []Card, rels []Relation,
 	files []fileRow, skipped []SkippedFile) error {
+	if err := validateCardKinds(cards); err != nil {
+		return err
+	}
 	for _, kv := range metaRows(meta) {
 		if _, err := tx.Exec(`INSERT INTO `+TableIndexMeta+`(key, value) VALUES(?, ?)`,
 			kv[0], kv[1]); err != nil {
@@ -350,16 +367,20 @@ func writeAll(tx *sql.Tx, meta Meta, cards []Card, rels []Relation,
 	for i, c := range cards {
 		rowid := int64(i + 1)
 		if _, err := tx.Exec(`INSERT INTO `+TableCards+
-			`(rowid, id, path, domain, title, status, deprecated, deleted, replaced_by, content_hash, mtime_unix)
-			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`(rowid, id, path, domain, title, status, deprecated, deleted, replaced_by,
+			  content_hash, mtime_unix, kind, validation)
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			rowid, c.ID, c.Path, c.Domain, c.Title, c.Status,
 			boolInt(c.Deprecated), boolInt(c.Deleted), c.ReplacedBy, c.ContentHash, c.MTimeUnix,
+			c.Kind, c.Validation,
 		); err != nil {
 			return fmt.Errorf("写 %s 失败（id=%s）：%w", TableCards, c.ID, err)
 		}
 		if _, err := tx.Exec(`INSERT INTO `+TableCardsFTS+
-			`(rowid, id, title, body, bigram_text) VALUES(?, ?, ?, ?, ?)`,
+			`(rowid, id, title, body, bigram_text, kind, validation)
+			 VALUES(?, ?, ?, ?, ?, ?, ?)`,
 			rowid, c.ID, c.Title, c.Body, BigramText(c.Title+"\n"+c.Body),
+			c.Kind, c.Validation,
 		); err != nil {
 			return fmt.Errorf("写 %s 失败（id=%s）：%w", TableCardsFTS, c.ID, err)
 		}
@@ -537,8 +558,10 @@ func exportRows(dir string) (string, error) {
 		{TableIndexMeta, `SELECT key, value FROM ` + TableIndexMeta +
 			` WHERE key <> '` + MetaBuiltAtUnix + `' ORDER BY key`},
 		{TableCards, `SELECT rowid, id, path, domain, title, status, deprecated, deleted,
-			replaced_by, content_hash, mtime_unix FROM ` + TableCards + ` ORDER BY rowid`},
-		{TableCardsFTS, `SELECT rowid, id, title, body, bigram_text FROM ` + TableCardsFTS + ` ORDER BY rowid`},
+			replaced_by, content_hash, mtime_unix, kind, validation FROM ` + TableCards +
+			` ORDER BY rowid`},
+		{TableCardsFTS, `SELECT rowid, id, title, body, bigram_text, kind, validation FROM ` +
+			TableCardsFTS + ` ORDER BY rowid`},
 		{TableRelations, `SELECT rowid, src_id, verb, dst_id, src_path, line FROM ` +
 			TableRelations + ` ORDER BY rowid`},
 		{TableFiles, `SELECT path, content_hash, size, mtime_unix FROM ` + TableFiles + ` ORDER BY path`},
@@ -680,6 +703,32 @@ func validSkippedKind(kind string) bool {
 		}
 	}
 	return false
+}
+
+// validateCardKinds 在写盘前逐卡校验分型与论证进度（Schema v2 §7 / §6.1）。
+//
+// 两条判定都取 schema.go 的封闭取值域（单一真源），错误文案必须**指名道姓**：
+// 哪张卡、哪个字段、实得什么值、封闭域是什么 —— 库上的 CHECK 只会回一句
+// `constraint failed`，对调用方（写命令 / 扫描面）毫无定位价值，两层各司其职。
+//
+// 这里**不做**任何兜底：既不把空 kind 补成 knowledge，也不把空 validation 补成 pending。
+// 兜底会把「调用方漏传」变成「库里一行看似合法的错行」，而错行只能在读路径被用户发现。
+func validateCardKinds(cards []Card) error {
+	for _, c := range cards {
+		if !validCardKind(c.Kind) {
+			return fmt.Errorf("卡片 %s（%s）的 kind = %q 不在封闭取值域 %v 内"+
+				"（调用方必须显式给值，索引层不做默认分型）", c.ID, c.Path, c.Kind, CardKinds())
+		}
+		if !validCardValidation(c.Kind, c.Validation) {
+			if c.Kind == CardKindKnowledge {
+				return fmt.Errorf("卡片 %s（%s）是 %s，validation 必须为空串，实得 %q"+
+					"（论证进度只属观点）", c.ID, c.Path, CardKindKnowledge, c.Validation)
+			}
+			return fmt.Errorf("观点 %s（%s）的 validation = %q 不在封闭取值域 %v 内",
+				c.ID, c.Path, c.Validation, CardValidations())
+		}
+	}
+	return nil
 }
 
 // —— 确定序：四份输入各有唯一排序键，排序恒在副本上做（不改调用方的切片）——
