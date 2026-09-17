@@ -62,6 +62,7 @@ tests/_staged/internal/cli/rel_add_test.go	internal/cli/rel_add_test.go	evergree
 tests/_staged/internal/cli/rel_ko_test.go	internal/cli/rel_ko_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_remove_test.go	internal/cli/rel_remove_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_test.go	internal/cli/rel_test.go	evergreen	unit	go
+tests/_staged/internal/cli/replaced_by_ko_cli_test.go	internal/cli/replaced_by_ko_cli_test.go	evergreen	unit	go
 tests/_staged/internal/cli/report_test.go	internal/cli/report_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reserved_runtime_exit5_test.go	internal/cli/reserved_runtime_exit5_test.go	evergreen	unit	go
 tests/_staged/internal/cli/reviewed_test.go	internal/cli/reviewed_test.go	evergreen	unit	go
@@ -111,6 +112,7 @@ tests/_staged/internal/plan/plan_test.go	internal/plan/plan_test.go	evergreen	un
 tests/_staged/internal/plan/precheck_test.go	internal/plan/precheck_test.go	evergreen	unit	go
 tests/_staged/internal/plan/relation_ko_chain_test.go	internal/plan/relation_ko_chain_test.go	evergreen	unit	go
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	internal/plan/remove_relation_idempotent_test.go	evergreen	unit	go
+tests/_staged/internal/plan/replaced_by_ko_test.go	internal/plan/replaced_by_ko_test.go	evergreen	unit	go
 tests/_staged/internal/plan/set_stale_test.go	internal/plan/set_stale_test.go	evergreen	unit	go
 tests/_staged/internal/plan/state_write_m3_test.go	internal/plan/state_write_m3_test.go	evergreen	unit	go
 tests/_staged/internal/proposal/execution_test.go	internal/proposal/execution_test.go	evergreen	unit	go

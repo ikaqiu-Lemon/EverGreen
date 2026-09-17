@@ -152,9 +152,10 @@ func (v *validator) cardFacts(rel string) (model.Card, bool) {
 
 // endpointFacts 只读取回论证关系宿主（知识卡或观点，按端点 id 前缀 k-/o- 分流）的
 // 关系维度事实（状态 / 逻辑删除 / relations[] / 宿主 ID）。
-// 与 cardFacts 分开：论证关系是跨类型的，宿主可能是观点，而 cardFacts 只认知识卡
-// （对观点会因分区校验失败而读不到）。card-only 业务（deprecate/restore/replaced_by 等）
-// 仍走 cardFacts，本函数只服务关系读侧（W3 判定 / 同对去重 / 命中计数）。
+// 与 cardFacts 分开：论证关系与 replaced_by 都是跨类型的，宿主可能是观点，而 cardFacts
+// 只认知识卡（对观点会因分区校验失败而读不到）。仍是 card-only 的业务
+// （deprecate/restore/undelete/delete）走 cardFacts；本函数服务关系读侧（W3 判定 /
+// 同对去重 / 命中计数）与 set_replaced_by 的两端事实（E10 墓碑 / W12 deprecated）。
 func (v *validator) endpointFacts(id, rel string) (store.RelationHost, bool) {
 	raw, ok := v.readExisting(rel)
 	if !ok {
@@ -272,8 +273,14 @@ func (v *validator) undelete(op *Op) {
 // —— ③ set_replaced_by ——
 
 // setReplacedBy 校验 set_replaced_by（W7 升 error、E10、W12、W2）。
+//
+// 宿主 `target` 与指向端 `replaced_by.target` 都是**跨类型端点**（k- 知识卡 / o- 观点）：
+// 迁移会把一条判断从知识卡改成观点，此时原 k- 卡逻辑删除并用 replaced_by 指向新 o- 观点
+// （Schema v2 §9.2 / T-009）。两端因此走 relationEndpoint 定位（接受 k/o、拒 s/n/r/p/畸形/
+// 不存在），事实读取走 endpointFacts（宿主可能是观点，cardFacts 只认知识卡）。权限仍复用
+// 矩阵 #4（ObjectCard + FieldReplacedBy）：宿主是知识卡还是观点，写权限口径一致。
 func (v *validator) setReplacedBy(op *Op) {
-	rel, ok := v.cardTarget(op, "target", op.Target)
+	rel, ok := v.relationEndpoint(op, "target", op.Target)
 	if !ok {
 		return
 	}
@@ -290,7 +297,7 @@ func (v *validator) setReplacedBy(op *Op) {
 			"set_replaced_by 缺 replaced_by.target：替代指针无法定位"))
 		return
 	}
-	pointeeRel, ok := v.cardTarget(op, "replaced_by.target", rb.Target)
+	pointeeRel, ok := v.relationEndpoint(op, "replaced_by.target", rb.Target)
 	if !ok {
 		return
 	}
@@ -308,18 +315,19 @@ func (v *validator) setReplacedBy(op *Op) {
 	// E10：§5.1 真值表「可作 replaced_by 目标」列的两个「已删除」象限均 🔴。
 	// 合同 §8.2.1 的行文「set_replaced_by 的 target」在本 op 下有两种读法
 	// （`target` 主体 / `replaced_by.target` 指向端），本实现取**两者的并集**（只加严）：
-	// 已被逻辑删除的卡既不得作替代指针的主体，也不得作替代目标。
-	if card, ok := v.cardFacts(rel); ok && card.DeletedAt != nil {
+	// 已被逻辑删除的对象既不得作替代指针的主体，也不得作替代目标。两端事实都走
+	// endpointFacts（宿主可能是观点），墓碑取 RelationHost.Tombstone（= frontmatter deleted_at）。
+	if host, ok := v.endpointFacts(op.Target, rel); ok && host.Tombstone != nil {
 		v.add(proposalStateError(E10, op.Index, opPath(op.Index, "target"), op.Target,
 			"set_replaced_by 的 target %s 已被逻辑删除（deleted_at=%s）：已删除对象不得作替代指针的主体（先 undelete）",
-			op.Target, card.DeletedAt))
+			op.Target, host.Tombstone))
 		return
 	}
-	pointee, pointeeKnown := v.cardFacts(pointeeRel)
-	if pointeeKnown && pointee.DeletedAt != nil {
+	pointee, pointeeKnown := v.endpointFacts(rb.Target, pointeeRel)
+	if pointeeKnown && pointee.Tombstone != nil {
 		v.add(proposalStateError(E10, op.Index, opPath(op.Index, "replaced_by.target"), rb.Target,
 			"replaced_by.target %s 已被逻辑删除（deleted_at=%s）：已删除对象不得作 replaced_by 目标",
-			rb.Target, pointee.DeletedAt))
+			rb.Target, pointee.Tombstone))
 		return
 	}
 	// W12：替代目标是 deprecated 且未删除 → §5.1 该象限 🟡「允许但提示」：照常写入 + 进报告。

@@ -131,25 +131,26 @@ func replacedByCommand() *Command {
 	return &Command{
 		Name:    "replaced-by",
 		Display: "replaced-by",
-		Summary: "在失效卡上写替代指针 replaced_by（单向；commit verb=process）",
+		Summary: "在被替代的知识卡/观点上写替代指针 replaced_by（单向；commit verb=process）",
 		Owner:   "T-evergreen.s1_main_flow-158614-039",
-		Usage: `eg replaced-by --target <k-id> --to <k-id> --reason <text> [--strict] [--json]
+		Usage: `eg replaced-by --target <k|o-id> --to <k|o-id> --reason <text> [--strict] [--json]
 
 参数：
-  --target <k-id>   是；被替代的**失效卡**（replaced_by 写在它身上）
-  --to <k-id>       是；替代它的新卡
+  --target <k|o-id> 是；被替代的知识卡（k-）或观点（o-）（replaced_by 写在它身上）
+  --to <k|o-id>     是；替代它的新知识卡（k-）或观点（o-）
   --reason <text>   是；替代理由（落到 replaced_by.reason）
   --strict          否；M6 写前强校验：升级面命中即锁内零写入中止退 5（携 E15）
 
-单向写入：被指向的新卡文件字节不变（反向查询归 S4）。
-E10：target 或 --to 任一已被逻辑删除 → 退 2、零写入。
+单向写入：被指向的替代端点（知识卡或观点）文件字节不变（反向查询归 S4）。
+E10：--target 或 --to 任一已被逻辑删除 → 退 2、零写入。
 W12：--to 是 deprecated 且未被删除 → 允许写入 + 进报告提示（退 0）。
+非 k/o 端点、指向自身或不存在端点 → 退 2、零写入。
 退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 部分写入被跳过 | 4 Git 提交失败 |
         5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
-			fs.String("target", "", "被替代的失效卡 ID")
-			fs.String("to", "", "替代它的新卡 ID")
+			fs.String("target", "", "被替代的知识卡（k-）或观点（o-）ID")
+			fs.String("to", "", "替代它的新知识卡（k-）或观点（o-）ID")
 			fs.String("reason", "", "替代理由")
 			registerStrictFlag(fs)
 		},
@@ -158,7 +159,7 @@ W12：--to 是 deprecated 且未被删除 → 允许写入 + 进报告提示（�
 				return err
 			}
 			if strings.TrimSpace(inv.String("to")) == "" {
-				return &UsageError{Msg: "eg replaced-by 缺必填参数 --to <k-id>：替代指针必须点名新卡"}
+				return &UsageError{Msg: "eg replaced-by 缺必填参数 --to <k|o-id>：替代指针必须点名替代端点"}
 			}
 			return nil
 		},

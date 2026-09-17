@@ -200,8 +200,8 @@ func (v *validator) opposingExists(id, rel string, target model.RelationEndpoint
 // 论证关系是**跨类型**的：端点只接受知识卡（k-）或观点（o-）。与 cardTarget 的区别是
 // 接受面从「只 k-」放宽到「k- / o-」，其余判定（缺失、无法解析、悬空、E4、W1 领域）逐一对齐。
 // s-（原文）/ n-（笔记）/ r-（综述）/ p-（提案）以及不可解析 ID 一律拒绝——论证关系永远
-// 发生在两条论证性产物之间。**不放宽** card-only 业务（deprecate/restore/replaced_by/
-// add_material_rel 等仍走 cardTarget）。
+// 发生在两条论证性产物之间。set_replaced_by 的宿主与指向端同样是跨类型端点（k-/o-），也走本
+// 函数；仍是 card-only 的业务（deprecate/restore/undelete/delete/add_material_rel 等）走 cardTarget。
 func (v *validator) relationEndpoint(op *Op, field, id string) (string, bool) {
 	if id == "" {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, field), "%s 缺 %s：关系端点无法定位", op.Name, field))
