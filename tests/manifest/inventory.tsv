@@ -148,7 +148,7 @@ tests/_staged/internal/query/search_test.go	unit	go	card-query	unit.internal.que
 tests/_staged/internal/query/visibility_test.go	unit	go	card-query	unit.internal.query	7	17842
 tests/_staged/internal/reconcile/check_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	7	16558
 tests/_staged/internal/reconcile/finding_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	4	10261
-tests/_staged/internal/reconcile/opinion_reconcile_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	11	28112
+tests/_staged/internal/reconcile/opinion_reconcile_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	11	29435
 tests/_staged/internal/reconcile/r1_git_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	4	12488
 tests/_staged/internal/reconcile/r2_reviewed_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	5	17247
 tests/_staged/internal/reconcile/r3_relation_test.go	unit	go	reconcile-takeover	unit.internal.reconcile	9	33152

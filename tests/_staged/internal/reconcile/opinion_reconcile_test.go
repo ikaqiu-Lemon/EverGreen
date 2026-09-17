@@ -275,6 +275,21 @@ func TestOpinionRelationTargetPrefixInvalid(t *testing.T) {
 	}
 }
 
+// assertEndpointWording 是 B2c 文案回归的最小判据：关系类 finding 的**用户可见** detail
+// 不得再出现只连知识卡的措辞（「目标卡」/「同一张卡」），且必须如实称呼「端点」——
+// 关系端点宇宙含知识卡与观点，指向 o-* 的诊断文案不能再把持有方 / 目标说成「卡」。
+func assertEndpointWording(t *testing.T, code, detail string) {
+	t.Helper()
+	for _, bad := range []string{"目标卡", "同一张卡"} {
+		if strings.Contains(detail, bad) {
+			t.Fatalf("%s detail 仍含只连知识卡的措辞 %q：%s", code, bad, detail)
+		}
+	}
+	if !strings.Contains(detail, "端点") {
+		t.Fatalf("%s detail 未如实称呼「端点」：%s", code, detail)
+	}
+}
+
 // TestOpinionRelationEndpointExistence：观点关系指向**存在**的 `o-*` / `k-*` 端点零 E13/E14；
 // 指向**缺失**的 `o-*` 与缺失的 `k-*` 都产 E13（观点是合法端点，缺失才是存在性问题）。
 func TestOpinionRelationEndpointExistence(t *testing.T) {
@@ -306,6 +321,9 @@ func TestOpinionRelationEndpointExistence(t *testing.T) {
 				if f.Code() != CodeE13 || f.Severity != SeverityError {
 					t.Fatalf("缺失端点必须 error 级 + %s，实得 %s / %s", CodeE13, f.Severity, f.Code())
 				}
+				// 文案回归（B2c）：观点持有 / 目标为 o-* 的 E13 detail 不得再用只连知识卡的
+				// 措辞（「目标卡」/「同一张卡」），且必须如实称呼「端点」。
+				assertEndpointWording(t, string(CodeE13), f.Detail)
 			}
 		})
 	}
@@ -540,6 +558,10 @@ func TestOpinionOpposingCrossKindNormalized(t *testing.T) {
 	if got := r3Counts(fsDup); got != [R3SubcheckCount]int{0, 0, 0, 1} {
 		t.Fatalf("o↔o 同文件同方向重复应恰 1 条 W16，四码条数 = %v：%+v", got, fsDup)
 	}
+	// 文案回归（B2c）：目标为 o-* 的 W16（同一持有端点 relations[] 内重复）detail 不得再用
+	// 只连知识卡的措辞（「目标卡」/「同一张卡」），且必须如实称呼「端点」。
+	w16dup := r3One(t, fsDup, CheckRelationDuplicate)
+	assertEndpointWording(t, string(CodeW16), w16dup.Detail)
 }
 
 // TestOpinionDuplicateIDReportedOnce：同一个 `o-*` 落在两个文件 → 恰 1 条 E11，

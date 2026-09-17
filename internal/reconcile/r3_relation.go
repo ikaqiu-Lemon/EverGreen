@@ -239,7 +239,7 @@ type targetAgg struct {
 //	target 形态合法但对象不在库内    → 恰 E13 一条
 //	target 形态合法且对象在库内      → 两码都不产
 //
-// 判定粒度 = 去重后的 `(from,target)`：同一张卡用两条不同类型的关系指向同一个缺失目标
+// 判定粒度 = 去重后的 `(from,target)`：同一持有端点用两条不同类型的关系指向同一个缺失目标
 // 是**一件**事实（条目数与类型集合进 detail，供逐条复算），不按条目报多条。
 // 产出顺序 = `(from,target)` 升序，与 map 迭代序无关。
 func checkR3TargetMissingAndPrefix(facts []relationFact, x StructureIndex) []Finding {
@@ -288,7 +288,7 @@ func targetMissingDetail(agg *targetAgg) string {
 	return fmt.Sprintf(
 		"关系 target 不存在：%s %s 的 relations[] 指向 %s，该目标在 vault 内查无此对象"+
 			"（共 %d 条条目，类型 %s；持有方落盘于 %s）。存在性只看落盘事实，不做 status / "+
-			"deleted_at / 可见性过滤；本码只报告——不自动补建目标卡、不移除该关系条目，"+
+			"deleted_at / 可见性过滤；本码只报告——不自动补建目标端点对象、不移除该关系条目，"+
 			"修复走 `eg rel remove` / `eg rel add`。关系条目的 target 缺失只走本码，"+
 			"**不走** R4 的 dangling_ref（E12），避免两码重复计一件事（合同 §6.2 末句）",
 		labelOf(agg.fact.fromKind), agg.fact.from, agg.fact.target, agg.entries,
@@ -371,7 +371,7 @@ func opposingPairs(facts []relationFact, x StructureIndex) (map[string]*opposing
 //
 // 反面两种形态都不在本码内：只有规范方向那一条 = 干净（单向存储的规范形态）；
 // 两个方向各有记录 = 重复对（W16），不是「缺方向」。
-// 自反对（两端同一张卡）的规范方向恒等于自身，因此恒不产 W15。
+// 自反对（两端同一端点）的规范方向恒等于自身，因此恒不产 W15。
 //
 // `targets[]` = 规范化后的 `[较小端, 较大端]`（合同 §2 的去重升序恒等于该次序）。
 func checkR3OpposingAsymmetric(facts []relationFact, x StructureIndex) []Finding {
@@ -439,7 +439,7 @@ func (g *dupGroup) inFileDuplicate() bool {
 //   - `opposing`：无向语义，同对判定**与方向无关** —— 先按两端 ID 字典序归一再计数，
 //     因此「两个方向各一条」= 同一对出现 2 条 = 重复（写侧「已存在则只更新 reason、
 //     不产生第二条」的读侧对应物）；
-//   - 其余三类论证关系：有向，`(from,type,target)` 逐字比对，只有同一张卡上重复写了
+//   - 其余三类论证关系：有向，`(from,type,target)` 逐字比对，只有同一持有端点上重复写了
 //     同一条边才算重复。
 //
 // 形态非法的 target（已由 E14 报）不参与判重：非法串的「规范化」不是可复算的事实，
@@ -517,7 +517,7 @@ func checkR3Duplicate(facts []relationFact) []Finding {
 
 // duplicateRelationDetail 渲染 W16 的 detail（规范化三元组 + 条目数 + 方向分布 + 路径）。
 func duplicateRelationDetail(g *dupGroup) string {
-	shape := "同一张卡的 relations[] 内重复写了同一条边"
+	shape := "同一持有端点的 relations[] 内重复写了同一条边"
 	if g.bidirectional {
 		shape = fmt.Sprintf("同一对 opposing 两个方向各有记录（%s → %s 共 %d 条、%s → %s 共 %d 条），"+
 			"按 A-24 的字典序规范化后属同一对", g.from, g.target, g.forward, g.target, g.from, g.backward)
