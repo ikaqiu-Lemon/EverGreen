@@ -15,7 +15,9 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -466,66 +468,158 @@ func TestRelRemoveKOFourCombinations(t *testing.T) {
 
 // —— ⑧ 写：rel remove 与 add 对称的非法端点表 —— 权威字节/mtime 零变化、零 commit ——
 //
-// 与 TestRelAddKOInvalidEndpointsZeroAuthorityChange 对称：from/target 两侧的
-// s-/n-/r-/p-/畸形与「合法但不存在的 k/o」都在 plan 校验期被拦下（E2 / E3），
-// 退 2、零权威写、零 commit（既有 runtime lock 语义不算权威写：authoritySnapshot
-// 已 SkipDir .git/.index/state，锁文件不落权威快照）。
+// 与 TestRelAddKOInvalidEndpointsZeroAuthorityChange 完全对称：from / target 两侧各自覆盖
+// s-/n-/r-/p-/畸形、以及「合法但不存在」的 k-* 与 o-*，自环（from == target）分别覆盖 k-* 与
+// o-*。所有非法端点都在 plan 校验期被拦下并退 2：
+//   - target 写成原文 ID s-* → E3（ID 类型写混）；
+//   - 其余非论证端点（n-/r-/p-/畸形）或合法但不存在的 k-*/o-* → E2（端点无法定位）；
+//   - 自环（同一论证端点）→ E5（静态 plan 级约束，与 add_relation 同级；**不落 W10**）。
 //
-// 自环（from == target）单列：rel remove 与 rel add **不对称**且这是既有行为，本用例如实锁定。
-// add 的自环是纯静态 plan 级约束（internal/plan/validate_rel.go 的 E5，两端可解析但取值组合
-// 不成立），而 remove 没有这条静态守卫——自环关系根本无从写入，故删它必然「未命中」，
-// 落到既有 W10 幂等 no-op：退 0、零写入、零 commit。本 phase 不触碰 plan，故锁既有语义，
-// 不臆造一个 remove 侧并不存在的 E5。
+// 每个用例除断言 exit=2 外，还从信封 `data.errors[]` 逐项断言**恰有**预期错误码，且 warnings 中
+// 不得出现 W10——自环被静态守卫拦下、根本不进入「未命中幂等」分支，这一点正是 fix2 修复的合同
+// 缺口（此前 remove 自环缺静态守卫，被折成 W10/exit 0）。
+//
+// 权威取证：只对 `.md`（权威 Markdown）逐字节 + mtime 比对（既有 runtime lock 文件非 .md，不入
+// 权威快照，故「允许既有 runtime lock、但不得误判为权威写」两条同时成立）；并核零 commit。
 func TestRelRemoveKOInvalidEndpointsZeroAuthorityChange(t *testing.T) {
-	// 退 2（校验失败，锁内发生）：权威 Markdown 逐字节不变、零 commit。
 	for _, c := range []struct {
-		name, from, target string
+		name, from, target, expectedCode string
 	}{
-		{"target_source_s", relKOOa, "s-20270101-x"},     // E3：s- 写进 target
-		{"target_note_n", relKOOa, "n-20270101-x"},       // E2：非论证端点
-		{"target_review_r", relKOOa, "r-20270101-x"},     // E2：非论证端点
-		{"target_proposal_p", relKOOa, "p-20270101-x"},   // E2：非论证端点
-		{"target_malformed", relKOOa, "o-not valid"},     // E2：端点形态非法
-		{"target_missing_o", relKOOa, "o-20270109-none"}, // E2：全库不存在
-		{"from_source_s", "s-20270101-x", relKOKa},       // E2：s- 无法解析为论证端点
-		{"from_note_n", "n-20270101-x", relKOKa},         // E2：非论证端点
-		{"from_review_r", "r-20270101-x", relKOKa},       // E2：非论证端点
-		{"from_proposal_p", "p-20270101-x", relKOKa},     // E2：非论证端点
-		{"from_malformed", "o-not valid", relKOKa},       // E2：端点形态非法
-		{"from_missing_o", "o-20270109-none", relKOKa},   // E2：from 全库不存在
+		// —— target 端非法：s- 判 E3（ID 类型写混），其余非论证/不存在判 E2 ——
+		{"target_source_s", relKOOa, "s-20270101-x", "E3"},
+		{"target_note_n", relKOOa, "n-20270101-x", "E2"},
+		{"target_review_r", relKOOa, "r-20270101-x", "E2"},
+		{"target_proposal_p", relKOOa, "p-20270101-x", "E2"},
+		{"target_malformed", relKOOa, "o-not valid", "E2"},
+		{"target_missing_k", relKOOa, "k-20270109-none", "E2"},
+		{"target_missing_o", relKOOa, "o-20270109-none", "E2"},
+		// —— from 端非法：无法解析为论证端点 / 合法但不存在，一律 E2 ——
+		{"from_source_s", "s-20270101-x", relKOKa, "E2"},
+		{"from_note_n", "n-20270101-x", relKOKa, "E2"},
+		{"from_review_r", "r-20270101-x", relKOKa, "E2"},
+		{"from_proposal_p", "p-20270101-x", relKOKa, "E2"},
+		{"from_malformed", "o-not valid", relKOKa, "E2"},
+		{"from_missing_k", "k-20270109-none", relKOKa, "E2"},
+		{"from_missing_o", "o-20270109-none", relKOKa, "E2"},
+		// —— 自环：from == target 是纯静态 plan 级约束，判 E5、绝不落 W10 ——
+		{"self_loop_k", relKOKa, relKOKa, "E5"},
+		{"self_loop_o", relKOOa, relKOOa, "E5"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := relKOWriteVault(t)
-			authBefore := authoritySnapshot(t, dir)
+			mdBefore := authorityMDStats(t, dir)
 			logBefore := gitLogCount(t, dir)
-			code, _, errOut := runRelRemoveCLI(t, dir, c.from, "supports", c.target, "--reason", "非法端点")
+			code, env, errOut := runRelRemoveCLI(t, dir, c.from, "supports", c.target, "--reason", "非法端点")
 			if code != ExitValidation {
 				t.Fatalf("%s 应退 2（校验失败），实际 %d：%s", c.name, code, errOut)
 			}
-			assertAuthorityUnchanged(t, dir, authBefore, "rel remove "+c.name)
+			// data.errors[] 必须恰有预期的一条错误码；不得多、不得少。
+			if gotCodes := relKOErrorCodes(t, env); len(gotCodes) != 1 || gotCodes[0] != c.expectedCode {
+				t.Fatalf("%s：data.errors[] 应恰为 [%s]，实得 %v", c.name, c.expectedCode, gotCodes)
+			}
+			// 非法端点 / 自环都不得走 W10 幂等 no-op（自环尤其：证明是静态守卫拦下、非伪造退出码）。
+			if strings.Contains(relAddWarningCodes(env), "W10") {
+				t.Fatalf("%s：非法端点/自环不得落 W10，warnings=%s", c.name, relAddWarningCodes(env))
+			}
+			// 权威 Markdown 逐字节 + mtime 均不变（runtime lock 非 .md，不入权威快照）。
+			assertAuthorityMDUnchanged(t, dir, mdBefore, "rel remove "+c.name)
 			if got := gitLogCount(t, dir); got != logBefore {
 				t.Fatalf("%s 校验失败不得产生 commit：%d → %d", c.name, logBefore, got)
 			}
 		})
 	}
+}
 
-	// 自环单列：既有行为是 W10 幂等 no-op（退 0、零权威写、零 commit），非 E5。
-	t.Run("self_loop_o_is_W10_noop", func(t *testing.T) {
-		dir := relKOWriteVault(t)
-		authBefore := authoritySnapshot(t, dir)
-		logBefore := gitLogCount(t, dir)
-		code, env, errOut := runRelRemoveCLI(t, dir, relKOOa, "supports", relKOOa, "--reason", "自环删")
-		if code != ExitOK {
-			t.Fatalf("自环 remove 既有行为应退 0（W10 幂等），实际 %d：%s", code, errOut)
+// relKOErrorCodes 从信封 data.errors[]（error 级诊断桶）逐项取 code，供「恰有预期错误码」断言。
+// --json 反序列化后 Data 是 map[string]interface{}，errors 落成 []interface{}{map...}。
+func relKOErrorCodes(t *testing.T, env Envelope) []string {
+	t.Helper()
+	raw, ok := env.Data["errors"]
+	if !ok {
+		return nil
+	}
+	list, ok := raw.([]interface{})
+	if !ok {
+		t.Fatalf("data.errors 应是数组，实得 %T", raw)
+	}
+	codes := make([]string, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("data.errors[] 元素应是对象，实得 %T", item)
 		}
-		if !strings.Contains(relAddWarningCodes(env), "W10") {
-			t.Fatalf("自环 remove 应记 W10 幂等 no-op，实得 %s", relAddWarningCodes(env))
+		code, _ := m["code"].(string)
+		codes = append(codes, code)
+	}
+	return codes
+}
+
+// mdStat 记录一份权威 Markdown 的字节与 mtime（纳秒），供「字节 + mtime 均不变」取证。
+type mdStat struct {
+	bytes string
+	mtime int64
+}
+
+// authorityMDStats 抓 vault 内全部 .md（权威 Markdown）的字节 + mtime 快照。
+// 只认 .md：runtime lock / 事务日志 / 索引均非 .md，天然不入权威快照，
+// 故「允许既有 runtime lock、但不得误判为权威写」两条同时成立。
+func authorityMDStats(t *testing.T, dir string) map[string]mdStat {
+	t.Helper()
+	out := map[string]mdStat{}
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
-		assertAuthorityUnchanged(t, dir, authBefore, "rel remove self_loop_o")
-		if got := gitLogCount(t, dir); got != logBefore {
-			t.Fatalf("自环 W10 no-op 不得产生 commit：%d → %d", logBefore, got)
+		if info.IsDir() {
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
 		}
+		if !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		rel, _ := filepath.Rel(dir, p)
+		out[filepath.ToSlash(rel)] = mdStat{bytes: string(raw), mtime: info.ModTime().UnixNano()}
+		return nil
 	})
+	if err != nil {
+		t.Fatalf("抓权威 Markdown 快照失败：%v", err)
+	}
+	return out
+}
+
+// assertAuthorityMDUnchanged 逐条比对权威 Markdown 的字节与 mtime（新增/改写/删除/触碰均报出）。
+func assertAuthorityMDUnchanged(t *testing.T, dir string, before map[string]mdStat, what string) {
+	t.Helper()
+	after := authorityMDStats(t, dir)
+	var diffs []string
+	for rel, st := range after {
+		old, ok := before[rel]
+		if !ok {
+			diffs = append(diffs, "新增 "+rel)
+			continue
+		}
+		if old.bytes != st.bytes {
+			diffs = append(diffs, "字节改写 "+rel)
+		}
+		if old.mtime != st.mtime {
+			diffs = append(diffs, "mtime 变化 "+rel)
+		}
+	}
+	for rel := range before {
+		if _, ok := after[rel]; !ok {
+			diffs = append(diffs, "删除 "+rel)
+		}
+	}
+	if len(diffs) > 0 {
+		sort.Strings(diffs)
+		t.Fatalf("%s：权威 Markdown 必须字节与 mtime 均不变，实际 %s", what, strings.Join(diffs, "；"))
+	}
 }
 
 // assertOnlyChanged 断言相对权威基线**恰一个** vault 内相对路径发生变化（其余逐字节不变）。

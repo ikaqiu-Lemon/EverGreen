@@ -234,6 +234,46 @@ func TestRelationChainRejectsNonKOEndpoint(t *testing.T) {
 	}
 }
 
+// TestRemoveRelationRejectsSelfLoopBeforeW10：remove_relation 的自环（from == target）在
+// plan 校验期即被静态守卫拦为 E5——**直接落在 Validate 上**，不经 CLI，证明 exit 2 是 plan
+// 判据而非命令层伪造。分别覆盖 k-* 与 o-* 两个论证端点；并逐条钉死：
+//   - 判 E5（与 add_relation 自环同级、path 指向 target）；
+//   - 零 action（零展开 → 零写入、零 commit）；
+//   - **不得出现 W10**——自环在端点解析 / 「未命中幂等」分支**之前**返回，绝不能被折成
+//     「删了个不存在的关系」的 W10 no-op（那会把「无论证意义的自环」掩盖成合法幂等）。
+func TestRemoveRelationRejectsSelfLoopBeforeW10(t *testing.T) {
+	for _, endpoint := range []string{"k-20260901-attention", "o-20260901-view"} {
+		t.Run(endpoint, func(t *testing.T) {
+			files := koChainFiles(t)
+			// remove_relation 属 P-U：带命令行佐证 + initiator=user，排除「因缺授权而 E6」的干扰，
+			// 坐实是自环守卫（而非矩阵闸门）把它拦下。
+			env := vault(t, files)
+			env.UserRequest = true
+			res := run(t, env, relatePlan(t, files,
+				fmt.Sprintf(`{"op":"remove_relation","from":%q,"type":"supports",`+
+					`"target":%q,"reason":"自环无论证意义","initiator":"user"}`, endpoint, endpoint)))
+
+			if !res.Failed() {
+				t.Fatalf("%s：自环 remove_relation 必须判 error，实得 warnings=%v", endpoint, codes(res.Warnings))
+			}
+			errCodes := codes(res.Errors)
+			d, ok := find(res.Errors, E5)
+			if !ok || len(errCodes) != 1 {
+				t.Fatalf("%s：自环应恰有一条 E5，实得 errors=%v", endpoint, errCodes)
+			}
+			if !strings.Contains(d.Path, "target") {
+				t.Fatalf("%s：自环 E5 诊断路径应指向 target，实得 %+v", endpoint, d)
+			}
+			if len(res.Actions) != 0 {
+				t.Fatalf("%s：自环必须零展开（零写入、零 commit），实得 %d 条 action", endpoint, len(res.Actions))
+			}
+			if _, hit := find(res.Warnings, W10); hit {
+				t.Fatalf("%s：自环绝不得落 W10 幂等 no-op，实得 warnings=%v", endpoint, codes(res.Warnings))
+			}
+		})
+	}
+}
+
 // execOnDir 与 execOn 同义，但把 files 写进新目录后返回目录与执行回执
 // （remove 用例需要独立于 add 的干净盘做二次执行）。
 func execOnDir(t *testing.T, files map[string]string, res *Result) (string, *ExecResult) {

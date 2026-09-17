@@ -69,7 +69,7 @@ type ReplacedByWrite struct {
 type RelationRemoval struct {
 	Type   string
 	Target string
-	// Matches 是宿主卡上命中的记录条数（移除全部命中，reason 不参与匹配）。
+	// Matches 是宿主端点（k-/o-）上命中的记录条数（移除全部命中，reason 不参与匹配）。
 	Matches int
 }
 
@@ -564,6 +564,17 @@ func (v *validator) removeRelation(op *Op) {
 	if err != nil {
 		v.add(errorAt(E5, op.Index, opPath(op.Index, "type"),
 			"type=%q 不在论证关系封闭四值内：合法取值恰为 %v", op.Type, model.ValidRelationTypes()))
+		return
+	}
+	// 自环与 add_relation 同阶段、同判据：from 与 target 同为一个论证端点是**纯静态**的
+	// plan 级语义约束（不读盘即可判定），必须在端点解析 / W10 幂等分支**之前**拦下并退 2。
+	// 若放到 W10 之后，未命中的自环会被折成 W10 幂等 no-op（退 0），把「无论证意义的自环」
+	// 掩盖成「删了个不存在的关系」——两者语义不同：自环该硬拒，缺失关系才是幂等。
+	// 编号取 **E5**（op 字段取值组合不成立），与 add_relation 自环守卫同级；path 指向 target。
+	if op.From != "" && op.From == op.Target {
+		v.add(errorAt(E5, op.Index, opPath(op.Index, "target"),
+			"关系两端不得是同一论证端点：from 与 target 同为 %s（自环无论证意义）；"+
+				"本次零写入、无 commit", op.From))
 		return
 	}
 	fromRel, ok := v.relationEndpoint(op, "from", op.From)
