@@ -30,9 +30,9 @@ func (e *executor) removeRelationWrite(a Action) {
 		Rel:          a.Path,
 		ExpectedHash: e.expect(a),
 		Stamp:        e.opt.Stamp,
-		From:         model.CardID(a.ID),
+		From:         model.RelationEndpoint(a.ID),
 		Type:         model.RelationType(rm.Type),
-		Target:       model.CardID(rm.Target),
+		Target:       model.RelationEndpoint(rm.Target),
 	})
 	if !e.record(a, out.Result, err) {
 		return

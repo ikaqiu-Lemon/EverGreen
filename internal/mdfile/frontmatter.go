@@ -99,6 +99,27 @@ func ParseNote(raw []byte) (*Doc, model.Note, error) {
 	return d, note, nil
 }
 
+// ParseOpinion 解析观点：索引 + frontmatter 字段 + 分区结构校验。
+//
+// 与 ParseCard 同源纪律：只做**只读** DecodeFM + ValidateSections(KindOpinion)，
+// 不序列化、不改写一个字节。观点与知识卡同级（Schema v2 §3.1），二者都在
+// frontmatter 里带 relations[]；论证关系写链路据此按宿主类型分流读取（k- 走 ParseCard、
+// o- 走本函数），拿到的 relations[] 语义完全一致。
+func ParseOpinion(raw []byte) (*Doc, model.Opinion, error) {
+	var op model.Opinion
+	d, err := Parse(raw)
+	if err != nil {
+		return nil, op, err
+	}
+	if err := d.DecodeFM(&op); err != nil {
+		return nil, op, err
+	}
+	if err := d.ValidateSections(KindOpinion); err != nil {
+		return nil, op, err
+	}
+	return d, op, nil
+}
+
 // ParseSource 解析原文：frontmatter（id/url/title/saved_at）+ 正文全文。
 // 正文收录后**不因任何加工改写**，因此原文没有固定分区约束。
 func ParseSource(raw []byte) (*Doc, model.Source, error) {

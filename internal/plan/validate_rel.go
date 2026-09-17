@@ -13,7 +13,6 @@ import (
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/rules"
-	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // materialRefs 校验一组材料关系四要素（create_card 自带的 sources[]）。
@@ -100,7 +99,7 @@ func (v *validator) materialRel(op *Op) {
 func (v *validator) relation(op *Op) {
 	if op.Target != "" && model.SourceID(op.Target).Valid() {
 		v.add(errorAt(E3, op.Index, opPath(op.Index, "target"),
-			"relations[].target 只连知识卡（k-…），实际是原文 ID %s：ID 类型写混一律拒绝", op.Target))
+			"relations[].target 只连论证性产物（知识卡 k-… 或观点 o-…），实际是原文 ID %s：ID 类型写混一律拒绝", op.Target))
 		return
 	}
 	if op.Type == "" {
@@ -128,11 +127,11 @@ func (v *validator) relation(op *Op) {
 				"本次零写入、无 commit", op.From))
 		return
 	}
-	fromRel, ok := v.cardTarget(op, "from", op.From)
+	fromRel, ok := v.relationEndpoint(op, "from", op.From)
 	if !ok {
 		return
 	}
-	if _, ok := v.cardTarget(op, "target", op.Target); !ok {
+	if _, ok := v.relationEndpoint(op, "target", op.Target); !ok {
 		return
 	}
 	targetRel, _ := v.resolve(op.Target)
@@ -170,7 +169,7 @@ func (v *validator) relation(op *Op) {
 			}
 			rel = newRel
 		}
-		if v.opposingExists(rel, model.RelationEndpoint(write.Target)) {
+		if v.opposingExists(id, rel, model.RelationEndpoint(write.Target)) {
 			write.Duplicate = true
 			d := warnAt(W8, op.Index, opPath(op.Index, "target"),
 				"opposing 同对已存在：幂等跳过，不产生第二条（reason 的更新属 S2 块替换，"+
@@ -186,18 +185,44 @@ func (v *validator) relation(op *Op) {
 	v.res.Actions = append(v.res.Actions, act)
 }
 
-// opposingExists 报告该卡的 relations[] 里是否已有同对 opposing（同对判定与方向无关）。
-func (v *validator) opposingExists(rel string, target model.RelationEndpoint) bool {
-	raw, ok := v.readExisting(rel)
+// opposingExists 报告该宿主的 relations[] 里是否已有同对 opposing（同对判定与方向无关）。
+func (v *validator) opposingExists(id, rel string, target model.RelationEndpoint) bool {
+	host, ok := v.endpointFacts(id, rel)
 	if !ok {
 		return false
 	}
-	card, err := store.CardOf(raw)
-	if err != nil {
-		return false
+	return rules.OpposingDuplicate(host.Relations,
+		rules.Opposing(model.RelationEndpoint(host.ID), target))
+}
+
+// relationEndpoint 解析并解析路径一个论证关系端点（from / target）。
+//
+// 论证关系是**跨类型**的：端点只接受知识卡（k-）或观点（o-）。与 cardTarget 的区别是
+// 接受面从「只 k-」放宽到「k- / o-」，其余判定（缺失、无法解析、悬空、E4、W1 领域）逐一对齐。
+// s-（原文）/ n-（笔记）/ r-（综述）/ p-（提案）以及不可解析 ID 一律拒绝——论证关系永远
+// 发生在两条论证性产物之间。**不放宽** card-only 业务（deprecate/restore/replaced_by/
+// add_material_rel 等仍走 cardTarget）。
+func (v *validator) relationEndpoint(op *Op, field, id string) (string, bool) {
+	if id == "" {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, field), "%s 缺 %s：关系端点无法定位", op.Name, field))
+		return "", false
 	}
-	return rules.OpposingDuplicate(card.Relations,
-		rules.Opposing(model.RelationEndpoint(card.ID), target))
+	if _, err := model.ParseRelationEndpoint(id); err != nil {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, field),
+			"%s 无法解析为论证关系端点（只接受知识卡 %s 或观点 %s）：%v",
+			field, model.PrefixCard, model.PrefixOpinion, err))
+		return "", false
+	}
+	rel, ok := v.resolve(id)
+	if !ok {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, field), "%s %s 不存在于全库：关系无法定位", field, id))
+		return "", false
+	}
+	if !v.frontmatterCheck(op, field, rel) {
+		return "", false
+	}
+	v.domainCheck(op, field, rel)
+	return rel, true
 }
 
 // RelationStatusWarning 构造 W3 诊断（论证关系某端不是 `status: active`）。

@@ -41,16 +41,17 @@ var (
 
 // RemoveRelationSpec 是一次 remove_relation 的落盘输入。
 //
-// From / Target 必须是**已规范化**的两端（`opposing` 写在字典序较小的一端）：
+// From / Target 是跨类型端点（RelationEndpoint，前缀 k- / o-）：宿主与对端都可能是
+// 知识卡或观点。两者必须是**已规范化**的两端（`opposing` 写在字典序较小的一端）：
 // 规范化的唯一实现在 internal/rules，由 internal/plan 在校验期完成——本包只做
 // 「已规范化」的硬校验，不反向依赖 rules（§13 依赖方向）。
 type RemoveRelationSpec struct {
-	Rel          string // 宿主卡（From 端）相对路径
+	Rel          string // 宿主实体（From 端）相对路径
 	ExpectedHash string
 	Stamp        model.Stamp
-	From         model.CardID
+	From         model.RelationEndpoint
 	Type         model.RelationType
-	Target       model.CardID
+	Target       model.RelationEndpoint
 }
 
 // RemoveRelationResult 是一次物理移除的回执：移除条数 + 单文件写入回执。
@@ -77,7 +78,7 @@ func (s *Store) ApplyRemoveRelation(spec RemoveRelationSpec) (RemoveRelationResu
 		return out, fmt.Errorf("论证关系取值封闭（冻结合同 F4，合法取值恰 %v）：%w",
 			model.ValidRelationTypes(), err)
 	}
-	if err := cardIDOnly("relations[].target", spec.Target); err != nil {
+	if err := relationEndpointOnly("relations[].target", spec.Target); err != nil {
 		return out, err
 	}
 	if spec.Type == model.RelationOpposing && string(spec.From) > string(spec.Target) {
@@ -85,13 +86,13 @@ func (s *Store) ApplyRemoveRelation(spec RemoveRelationSpec) (RemoveRelationResu
 			spec.Target, spec.From)
 	}
 
-	f, card, _, err := s.readCard(spec.Rel)
+	f, hostRelations, _, _, err := s.readRelationHost(spec.From, spec.Rel)
 	if err != nil {
 		return out, err
 	}
 	out.Hash = f.Hash
 	var hit []int
-	for i, exist := range card.Relations {
+	for i, exist := range hostRelations {
 		if exist.Type == spec.Type && string(exist.Target) == string(spec.Target) {
 			hit = append(hit, i)
 		}
@@ -271,6 +272,21 @@ func cardIDOnly(field string, id model.CardID) error {
 	if len(id) < len(model.PrefixCard) || string(id[:len(model.PrefixCard)]) != model.PrefixCard {
 		return fmt.Errorf("%w：%s 必须是 %s 前缀的卡 ID，得到 %q",
 			ErrRelationTargetType, field, model.PrefixCard, id)
+	}
+	return nil
+}
+
+// relationEndpointOnly 是论证关系端点（`relations[].target`）的 E3 硬拦：
+// 只接受 k- / o- 端点。s- 明确按 E3「ID 类型写混」拒绝；其余前缀（n- / r- / p-）与
+// 不可解析 ID 一律拒绝。论证关系永远发生在两条论证性产物（知识卡 / 观点）之间。
+func relationEndpointOnly(field string, id model.RelationEndpoint) error {
+	if len(id) >= len(model.PrefixSource) && string(id[:len(model.PrefixSource)]) == model.PrefixSource {
+		return fmt.Errorf("%w：%s 只接受 %s / %s 前缀的端点，得到 %q（E3）",
+			ErrRelationTargetType, field, model.PrefixCard, model.PrefixOpinion, id)
+	}
+	if _, err := model.ParseRelationEndpoint(string(id)); err != nil {
+		return fmt.Errorf("%w：%s 必须是 %s / %s 前缀的端点，得到 %q（%v）",
+			ErrRelationTargetType, field, model.PrefixCard, model.PrefixOpinion, id, err)
 	}
 	return nil
 }

@@ -203,7 +203,7 @@ func TestRelationOpposingIsStoredOnceOnLexicalSmallerEnd(t *testing.T) {
 		if pair.From != "k-20260815-rnn" {
 			t.Fatalf("规范化后写入端应是字典序较小者，实得 %s", pair.From)
 		}
-		res, err := s.ApplyRelation(RelationSpec{From: model.CardID(pair.From),
+		res, err := s.ApplyRelation(RelationSpec{From: pair.From,
 			Relation: model.Relation{Type: model.RelationOpposing, Target: pair.Target,
 				Reason: "两者对长序列的结论相反"}})
 		if err != nil || !res.Written {
@@ -235,7 +235,7 @@ func TestRelationOpposingIsStoredOnceOnLexicalSmallerEnd(t *testing.T) {
 func TestRelationOpposingDuplicateIsIdempotent(t *testing.T) {
 	s, root := relVault(t)
 	pair := rules.Opposing("k-20260901-attention", "k-20260815-rnn")
-	spec := RelationSpec{From: model.CardID(pair.From),
+	spec := RelationSpec{From: pair.From,
 		Relation: model.Relation{Type: model.RelationOpposing, Target: pair.Target, Reason: "结论相反"}}
 	if _, err := s.ApplyRelation(spec); err != nil {
 		t.Fatalf("首次写入：%v", err)

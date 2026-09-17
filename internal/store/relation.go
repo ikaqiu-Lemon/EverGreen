@@ -46,12 +46,15 @@ type MaterialRelSpec struct {
 	Ref          model.SourceRef
 }
 
-// RelationSpec 是一次 add_relation 的落盘输入：写入知识卡 frontmatter 的 relations[]。
+// RelationSpec 是一次 add_relation 的落盘输入：写入**宿主实体**（From 端）frontmatter 的 relations[]。
+//
+// From 是跨类型端点（RelationEndpoint，前缀 k- / o-）：论证关系可发生在知识卡或观点之间，
+// 宿主既可能是知识卡也可能是观点，落盘按端点前缀分流（k- 读写知识卡、o- 读写观点）。
 type RelationSpec struct {
-	Rel          string // 写入端（From 卡）的相对路径
+	Rel          string // 写入端（From 实体）的相对路径
 	ExpectedHash string
 	Stamp        model.Stamp
-	From         model.CardID
+	From         model.RelationEndpoint
 	Relation     model.Relation
 	Index        *Index // id → path（用于 E2 解析；nil → 现场全库扫描）
 }
@@ -96,7 +99,7 @@ func (s *Store) ApplyMaterialRel(spec MaterialRelSpec) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	return s.seqEdit(spec.Rel, spec.ExpectedHash, f, doc, "sources", item, spec.Stamp, warnings)
+	return s.seqEdit(spec.Rel, spec.ExpectedHash, f, doc, mdfile.KindCard, "sources", item, spec.Stamp, warnings)
 }
 
 // ApplyRelation 向知识卡 relations[] 追加一条论证关系。
@@ -108,12 +111,12 @@ func (s *Store) ApplyRelation(spec RelationSpec) (Result, error) {
 			model.ValidRelationTypes(), err)
 	}
 	if bytes.HasPrefix([]byte(rel.Target), []byte(model.PrefixSource)) {
-		return res, fmt.Errorf("%w：relations[].target 只接受 %s 前缀的卡 ID，得到 %q（E3）",
-			ErrRelationTargetType, model.PrefixCard, rel.Target)
+		return res, fmt.Errorf("%w：relations[].target 只接受 %s / %s 前缀的端点，得到 %q（E3）",
+			ErrRelationTargetType, model.PrefixCard, model.PrefixOpinion, rel.Target)
 	}
-	if !bytes.HasPrefix([]byte(rel.Target), []byte(model.PrefixCard)) {
-		return res, fmt.Errorf("%w：relations[].target 必须是 %s 前缀的卡 ID，得到 %q",
-			ErrRelationTargetType, model.PrefixCard, rel.Target)
+	if _, err := model.ParseRelationEndpoint(string(rel.Target)); err != nil {
+		return res, fmt.Errorf("%w：relations[].target 必须是 %s / %s 前缀的端点，得到 %q（%v）",
+			ErrRelationTargetType, model.PrefixCard, model.PrefixOpinion, rel.Target, err)
 	}
 	if string(rel.Target) == string(spec.From) {
 		return res, fmt.Errorf("%w：%s", ErrSelfRelation, rel.Target)
@@ -143,12 +146,12 @@ func (s *Store) ApplyRelation(spec RelationSpec) (Result, error) {
 		res.Path = path
 	}
 
-	f, card, doc, err := s.readCard(spec.Rel)
+	f, hostRelations, doc, kind, err := s.readRelationHost(spec.From, spec.Rel)
 	if err != nil {
 		return res, err
 	}
 	res.Hash = f.Hash
-	for _, exist := range card.Relations {
+	for _, exist := range hostRelations {
 		if exist == rel {
 			res.Detail = fmt.Sprintf("relations[] 已有完全相同的关系（%s → %s）：幂等去重，不追加第二条",
 				rel.Type, rel.Target)
@@ -168,7 +171,28 @@ func (s *Store) ApplyRelation(spec RelationSpec) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	return s.seqEdit(spec.Rel, spec.ExpectedHash, f, doc, "relations", item, spec.Stamp, warnings)
+	return s.seqEdit(spec.Rel, spec.ExpectedHash, f, doc, kind, "relations", item, spec.Stamp, warnings)
+}
+
+// readRelationHost 读一个论证关系宿主（知识卡或观点，按端点前缀分流）：
+// 原始字节 + 只读解析出的 relations[] + 文档索引 + 宿主类型（供守卫写沿用固定分区口径）。
+func (s *Store) readRelationHost(from model.RelationEndpoint, rel string) (File, []model.Relation, *mdfile.Doc, mdfile.Kind, error) {
+	f, err := s.Read(rel)
+	if err != nil {
+		return File{}, nil, nil, "", err
+	}
+	if bytes.HasPrefix([]byte(from), []byte(model.PrefixOpinion)) {
+		doc, op, err := mdfile.ParseOpinion(f.Bytes)
+		if err != nil {
+			return f, nil, nil, mdfile.KindOpinion, err
+		}
+		return f, op.Relations, doc, mdfile.KindOpinion, nil
+	}
+	doc, card, err := mdfile.ParseCard(f.Bytes)
+	if err != nil {
+		return f, nil, nil, mdfile.KindCard, err
+	}
+	return f, card.Relations, doc, mdfile.KindCard, nil
 }
 
 // readCard 读一张卡：原始字节 + 只读解析出的 frontmatter 字段 + 文档索引。
@@ -186,7 +210,11 @@ func (s *Store) readCard(rel string) (File, model.Card, *mdfile.Doc, error) {
 
 // seqEdit 把一条序列条目写进 frontmatter：既有序列沿用缩进追加，键缺失则新建块状序列，
 // 序列为空（无缩进风格）则不猜、不写、出 warning。
-func (s *Store) seqEdit(rel, expectedHash string, f File, doc *mdfile.Doc, key string,
+//
+// kind 是宿主固定分区口径（KindCard / KindOpinion）：关系与材料关系都只动 frontmatter
+// 序列、不追加任何正文分区，因此 kind 不改变本函数写出的字节；透传它只为守卫写沿用
+// 宿主真实类型的分区白名单（自动路径永不误写「用户补充」等分区，B2）。
+func (s *Store) seqEdit(rel, expectedHash string, f File, doc *mdfile.Doc, kind mdfile.Kind, key string,
 	item []string, stamp model.Stamp, warnings []string) (Result, error) {
 	hash := expectedHash
 	if hash == "" {
@@ -198,7 +226,7 @@ func (s *Store) seqEdit(rel, expectedHash string, f File, doc *mdfile.Doc, key s
 	}
 	// 既有 `updated_at` 由 Edit.Stamp 在同一次守卫写里整行刷新（矩阵第 8 行）：
 	// 关系维度的写入同样是「实际写入」，rel add / eg apply 都必须推进内容时间戳。
-	edit := Edit{Kind: mdfile.KindCard, FMKeys: keys, Stamp: stamp}
+	edit := Edit{Kind: kind, FMKeys: keys, Stamp: stamp}
 	switch seq, err := doc.FMSeq(key); {
 	case err == nil:
 		edit.FMSeqItems = []FMSeqAppend{{Key: key, Item: seqItem(item, append(seq.Indent, ' ', ' '))}}

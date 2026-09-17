@@ -108,6 +108,7 @@ tests/_staged/internal/plan/matrix_contract_test.go	internal/plan/matrix_contrac
 tests/_staged/internal/plan/matrix_test.go	internal/plan/matrix_test.go	evergreen	unit	go
 tests/_staged/internal/plan/plan_test.go	internal/plan/plan_test.go	evergreen	unit	go
 tests/_staged/internal/plan/precheck_test.go	internal/plan/precheck_test.go	evergreen	unit	go
+tests/_staged/internal/plan/relation_ko_chain_test.go	internal/plan/relation_ko_chain_test.go	evergreen	unit	go
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	internal/plan/remove_relation_idempotent_test.go	evergreen	unit	go
 tests/_staged/internal/plan/set_stale_test.go	internal/plan/set_stale_test.go	evergreen	unit	go
 tests/_staged/internal/plan/state_write_m3_test.go	internal/plan/state_write_m3_test.go	evergreen	unit	go
@@ -166,6 +167,7 @@ tests/_staged/internal/store/note_blocks_test.go	internal/store/note_blocks_test
 tests/_staged/internal/store/opinion_layout_test.go	internal/store/opinion_layout_test.go	evergreen	unit	go
 tests/_staged/internal/store/proposal_test.go	internal/store/proposal_test.go	evergreen	unit	go
 tests/_staged/internal/store/receipt_test.go	internal/store/receipt_test.go	evergreen	unit	go
+tests/_staged/internal/store/relations_ko_test.go	internal/store/relations_ko_test.go	evergreen	unit	go
 tests/_staged/internal/store/relations_test.go	internal/store/relations_test.go	evergreen	unit	go
 tests/_staged/internal/store/remove_relation_test.go	internal/store/remove_relation_test.go	evergreen	unit	go
 tests/_staged/internal/store/section_write_test.go	internal/store/section_write_test.go	evergreen	unit	go

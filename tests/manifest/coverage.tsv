@@ -12,9 +12,9 @@ index-search	12	0	9	0	0	21
 lifecycle	0	2	8	0	0	10
 ops-diagnostics	4	1	5	0	0	10
 perf	0	0	0	0	3	3
-proposal	22	0	4	0	0	26
+proposal	23	0	4	0	0	27
 queryset	1	0	0	0	0	1
 reconcile-takeover	12	4	6	0	0	22
 relation	0	1	5	0	0	6
-storage-markdown	28	0	0	0	0	28
+storage-markdown	29	0	0	0	0	29
 txn-atomicity	11	1	11	0	0	23

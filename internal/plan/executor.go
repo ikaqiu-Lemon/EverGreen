@@ -512,7 +512,7 @@ func (e *executor) relationWrite(a Action) {
 		Rel:          a.Path,
 		ExpectedHash: e.expect(a),
 		Stamp:        e.opt.Stamp,
-		From:         model.CardID(a.ID),
+		From:         model.RelationEndpoint(a.ID),
 		Relation: model.Relation{
 			Type:   model.RelationType(rel.Type),
 			Target: model.RelationEndpoint(rel.Target),

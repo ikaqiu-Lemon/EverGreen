@@ -1,6 +1,8 @@
 package store
 
 import (
+	"strings"
+
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 )
@@ -96,4 +98,51 @@ func FrontmatterInto(raw []byte, out interface{}) error {
 func CardOf(raw []byte) (model.Card, error) {
 	_, card, err := mdfile.ParseCard(raw)
 	return card, err
+}
+
+// OpinionOf 只读解析一条观点的 frontmatter 字段（含 relations[]）。
+// 与 CardOf 对称：论证关系写链路对 o- 宿主取事实时经由本转发点，plan 层因此
+// 不必直连 mdfile（§13 依赖方向）。
+func OpinionOf(raw []byte) (model.Opinion, error) {
+	_, op, err := mdfile.ParseOpinion(raw)
+	return op, err
+}
+
+// RelationHost 是论证关系宿主（知识卡或观点）在**关系维度**的只读事实。
+//
+// 论证关系是跨类型的（端点前缀 k- / o-，见 model.RelationEndpoint）：宿主既可能是
+// 知识卡也可能是观点，二者在 status / deleted_at / relations[] 三个字段上语义一致，
+// 上层（plan 校验）只需要这三项即可完成 W3 判定、同对去重与命中计数，不必关心宿主是
+// 哪一类实体。本结构把两类实体在关系维度共享的字段收敛成一个口径，避免调用方按类型
+// 各写一套读取分支。
+type RelationHost struct {
+	Kind      Kind
+	ID        string
+	Status    model.Status
+	Tombstone *model.Stamp // 逻辑删除墓碑（对应 frontmatter 的 deleted_at；nil = 未删）
+	Relations []model.Relation
+}
+
+// RelationHostOf 按端点前缀（k- 走知识卡、o- 走观点）解析宿主的关系维度事实。
+//
+// 端点必须已是合法的关系端点（k- / o-）；非法或其它前缀直接返回错误（调用方据此拒绝），
+// 绝不猜测宿主类型。解析仍是**只读**：不改写宿主一个字节。
+func RelationHostOf(endpoint model.RelationEndpoint, raw []byte) (RelationHost, error) {
+	if _, err := model.ParseRelationEndpoint(string(endpoint)); err != nil {
+		return RelationHost{}, err
+	}
+	if strings.HasPrefix(string(endpoint), model.PrefixOpinion) {
+		op, err := OpinionOf(raw)
+		if err != nil {
+			return RelationHost{}, err
+		}
+		return RelationHost{Kind: KindOpinion, ID: string(op.ID), Status: op.Status,
+			Tombstone: op.DeletedAt, Relations: op.Relations}, nil
+	}
+	card, err := CardOf(raw)
+	if err != nil {
+		return RelationHost{}, err
+	}
+	return RelationHost{Kind: KindCard, ID: string(card.ID), Status: card.Status,
+		Tombstone: card.DeletedAt, Relations: card.Relations}, nil
 }

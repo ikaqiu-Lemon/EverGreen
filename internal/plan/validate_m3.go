@@ -150,6 +150,23 @@ func (v *validator) cardFacts(rel string) (model.Card, bool) {
 	return card, true
 }
 
+// endpointFacts 只读取回论证关系宿主（知识卡或观点，按端点 id 前缀 k-/o- 分流）的
+// 关系维度事实（状态 / 逻辑删除 / relations[] / 宿主 ID）。
+// 与 cardFacts 分开：论证关系是跨类型的，宿主可能是观点，而 cardFacts 只认知识卡
+// （对观点会因分区校验失败而读不到）。card-only 业务（deprecate/restore/replaced_by 等）
+// 仍走 cardFacts，本函数只服务关系读侧（W3 判定 / 同对去重 / 命中计数）。
+func (v *validator) endpointFacts(id, rel string) (store.RelationHost, bool) {
+	raw, ok := v.readExisting(rel)
+	if !ok {
+		return store.RelationHost{}, false
+	}
+	host, err := store.RelationHostOf(model.RelationEndpoint(id), raw)
+	if err != nil {
+		return store.RelationHost{}, false
+	}
+	return host, true
+}
+
 // idempotentNoOp 记一条 W11（三类幂等 no-op：该 op 零写入 + 进报告，不产生空 commit）。
 func (v *validator) idempotentNoOp(op *Op, msg string, args ...interface{}) {
 	d := warnAt(W11, op.Index, opPath(op.Index, "target"), msg, args...)
@@ -535,7 +552,7 @@ func (v *validator) reviewedTarget(op *Op) (Object, string, bool) {
 func (v *validator) removeRelation(op *Op) {
 	if op.Target != "" && model.SourceID(op.Target).Valid() {
 		v.add(errorAt(E3, op.Index, opPath(op.Index, "target"),
-			"relations[].target 只连知识卡（k-…），实际是原文 ID %s：ID 类型写混一律拒绝", op.Target))
+			"relations[].target 只连论证性产物（知识卡 k-… 或观点 o-…），实际是原文 ID %s：ID 类型写混一律拒绝", op.Target))
 		return
 	}
 	if op.Type == "" {
@@ -549,11 +566,11 @@ func (v *validator) removeRelation(op *Op) {
 			"type=%q 不在论证关系封闭四值内：合法取值恰为 %v", op.Type, model.ValidRelationTypes()))
 		return
 	}
-	fromRel, ok := v.cardTarget(op, "from", op.From)
+	fromRel, ok := v.relationEndpoint(op, "from", op.From)
 	if !ok {
 		return
 	}
-	targetRel, ok := v.cardTarget(op, "target", op.Target)
+	targetRel, ok := v.relationEndpoint(op, "target", op.Target)
 	if !ok {
 		return
 	}
@@ -593,7 +610,7 @@ func (v *validator) removeRelation(op *Op) {
 			rel = newRel
 		}
 	}
-	removal.Matches = v.countRelations(rel, removal.Type, removal.Target)
+	removal.Matches = v.countRelations(id, rel, removal.Type, removal.Target)
 	if removal.Matches == 0 {
 		d := warnAt(W10, op.Index, opPath(op.Index, "target"),
 			"remove_relation 未命中任何既有关系（%s → %s → %s）：幂等 no-op，"+
@@ -609,14 +626,15 @@ func (v *validator) removeRelation(op *Op) {
 	v.res.Actions = append(v.res.Actions, act)
 }
 
-// countRelations 数宿主卡上匹配 `(type, target)` 的记录条数（reason 不参与匹配）。
-func (v *validator) countRelations(rel, relType, target string) int {
-	card, ok := v.cardFacts(rel)
+// countRelations 数宿主上匹配 `(type, target)` 的记录条数（reason 不参与匹配）。
+// id 是宿主端点（k-/o-），用于按类型分流读取宿主的 relations[]。
+func (v *validator) countRelations(id, rel, relType, target string) int {
+	host, ok := v.endpointFacts(id, rel)
 	if !ok {
 		return 0
 	}
 	n := 0
-	for _, exist := range card.Relations {
+	for _, exist := range host.Relations {
 		if string(exist.Type) == relType && string(exist.Target) == target {
 			n++
 		}
@@ -627,20 +645,20 @@ func (v *validator) countRelations(rel, relType, target string) int {
 // relationEndW3 判 W3（**M3 起真正判定**）：论证关系某端不是 active 或已被逻辑删除。
 // 仍是 warning：关系照写 / 照删 + 进报告，不拦截（S5 起才 error）。
 func (v *validator) relationEndW3(op *Op, field, id, rel string) {
-	card, ok := v.cardFacts(rel)
+	host, ok := v.endpointFacts(id, rel)
 	if !ok {
 		return
 	}
-	if card.DeletedAt != nil {
+	if host.Tombstone != nil {
 		d := warnAt(W3, op.Index, opPath(op.Index, field),
 			"论证关系的一端 %s 已被逻辑删除（deleted_at=%s）：照常处理 + 进报告，不拦截（S5 起 error）",
-			id, card.DeletedAt)
+			id, host.Tombstone)
 		d.Target = id
 		v.add(d)
 		return
 	}
-	if card.Status != model.StatusActive {
-		d := RelationStatusWarning(op.Index, field, id, card.Status)
+	if host.Status != model.StatusActive {
+		d := RelationStatusWarning(op.Index, field, id, host.Status)
 		v.add(d)
 	}
 }

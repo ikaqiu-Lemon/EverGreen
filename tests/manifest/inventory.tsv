@@ -108,6 +108,7 @@ tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.intern
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	11184
 tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	32174
 tests/_staged/internal/plan/precheck_test.go	unit	go	proposal	unit.internal.plan	3	3614
+tests/_staged/internal/plan/relation_ko_chain_test.go	unit	go	proposal	unit.internal.plan	3	9756
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	unit	go	proposal	unit.internal.plan	1	4129
 tests/_staged/internal/plan/set_stale_test.go	unit	go	proposal	unit.internal.plan	8	11798
 tests/_staged/internal/plan/state_write_m3_test.go	unit	go	proposal	unit.internal.plan	5	8274
@@ -166,7 +167,8 @@ tests/_staged/internal/store/note_blocks_test.go	unit	go	storage-markdown	unit.i
 tests/_staged/internal/store/opinion_layout_test.go	unit	go	storage-markdown	unit.internal.store	3	3071
 tests/_staged/internal/store/proposal_test.go	unit	go	storage-markdown	unit.internal.store	2	4976
 tests/_staged/internal/store/receipt_test.go	unit	go	storage-markdown	unit.internal.store	1	2691
-tests/_staged/internal/store/relations_test.go	unit	go	storage-markdown	unit.internal.store	15	16721
+tests/_staged/internal/store/relations_ko_test.go	unit	go	storage-markdown	unit.internal.store	7	13349
+tests/_staged/internal/store/relations_test.go	unit	go	storage-markdown	unit.internal.store	15	16693
 tests/_staged/internal/store/remove_relation_test.go	unit	go	storage-markdown	unit.internal.store	1	6401
 tests/_staged/internal/store/section_write_test.go	unit	go	storage-markdown	unit.internal.store	3	7767
 tests/_staged/internal/store/source_test.go	unit	go	storage-markdown	unit.internal.store	4	4288
