@@ -4,7 +4,8 @@ package cli
 // （同合同 §4；T-…-024，实现在 rel_add.go）+ `rel remove` 写路径（M3 接管 M2 占位，
 // 实现在 rel_remove.go；T-…-044）。
 //
-// 正向读本卡 frontmatter 的 `relations[]`，反向靠 **Markdown 全库扫描**反查「谁指向了我」，
+// 焦点端点跨类型（k- 知识卡 / o- 观点）：正向读**焦点端点**自身 frontmatter 的 `relations[]`，
+// 反向靠 **Markdown 全库扫描**反查「谁指向了我」（来源既可能是卡也可能是观点），
 // 悬空引用如实报 Q2；`opposing` 单向存储，读路径不补对称条目。
 //
 // **M1 期口径的变更说明（同 commit 生效，不留自相矛盾的禁令）**：M1 的文件头曾写死
@@ -41,12 +42,12 @@ func relCommand() *Command {
 		Summary: "论证关系：读 relations[] 与反向视图 / add 写入（verb=relate）",
 		Owner:   "T-evergreen.s1_main_flow-158614-024",
 		Subs:    relSubcommands,
-		Usage: `eg rel <k-id> [--to <id>] [--include-deprecated] [--replaced-by] [--limit <n>] [--offset <n>] [--json]   # 读：正向 relations[] + 反向全库扫描
+		Usage: `eg rel <endpoint-id> [--to <id>] [--include-deprecated] [--replaced-by] [--limit <n>] [--offset <n>] [--json]   # 读：正向 relations[] + 反向全库扫描
 eg rel add <from> <type> <to> --reason <text> [--domain <d>] [--strict] [--json]   # 写（已实现，verb = relate）
 eg rel remove <from> <type> <to> --reason <text> [--strict] [--json]   # 写（已实现，verb = relate）
 
 参数（M2 查询合同 §3.1 读 / §4.1 写）：
-  <k-id>            读路径：起点卡 ID；卡不存在 → 退 1
+  <endpoint-id>     读路径：焦点端点 ID（知识卡 k- / 观点 o-）；端点不存在 → 退 1
   --to <id>         否；只保留对端 == 该 ID 的条目（正反向同时过滤）；ID 不存在 → 结果为空 + 一条 Q2
   --include-deprecated  否；默认隐藏对端 deprecated 的关系条目，加此 flag 才展示（仍带 [失效] 标记，
                     见 owner 裁决 A-38/A-39，归 M4 规划）；只放开 deprecated 维度，不影响已删除维度；与 --to 正交
@@ -56,15 +57,16 @@ eg rel remove <from> <type> <to> --reason <text> [--strict] [--json]   # 写（�
   --limit <n>       否，默认 50；**本次最多返回的关系条数**（0 = 不限量）
   --offset <n>      否，默认 0；跳过的关系条数；超出总数返回空列表且仍退 0；
                     两者为负数 / 非整数 → 参数错，退 1、零写入（M5 合同 §8.2 经 I-…-008 改判，原写 4）
-  <from> <to>       写路径：知识卡 ID；不可解析 / 不存在 → E2，target 写成 s-… → E3（退 2，零写入）
+  <from> <to>       写路径：端点 ID（知识卡 k- / 观点 o-，from/target 四组合 k→k/k→o/o→k/o→o）；
+                    不可解析 / 不存在 → E2，target 写成 s-… 等非 k/o 端点 → E3（退 2，零写入）
   <type>            derives | supports | limits | opposing（冻结合同 F4）；集合外退 1
   --reason <text>   rel add / rel remove 必填（缺该 flag 退 1；给了空串或等于关系名本身 → W2 照写不拦截）
-  --domain <d>      否；只用于 plan 的 domain；未给则取 from 卡所在领域，再回落 default_domain
+  --domain <d>      否；只用于 plan 的 domain；未给则取 from 端点所在领域，再回落 default_domain
   --strict          否；仅 rel add / rel remove 写路径生效；M6 写前强校验升级面命中即锁内零写入中止退 5（携 E15）
 
 读（§3.1）data 键序固定：id / relations_out / relations_in / scanned_files / skipped_files；
 条目键恰 from / type / target / reason / path 五项，正反向同构。
-正向 = 本卡 frontmatter relations[]（from 恒为本卡）；反向 = 全库 Markdown 扫描（不走索引）。
+正向 = 焦点端点 frontmatter relations[]（from 恒为焦点端点）；反向 = 全库 Markdown 扫描（含卡与观点）。
 排序（§3.3 + M5 §7.4 四级全序）：type 固定次序 opposing → limits → supports → derives →
 对端 ID 升序 → path 升序 → 条目输出全等标识（from|type|target|reason）升序；两个后端可复算。
 分页（M5 合同 §8.2，S4 起）：--limit 是**一个全局上限**——正反向两个列表先合并成一条确定序列
@@ -117,7 +119,7 @@ Agent 自动路径（无用户显式命令）删关系被矩阵 #11 拦下：退
 			}
 			if len(inv.Args) != 1 {
 				return &UsageError{Msg: fmt.Sprintf(
-					"eg rel 需要恰一个位置参数 <k-id>，实际 %d 个：%v", len(inv.Args), inv.Args)}
+					"eg rel 需要恰一个位置参数 <endpoint-id>（知识卡 k- / 观点 o-），实际 %d 个：%v", len(inv.Args), inv.Args)}
 			}
 			return nil
 		},
@@ -135,7 +137,7 @@ func (r *Root) runRel(inv *Invocation) (*Result, error) {
 	return r.runRelQuery(inv)
 }
 
-// runRelQuery 实现 eg rel <k-id> 的读路径（只读，零副作用）。
+// runRelQuery 实现 eg rel <endpoint-id> 的读路径（只读，零副作用）。
 func (r *Root) runRelQuery(inv *Invocation) (*Result, error) {
 	page, err := pageSpecFrom(inv)
 	if err != nil {
@@ -201,7 +203,7 @@ func relSummaryLines(res *query.RelResult) []string {
 		lines = append(lines, "反向关系 relations_in[]：无")
 	}
 	for _, e := range d.RelationsIn {
-		lines = append(lines, fmt.Sprintf("反向关系：%s%s --%s--> %s  理由：%s（来源卡：%s）",
+		lines = append(lines, fmt.Sprintf("反向关系：%s%s --%s--> %s  理由：%s（来源：%s）",
 			e.From, peerDeprecatedMark(deprecated, e.From), e.Type, e.Target, e.Reason, e.Path))
 	}
 	return lines

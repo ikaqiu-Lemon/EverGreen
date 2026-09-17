@@ -132,6 +132,7 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 对卡 / 观点逐字同构）。
 	var rawOut []RelationEdge
 	var focusPath string
+	var focusOpinion *OpinionEntry
 	found := false
 	for i := range scan.Cards {
 		if scan.Cards[i].ID == string(req.ID) {
@@ -147,6 +148,7 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 				rawOut = relationEdgesFrom(scan.Opinions[i].ID, scan.Opinions[i].Path,
 					scan.Opinions[i].Relations)
 				focusPath = scan.Opinions[i].Path
+				focusOpinion = &scan.Opinions[i]
 				found = true
 				break
 			}
@@ -189,16 +191,28 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	}, pol)
 	hidden := hiddenOut + hiddenIn
 	diags := scan.Diagnostics
+	// 焦点是观点时补齐**观点持有方**的悬空引用（Q2）：卡持有方的悬空由 scan.go
+	// danglingDiagnostics 在全库扫描面统一判定并已进 scan.Diagnostics，但观点自身
+	// relations[] 指向库中不存在对端的悬空**不在**那一步（见 danglingDiagnostics 注释：
+	// 观点持有方交由各消费者按 opinion show 同口径补齐）。若不在此补齐，`eg rel <o-id>`
+	// 会对焦点观点的悬空边漏报 Q2。复用 opinion_show 的 opinionDanglingRefs / knownIDSet
+	// 逐字同口径；合并时先 dropQ3 再 finalize，按合并后结果重算恰一条 Q3，绝不双计。
+	if focusOpinion != nil {
+		if _, danglingQ2 := opinionDanglingRefs(*focusOpinion, knownIDSet(scan)); len(danglingQ2) > 0 {
+			diags = finalizeDiagnostics(append(dropQ3(diags), danglingQ2...))
+		}
+	}
 	if req.To != "" && !hasEndpoint(universe, req.To) {
 		// 合同 §3.1：`--to` 指向不存在的 ID → **结果为空** + 一条 Q2（如实说明，不静默返回空）。
 		// 置空是逐字判据：即使焦点有一条悬空 relations[] 恰好指向这个不存在的 ID，
 		// 也不能因此让 relations_out[] 非空——「对端不存在」的口径优于「条目照常输出」。
 		// 存在性判定走**统一端点宇宙**（Knowledge ∪ Opinion）：`--to o-id` 指向真实观点即命中，
 		// 指向不存在的 k/o 端点才置空。对端不存在者不在库、不可能 deprecated，故隐藏计数在此
-		// 归零（不产 Q4，只产该 Q2）。
+		// 归零（不产 Q4，只产该 Q2）。焦点观点自身的悬空 Q2 已并入 diags，此处 dropQ3 后再追加
+		// --to 的 Q2 并 finalize，Q3 按合并后结果重算恰一条。
 		out, in = []RelationEdge{}, []RelationEdge{}
 		hidden = 0
-		diags = finalizeDiagnostics(append(append([]Diagnostic{}, scan.Diagnostics...),
+		diags = finalizeDiagnostics(append(dropQ3(diags),
 			newQ2(focusPath, "--to 指定的对端 %s 在库中不存在：正反向结果均为空", req.To)))
 	}
 	// 分页施加在可见性过滤**之后**（默认视图看到几条，就从这几条里分页），并且是

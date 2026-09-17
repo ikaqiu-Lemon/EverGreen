@@ -59,6 +59,7 @@ tests/_staged/internal/cli/reconcile_transaction_test.go	internal/cli/reconcile_
 tests/_staged/internal/cli/recover_barrier_exit5_test.go	internal/cli/recover_barrier_exit5_test.go	evergreen	unit	go
 tests/_staged/internal/cli/recover_hook_test.go	internal/cli/recover_hook_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_add_test.go	internal/cli/rel_add_test.go	evergreen	unit	go
+tests/_staged/internal/cli/rel_ko_test.go	internal/cli/rel_ko_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_remove_test.go	internal/cli/rel_remove_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_test.go	internal/cli/rel_test.go	evergreen	unit	go
 tests/_staged/internal/cli/report_test.go	internal/cli/report_test.go	evergreen	unit	go
