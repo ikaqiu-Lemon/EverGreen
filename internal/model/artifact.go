@@ -68,10 +68,15 @@ type Opinion struct {
 // 靠猜；两个子字段一起写、一起读，缺一即视为未给（整体 nil）。
 // 为什么是指针：`replaced_by` 缺失与「给了空值」必须可区分——nil 表示这张卡没有
 // 替代指针，本层因此不会把空 mapping 写进 frontmatter（不留墓碑）。
-// **单向存储**：指针只落在失效卡自己的文件里，被指向的目标卡永不被反写。
+// **单向存储**：指针只落在失效卡自己的文件里，被指向的目标永不被反写。
+//
+// Target 是**跨类型**端点（RelationEndpoint，前缀 k- / o-）：迁移会把一条判断从知识卡
+// 改成观点（Schema v2 §9.2 / T-009），此时原 k- 卡逻辑删除并用 replaced_by 指向新
+// o- 观点，因此 target 不再收窄成知识卡 ID。字段仍恰两键（target / reason），
+// YAML/JSON 落盘仍是一个 `target: <id>` 标量，键形态与旧版逐字一致（只泛化类型，不动 schema）。
 type ReplacedBy struct {
-	Target string `yaml:"target" json:"target"`
-	Reason string `yaml:"reason" json:"reason"`
+	Target RelationEndpoint `yaml:"target" json:"target"`
+	Reason string           `yaml:"reason" json:"reason"`
 }
 
 // SourceRef 是知识卡 sources[] 的一条四要素材料关系（EG-KNW-04）。

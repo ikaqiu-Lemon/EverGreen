@@ -179,7 +179,7 @@ func TestSetReplacedByLeavesTargetCardUntouched(t *testing.T) {
 	// 时刻传零值：本用例锁的是「只在失效卡上写一个 replaced_by 键、目标卡零字节改动」，
 	// 时间戳刷新另有专门用例。
 	res, err := s.SetReplacedBy("cards/k-20260901-state.md", f.Hash,
-		model.CardID("k-20260902-target"), "口径已更新，见新卡", model.Stamp{})
+		model.RelationEndpoint("k-20260902-target"), "口径已更新，见新卡", model.Stamp{})
 	if err != nil {
 		t.Fatalf("SetReplacedBy: %v", err)
 	}

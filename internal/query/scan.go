@@ -315,7 +315,7 @@ func replacedByTargetOf(rb *model.ReplacedBy) string {
 	if rb == nil {
 		return ""
 	}
-	return rb.Target
+	return string(rb.Target)
 }
 
 // scanOpinionDir 扫描单个领域的 opinions/（schema v2 的观点分区）。

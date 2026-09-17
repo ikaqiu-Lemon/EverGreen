@@ -117,7 +117,7 @@ func (e *executor) setReplacedByWrite(a Action) {
 		Op:           store.StateWriteReplacedBy,
 		Rel:          a.Path,
 		ExpectedHash: e.expect(a),
-		Target:       model.CardID(rb.Target),
+		Target:       model.RelationEndpoint(rb.Target),
 		Reason:       rb.Reason,
 		// 写替代指针同样是实际写入 → 刷新 `updated_at`（矩阵第 8 行）。
 		Stamp: e.opt.Stamp,

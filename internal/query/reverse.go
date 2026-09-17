@@ -77,7 +77,7 @@ func replacedByOf(root string, c CardEntry) (target, reason string) {
 	if card.ReplacedBy == nil {
 		return "", ""
 	}
-	return card.ReplacedBy.Target, card.ReplacedBy.Reason
+	return string(card.ReplacedBy.Target), card.ReplacedBy.Reason
 }
 
 // ReplacedByForward 给出「**谁取代了 id**」：id 自己的替代指针，至多一条边。

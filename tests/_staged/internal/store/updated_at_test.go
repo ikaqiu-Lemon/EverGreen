@@ -120,7 +120,7 @@ func TestSetReplacedByRefreshesUpdatedAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if _, err := s.SetReplacedBy(rel, f.Hash, model.CardID("k-20260902-target"),
+	if _, err := s.SetReplacedBy(rel, f.Hash, model.RelationEndpoint("k-20260902-target"),
 		"口径已更新，见新卡", refreshStamp(t)); err != nil {
 		t.Fatalf("SetReplacedBy: %v", err)
 	}

@@ -458,3 +458,26 @@ func TestRelationTargetKeyShapeUnchanged(t *testing.T) {
 		t.Fatalf("Relation 字段数应恰 3（type / target / reason），实得 %d", n)
 	}
 }
+
+// TestReplacedByTargetIsEndpointKeyShapeUnchanged：ReplacedBy 的 target 收紧成
+// RelationEndpoint（k- / o- 封闭端点，迁移后旧 k- 卡的 replaced_by 可指向新 o- 观点）后，
+// YAML / JSON 键形态与旧版逐字一致（仍是一个 `target: <id>` 标量），字段仍恰两键。
+func TestReplacedByTargetIsEndpointKeyShapeUnchanged(t *testing.T) {
+	var rb ReplacedBy
+	if err := yaml.Unmarshal([]byte("target: o-20260901-scaling\nreason: 口径已更新，见新观点\n"), &rb); err != nil {
+		t.Fatalf("ReplacedBy 反序列化失败：%v", err)
+	}
+	if rb.Target != RelationEndpoint("o-20260901-scaling") {
+		t.Fatalf("target 应解析成 RelationEndpoint(o-20260901-scaling)，实得 %q", rb.Target)
+	}
+	b, err := json.Marshal(rb)
+	if err != nil {
+		t.Fatalf("ReplacedBy JSON 序列化失败：%v", err)
+	}
+	if got := string(b); !strings.Contains(got, `"target":"o-20260901-scaling"`) {
+		t.Fatalf("JSON 键形态应含 \"target\":\"o-20260901-scaling\"，实得 %s", got)
+	}
+	if n := reflect.TypeOf(ReplacedBy{}).NumField(); n != 2 {
+		t.Fatalf("ReplacedBy 字段数应恰 2（target / reason），实得 %d", n)
+	}
+}

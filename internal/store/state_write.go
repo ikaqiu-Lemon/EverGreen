@@ -106,9 +106,11 @@ func (s *Store) SetStatus(rel string, expectedHash string, status model.Status,
 
 // SetReplacedBy 在**失效卡**上写替代指针 `replaced_by: {target: <id>, reason: "<text>"}`。
 //
-// 单向存储：只动 rel 这一份文件；target 指向的那张卡不打开、不读、不写。
-// target 必须是知识卡 ID（k- 前缀），reason 必带——缺一视为未给，拒写而不写半个指针。
-func (s *Store) SetReplacedBy(rel string, expectedHash string, target model.CardID,
+// 单向存储：只动 rel 这一份文件；target 指向的那份产物不打开、不读、不写。
+// target 是跨类型端点（k- / o- 前缀）：迁移会让原 k- 卡的 replaced_by 指向新 o- 观点
+// （Schema v2 §9.2 / T-009），因此这里走 relationEndpointOnly 守卫，接受 k/o、拒 s/n/r/p/
+// 畸形；reason 必带——缺一视为未给，拒写而不写半个指针。
+func (s *Store) SetReplacedBy(rel string, expectedHash string, target model.RelationEndpoint,
 	reason string, stamp model.Stamp) (Result, error) {
 	res := Result{Path: rel}
 	if rel == "" {
@@ -118,14 +120,14 @@ func (s *Store) SetReplacedBy(rel string, expectedHash string, target model.Card
 		return res, fmt.Errorf("%w：得到 target=%q reason=%q", ErrReplacedByIncomplete,
 			target, reason)
 	}
-	if err := cardIDOnly(fmKeyReplacedBy+".target", target); err != nil {
+	if err := relationEndpointOnly(fmKeyReplacedBy+".target", target); err != nil {
 		return res, err
 	}
 	// 流式 mapping 单行落盘：一个键一行，改写区间最小，且与合同给的 YAML 形态逐字一致。
 	value := make([]byte, 0, len(target)+len(reason)+24)
 	value = append(value, '{')
 	value = append(value, "target: "...)
-	value = append(value, target...)
+	value = append(value, string(target)...)
 	value = append(value, ", reason: "...)
 	value = append(value, yamlDoubleQuoted(reason)...)
 	value = append(value, '}')
@@ -336,7 +338,7 @@ type StateWriteSpec struct {
 	Rel          string
 	ExpectedHash string
 	Status       model.Status
-	Target       model.CardID
+	Target       model.RelationEndpoint
 	Reason       string
 	At           model.Stamp
 	// StaleReason 只对 stale 形态有意义（封闭三值）。**刻意不复用 Reason 那一格**：
@@ -369,7 +371,7 @@ func (s *Store) ApplyStateWrite(spec StateWriteSpec) (Result, error) {
 // 为什么保留这层：写口唯一的 grep 反证要求 setter 的调用点全部落在 internal/store/ 内，
 // 这层就是那个唯一的包内调用点（护栏见 store_test.go 的写口唯一测试）。
 func (s *Store) stateWrite(op string, rel string, expectedHash string,
-	status model.Status, target model.CardID, reason string, at model.Stamp,
+	status model.Status, target model.RelationEndpoint, reason string, at model.Stamp,
 	staleReason model.StaleReason, clear bool, updatedAt model.Stamp) (Result, error) {
 	switch op {
 	case StateWriteStatus:
