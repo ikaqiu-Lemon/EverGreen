@@ -20,13 +20,15 @@ import (
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
-// koChainFiles 是一份含知识卡与观点的库：两张卡 + 一条观点（frontmatter 合法、无 relations 键）。
+// koChainFiles 是一份含知识卡与观点的库：两张卡 + 两条观点（frontmatter 合法、无 relations 键），
+// 两条观点用于覆盖 o→o 这一跨类型组合（from 与 target 均为观点）。
 func koChainFiles(t *testing.T) map[string]string {
 	t.Helper()
 	return map[string]string{
 		"domains/ai-infra/knowledge/k-20260901-attention.md": card("k-20260901-attention"),
 		"domains/ai-infra/knowledge/k-20260815-rnn.md":       card("k-20260815-rnn"),
 		store.OpinionRel("ai-infra", "o-20260901-view"):      opinionFile("o-20260901-view", "长序列不经济", model.ValidationPending),
+		store.OpinionRel("ai-infra", "o-20260815-alt"):       opinionFile("o-20260815-alt", "短序列足够", model.ValidationPending),
 		"domains/ai-infra/notes/n-20260901-attention.md":     note("n-20260901-attention"),
 		"sources/s-20260901-attention.md":                    source("s-20260901-attention"),
 	}
@@ -74,6 +76,9 @@ func TestAddRelationChainAcrossKinds(t *testing.T) {
 		{"o_to_k", "o-20260901-view", "k-20260901-attention",
 			store.OpinionRel("ai-infra", "o-20260901-view"),
 			"domains/ai-infra/knowledge/k-20260901-attention.md"},
+		{"o_to_o", "o-20260901-view", "o-20260815-alt",
+			store.OpinionRel("ai-infra", "o-20260901-view"),
+			store.OpinionRel("ai-infra", "o-20260815-alt")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -121,54 +126,93 @@ func TestAddRelationChainAcrossKinds(t *testing.T) {
 	}
 }
 
-// TestRemoveRelationChainOnOpinionHost：remove_relation 的 from 端为观点也能走通全链，
-// 物理移除 from 宿主上的匹配条目，对端零改动。
-func TestRemoveRelationChainOnOpinionHost(t *testing.T) {
-	files := koChainFiles(t)
-	fromRel := store.OpinionRel("ai-infra", "o-20260901-view")
-	targetRel := "domains/ai-infra/knowledge/k-20260901-attention.md"
+// TestRemoveRelationChainAcrossKinds：remove_relation 的 from/target 覆盖四组合
+// （k→k / k→o / o→k / o→o）都能走通全链，物理移除 from 宿主上的匹配条目，对端零改动。
+func TestRemoveRelationChainAcrossKinds(t *testing.T) {
+	cases := []struct {
+		name, from, target, fromRel, targetRel string
+	}{
+		{"k_to_k", "k-20260901-attention", "k-20260815-rnn",
+			"domains/ai-infra/knowledge/k-20260901-attention.md",
+			"domains/ai-infra/knowledge/k-20260815-rnn.md"},
+		{"k_to_o", "k-20260901-attention", "o-20260815-alt",
+			"domains/ai-infra/knowledge/k-20260901-attention.md",
+			store.OpinionRel("ai-infra", "o-20260815-alt")},
+		{"o_to_k", "o-20260901-view", "k-20260901-attention",
+			store.OpinionRel("ai-infra", "o-20260901-view"),
+			"domains/ai-infra/knowledge/k-20260901-attention.md"},
+		{"o_to_o", "o-20260901-view", "o-20260815-alt",
+			store.OpinionRel("ai-infra", "o-20260901-view"),
+			store.OpinionRel("ai-infra", "o-20260815-alt")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := koChainFiles(t)
+			// from 宿主可能自带存量关系（k- 夹具带一条 limits）：一切断言相对基线计数，
+			// 不写死 1/0，才能同时覆盖「宿主本就有关系」与「宿主空关系」两种起点。
+			base, err := store.RelationHostOf(model.RelationEndpoint(tc.from), []byte(files[tc.fromRel]))
+			if err != nil {
+				t.Fatalf("%s：解析 from 宿主基线：%v", tc.name, err)
+			}
+			baseCount := len(base.Relations)
 
-	// 第一步：在观点宿主上建一条 supports（复用 add 链路，落到实盘）。
-	addRes := run(t, vault(t, files), relatePlan(t, files,
-		`{"op":"add_relation","from":"o-20260901-view","type":"supports",`+
-			`"target":"k-20260901-attention","reason":"观点支持该卡"}`))
-	if addRes.Failed() {
-		t.Fatalf("前置 add_relation 不应有 error：%v", codes(addRes.Errors))
-	}
-	dir, _ := execOn(t, files, addRes)
-	// 把落盘后的观点宿主字节回填进 files，作为 remove 计划的新基线。
-	files[fromRel] = readVaultFile(t, dir, fromRel)
-	if host, _ := store.RelationHostOf("o-20260901-view", []byte(files[fromRel])); len(host.Relations) != 1 {
-		t.Fatalf("前置条件：观点宿主应有 1 条关系，实得 %+v", host.Relations)
-	}
-	targetBefore := readVaultFile(t, dir, targetRel)
+			// 第一步：在 from 宿主上建一条 supports（复用 add 链路，落到实盘）。
+			addRes := run(t, vault(t, files), relatePlan(t, files,
+				fmt.Sprintf(`{"op":"add_relation","from":%q,"type":"supports","target":%q,`+
+					`"reason":"待删的 supports"}`, tc.from, tc.target)))
+			if addRes.Failed() {
+				t.Fatalf("%s：前置 add_relation 不应有 error：%v", tc.name, codes(addRes.Errors))
+			}
+			dir, _ := execOn(t, files, addRes)
+			// 把落盘后的 from 宿主字节回填进 files，作为 remove 计划的新基线（对端未被 add 触碰）。
+			files[tc.fromRel] = readVaultFile(t, dir, tc.fromRel)
+			addedHost, err := store.RelationHostOf(model.RelationEndpoint(tc.from), []byte(files[tc.fromRel]))
+			if err != nil {
+				t.Fatalf("%s：解析 add 后的 from 宿主：%v", tc.name, err)
+			}
+			if len(addedHost.Relations) != baseCount+1 ||
+				!hasRelation(addedHost.Relations, model.RelationSupports, model.RelationEndpoint(tc.target)) {
+				t.Fatalf("%s：前置条件，from 宿主应在基线 %d 上恰 +1 条指向 %s 的 supports，实得 %+v",
+					tc.name, baseCount, tc.target, addedHost.Relations)
+			}
+			targetBefore := files[tc.targetRel]
 
-	// 第二步：点名删除它（remove_relation 属 P-U，需命令行佐证 + initiator=user）。
-	rmEnv := vault(t, files)
-	rmEnv.UserRequest = true
-	rmRes := run(t, rmEnv, relatePlan(t, files,
-		`{"op":"remove_relation","from":"o-20260901-view","type":"supports",`+
-			`"target":"k-20260901-attention","reason":"不再支持","initiator":"user"}`))
-	if rmRes.Failed() {
-		t.Fatalf("remove_relation 不应有 error：%v", codes(rmRes.Errors))
-	}
-	if len(rmRes.Actions) != 1 {
-		t.Fatalf("单关系删除应恰一条 action，实得 %d", len(rmRes.Actions))
-	}
-	dir2, out2 := execOnDir(t, files, rmRes)
-	if len(out2.Written) != 1 || out2.Written[0] != fromRel {
-		t.Fatalf("删除只应写 from 宿主 %s，实得 %v", fromRel, out2.Written)
-	}
-	if len(out2.KnowledgeRemoved) != 1 {
-		t.Fatalf("应恰记录一条被移除关系，实得 %+v", out2.KnowledgeRemoved)
-	}
-	if host, _ := store.RelationHostOf("o-20260901-view",
-		[]byte(readVaultFile(t, dir2, fromRel))); len(host.Relations) != 0 {
-		t.Fatalf("观点宿主关系应被清空，实得 %+v", host.Relations)
-	}
-	// 对端仍逐字不变。
-	if got := readVaultFile(t, dir2, targetRel); got != targetBefore {
-		t.Fatal("删除只动 from 宿主，对端不得被改动")
+			// 第二步：点名删除它（remove_relation 属 P-U，需命令行佐证 + initiator=user）。
+			rmEnv := vault(t, files)
+			rmEnv.UserRequest = true
+			rmRes := run(t, rmEnv, relatePlan(t, files,
+				fmt.Sprintf(`{"op":"remove_relation","from":%q,"type":"supports",`+
+					`"target":%q,"reason":"不再支持","initiator":"user"}`, tc.from, tc.target)))
+			if rmRes.Failed() {
+				t.Fatalf("%s：remove_relation 不应有 error：%v", tc.name, codes(rmRes.Errors))
+			}
+			if len(rmRes.Actions) != 1 {
+				t.Fatalf("%s：单关系删除应恰一条 action，实得 %d", tc.name, len(rmRes.Actions))
+			}
+			dir2, out2 := execOnDir(t, files, rmRes)
+			if len(out2.Written) != 1 || out2.Written[0] != tc.fromRel {
+				t.Fatalf("%s：删除只应写 from 宿主 %s，实得 %v", tc.name, tc.fromRel, out2.Written)
+			}
+			if len(out2.KnowledgeRemoved) != 1 {
+				t.Fatalf("%s：应恰记录一条被移除关系，实得 %+v", tc.name, out2.KnowledgeRemoved)
+			}
+			// 只移除本轮新增的那条 supports：宿主回落到基线计数，且该 supports 已消失，
+			// 存量关系（若有）逐条保留。
+			finalHost, err := store.RelationHostOf(model.RelationEndpoint(tc.from),
+				[]byte(readVaultFile(t, dir2, tc.fromRel)))
+			if err != nil {
+				t.Fatalf("%s：解析 remove 后的 from 宿主：%v", tc.name, err)
+			}
+			if len(finalHost.Relations) != baseCount ||
+				hasRelation(finalHost.Relations, model.RelationSupports, model.RelationEndpoint(tc.target)) {
+				t.Fatalf("%s：from 宿主应回落到基线 %d 且移除指向 %s 的 supports，实得 %+v",
+					tc.name, baseCount, tc.target, finalHost.Relations)
+			}
+			// 对端仍逐字不变。
+			if got := readVaultFile(t, dir2, tc.targetRel); got != targetBefore {
+				t.Fatalf("%s：删除只动 from 宿主，对端 %s 不得被改动", tc.name, tc.targetRel)
+			}
+		})
 	}
 }
 

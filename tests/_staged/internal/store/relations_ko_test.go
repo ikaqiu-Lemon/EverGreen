@@ -14,6 +14,7 @@ package store
 
 import (
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -385,5 +386,95 @@ func TestRelationSelfLoopOnOpinionHostRejected(t *testing.T) {
 	}
 	if !bytes.Equal(mustBytes(t, abs), before) {
 		t.Fatal("自环拒写必须零字节变化")
+	}
+}
+
+// ---------- from 端点守卫：非法 / 其它 kind 的 from 也必须被拒（E3），零副作用 ----------
+
+// badFromEndpoints 是一组非 k/o 的 from 端点：原文 s- 明确按 E3「ID 类型写混」拒，
+// 笔记 n- / 综述 r- / 提案 p- 非论证性产物一律拒，畸形 / 空 ID 也拒。
+// 论证关系永远发生在两条论证性产物（知识卡 / 观点）之间——from 与 target 同口径。
+var badFromEndpoints = []struct{ name, from string }{
+	{"source", "s-20260901-x"},
+	{"note", "n-20260901-x"},
+	{"review", "r-20260901-x"},
+	{"proposal", "p-20260901-x"},
+	{"malformed", "x-20260901-x"},
+	{"empty", ""},
+}
+
+// TestApplyRelationRejectsNonKOFrom：add_relation 的 from 端非 k/o 时，
+// store 必须在任何读盘 / 写盘之前经 relationEndpointOnly 拒绝（errors.Is ErrRelationTargetType），
+// 且宿主候选文件字节逐字不变（零副作用）。
+func TestApplyRelationRejectsNonKOFrom(t *testing.T) {
+	for _, tc := range badFromEndpoints {
+		t.Run(tc.name, func(t *testing.T) {
+			s, root := koVault(t)
+			// Rel 指向一份**真实存在**的宿主文件，用来证明「即便宿主可读，非法 from
+			// 也在读写之前被拒、该文件一个字节都不动」。
+			hostAbs := filepath.Join(root, hostRel("k-20260901-koa"))
+			hostBefore := mustBytes(t, hostAbs)
+			targetAbs := filepath.Join(root, hostRel("k-20260901-kob"))
+			targetBefore := mustBytes(t, targetAbs)
+
+			res, err := s.ApplyRelation(RelationSpec{
+				Rel:  hostRel("k-20260901-koa"),
+				From: model.RelationEndpoint(tc.from),
+				Relation: model.Relation{Type: model.RelationSupports,
+					Target: "k-20260901-kob", Reason: "非法 from 端点"},
+				Stamp: refreshStamp(t),
+			})
+			if err == nil || res.Written {
+				t.Fatalf("%s：非 k/o 的 from 必须拒写：%v / %+v", tc.name, err, res)
+			}
+			if !errors.Is(err, ErrRelationTargetType) {
+				t.Fatalf("%s：from 端点错误必须裹 ErrRelationTargetType，实得 %v", tc.name, err)
+			}
+			if !bytes.Equal(mustBytes(t, hostAbs), hostBefore) {
+				t.Fatalf("%s：拒写必须零副作用——宿主候选文件字节必须不变", tc.name)
+			}
+			if !bytes.Equal(mustBytes(t, targetAbs), targetBefore) {
+				t.Fatalf("%s：拒写必须零副作用——对端文件字节必须不变", tc.name)
+			}
+		})
+	}
+}
+
+// TestApplyRemoveRelationRejectsNonKOFrom：remove_relation 的 from 端非 k/o 时，
+// store 必须在读盘 / 移除之前经 relationEndpointOnly 拒绝（errors.Is ErrRelationTargetType），
+// 且宿主候选文件字节逐字不变（零副作用）。
+func TestApplyRemoveRelationRejectsNonKOFrom(t *testing.T) {
+	for _, tc := range badFromEndpoints {
+		t.Run(tc.name, func(t *testing.T) {
+			s, root := koVault(t)
+			// 先在合法 k- 宿主上落一条真实关系，作为「盘上确有可删记录」的基线；
+			// 随后用非法 from 去删——必须被 from 守卫在读盘/移除前拦下，基线一字不动。
+			if r, err := s.ApplyRelation(RelationSpec{
+				Rel:  hostRel("k-20260901-koa"),
+				From: "k-20260901-koa",
+				Relation: model.Relation{Type: model.RelationSupports,
+					Target: "k-20260901-kob", Reason: "基线关系"},
+			}); err != nil || !r.Written {
+				t.Fatalf("%s：前置 add_relation 应成功：%v / %+v", tc.name, err, r)
+			}
+			hostAbs := filepath.Join(root, hostRel("k-20260901-koa"))
+			hostBefore := mustBytes(t, hostAbs)
+
+			out, err := s.ApplyRemoveRelation(RemoveRelationSpec{
+				Rel:    hostRel("k-20260901-koa"),
+				From:   model.RelationEndpoint(tc.from),
+				Type:   model.RelationSupports,
+				Target: "k-20260901-kob",
+			})
+			if err == nil || out.Written || out.Removed != 0 {
+				t.Fatalf("%s：非 k/o 的 from 必须拒删：%v / %+v", tc.name, err, out)
+			}
+			if !errors.Is(err, ErrRelationTargetType) {
+				t.Fatalf("%s：from 端点错误必须裹 ErrRelationTargetType，实得 %v", tc.name, err)
+			}
+			if !bytes.Equal(mustBytes(t, hostAbs), hostBefore) {
+				t.Fatalf("%s：拒删必须零副作用——宿主文件字节必须不变", tc.name)
+			}
+		})
 	}
 }

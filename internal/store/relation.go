@@ -106,6 +106,11 @@ func (s *Store) ApplyMaterialRel(spec MaterialRelSpec) (Result, error) {
 func (s *Store) ApplyRelation(spec RelationSpec) (Result, error) {
 	res := Result{Path: spec.Rel}
 	rel := spec.Relation
+	// from 端也是论证关系端点：与 target 同口径，只接受 k- / o-（E3 硬拦，**先于**任何
+	// 读盘/写盘/解析——非法或其它 kind 的 from 一律零副作用拒绝）。
+	if err := relationEndpointOnly("relations[].from", spec.From); err != nil {
+		return res, err
+	}
 	if _, err := model.ParseRelationType(string(rel.Type)); err != nil {
 		return res, fmt.Errorf("论证关系取值封闭（冻结合同 F4，合法取值恰 %v）：%w",
 			model.ValidRelationTypes(), err)

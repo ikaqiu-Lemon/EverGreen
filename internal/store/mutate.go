@@ -74,6 +74,11 @@ func (s *Store) ApplyRemoveRelation(spec RemoveRelationSpec) (RemoveRelationResu
 	if spec.Rel == "" {
 		return out, ErrCardRelRequired
 	}
+	// from 端也是论证关系端点：只接受 k- / o-（E3 硬拦，**先于**读盘/移除——非法或其它
+	// kind 的 from 一律零副作用拒绝）。
+	if err := relationEndpointOnly("relations[].from", spec.From); err != nil {
+		return out, err
+	}
 	if _, err := model.ParseRelationType(string(spec.Type)); err != nil {
 		return out, fmt.Errorf("论证关系取值封闭（冻结合同 F4，合法取值恰 %v）：%w",
 			model.ValidRelationTypes(), err)
