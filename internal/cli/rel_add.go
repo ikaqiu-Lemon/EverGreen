@@ -121,7 +121,7 @@ func (r *Root) buildRelationPlan(inv *Invocation, from, relType, to, reason stri
 }
 
 // relAddDomain 决定 plan.domain（合同 §4.1）：
-// `--domain` 优先 → 其次 from 卡**所在目录**的领域（EG-DOM-01，避免误报 W1）
+// `--domain` 优先 → 其次 from 端点**所在目录**的领域（EG-DOM-01，避免误报 W1）
 // → 最后 `default_domain`；三者皆无 → 退 1（CLI 绝不自选领域，EG-DOM-03）。
 func relAddDomain(inv *Invocation, fromPath string) (string, error) {
 	if d := strings.TrimSpace(inv.String("domain")); d != "" {
@@ -139,7 +139,7 @@ func relAddDomain(inv *Invocation, fromPath string) (string, error) {
 		return d, nil
 	}
 	return "", &UsageError{Msg: fmt.Sprintf(
-		"无法确定落位领域：未给 --domain、from 卡不在任何领域目录下且 %s 未配置 default_domain"+
+		"无法确定落位领域：未给 --domain、from 端点不在任何领域目录下且 %s 未配置 default_domain"+
 			"（CLI 绝不自选领域）", ConfigFileName)}
 }
 
@@ -150,7 +150,7 @@ func relAddDomain(inv *Invocation, fromPath string) (string, error) {
 //   - `type` 出四值 → 退 1（§4.1「集合外一律拒绝，退 1」，§4.5 同款列举）；
 //   - **完全未给** `--reason` → 退 1（§4.5「缺 --reason」属参数非法）；
 //     给了但为空串或等于关系名本身 → 不拦截，由既有 W2 照写并进报告（§4.1）；
-//   - 卡 ID 不可解析 / 不存在 / `s-` 写进 target → 交给 plan 校验产出 E2 / E3（退 2）。
+//   - k/o 端点 ID 不可解析 / 不存在 / `s-` 等非 k/o 前缀写进 target → 交给 plan 校验产出 E2 / E3（退 2）。
 func validateRelAddArgs(inv *Invocation) error {
 	if err := rejectReadOnlyVisibilityFlag(inv); err != nil {
 		return err

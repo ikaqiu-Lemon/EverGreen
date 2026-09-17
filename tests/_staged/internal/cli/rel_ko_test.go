@@ -464,6 +464,70 @@ func TestRelRemoveKOFourCombinations(t *testing.T) {
 	}
 }
 
+// —— ⑧ 写：rel remove 与 add 对称的非法端点表 —— 权威字节/mtime 零变化、零 commit ——
+//
+// 与 TestRelAddKOInvalidEndpointsZeroAuthorityChange 对称：from/target 两侧的
+// s-/n-/r-/p-/畸形与「合法但不存在的 k/o」都在 plan 校验期被拦下（E2 / E3），
+// 退 2、零权威写、零 commit（既有 runtime lock 语义不算权威写：authoritySnapshot
+// 已 SkipDir .git/.index/state，锁文件不落权威快照）。
+//
+// 自环（from == target）单列：rel remove 与 rel add **不对称**且这是既有行为，本用例如实锁定。
+// add 的自环是纯静态 plan 级约束（internal/plan/validate_rel.go 的 E5，两端可解析但取值组合
+// 不成立），而 remove 没有这条静态守卫——自环关系根本无从写入，故删它必然「未命中」，
+// 落到既有 W10 幂等 no-op：退 0、零写入、零 commit。本 phase 不触碰 plan，故锁既有语义，
+// 不臆造一个 remove 侧并不存在的 E5。
+func TestRelRemoveKOInvalidEndpointsZeroAuthorityChange(t *testing.T) {
+	// 退 2（校验失败，锁内发生）：权威 Markdown 逐字节不变、零 commit。
+	for _, c := range []struct {
+		name, from, target string
+	}{
+		{"target_source_s", relKOOa, "s-20270101-x"},     // E3：s- 写进 target
+		{"target_note_n", relKOOa, "n-20270101-x"},       // E2：非论证端点
+		{"target_review_r", relKOOa, "r-20270101-x"},     // E2：非论证端点
+		{"target_proposal_p", relKOOa, "p-20270101-x"},   // E2：非论证端点
+		{"target_malformed", relKOOa, "o-not valid"},     // E2：端点形态非法
+		{"target_missing_o", relKOOa, "o-20270109-none"}, // E2：全库不存在
+		{"from_source_s", "s-20270101-x", relKOKa},       // E2：s- 无法解析为论证端点
+		{"from_note_n", "n-20270101-x", relKOKa},         // E2：非论证端点
+		{"from_review_r", "r-20270101-x", relKOKa},       // E2：非论证端点
+		{"from_proposal_p", "p-20270101-x", relKOKa},     // E2：非论证端点
+		{"from_malformed", "o-not valid", relKOKa},       // E2：端点形态非法
+		{"from_missing_o", "o-20270109-none", relKOKa},   // E2：from 全库不存在
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := relKOWriteVault(t)
+			authBefore := authoritySnapshot(t, dir)
+			logBefore := gitLogCount(t, dir)
+			code, _, errOut := runRelRemoveCLI(t, dir, c.from, "supports", c.target, "--reason", "非法端点")
+			if code != ExitValidation {
+				t.Fatalf("%s 应退 2（校验失败），实际 %d：%s", c.name, code, errOut)
+			}
+			assertAuthorityUnchanged(t, dir, authBefore, "rel remove "+c.name)
+			if got := gitLogCount(t, dir); got != logBefore {
+				t.Fatalf("%s 校验失败不得产生 commit：%d → %d", c.name, logBefore, got)
+			}
+		})
+	}
+
+	// 自环单列：既有行为是 W10 幂等 no-op（退 0、零权威写、零 commit），非 E5。
+	t.Run("self_loop_o_is_W10_noop", func(t *testing.T) {
+		dir := relKOWriteVault(t)
+		authBefore := authoritySnapshot(t, dir)
+		logBefore := gitLogCount(t, dir)
+		code, env, errOut := runRelRemoveCLI(t, dir, relKOOa, "supports", relKOOa, "--reason", "自环删")
+		if code != ExitOK {
+			t.Fatalf("自环 remove 既有行为应退 0（W10 幂等），实际 %d：%s", code, errOut)
+		}
+		if !strings.Contains(relAddWarningCodes(env), "W10") {
+			t.Fatalf("自环 remove 应记 W10 幂等 no-op，实得 %s", relAddWarningCodes(env))
+		}
+		assertAuthorityUnchanged(t, dir, authBefore, "rel remove self_loop_o")
+		if got := gitLogCount(t, dir); got != logBefore {
+			t.Fatalf("自环 W10 no-op 不得产生 commit：%d → %d", logBefore, got)
+		}
+	})
+}
+
 // assertOnlyChanged 断言相对权威基线**恰一个** vault 内相对路径发生变化（其余逐字节不变）。
 func assertOnlyChanged(t *testing.T, dir string, before map[string]string, wantRel, what string) {
 	t.Helper()

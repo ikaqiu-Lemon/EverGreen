@@ -18,7 +18,7 @@ package cli
 // 关系条目的字节剪除只有一处实现，复制第二份会让 A-24 的匹配口径两处各自漂移。
 //
 // **落盘语义按 owner 裁决执行，本层不拍板**（`docs/specs/2026-10-13-m3-prestart-adjudication.md`
-// §7.2 A-24 逐字结论 = `物理移除`）：命中即从宿主卡 frontmatter 的 `relations[]` 里
+// §7.2 A-24 逐字结论 = `物理移除`）：命中即从宿主端点（知识卡 / 观点）frontmatter 的 `relations[]` 里
 // 删掉规范化 `(from,type,target)` 匹配的**全部**记录，**不留墓碑、不创建 RelationID**。
 // 它与 §5.2「关系记录不被物理删除」不冲突：后者约束的是**逻辑删除卡**时不得级联清理
 // 指向它的关系（U-01），而这里是用户点名删一条关系这个**独立动作**。
@@ -135,7 +135,7 @@ func (r *Root) buildRelationRemovePlan(inv *Invocation, from, relType, to, reaso
 //   - `type` 出四值 → 退 1（冻结合同 F4）；
 //   - **完全未给** `--reason` → 退 1（属参数非法）；给了但为空串或等于关系名本身 → 不拦截，
 //     由既有 W2 照写并进报告；
-//   - 卡 ID 不可解析 / 不存在 / `s-` 写进 target → 交给 plan 校验产出 E2 / E3（退 2）；
+//   - k/o 端点 ID 不可解析 / 不存在 / `s-` 等非 k/o 前缀写进 target → 交给 plan 校验产出 E2 / E3（退 2）；
 //   - 关系不存在**不是**参数错误，交给 W10 幂等（退 0）。
 func validateRelRemoveArgs(inv *Invocation) error {
 	if err := rejectReadOnlyVisibilityFlag(inv); err != nil {
