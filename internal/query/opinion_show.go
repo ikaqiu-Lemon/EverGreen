@@ -26,14 +26,15 @@ package query
 // opposing **三组**，每组各有「正向（以该观点为起点）」与「反向（以该观点为终点）」两段；
 // derives（以及 replaced_by 等生命周期字段）**不进**这三组。
 //
-// # 端点写模型边界（B2a 最小定向检查结论）
+// # 端点写模型边界（B2c 读路径推广后的现状）
 //
-// model.Relation.Target 的落盘类型是 model.CardID：观点是关系的**持有方**，正向边
-// `o-* → k-*` 是当前写模型能表达的真实事实（OpinionEntry.Relations）。而「卡侧不写回」
-// （scan.go 注释）＋ `add_relation` 的 from/target 都过 ParseCardID（只认 k-*）意味着当前
-// 写模型**无法**令任何产物以某观点为 target。因此反向段按「全库扫描 target==o-id」的通用
-// 机制实现，但在写模型忠实的语料上恒为空——端点扩展（让产物以观点为终点）留 B2c，
-// 本批**不**改 model/store/plan/reconcile/index 写模型、eg rel 或 schema。
+// model.Relation.Target 的落盘类型是 model.RelationEndpoint：观点是关系的**持有方**，
+// 正向边 `o-* → k-*` / `o-* → o-*` 都是写模型能表达的真实事实（OpinionEntry.Relations）。
+// 自 T-006-B2c 写路径起，`add_relation` 的 from/target 端点已支持 k/o（store.relationEndpointOnly），
+// 因此**任何产物都可以某观点为 target**——反向段（`*→o`）不再恒空：谁写了指向本观点的边，
+// 就会在这里如实现身。反向按「全库扫描 target==o-id」的通用机制实现，来源面是 Knowledge ∪
+// Opinion 两类持有方（opinionReverseEdges 两类都扫），与 card show / rel 的 RelationsInAll 同口径。
+// 本文件仍**不**接任何 CLI，也不改 model/store/plan/reconcile/index 写模型或 schema。
 
 import (
 	"errors"
@@ -222,14 +223,14 @@ func ShowOpinionPaged(root string, id model.OpinionID, deps IndexDeps, page Page
 			ErrOpinionNotFound, string(id), scan.ScannedFiles)
 	}
 
-	// 可见性宇宙 = 知识卡 ∪ 观点（只取 ID / Deleted / Deprecated 三格，供 VisibleEndpoints
-	// 判定对端可见性）。正向对端多为知识卡，反向来源两类都可能，故两类都纳入。
-	universe := opinionVisibilityUniverse(scan)
+	// 可见性宇宙 = 知识卡 ∪ 观点（endpointUniverse，与 card show / rel 共用同一折叠宇宙）。
+	// 正向对端多为知识卡，反向来源两类都可能，故两类都纳入。
+	universe := endpointUniverse(scan)
 
 	// 正向：观点自身 relations[]（排除 derives），按 target 升序。
 	fwd := opinionForwardEdges(*target)
 	// 反向：全库扫描 target==o-id（排除 derives、排除自身），按 from 升序。
-	//   写模型忠实语料上恒空（「卡侧不写回」＋ target 只认 k-*），端点扩展留 B2c。
+	//   来源面是 Knowledge ∪ Opinion 两类持有方：schema v2 写路径允许 `*→o`，故真实反向边现身。
 	rev := opinionReverseEdges(scan, string(id))
 
 	// 可见性过滤（与 card show 同：默认隐藏对端已删除 + 对端 deprecated）。
@@ -292,9 +293,12 @@ func ShowOpinionPaged(root string, id model.OpinionID, deps IndexDeps, page Page
 	return res, nil
 }
 
-// opinionVisibilityUniverse 把知识卡与观点折成 VisibleEndpoints 所需的 CardEntry 面
-// （只读 ID / Deleted / Deprecated 三格）：正向对端多为知识卡，反向来源两类都可能。
-func opinionVisibilityUniverse(scan *ScanResult) []CardEntry {
+// opinionVisibilityUniverse 更名并归位为 endpointUniverse（见 scan.go 边的 RelationsInAll
+// 同批推广）：把知识卡与观点折成 VisibleEndpoints 所需的 CardEntry 面（只读 ID / Deleted /
+// Deprecated 三格）。**card show / rel / opinion show 三条读路径共用它**——schema v2 的写路径
+// 允许任意产物以 k/o 端点为 target，正向对端与反向来源都可能横跨两类，故存在性与可见性
+// 判定的宇宙必须是 Knowledge ∪ Opinion，而非仅知识卡。
+func endpointUniverse(scan *ScanResult) []CardEntry {
 	u := make([]CardEntry, 0, len(scan.Cards)+len(scan.Opinions))
 	u = append(u, scan.Cards...)
 	for _, o := range scan.Opinions {
@@ -319,9 +323,10 @@ func opinionForwardEdges(o OpinionEntry) []RelationEdge {
 }
 
 // opinionReverseEdges 扫描全库、折出以该观点为 target 的反向边（**排除 derives、排除自身**），
-// 按 from 升序。知识卡与观点两类持有方都扫（与 RelationsIn 同构）。
+// 按 from 升序。知识卡与观点两类持有方都扫（与 RelationsInAll 同构）。
 //
-// 写模型忠实语料上恒空：当前写模型无法令任何产物以观点为 target（见文件头端点边界）。
+// 反向段不再恒空：schema v2 写路径允许任意产物以观点为 target（`*→o`），谁写了指向本观点
+// 的边（k→o / o→o），就会在这里如实现身（见文件头端点边界）。
 func opinionReverseEdges(scan *ScanResult, id string) []RelationEdge {
 	out := []RelationEdge{}
 	collect := func(from, path string, rels []model.Relation) {

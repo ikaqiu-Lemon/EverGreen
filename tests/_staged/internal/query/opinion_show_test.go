@@ -16,13 +16,13 @@ package query
 //
 // # 端点写模型边界（B2a 的最小定向检查结论，写进用例而不是顺手改模型）
 //
-// model.Relation.Target 的落盘类型是 model.CardID：观点是关系的**持有方**，正向边
-// `o-* → k-*` 是当前写模型能表达的真实事实（scan.OpinionEntry.Relations）；而
-// 「卡侧不写回」（scan.go 对 OpinionEntry.Relations 的注释）意味着当前写模型**无法**
-// 令任何产物以某观点为 target（`add_relation` 的 from/target 都过 ParseCardID，只认 k-*）。
-// 因此本批把反向段实现为「全库扫描 target==o-id」的通用机制，但在写模型忠实的语料上它
-// **恒为空**——这一边界在 TestShowOpinionReverseGroupsEmptyUnderWriteModel 里逐字钉死，
-// 端点扩展（让产物以观点为终点）留 B2c，本批不改 model/store/plan/reconcile/index 写模型。
+// model.Relation.Target 的落盘类型是 model.RelationEndpoint：观点是关系的**持有方**，正向边
+// `o-* → k-*` / `o-* → o-*` 是写模型能表达的真实事实（scan.OpinionEntry.Relations）。自 B2c
+// 写路径起 `add_relation` 的 from/target 端点已支持 k/o，故**任何产物都可以某观点为 target**，
+// 反向段（`*→o`）不再被写模型禁止。本文件的 osVault **语料本身**不含任何指向观点的边，因此
+// 在此语料上反向段恒为 `[]`——TestShowOpinionReverseGroupsEmptyUnderWriteModel 钉的是「无
+// 入边语料下反向段是非 nil 空数组」这一形状事实，而非「写模型禁止 *→o」的旧边界；`*→o`
+// 真实边的读路径投影由 relation_ko_readpath_test.go（B2c Phase 3）在含入边语料上逐字钉死。
 
 import (
 	"encoding/json"
@@ -345,9 +345,10 @@ func TestShowOpinionDanglingForwardRefReusesCardShowIdiom(t *testing.T) {
 	}
 }
 
-// TestShowOpinionReverseGroupsEmptyUnderWriteModel —— ②/边界：反向段在**写模型忠实**的
-// 语料上恒为空（「卡侧不写回」＋ target 只认 k-*）；端点扩展留 B2c。三组的正向/反向段
-// 都必须是非 nil 的 JSON 数组（`[]`，绝不 `null`）。
+// TestShowOpinionReverseGroupsEmptyUnderWriteModel —— ②/边界：反向段在**无入边的 osVault
+// 语料**上恒为空（该语料没有任何产物以观点为 target）；含入边语料下的真实 `*→o` 投影由
+// relation_ko_readpath_test.go 覆盖。三组的正向/反向段都必须是非 nil 的 JSON 数组
+// （`[]`，绝不 `null`）。
 func TestShowOpinionReverseGroupsEmptyUnderWriteModel(t *testing.T) {
 	root := osVault(t)
 	res, err := osShow(root, osRichID)

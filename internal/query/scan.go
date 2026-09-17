@@ -132,8 +132,8 @@ type OpinionEntry struct {
 	// 且 schema v2 的 CHECK 要求 opinion 行 validation ∈ {pending,validated,rejected}）。
 	Validation string
 	// Relations 是 `relations[]` 的逐字原值。观点是关系的**持有方**，
-	// 而 target 的落盘类型仍是知识卡 ID（model.Relation.Target 是 CardID）：
-	// 「观点支持 / 限制 / 反对某张卡」写在观点这一侧，卡侧不写回。
+	// 而 target 的落盘类型是跨类型端点（model.Relation.Target 是 RelationEndpoint，
+	// 前缀 k- / o-）：观点可支持 / 限制 / 反对某张知识卡（o→k）或另一条观点（o→o）。
 	Relations []model.Relation
 	// Sources 是 `sources[]` 的逐字原值（材料层引用：原文 + 来源笔记）。
 	Sources []model.SourceRef
@@ -223,7 +223,7 @@ func VaultScan(root string, opt ScanOptions) (*ScanResult, error) {
 	if len(opt.Domains) == 0 {
 		// 悬空引用只在**全库**扫描面上判定：受限扫描面看不见他域的卡，
 		// 在那里判 Q2 会把「没扫到」误报成「不存在」（合同 §5.1 的 Q2 以全库为准）。
-		res.Diagnostics = append(res.Diagnostics, danglingDiagnostics(res.Cards)...)
+		res.Diagnostics = append(res.Diagnostics, danglingDiagnostics(res.Cards, res.Opinions)...)
 	}
 	res.Diagnostics = finalizeDiagnostics(res.Diagnostics)
 	return res, nil
@@ -429,12 +429,20 @@ func duplicateIDDiagnostics(cards []CardEntry) []Diagnostic {
 	return out
 }
 
-// danglingDiagnostics 报悬空引用（Q2）：relations[].target 在全库中不存在。
+// danglingDiagnostics 报悬空引用（Q2）：**知识卡自身** relations[].target 在全库中不存在。
 // 条目本身**不隐藏**，只是附一条诊断（合同 §5.1）。
-func danglingDiagnostics(cards []CardEntry) []Diagnostic {
+//
+// 存在宇宙 = 知识卡 ∪ 观点（schema v2：写路径已允许任意产物以 k/o 端点为 target，
+// 见 store.relationEndpointOnly）：一张卡指向某个**存在的观点**（k→o）不再被误报成悬空。
+// 观点自身 relations[] 的悬空由 opinion show 的 opinionDanglingRefs 负责（同 known 口径），
+// 本函数只判知识卡持有方，两处合起来覆盖 K∪O 两类持有方且互不重复（无双计）。
+func danglingDiagnostics(cards []CardEntry, opinions []OpinionEntry) []Diagnostic {
 	known := map[string]bool{}
 	for _, c := range cards {
 		known[c.ID] = true
+	}
+	for _, o := range opinions {
+		known[o.ID] = true
 	}
 	var out []Diagnostic
 	for _, c := range cards {
@@ -749,6 +757,39 @@ func RelationsIn(cards []CardEntry, id string) []RelationEdge {
 			out = append(out, RelationEdge{From: c.ID, Type: string(rel.Type),
 				Target: string(rel.Target), Reason: rel.Reason, Path: c.Path})
 		}
+	}
+	SortEdges(out, func(e RelationEdge) string { return e.From })
+	return out
+}
+
+// RelationsInAll 全库反向扫描出指向 id 的关系，**知识卡与观点两类持有方都扫**
+// （合同 §3.2 在 schema v2 下的推广：写路径已允许任意产物以 k/o 端点为 target，见
+// store.relationEndpointOnly，故反向来源不再限于知识卡）。与 RelationsIn 逐字同构
+// ——含全部关系类型、排除自身、按 SortEdges 四级全序按 from 升序——只是把来源面从
+// 「仅 Cards」并上了 Opinions，因此 `card show` / `rel` 能看见 `o-* → k-*` 的反向边。
+//
+// **不走任何索引**：入参就是 VaultScan / indexVault 的全库结果（两类持有方的 Relations
+// 都已按各自后端解析到位）。ID 全库唯一（k-* 与 o-* 不撞号），故 Cards 与 Opinions 两轮
+// 收集不会互相覆盖，SortEdges 的第 ④ 级仍是全序封闭点。
+func RelationsInAll(scan *ScanResult, id string) []RelationEdge {
+	out := []RelationEdge{}
+	collect := func(from, path string, rels []model.Relation) {
+		if from == id {
+			return
+		}
+		for _, rel := range rels {
+			if string(rel.Target) != id {
+				continue
+			}
+			out = append(out, RelationEdge{From: from, Type: string(rel.Type),
+				Target: string(rel.Target), Reason: rel.Reason, Path: path})
+		}
+	}
+	for _, c := range scan.Cards {
+		collect(c.ID, c.Path, c.Relations)
+	}
+	for _, o := range scan.Opinions {
+		collect(o.ID, o.Path, o.Relations)
 	}
 	SortEdges(out, func(e RelationEdge) string { return e.From })
 	return out

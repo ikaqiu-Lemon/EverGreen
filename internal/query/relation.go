@@ -125,7 +125,7 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 明明把对端隐藏了却不报 Q4（违反 Q4 的 N≥1 条件与正交性）；这里改为收窄在前、可见性在后。
 	// 视图切换（T-…-068）：默认是论证关系 relations[]；`--replaced-by` 换成替代指针的
 	// 正反双向（reverse.go）。两种视图**同构**：都是五键条目、同一套排序、同一套可见性。
-	rawOut, rawIn := RelationsOut(*target), RelationsIn(scan.Cards, string(req.ID))
+	rawOut, rawIn := RelationsOut(*target), RelationsInAll(scan, string(req.ID))
 	if req.ReplacedBy {
 		rawOut = ReplacedByForward(root, scan.Cards, string(req.ID))
 		rawIn = ReplacedByReverse(root, scan.Cards, string(req.ID))
@@ -137,11 +137,16 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 关系端点按可见性策略过滤（合同 §5.1 真值表「作为关系端点默认展示」列）：
 	// 默认隐藏对端 deprecated 与对端已删除；--include-deprecated 只放开 deprecated（T-…-061）。
 	// **记录不动**：过滤只在读路径发生，源文件 relations[] 的条目数与字节一字不改。
+	//
+	// 端点宇宙 = 知识卡 ∪ 观点（endpointUniverse，与 card show / opinion show 共用）：反向来源
+	// 与正向对端在 schema v2 下都可能横跨 k/o，故可见性 / 悬空 / deprecated 计数统一用折叠宇宙，
+	// 反向扫描用 RelationsInAll（卡 ∪ 观点），`o-* → k-*` 的反向边因此在 `eg rel` 里如实现身。
 	pol := VisibilityPolicy{IncludeDeprecated: req.IncludeDeprecated}
-	out, hiddenOut := VisibleEndpoints(scan.Cards, rawOut, func(e RelationEdge) string {
+	universe := endpointUniverse(scan)
+	out, hiddenOut := VisibleEndpoints(universe, rawOut, func(e RelationEdge) string {
 		return e.Target
 	}, pol)
-	in, hiddenIn := VisibleEndpoints(scan.Cards, rawIn, func(e RelationEdge) string {
+	in, hiddenIn := VisibleEndpoints(universe, rawIn, func(e RelationEdge) string {
 		return e.From
 	}, pol)
 	hidden := hiddenOut + hiddenIn
@@ -162,14 +167,14 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 2N 条；截断只判一次，只产**恰一条** W25（合同 §8.2）。
 	out, in, pg := ApplyPagePair(out, in, req.Page)
 	depPeers := mergeSortedUnique(
-		deprecatedPeerSet(scan.Cards, out, func(e RelationEdge) string { return e.Target }),
-		deprecatedPeerSet(scan.Cards, in, func(e RelationEdge) string { return e.From }))
+		deprecatedPeerSet(universe, out, func(e RelationEdge) string { return e.Target }),
+		deprecatedPeerSet(universe, in, func(e RelationEdge) string { return e.From }))
 	return &RelResult{
 		Data: RelData{
 			ID: string(req.ID), RelationsOut: out, RelationsIn: in,
 			ScannedFiles: scan.ScannedFiles, SkippedFiles: scan.SkippedFiles,
 		},
-		MissingTargets: missingTargets(scan.Cards, out),
+		MissingTargets: missingTargets(universe, out),
 		Diagnostics: withTruncationDiagnostic(withIndexDegradedDiagnostics(
 			withDeprecatedHiddenDiagnostic(diags, hidden, req.IncludeDeprecated),
 			degradeDiagnostics(backend)), pg.Truncated, pg, "关系条目"),

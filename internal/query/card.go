@@ -212,10 +212,17 @@ func ShowCardPaged(root string, id model.CardID, deps IndexDeps, page PageSpec,
 	// 关系端点按可见性策略过滤（合同 §5.1 真值表「作为关系端点默认展示」列）：
 	// 默认隐藏对端 deprecated 与对端已删除；--include-deprecated 只放开 deprecated（T-…-061）。
 	// **记录不动**：过滤只发生在读路径，源文件 frontmatter 的 relations[] 一条不少、一字不改。
-	out, hiddenOut := VisibleEndpoints(scan.Cards, RelationsOut(*target), func(e RelationEdge) string {
+	//
+	// 端点宇宙（可见性 / 悬空 / deprecated 计数）= 知识卡 ∪ 观点（endpointUniverse）：schema v2
+	// 的写路径允许一张卡以 k/o 端点为 target（k→o），而反向来源既可能是卡（k→k）也可能是观点
+	// （o→k）。若仍只用 scan.Cards 作宇宙，k→o 的有效目标会被误判悬空、观点对端的 deprecated /
+	// deleted 可见性判不出、o→k 反向边整条丢失——因此正向 target 侧、反向 from 侧统一用同一个
+	// 折叠宇宙，反向扫描也从 RelationsIn（仅卡）升级为 RelationsInAll（卡 ∪ 观点）。
+	universe := endpointUniverse(scan)
+	out, hiddenOut := VisibleEndpoints(universe, RelationsOut(*target), func(e RelationEdge) string {
 		return e.Target
 	}, pol)
-	in, hiddenIn := VisibleEndpoints(scan.Cards, RelationsIn(scan.Cards, string(id)), func(e RelationEdge) string {
+	in, hiddenIn := VisibleEndpoints(universe, RelationsInAll(scan, string(id)), func(e RelationEdge) string {
 		return e.From
 	}, pol)
 	hidden := hiddenOut + hiddenIn
@@ -225,8 +232,8 @@ func ShowCardPaged(root string, id model.CardID, deps IndexDeps, page PageSpec,
 	// 合计 2N —— 截断也只判一次，只产**恰一条** W25。
 	out, in, pg := ApplyPagePair(out, in, page)
 	depPeers := mergeSortedUnique(
-		deprecatedPeerSet(scan.Cards, out, func(e RelationEdge) string { return e.Target }),
-		deprecatedPeerSet(scan.Cards, in, func(e RelationEdge) string { return e.From }))
+		deprecatedPeerSet(universe, out, func(e RelationEdge) string { return e.Target }),
+		deprecatedPeerSet(universe, in, func(e RelationEdge) string { return e.From }))
 	res := &CardShowResult{
 		Card: CardDetail{
 			ID: target.ID, Title: target.Title, Domain: target.Domain,
@@ -237,7 +244,7 @@ func ShowCardPaged(root string, id model.CardID, deps IndexDeps, page PageSpec,
 			RelationsOut: out, RelationsIn: in,
 			Deleted: target.Deleted,
 		},
-		MissingTargets: missingTargets(scan.Cards, out),
+		MissingTargets: missingTargets(universe, out),
 		backend:        backend,
 		Diagnostics: withTruncationDiagnostic(withIndexDegradedDiagnostics(
 			withDeprecatedHiddenDiagnostic(scan.Diagnostics, hidden, pol.IncludeDeprecated),

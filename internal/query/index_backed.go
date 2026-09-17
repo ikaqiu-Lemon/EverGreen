@@ -321,14 +321,16 @@ func planFor(need Need, opt ScanOptions) parsePlan {
 //	   「在册卡集合」与「哪些文件索引里没有」，不提供也不假装提供 tags / updated_at。
 //	② plan.focus（`eg card show` / `eg rel`）：只解析
 //
-//	   {焦点卡自身} ∪ {relations.dst_id = focus 的来源卡} ∪ {索引未收录的文件}
+//	   {焦点卡自身} ∪ {relations.dst_id = focus 的反向来源（卡或观点）} ∪ {索引未收录的文件}
 //
 // 三段的必要性与充分性（等价性证明，逐条对应下游消费者）：
 //
 //	① 焦点卡：五分区正文 / tags / 时间戳 / sources[] / 正向 relations[] 全部只在它自己的
 //	   文件里 ⇒ 解析它一个文件即可，且必须解析（索引不存正文与 reason）；
-//	② 反向来源卡：`relations` 表存**全部**正向边，按 `dst_id` 反查即得「谁指向了 focus」的
-//	   精确集合（无假阴性）；每条边的 `reason` 回源文件取逐字原值 ⇒ 必须解析这几个文件；
+//	② 反向来源（卡或观点）：`relations` 表存**全部**正向边（含观点持有的 `o-* → k-*`），按
+//	   `dst_id` 反查即得「谁指向了 focus」的精确集合（无假阴性）；每条边的 `reason` 回源文件取
+//	   逐字原值 ⇒ 必须解析这几个文件——来源是知识卡走 need，是观点走 needOpinion（因索引
+//	   relations 表不存 reason，观点 stub 的 relBySrc 反查会漏 reason，必须回权威）；
 //	③ 索引未收录的文件：`files` / `cards` 只收**解析得动**的卡（构建侧的快照就是扫描结果，
 //	   见 internal/cli 的 indexSnapshotWith），故「现态走查到但索引 cards 里没有」的文件恰是
 //	   「解析不了的（Q1 / skipped）」「同 ID 重复被主键收掉的第二份」与「索引建好之后**新增**
@@ -341,7 +343,7 @@ func planFor(need Need, opt ScanOptions) parsePlan {
 //
 // 摘要条目的边界（写死在类型里而不是靠自律）：stub 的 Raw / Doc 恒为 nil、
 // Tags / Sources 恒为空、时间戳恒为空串 —— 任何需要这些字段的读路径都不可能只拿 stub
-// 就产出结果：`card show` / `rel` 只对**焦点卡与反向来源卡**取这些字段（都已解析），
+// 就产出结果：`card show` / `rel` 只对**焦点卡与反向来源（卡或观点）**取这些字段（都已解析），
 // 而 `eg search` 走 plan.all，一条 stub 都不会留到结果里（TestIndexBackendNoStubLeaks）。
 func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) {
 	cards, err := index.ReadCards(p.dir)
@@ -428,6 +430,12 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 		entries = append(entries, entry)
 	}
 	need := map[string]bool{}
+	// needOpinion 承接**反向来源是观点**的路径（plan.focus：card show / rel）：schema v2 写路径
+	// 允许 `o-* → k-*`，故焦点卡的反向来源可能是观点文件。索引 relations 表**不存 reason**
+	// （只有 src_id/verb/dst_id/src_path/line），若只拿观点 stub 的 relBySrc 反查，o→k 反向边的
+	// reason 会是空串，与扫描后端（回权威取逐字 reason）分叉。因此这些观点必须回权威解析，
+	// 与 plan.all 的观点解析共用 parsedOpinions（下面的覆盖循环据此把 stub 换成权威条目）。
+	needOpinion := map[string]bool{}
 	// parsedOpinions 承接 plan.all（`eg search`）下**回权威解析**的观点全条目。
 	// 默认读路径（plan.focus：card show / rel）不投观点，因此这个 map 恒空、观点保持摘要态；
 	// 只有 search 需要观点的 tags / created_at / updated_at / 正文来打分与四级全序（kind
@@ -460,9 +468,14 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 			}
 		}
 		for _, r := range rels {
-			// 观点→知识卡的边在 relations 表里在册（relations 纳管观点），但默认读路径不投
-			// 观点：反向来源不解析观点文件（否则会把观点当卡解析后又丢弃，做无用功且语义含糊）。
-			if r.DstID == plan.focus && inDomains(r.SrcPath, plan.domains) && !opinionPaths[r.SrcPath] {
+			if r.DstID != plan.focus || !inDomains(r.SrcPath, plan.domains) {
+				continue
+			}
+			// 反向来源既可能是知识卡也可能是观点（schema v2 允许 `o-* → k-*`）：
+			// 观点来源回权威解析取逐字 reason（索引 relations 不存 reason），知识卡来源照旧。
+			if opinionPaths[r.SrcPath] {
+				needOpinion[r.SrcPath] = true
+			} else {
 				need[r.SrcPath] = true
 			}
 		}
@@ -479,6 +492,20 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 			return nil, fmt.Errorf("索引记录的卡文件 %s 现在解析不了", rel)
 		}
 		parsed[rel] = entry
+	}
+	// plan.focus 下反向来源是观点的，回权威解析补齐逐字 reason（与 plan.all 共用 parsedOpinions；
+	// 下面的覆盖循环据此把观点 stub 换成权威条目，o→k 反向边的 reason 便与扫描后端逐字一致）。
+	for rel := range needOpinion {
+		if _, done := parsedOpinions[rel]; done {
+			continue
+		}
+		oe, _, ok := parseOpinionAt(root, rel)
+		if !ok {
+			// 索引说这里有一份可解析的观点，现在解析不了 ⇒ 索引与权威不一致：
+			// 整体退回扫描后端（degrade.go 的 loadVault 留痕 W22 + Q5），不半索引半扫描。
+			return nil, fmt.Errorf("索引记录的观点文件 %s 现在解析不了", rel)
+		}
+		parsedOpinions[rel] = oe
 	}
 	// 用解析结果覆盖同路径的摘要条目：同一路径只留一条，且优先留「真读过字节」的那条。
 	for i := range entries {
@@ -505,7 +532,7 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 	if len(plan.domains) == 0 {
 		// 悬空引用（Q2）只在**全库**面上判定：与 VaultScan 逐字同一条件
 		// （受限扫描面看不见他域的卡，在那里判 Q2 会把「没扫到」误报成「不存在」）。
-		res.Diagnostics = append(res.Diagnostics, danglingDiagnostics(res.Cards)...)
+		res.Diagnostics = append(res.Diagnostics, danglingDiagnostics(res.Cards, res.Opinions)...)
 	}
 	res.Diagnostics = finalizeDiagnostics(res.Diagnostics)
 	return res, nil
