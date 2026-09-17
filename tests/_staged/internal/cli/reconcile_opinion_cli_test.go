@@ -259,8 +259,14 @@ func TestCheckCLIOnOpinionVaultStaysSevenChecksReadOnly(t *testing.T) {
 
 // —— ③ 判据 3：命令层透传 C1 的 R3 / R4 诊断（悬空 o-* 关系必被点名）——
 
-// TestOpinionDanglingRelationSurfacedByBothCommands：观点 `relations[]` 指向不存在的
-// 知识卡（E13）或形态非法的 target（E14）时，**两条命令**都必须如实点名、不静默。
+// TestOpinionDanglingRelationSurfacedByBothCommands：观点 `relations[]` 指向库内查无此
+// 对象的端点（缺失 `k-` / `o-` → E13）或形态非法的 target（非 k/o 端点 / 畸形 → E14）时，
+// **两条命令**都必须如实点名、不静默。
+//
+// 端点合同（B2c）：论证关系端点宇宙 = 知识卡（`k-`）∪ 观点（`o-`）。因此「指向不存在的
+// 观点」是**存在性缺失**（relation_target_missing / E13），不再是「前缀不合法」——
+// 这正是本用例第 2 行要钉死的回归点：缺失 o-* 由 `eg check` 与 `eg reconcile` 都报
+// relation_target_missing，而非 relation_prefix_invalid。
 //
 // 这支同时是「命令层确实把观点采进来了」的正面反证（见文件头的反证纪律）。
 func TestOpinionDanglingRelationSurfacedByBothCommands(t *testing.T) {
@@ -273,9 +279,13 @@ func TestOpinionDanglingRelationSurfacedByBothCommands(t *testing.T) {
 		// target 形态合法（`k-` + 8 位 + 非空 slug）但库里查无此卡 → 存在性缺失。
 		{"target 指向不存在的知识卡 → relation_target_missing",
 			"supports", "k-20261231-nonexistent", "relation_target_missing"},
-		// target 是观点 ID：关系只连知识卡，形态非法 → 前缀不合法（不再判存在性）。
-		{"target 指向观点 ID → relation_prefix_invalid",
-			"supports", "o-20261231-other", "relation_prefix_invalid"},
+		// target 形态合法（`o-` + 8 位 + 非空 slug）但库里查无此观点 → 同样是存在性缺失，
+		// **不再**当作前缀不合法（观点是合法端点）。
+		{"target 指向不存在的观点 → relation_target_missing（而非 prefix_invalid）",
+			"supports", "o-20261231-other", "relation_target_missing"},
+		// target 是非 k/o 端点（笔记 ID）→ 前缀 / 形态不合法，与存在性互斥。
+		{"target 指向笔记 ID（非 k/o 端点）→ relation_prefix_invalid",
+			"supports", "n-20261231-note", "relation_prefix_invalid"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -331,6 +341,76 @@ func opContains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// opinionOnlyPlan 造一份只新建观点（无关系）的 plan，供「关系指向存在 o-*」正面用例补第二个
+// 落盘观点。sources 复用库内已有的原文 / 笔记，因此不引入任何额外的悬空引用。
+func opinionOnlyPlan(opinionID string) string {
+	return `{"plan_version":2,"verb":"relate","domain":"ai-infra",
+"reason":"落第二个观点作为存在的关系端点","requirement_ids":["EG-AGT-03"],
+"ops":[{"op":"create_opinion","opinion_id":"` + opinionID + `",
+ "title":"第二个观点：作为存在的关系端点",
+ "sources":[{"source":"` + applySourceID + `","note":"` + applyNoteID + `",
+ "rel":"support","reason":"复用同一原文的另一处论据"}],
+ "sections":{"观点":"这是用于端点存在性对照的第二个观点。\n","论据与推理":"复用同一原文的另一处论据。\n"}}]}`
+}
+
+// TestOpinionRelationToExistingOpinionAccepted：观点持有的关系指向**存在**的 `o-*` 端点时，
+// `eg check` 与 `eg reconcile` 都不得报 relation_prefix_invalid / relation_target_missing，
+// 也不产任何 error —— 论证关系端点宇宙含观点（B2c 端点合同）的命令层正面证据。
+//
+// 与 TestOpinionDanglingRelationSurfacedByBothCommands 的「缺失 o-*」分支成对：那支证明
+// 缺失即 E13，本支证明存在即零诊断，两支一起把「o-* 是合法端点、但仍照判存在性」钉死。
+func TestOpinionRelationToExistingOpinionAccepted(t *testing.T) {
+	dir, _, opinionRel := opinionVault(t)
+
+	// 落第二个观点，作为**存在**的关系端点（同一事务落盘、工作区随后仍干净）。
+	const secondOpinion = "o-20261017-second"
+	if code, _, errOut := runApplyPlan(t, dir, opinionOnlyPlan(secondOpinion)); code != ExitOK {
+		t.Fatalf("落第二个观点退出码 = %d：%s", code, errOut)
+	}
+	if _, err := os.Stat(absIn(dir, store.OpinionRel("ai-infra", secondOpinion))); err != nil {
+		t.Fatalf("前置不成立：第二个观点未落盘：%v", err)
+	}
+	// 外部编辑：让第一个观点 `supports` 第二个（存在的）观点端点。
+	opAddRelations(t, dir, opinionRel, "supports", secondOpinion)
+
+	beforeCommits := gitLogCount(t, dir)
+	beforeBytes := opVaultBytes(t, dir)
+
+	// —— eg check：指向存在 o-* 不构成结构 error → 退 0，且无关系两码点名该边 ——
+	code, out, errOut := runCheckCLI(t, dir)
+	if code != ExitOK {
+		t.Fatalf("eg check 退出码 = %d，期望 0（指向存在 o-* 是合法端点）：%s\n%s", code, errOut, out)
+	}
+	for _, f := range chkFindings(t, out) {
+		if f.Check == "relation_prefix_invalid" || f.Check == "relation_target_missing" {
+			t.Fatalf("指向存在 o-* 不得报 %s：%+v", f.Check, f)
+		}
+	}
+
+	// —— eg reconcile：同一事实同样零 error、无关系诊断点名该端点 ——
+	rcode, rout, rerr := runReconcileCLI(t, newTestRoot(t, dir), dir, "--dry-run")
+	if rcode != ExitOK {
+		t.Fatalf("eg reconcile 退出码 = %d，期望 0：%s\n%s", rcode, rerr, rout)
+	}
+	rfs := rcAssertReconcileShape(t, rcRawAt(t, []byte(rout), "data", "reconcile"))
+	if got := opErrorFindings(rfs); len(got) != 0 {
+		t.Fatalf("指向存在 o-* 不得产 error 级 finding：%+v", got)
+	}
+	for _, f := range rfs {
+		if f.Check == "relation_prefix_invalid" || f.Check == "relation_target_missing" {
+			t.Fatalf("eg reconcile 不得对存在 o-* 报 %s：%+v", f.Check, f)
+		}
+	}
+
+	// —— 只读性：两条命令都零写入、零提交（权威字节与 commit 数不变）——
+	if got := opVaultBytes(t, dir); !reflect.DeepEqual(got, beforeBytes) {
+		t.Fatalf("check / reconcile 必须零写入：权威字节发生变化")
+	}
+	if got := gitLogCount(t, dir); got != beforeCommits {
+		t.Fatalf("只读命令恒 0 次提交：commit 数 %d → %d", beforeCommits, got)
+	}
 }
 
 // —— ④ 判据 4：R2 / R6 修复与观点共存（观点字节不变、不被遗漏或误写）——

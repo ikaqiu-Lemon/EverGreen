@@ -133,8 +133,9 @@ type StructureIndex struct {
 	ObjectPaths map[string][]string
 	// ObjectKinds 是 ID → 命中的对象类别（去重 + 升序）。跨类别撞同一 ID 同样算重复。
 	ObjectKinds map[string][]string
-	// RelationsIn 是**落盘事实**的反向表：目标卡 ID → 指向它的来源卡 ID（去重 + 升序）。
-	// 口径 = 全库遍历每张卡的 `relations[]` 原始条目，**不过滤**对端的 status / deleted_at。
+	// RelationsIn 是**落盘事实**的反向表：目标端点 ID → 指向它的来源端点 ID（去重 + 升序）。
+	// 端点取自知识卡 ∪ 观点宇宙（`k-` / `o-`），来源侧同样是承载 `relations[]` 的卡或观点。
+	// 口径 = 全库遍历每个持有方的 `relations[]` 原始条目，**不过滤**对端的 status / deleted_at。
 	RelationsIn map[string][]string
 	// NotesBySource 是原文 ID → 派生笔记 ID（去重 + 升序），同样只看落盘事实。
 	NotesBySource map[string][]string
@@ -143,8 +144,9 @@ type StructureIndex struct {
 	// （同 query 侧「Q2 只在全库扫描面判定」的诚实性口径）。
 	SourcesSampled bool
 
-	// outDegree 是卡 ID → 落盘出边条数（`relations[]` 的非空 target 条目数）。
-	// 不导出：出边度数只留 OutDegree 一个读口，杜绝调用方自己再数一遍导致口径分叉。
+	// outDegree 是持有方端点 ID → 落盘出边条数（`relations[]` 的非空 target 条目数）。
+	// 持有方是知识卡或观点；不导出：出边度数只留 OutDegree 一个读口，杜绝调用方自己再数
+	// 一遍导致口径分叉。
 	outDegree map[string]int
 }
 
@@ -158,13 +160,13 @@ func (x StructureIndex) Has(id, kind string) bool {
 	return false
 }
 
-// OutDegree 报告该卡 `relations[]` 的落盘条目数（含指向不存在目标的条目）。
+// OutDegree 报告该端点 `relations[]` 的落盘条目数（含指向不存在目标的条目）。
 //
-// 为什么悬空的出边也算出边：那属 R3 的 relation_target_missing（E13），这张卡在落盘事实上
+// 为什么悬空的出边也算出边：那属 R3 的 relation_target_missing（E13），该端点在落盘事实上
 // **并非孤立**；若把它算成零出边，同一件事会被 W17 与 E13 各记一次。
 func (x StructureIndex) OutDegree(id string) int { return x.outDegree[id] }
 
-// InDegree 报告指向该卡的落盘入边条数（来源卡去重后的个数）。
+// InDegree 报告指向该端点的落盘入边条数（来源端点去重后的个数）。
 func (x StructureIndex) InDegree(id string) int { return len(x.RelationsIn[id]) }
 
 // NewStructureIndex 从只读输入建索引（纯函数：不改入参、不做任何 IO）。

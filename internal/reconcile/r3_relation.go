@@ -20,7 +20,7 @@ package reconcile
 //   - **不改 F4**：关系类型集合仍恰 8 值封闭（材料三值 + 论证四值 + 生命周期 `replaced_by`），
 //     不新增关系类型、不新增关系字段（反证见 F4RelationValues 与用例 TestR3RelationTypesStillEight）。
 //   - **不新造 ID 规则**：前缀 / 形态校验一律委派 `github.com/ikaqiu-Lemon/EverGreen/internal/model` 的现成入口
-//     （ValidRelationTarget → CardID.Valid → ParseID），本文件零正则、零前缀字面量表。
+//     （ValidRelationTarget → model.ParseRelationEndpoint → ParseID），本文件零正则、零前缀字面量表。
 //   - 不自己扫描 vault：关系事实以 query.ScanResult（M2 的全量扫描底座）的形态从 Input 进来，
 //     本包不另写扫描器（合同 §17 第 7 条）。存在性索引复用 R4 交付的 StructureIndex，
 //     不再各扫各的、不各建一套反向表。
@@ -118,17 +118,28 @@ func F4RelationValues() []string {
 	return append(out, F4LifecycleRelation)
 }
 
-// ValidRelationTarget 报告关系 `target` 是否满足**既有** ID 规则。
+// ValidRelationTarget 报告关系 `target` 是否是**合法的论证关系端点**（`k-` 或 `o-`）。
 //
-// **零新造规则**：判定整体委派给 model 的现成入口 —— 关系 target 的落盘类型是知识卡 ID
-// （`Relation.Target` 是 model.CardID），故合法性 == CardID.Valid()（内部走 ParseID：
-// 前缀 `k-` + 8 位 yyyymmdd + 非空 slug）。本文件因此没有任何正则、没有任何前缀字面量表：
-// 前缀规则若在 model 侧变更，本判定自动随之变更，不会出现「两处规则」。
+// **零新造规则**：判定整体委派给 model 的现成入口 model.ParseRelationEndpoint —— 论证
+// 关系端点的落盘对象宇宙是知识卡（`k-`）∪ 观点（`o-`），故合法性 == ParseRelationEndpoint
+// 无错（内部先走 ParseID：前缀 + 8 位 yyyymmdd + 非空 slug，再只接受这两种端点前缀）。
+// 本文件因此没有任何正则、没有任何前缀字面量表：端点规则若在 model 侧变更，本判定自动随之
+// 变更，不会出现「两处规则」。
 //
-// 笔记 / 原文 ID（`n-` / `s-`）出现在关系 target 上同样是**非法前缀**：关系只连知识卡
-// （与 R4 侧 T-…-052 用例「出边 target 前缀非法（n- 前缀）」逐字同口径）。
+// 笔记 / 原文 / 预留 / 提案 ID（`n-` / `s-` / `r-` / `p-`）出现在关系 target 上一律是
+// **非法端点**：论证关系只连知识卡或观点（与写侧 model.ParseRelationEndpoint 的端点合同
+// 逐字同口径）。
 func ValidRelationTarget(target string) bool {
-	return model.CardID(strings.TrimSpace(target)).Valid()
+	_, err := model.ParseRelationEndpoint(strings.TrimSpace(target))
+	return err == nil
+}
+
+// hasRelationEndpoint 报告端点 ID 是否落在**论证关系端点宇宙**（知识卡 ∪ 观点）内。
+//
+// 存在性只看落盘事实：端点可能是知识卡（KindCard）或观点（KindOpinion），二者任一命中
+// 即存在。只查 KindCard 会把「指向一条存在的观点」误判成 target 缺失（E13）。
+func hasRelationEndpoint(x StructureIndex, id string) bool {
+	return x.Has(id, KindCard) || x.Has(id, KindOpinion)
 }
 
 // NormalizeOpposingPair 按两端 ID 字典序规范化 `opposing` 的 `(from,target)`：
@@ -149,7 +160,7 @@ type relationFact struct {
 	// from 是持有该条关系的对象 ID（`relations[]` 落在来源侧，单向一条）。
 	from string
 	// fromKind 是持有方的对象类别（KindCard 或 KindOpinion，与 R4 的类别串同源）。
-	// 只影响 detail 里的称呼与 `opposing` 规范化的适用范围，**不参与**存在性 / 形态判定。
+	// 只影响 detail 里的称呼；**不参与**存在性 / 形态 / 规范化判定（端点宇宙不分卡与观点）。
 	fromKind string
 	// typ 是关系类型的逐字原值（封闭四值之一；集合外取值在扫描层就已被拒收）。
 	typ string
@@ -166,12 +177,12 @@ func (f relationFact) isOpposing() bool { return f.typ == string(model.RelationO
 
 // opposingNormalizable 报告本条 `opposing` 是否适用 A-24 的「按两端 ID 字典序规范化」。
 //
-// 只有**两端都是知识卡**时适用：那时两端都能承载 `relations[]`，「取小者为写入端」
-// 才是一条可复算的落盘不变量。观点持有的 `opposing` 不适用 —— 关系 target 的落盘类型
-// 恒是知识卡 ID，卡侧结构上写不回指向观点的条目，于是记录**必然**只落在观点这一端；
-// 若照卡侧口径规范化，每一条合法的「观点反对某卡」都会被 W15 误报成「方向不对称」。
+// 端点合同（B2c）落地后，论证关系两端都取自知识卡 ∪ 观点的端点宇宙，`opposing` 因此在
+// k↔k / k↔o / o↔k / o↔o 四种组合上都适用「按完整 ID 字典序取小端为唯一宿主」这条可复算
+// 的落盘不变量。适用前提只有一个：持有方 `from` 本身是合法端点（否则它连落盘对象都不是，
+// 谈不上「哪一端是规范写入端」）。目标端的形态 / 存在性另由 E14 / E13 判，见 opposingPairs。
 func (f relationFact) opposingNormalizable() bool {
-	return f.isOpposing() && f.fromKind == KindCard && ValidRelationTarget(f.from)
+	return f.isOpposing() && ValidRelationTarget(f.from)
 }
 
 // collectRelationFacts 把扫描快照折成关系事实序列（纯函数：不改入参、零 IO）。
@@ -205,7 +216,7 @@ func collectRelationFacts(scan *query.ScanResult) []relationFact {
 		appendRels(c.ID, KindCard, c.Path, c.Relations)
 	}
 	// 观点同样承载 `relations[]`（schema v2 的「支持 / 限制 / 反对」三组视图就落在这里），
-	// 因此同样进 R3 的判定面：target 仍必须是知识卡 ID，形态与存在性两码逐字同口径。
+	// 因此同样进 R3 的判定面：target 是知识卡或观点端点（`k-` / `o-`），形态与存在性两码逐字同口径。
 	for _, o := range scan.Opinions {
 		appendRels(o.ID, KindOpinion, o.Path, o.Relations)
 	}
@@ -259,7 +270,7 @@ func checkR3TargetMissingAndPrefix(facts []relationFact, x StructureIndex) []Fin
 				continue // 防御性丢弃：只读检查不该让进程死在检查器里
 			}
 			invalid = append(invalid, fd)
-		case !x.Has(f.target, KindCard):
+		case !hasRelationEndpoint(x, f.target):
 			fd, err := NewFinding(CheckRelationTargetMissing, []string{f.from, f.target},
 				targetMissingDetail(agg))
 			if err != nil {
@@ -289,8 +300,8 @@ func targetMissingDetail(agg *targetAgg) string {
 func prefixInvalidDetail(agg *targetAgg) string {
 	return fmt.Sprintf(
 		"关系 target 的 ID 前缀 / 形态不合法：%s %s 的 relations[] 第 %d 条 target = %q"+
-			"（共 %d 条同目标条目，类型 %s），不满足既有 ID 规则（关系只连知识卡，target 恒 "+
-			"`k-` + 8 位 yyyymmdd + 非空 slug；判定直接调用 internal/model 的现成校验，"+
+			"（共 %d 条同目标条目，类型 %s），不满足既有 ID 规则（论证关系端点恒是知识卡或观点，"+
+			"即 `k-` / `o-` + 8 位 yyyymmdd + 非空 slug；判定直接调用 internal/model 的现成校验，"+
 			"本检查零新造规则）；持有方落盘于 %s。形态非法时不再判 target 存在性（E13），"+
 			"一件事只报一码；只报告——不自动改写 target、不移除该条目",
 		labelOf(agg.fact.fromKind), agg.fact.from, agg.fact.seq, agg.fact.target, agg.entries,
@@ -312,7 +323,8 @@ type opposingPair struct {
 	paths []string
 }
 
-// opposingPairs 归并全部**可判定**的 `opposing` 条目：两端都必须是合法且在库内的知识卡 ID。
+// opposingPairs 归并全部**可判定**的 `opposing` 条目：两端都必须是合法且在库内的关系端点
+// （知识卡或观点，按完整 ID 字典序规范化）。
 //
 // 为什么跳过不可判定的条目：target 形态非法已由 E14 报、target 不在库内已由 E13 报，
 // 「对端不存在时缺不缺反向」不是一件可复算的事实 —— 若照判，同一条脏数据会被两个码各记
@@ -322,14 +334,14 @@ func opposingPairs(facts []relationFact, x StructureIndex) (map[string]*opposing
 	keys := make([]string, 0, len(facts))
 	for _, f := range facts {
 		if !f.opposingNormalizable() {
-			// 非 opposing、或持有方不是知识卡（观点侧无规范方向可言，见
-			// opposingNormalizable 的说明）：本码整体不判。
+			// 非 opposing、或持有方不是合法端点（连落盘对象都不是，无规范方向可言）：
+			// 本码整体不判。
 			continue
 		}
 		if !ValidRelationTarget(f.target) {
 			continue
 		}
-		if !x.Has(f.target, KindCard) {
+		if !hasRelationEndpoint(x, f.target) {
 			continue
 		}
 		small, large := NormalizeOpposingPair(f.from, f.target)

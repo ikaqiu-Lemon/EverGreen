@@ -34,6 +34,8 @@ import (
 const (
 	oA = "o-20260916-alpha"
 	oB = "o-20260916-beta"
+	// oGone 形态合法但库内不存在（观点端点的 E13 判定面，与 kGone 对称）。
+	oGone = "o-20260916-gone"
 )
 
 // opOpinion 构造一条观点条目（路径由 ID 派生，保证扫描序稳定可复算）。
@@ -237,14 +239,19 @@ func TestOpinionRelationTargetMissingDiagnosedByR3(t *testing.T) {
 	}
 }
 
-// TestOpinionRelationTargetPrefixInvalid：观点关系的 target 不是知识卡 ID（`o-` 前缀 /
-// 空串）→ 恰 1 条 E14，且与 E13 互斥（形态非法时不再判存在性）。
+// TestOpinionRelationTargetPrefixInvalid：观点关系的 target 不是合法端点（`n-` / `s-` /
+// 畸形 `o-` / 空串）→ 恰 1 条 E14，且与 E13 互斥（形态非法时不再判存在性）。
+//
+// 端点合同（B2c）：`o-*` 已是合法端点，因此指向观点不再是 E14；本用例只钉「非 k/o 端点」
+// 与「畸形端点」两支（合法但缺失的 o-* 走 E13，见 TestOpinionRelationEndpointExistence）。
 func TestOpinionRelationTargetPrefixInvalid(t *testing.T) {
 	cases := []struct {
 		name   string
 		target string
 	}{
-		{"target 指向另一条观点（关系只连知识卡）", oB},
+		{"target 是笔记 ID（n- 非端点）", "n-20260916-note"},
+		{"target 是原文 ID（s- 非端点）", "s-20260916-src"},
+		{"target 是畸形观点端点（o- 但缺日期 / slug 段）", "o-a1"},
 		{"target 为空串", ""},
 	}
 	for _, c := range cases {
@@ -263,6 +270,42 @@ func TestOpinionRelationTargetPrefixInvalid(t *testing.T) {
 			}
 			if !strings.Contains(f.Detail, oA) {
 				t.Fatalf("E14 的 detail 未点名引用方：%q", f.Detail)
+			}
+		})
+	}
+}
+
+// TestOpinionRelationEndpointExistence：观点关系指向**存在**的 `o-*` / `k-*` 端点零 E13/E14；
+// 指向**缺失**的 `o-*` 与缺失的 `k-*` 都产 E13（观点是合法端点，缺失才是存在性问题）。
+func TestOpinionRelationEndpointExistence(t *testing.T) {
+	// 落盘宇宙：知识卡 kA + 观点 oB 存在；持有方是观点 oA。
+	build := func(target string) Input {
+		return Input{Scan: opScanOf(
+			[]query.CardEntry{card(kA, "domains/ai/knowledge/"+kA+".md")}, nil,
+			[]query.OpinionEntry{opOpinion(oA, r3Rel(model.RelationSupports, target)), opOpinion(oB)},
+		)}
+	}
+	cases := []struct {
+		name   string
+		target string
+		want   [R3SubcheckCount]int
+	}{
+		{"观点持有关系指向存在的观点（o-）→ 零 E13/E14", oB, [R3SubcheckCount]int{0, 0, 0, 0}},
+		{"观点持有关系指向存在的知识卡（k-）→ 零 E13/E14", kA, [R3SubcheckCount]int{0, 0, 0, 0}},
+		{"观点持有关系指向缺失的观点（o-）→ E13", oGone, [R3SubcheckCount]int{1, 0, 0, 0}},
+		{"观点持有关系指向缺失的知识卡（k-）→ E13", kGone, [R3SubcheckCount]int{1, 0, 0, 0}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fs := r3Of(t, build(c.target))
+			if got := r3Counts(fs); got != c.want {
+				t.Fatalf("四码条数 = %v，期望 %v：%+v", got, c.want, fs)
+			}
+			if c.want[0] == 1 {
+				f := r3One(t, fs, CheckRelationTargetMissing)
+				if f.Code() != CodeE13 || f.Severity != SeverityError {
+					t.Fatalf("缺失端点必须 error 级 + %s，实得 %s / %s", CodeE13, f.Severity, f.Code())
+				}
 			}
 		})
 	}
@@ -388,38 +431,114 @@ func TestOpinionDanglingReferenceFields(t *testing.T) {
 	}
 }
 
-// TestOpinionHeldOpposingNotJudgedAsymmetric：观点持有的 `opposing` 不判方向不对称。
+// TestOpinionHeldOpposingNormalizedAcrossKinds：观点持有的 `opposing` 同样按 A-24 的完整 ID
+// 字典序规范化（端点合同 B2c）——观点不再豁免方向对称性检查。
 //
-// 理由是落盘形态本身：关系 target 恒是知识卡 ID，知识卡侧**无法**写回指向观点的条目，
-// 因此「按两端 ID 字典序取小者为写入端」这条规范化不变量在观点侧不成立——若照判，
-// 每一条合法的「观点反对某卡」都会误报 W15。同一条边在同一份观点文件里写两遍仍要报 W16。
-func TestOpinionHeldOpposingNotJudgedAsymmetric(t *testing.T) {
-	// oA > kA（字典序），故若沿用知识卡两端的规范化口径，这条边会被判成「落在非规范方向」。
-	single := Input{Scan: opScanOf(
-		[]query.CardEntry{card(kA, "domains/ai/knowledge/"+kA+".md")}, nil,
-		[]query.OpinionEntry{opOpinion(oA, r3Rel(model.RelationOpposing, kA))},
-	)}
-	if got := r3Counts(r3Of(t, single)); got != [R3SubcheckCount]int{0, 0, 0, 0} {
-		t.Fatalf("观点持有的合法 opposing 不得产任何 R3 finding，四码条数 = %v", got)
+// 'k' < 'o'，故 kA < oA：规范写入端是 kA。因此：
+//   - 观点 oA 反对卡 kA（落在较大端 → 非规范方向）单条 → W15；
+//   - 卡 kA 反对观点 oA（规范方向）单条 → 零 finding；
+//   - 两个方向各一条 → W16（无 W15）；
+//   - 观点侧同一条非规范边写两遍：既非规范方向又重复 → W15 + W16 各 1 条（两件独立事实）。
+func TestOpinionHeldOpposingNormalizedAcrossKinds(t *testing.T) {
+	kaPath := "domains/ai/knowledge/" + kA + ".md"
+	// ① 非规范方向单条（观点持有较大端 oA → 较小端 kA）→ 恰 1 条 W15，targets 规范化为 [kA, oA]。
+	rev := Input{Scan: opScanOf(
+		[]query.CardEntry{card(kA, kaPath)}, nil,
+		[]query.OpinionEntry{opOpinion(oA, r3Rel(model.RelationOpposing, kA))})}
+	fsRev := r3Of(t, rev)
+	if got := r3Counts(fsRev); got != [R3SubcheckCount]int{0, 0, 1, 0} {
+		t.Fatalf("观点持有非规范方向 opposing 应恰 1 条 W15，四码条数 = %v：%+v", got, fsRev)
 	}
-	// 同一份观点文件内同一条边写两遍 → 恰 1 条 W16。
-	dup := Input{Scan: opScanOf(
-		[]query.CardEntry{card(kA, "domains/ai/knowledge/"+kA+".md")}, nil,
+	w15 := r3One(t, fsRev, CheckRelationOpposingAsymmetric)
+	if w15.Code() != CodeW15 || w15.Severity != SeverityWarning {
+		t.Fatalf("W15 必须 warning 级 + %s，实得 %s / %s", CodeW15, w15.Severity, w15.Code())
+	}
+	if want := []string{kA, oA}; !reflect.DeepEqual(w15.Targets, want) {
+		t.Fatalf("W15 的 targets = %v，期望规范化后的 %v", w15.Targets, want)
+	}
+	// ② 规范方向单条（知识卡持有较小端 kA → 较大端 oA）→ 零 finding。
+	canon := Input{Scan: opScanOf(
+		[]query.CardEntry{r3Card(kA, r3Rel(model.RelationOpposing, oA))}, nil,
+		[]query.OpinionEntry{opOpinion(oA)})}
+	if got := r3Counts(r3Of(t, canon)); got != [R3SubcheckCount]int{0, 0, 0, 0} {
+		t.Fatalf("规范方向的合法 opposing 不得产任何 R3 finding，四码条数 = %v", got)
+	}
+	// ③ 两个方向各一条 → W16（无 W15）。
+	both := Input{Scan: opScanOf(
+		[]query.CardEntry{r3Card(kA, r3Rel(model.RelationOpposing, oA))}, nil,
+		[]query.OpinionEntry{opOpinion(oA, r3Rel(model.RelationOpposing, kA))})}
+	fsBoth := r3Of(t, both)
+	if got := r3Counts(fsBoth); got != [R3SubcheckCount]int{0, 0, 0, 1} {
+		t.Fatalf("两个方向各一条应恰 1 条 W16（无 W15），四码条数 = %v：%+v", got, fsBoth)
+	}
+	w16 := r3One(t, fsBoth, CheckRelationDuplicate)
+	if w16.Code() != CodeW16 || w16.Severity != SeverityWarning {
+		t.Fatalf("W16 必须 warning 级 + %s，实得 %s / %s", CodeW16, w16.Severity, w16.Code())
+	}
+	if want := []string{kA, oA}; !reflect.DeepEqual(w16.Targets, want) {
+		t.Fatalf("W16 的 targets = %v，期望 %v", w16.Targets, want)
+	}
+	// ④ 观点侧同一条非规范边写两遍：既非规范方向又重复 → W15 + W16 各 1 条。
+	dupRev := Input{Scan: opScanOf(
+		[]query.CardEntry{card(kA, kaPath)}, nil,
 		[]query.OpinionEntry{opOpinion(oA,
-			r3Rel(model.RelationOpposing, kA), r3Rel(model.RelationOpposing, kA))},
-	)}
-	fs := r3Of(t, dup)
-	if got := r3Counts(fs); got != [R3SubcheckCount]int{0, 0, 0, 1} {
-		t.Fatalf("同文件重复写同一条边应恰 1 条 W16，四码条数 = %v：%+v", got, fs)
+			r3Rel(model.RelationOpposing, kA), r3Rel(model.RelationOpposing, kA))})}
+	if got := r3Counts(r3Of(t, dupRev)); got != [R3SubcheckCount]int{0, 0, 1, 1} {
+		t.Fatalf("非规范方向重复应各产 1 条 W15 与 W16，四码条数 = %v", got)
 	}
-	f := r3One(t, fs, CheckRelationDuplicate)
-	if f.Code() != CodeW16 || f.Severity != SeverityWarning {
-		t.Fatalf("重复关系对必须 warning 级 + %s，实得 %s / %s", CodeW16, f.Severity, f.Code())
+}
+
+// TestOpinionOpposingCrossKindNormalized：观点↔观点（o↔o）的 `opposing` 同样按 A-24 的
+// 完整 ID 字典序规范化 —— 端点合同 B2c 把规范化 / 判重从 k↔k 扩到 k↔o / o↔k / o↔o。
+//
+// oA < oB（字典序），故 oA 是这对边的唯一规范写入端。四种落盘形态各钉一次：
+//   - oA → oB 单条（规范方向）        → 零 finding；
+//   - oB → oA 单条（非规范方向）      → 恰 1 条 W15；
+//   - 两个方向各一条                   → 恰 1 条 W16（无 W15）；
+//   - 同一观点文件里同方向写两遍       → 恰 1 条 W16。
+func TestOpinionOpposingCrossKindNormalized(t *testing.T) {
+	if !(oA < oB) {
+		t.Fatalf("用例前提不成立：期望 %s 字典序小于 %s", oA, oB)
 	}
-	want := []string{kA, oA}
-	sort.Strings(want)
-	if !reflect.DeepEqual(f.Targets, want) {
-		t.Fatalf("targets 期望 %v，实得 %v", want, f.Targets)
+	// ① 规范方向单条 → 零 finding。
+	canon := Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+		opOpinion(oA, r3Rel(model.RelationOpposing, oB)), opOpinion(oB)})}
+	if got := r3Counts(r3Of(t, canon)); got != [R3SubcheckCount]int{0, 0, 0, 0} {
+		t.Fatalf("o↔o 规范方向合法 opposing 不得产任何 R3 finding，四码条数 = %v", got)
+	}
+	// ② 非规范方向单条（较大端 oB 持有）→ 恰 1 条 W15，targets 规范化为 [oA, oB]。
+	rev := Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+		opOpinion(oA), opOpinion(oB, r3Rel(model.RelationOpposing, oA))})}
+	fsRev := r3Of(t, rev)
+	if got := r3Counts(fsRev); got != [R3SubcheckCount]int{0, 0, 1, 0} {
+		t.Fatalf("o↔o 非规范方向应恰 1 条 W15，四码条数 = %v：%+v", got, fsRev)
+	}
+	w15 := r3One(t, fsRev, CheckRelationOpposingAsymmetric)
+	if w15.Code() != CodeW15 || w15.Severity != SeverityWarning {
+		t.Fatalf("W15 必须 warning 级 + %s，实得 %s / %s", CodeW15, w15.Severity, w15.Code())
+	}
+	if want := []string{oA, oB}; !reflect.DeepEqual(w15.Targets, want) {
+		t.Fatalf("W15 的 targets = %v，期望规范化后的 %v", w15.Targets, want)
+	}
+	// ③ 两个方向各一条 → 恰 1 条 W16（无 W15）。
+	both := Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+		opOpinion(oA, r3Rel(model.RelationOpposing, oB)),
+		opOpinion(oB, r3Rel(model.RelationOpposing, oA))})}
+	fsBoth := r3Of(t, both)
+	if got := r3Counts(fsBoth); got != [R3SubcheckCount]int{0, 0, 0, 1} {
+		t.Fatalf("o↔o 两个方向各一条应恰 1 条 W16（无 W15），四码条数 = %v：%+v", got, fsBoth)
+	}
+	w16 := r3One(t, fsBoth, CheckRelationDuplicate)
+	if want := []string{oA, oB}; !reflect.DeepEqual(w16.Targets, want) {
+		t.Fatalf("W16 的 targets = %v，期望 %v", w16.Targets, want)
+	}
+	// ④ 同一观点文件同方向写两遍 → 恰 1 条 W16。
+	dup := Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+		opOpinion(oA, r3Rel(model.RelationOpposing, oB), r3Rel(model.RelationOpposing, oB)),
+		opOpinion(oB)})}
+	fsDup := r3Of(t, dup)
+	if got := r3Counts(fsDup); got != [R3SubcheckCount]int{0, 0, 0, 1} {
+		t.Fatalf("o↔o 同文件同方向重复应恰 1 条 W16，四码条数 = %v：%+v", got, fsDup)
 	}
 }
 

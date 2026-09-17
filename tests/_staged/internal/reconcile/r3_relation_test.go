@@ -5,7 +5,7 @@ package reconcile
 // 六组（deliverables 逐字要求，用例名不得改字）：
 //  1. TestR3TargetMissing                 —— target 查无此对象 → E13 / error，聚合与去重可复算；
 //  2. TestR3PrefixInvalidReusesModelRule   —— 前缀 / 形态非法 → E14 / error，判定逐条与
-//     model.ParseCardID 一致（零新造规则），且与 E13 互斥；
+//     model.ParseRelationEndpoint 一致（零新造规则），且与 E13 互斥；
 //  3. TestR3OpposingAsymmetricNormalized   —— 按 A-24 的 ID 字典序规范化后判方向不对称 → W15 / warning；
 //  4. TestR3DuplicateNormalizedTriple      —— 规范化 (from,type,target) ≥ 2 条 → W16 / warning；
 //  5. TestR3ReportOnlyNoAutoFix            —— 只报告零自动修：零 RepairSpec / 零写盘 / 入参不改 / 幂等；
@@ -180,8 +180,11 @@ func TestR3TargetMissing(t *testing.T) {
 
 // TestR3PrefixInvalidReusesModelRule：target 的前缀 / 形态非法 → E14 / error。
 //
-// 两条硬要求：① 判定**逐条**与 model 的现成规则（ParseCardID）一致，本包零新造规则；
-// ② E14 与 E13 **互斥**——形态非法时不再判存在性，一件事只报一码。
+// 两条硬要求：① 判定**逐条**与 model 的现成规则（ParseRelationEndpoint）一致，本包零新造
+// 规则；② E14 与 E13 **互斥**——形态非法时不再判存在性，一件事只报一码。
+//
+// 端点合同（B2c）：合法端点是知识卡（`k-`）∪ 观点（`o-`）。因此形态合法但库内不存在的
+// `k-` / `o-` 都走 E13（见末两例）；`n-` / `s-` / `r-` / `p-` / 畸形 / 空一律 E14。
 func TestR3PrefixInvalidReusesModelRule(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -193,17 +196,22 @@ func TestR3PrefixInvalidReusesModelRule(t *testing.T) {
 			[R3SubcheckCount]int{0, 1, 0, 0}, []string{kA, "n-20261123-note"}},
 		{"原文 ID 当关系 target（s- 前缀）", "s-20261123-src",
 			[R3SubcheckCount]int{0, 1, 0, 0}, []string{kA, "s-20261123-src"}},
-		{"S2 预留前缀（r-）同样不是知识卡 ID", "r-20261123-recap",
+		{"S2 预留前缀（r-）不是合法端点", "r-20261123-recap",
 			[R3SubcheckCount]int{0, 1, 0, 0}, []string{kA, "r-20261123-recap"}},
+		{"提案前缀（p-）不是合法端点", "p-20261123-plan",
+			[R3SubcheckCount]int{0, 1, 0, 0}, []string{kA, "p-20261123-plan"}},
 		{"无前缀裸串", "gone", [R3SubcheckCount]int{0, 1, 0, 0}, []string{"gone", kA}},
 		{"k- 但缺 yyyymmdd-slug 段", "k-a1", [R3SubcheckCount]int{0, 1, 0, 0}, []string{kA, "k-a1"}},
+		{"o- 但缺 yyyymmdd-slug 段", "o-a1", [R3SubcheckCount]int{0, 1, 0, 0}, []string{kA, "o-a1"}},
 		{"k- 但日期段非 8 位", "k-2026-alpha", [R3SubcheckCount]int{0, 1, 0, 0},
 			[]string{"k-2026-alpha", kA}},
 		{"k- 但 slug 段为空", "k-20261123-", [R3SubcheckCount]int{0, 1, 0, 0},
 			[]string{"k-20261123-", kA}},
 		{"空 target（形态问题归 R3，targets 只剩引用方）", "",
 			[R3SubcheckCount]int{0, 1, 0, 0}, []string{kA}},
-		{"形态合法但库内不存在 → 走 E13，不走 E14（两码互斥）", kGone,
+		{"k- 形态合法但库内不存在 → 走 E13，不走 E14（两码互斥）", kGone,
+			[R3SubcheckCount]int{1, 0, 0, 0}, nil},
+		{"o- 形态合法但库内不存在 → 同样走 E13（观点也是合法端点）", oGone,
 			[R3SubcheckCount]int{1, 0, 0, 0}, nil},
 	}
 	for _, c := range cases {
@@ -213,10 +221,10 @@ func TestR3PrefixInvalidReusesModelRule(t *testing.T) {
 			if got := r3Counts(fs); got != c.want {
 				t.Fatalf("四码条数 = %v，期望 %v：%+v", got, c.want, fs)
 			}
-			// ① 判定逐条与 model 的现成规则一致（零新造规则的等价性复算）。
-			_, err := model.ParseCardID(strings.TrimSpace(c.target))
+			// ① 判定逐条与 model 的现成端点规则一致（零新造规则的等价性复算）。
+			_, err := model.ParseRelationEndpoint(strings.TrimSpace(c.target))
 			if ValidRelationTarget(c.target) != (err == nil) {
-				t.Fatalf("ValidRelationTarget(%q) = %v，与 model.ParseCardID 的判定不一致（err=%v）",
+				t.Fatalf("ValidRelationTarget(%q) = %v，与 model.ParseRelationEndpoint 的判定不一致（err=%v）",
 					c.target, ValidRelationTarget(c.target), err)
 			}
 			if c.want[1] != 1 {
@@ -240,9 +248,13 @@ func TestR3PrefixInvalidReusesModelRule(t *testing.T) {
 	if !strings.Contains(body, "internal/model") {
 		t.Fatal("r3_relation.go 未引用 internal/model：前缀校验必须复用现成规则")
 	}
-	for _, bad := range []string{"regexp", "MustCompile", "HasPrefix(\"k-\"", "PrefixCard ="} {
+	if !strings.Contains(body, "ParseRelationEndpoint") {
+		t.Fatal("r3_relation.go 未复用 model.ParseRelationEndpoint：端点校验必须走现成入口")
+	}
+	for _, bad := range []string{"regexp", "MustCompile", "HasPrefix(\"k-\"", "HasPrefix(\"o-\"",
+		"PrefixCard =", "PrefixOpinion ="} {
 		if strings.Contains(body, bad) {
-			t.Errorf("r3_relation.go 出现 %q：ID 前缀规则不得在本包重造", bad)
+			t.Errorf("r3_relation.go 出现 %q：ID 端点规则不得在本包重造", bad)
 		}
 	}
 }
