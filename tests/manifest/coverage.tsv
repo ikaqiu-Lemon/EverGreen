@@ -2,7 +2,7 @@ capability	unit	integration	e2e	contract	perf	total
 arch-boundary	0	2	2	16	0	20
 authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
-card-query	23	0	4	0	0	27
+card-query	24	0	4	0	0	28
 cli-core	73	0	6	0	0	79
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7

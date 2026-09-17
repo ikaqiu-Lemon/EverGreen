@@ -733,10 +733,18 @@ type RelationEdge struct {
 
 // RelationsOut 返回本卡 frontmatter relations[] 的正向关系（合同 §3.2），已排序。
 func RelationsOut(card CardEntry) []RelationEdge {
+	return relationEdgesFrom(card.ID, card.Path, card.Relations)
+}
+
+// relationEdgesFrom 把某个**持有方**（知识卡或观点）自身的 relations[] 折成正向边，
+// 按 target 升序（复用 SortEdges 四级全序）。from / path 取该持有方的 ID / 文件路径，
+// reason 逐字取自其 frontmatter —— 因此 `RelView` 的焦点是观点时（o→k / o→o），正向边
+// 与知识卡焦点逐字同构（同一 RelationEdge 形状、同一排序），只是持有方换成了观点。
+func relationEdgesFrom(from, path string, rels []model.Relation) []RelationEdge {
 	out := []RelationEdge{}
-	for _, rel := range card.Relations {
-		out = append(out, RelationEdge{From: card.ID, Type: string(rel.Type),
-			Target: string(rel.Target), Reason: rel.Reason, Path: card.Path})
+	for _, rel := range rels {
+		out = append(out, RelationEdge{From: from, Type: string(rel.Type),
+			Target: string(rel.Target), Reason: rel.Reason, Path: path})
 	}
 	SortEdges(out, func(e RelationEdge) string { return e.Target })
 	return out

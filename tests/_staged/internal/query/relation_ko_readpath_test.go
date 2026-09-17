@@ -26,7 +26,8 @@ package query
 // bkDeps），绝不伪造 DTO 掩盖链路。
 
 import (
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"sort"
@@ -159,6 +160,16 @@ func korReasonOf(edges []RelationEdge, from string) string {
 	return ""
 }
 
+// korReasonToTarget 按 target 取 reason（正向段用：正向边 from 恒为焦点，对端在 target 位）。
+func korReasonToTarget(edges []RelationEdge, target string) string {
+	for _, e := range edges {
+		if e.Target == target {
+			return e.Reason
+		}
+	}
+	return ""
+}
+
 // —— ① 扫描后端：四组合正反向可读（无索引，走全量扫描底座）——
 
 func TestReadPathKOForwardReverseScanBackend(t *testing.T) {
@@ -231,7 +242,7 @@ func TestReadPathKOForwardReverseScanBackend(t *testing.T) {
 	}
 
 	// rel k-beta：与 card show 同一套反向事实（o→k 反向边同样现身、reason 权威）。
-	rv, err := bkRel(root, RelRequest{ID: model.CardID(korBetaID)})
+	rv, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korBetaID)})
 	if err != nil {
 		t.Fatalf("rel beta：%v", err)
 	}
@@ -289,79 +300,153 @@ func TestReadPathKOReverseVisibilityDeprecatedDeleted(t *testing.T) {
 	}
 }
 
-// —— ③ 四后端矩阵：healthy / missing / stale / corrupt 业务结果逐字等价 ——
+// —— ②′ `rel` 焦点为观点端点（o-id）：正向读自身 relations[]、反向全库反查 `*→o` ——
 
-// korProjection 是一次读的业务投影（供跨后端逐字比对；不含降级诊断——那是 backend 的事）。
-type korProjection struct {
-	CardJSON    string
-	CardMissing string
-	OpnJSON     string
-	OpnMissing  string
-	RelInFroms  string
-	RelInReason string
-}
-
-func korProject(t *testing.T, root string, wantIndex bool) korProjection {
-	t.Helper()
-	beta, err := bkShow(root, model.CardID(korBetaID))
-	if err != nil {
-		t.Fatalf("card show beta：%v", err)
-	}
-	pori, err := osShow(root, korPoriID)
-	if err != nil {
-		t.Fatalf("opinion show pori：%v", err)
-	}
-	rv, err := bkRel(root, RelRequest{ID: model.CardID(korBetaID)})
-	if err != nil {
-		t.Fatalf("rel beta：%v", err)
-	}
-	if got := beta.backend.UseIndex(); got != wantIndex {
-		t.Fatalf("card show 后端与预期不符：useIndex=%v want=%v（%s）",
-			got, wantIndex, beta.backend.Message)
-	}
-	if got := pori.backend.UseIndex(); got != wantIndex {
-		t.Fatalf("opinion show 后端与预期不符：useIndex=%v want=%v", got, wantIndex)
-	}
-	if got := rv.backend.UseIndex(); got != wantIndex {
-		t.Fatalf("rel 后端与预期不符：useIndex=%v want=%v", got, wantIndex)
-	}
-	cb, _ := json.Marshal(beta.Card)
-	ob, _ := json.Marshal(pori.Opinion)
-	return korProjection{
-		CardJSON:    string(cb),
-		CardMissing: strings.Join(beta.MissingTargets, ","),
-		OpnJSON:     string(ob),
-		OpnMissing:  strings.Join(pori.MissingTargets, ","),
-		RelInFroms:  strings.Join(korFroms(rv.Data.RelationsIn), ","),
-		RelInReason: korReasonOf(rv.Data.RelationsIn, korPoriID),
-	}
-}
-
-func TestReadPathKOFourBackendEquivalence(t *testing.T) {
-	// 基线：healthy 索引（含观点）。
+// TestReadPathKORelOpinionFocus 钉 `RelView(o-id)` 这条核心 API：焦点端点是观点时，正向
+// 读观点**自身** relations[]（o→k / o→o），反向在 Knowledge ∪ Opinion 全库反查谁指向了它
+// （k→o / o→o 都如实现身）。这是 8b833a6 缺的第一处核心 API：焦点实体必须从
+// Knowledge ∪ Opinion 联合定位，`RelView(o-id)` 的正反向因此都可用。
+func TestReadPathKORelOpinionFocus(t *testing.T) {
 	root := korVault(t)
-	bkoBuildIndexWithOpinions(t, root)
-	healthy := korProject(t, root, true)
 
-	// missing / corrupt / stale：各自在**新建的 healthy vault** 上破坏，再取投影（应降级为扫描）。
-	for _, c := range []struct {
-		name   string
-		break_ func(*testing.T, string)
-	}{
-		{"missing", bkDropIndex},
-		{"corrupt", bkCorruptIndex},
-		{"stale", korMakeStale},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			r := korVault(t)
-			bkoBuildIndexWithOpinions(t, r)
-			c.break_(t, r)
-			got := korProject(t, r, false)
-			if got != healthy {
-				t.Fatalf("%s 降级后业务投影与 healthy 不等价：\nhealthy=%+v\n%s=%+v",
-					c.name, healthy, c.name, got)
-			}
-		})
+	// rel o-pori：正向自身 relations[]。SortEdges 按关系类型 opposing→limits→supports→derives
+	// 排序，故 limits(o-quon) 在 supports(k-beta) 之前；两条对端一个是观点(o→o)、一个是卡(o→k)。
+	pori, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korPoriID)})
+	if err != nil {
+		t.Fatalf("rel pori：%v", err)
+	}
+	if pori.backend.UseIndex() {
+		t.Fatalf("前置：无索引应走扫描后端，实际 %s", pori.backend.Kind)
+	}
+	if pori.Data.ID != korPoriID {
+		t.Fatalf("rel data.id 必须回显焦点端点 %s，实际 %q", korPoriID, pori.Data.ID)
+	}
+	if got := targetsOf(pori.Data.RelationsOut); strings.Join(got, ",") != korQuonID+","+korBetaID {
+		t.Fatalf("pori.relations_out = %v，期望 [o-quon(o→o,limits), k-beta(o→k,supports)]", got)
+	}
+	// 正向边 from 恒为焦点自身，reason 逐字取权威。
+	for _, e := range pori.Data.RelationsOut {
+		if e.From != korPoriID {
+			t.Fatalf("正向边 from 必须恒为焦点 %s，实际 %s", korPoriID, e.From)
+		}
+	}
+	if got := korReasonToTarget(pori.Data.RelationsOut, korBetaID); got != korRPoriBeta {
+		t.Fatalf("o→k 正向边 reason 应为权威原值 %q，实际 %q", korRPoriBeta, got)
+	}
+	// 反向：k-alpha 以 k→o 指向 o-pori（*→o 真实边必须现身，reason 权威）。
+	if got := korFroms(pori.Data.RelationsIn); strings.Join(got, ",") != korAlphaID {
+		t.Fatalf("pori.relations_in = %v，期望 [k-alpha(k→o 反向真实边)]", got)
+	}
+	if got := korReasonOf(pori.Data.RelationsIn, korAlphaID); got != korRAlphaPori {
+		t.Fatalf("k→o 反向边 reason 应为权威原值 %q，实际 %q", korRAlphaPori, got)
+	}
+
+	// rel o-quon：正向为空；反向出现 o→o 真实边（o-pori→o-quon）。
+	quon, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korQuonID)})
+	if err != nil {
+		t.Fatalf("rel quon：%v", err)
+	}
+	if len(quon.Data.RelationsOut) != 0 {
+		t.Fatalf("o-quon 无正向关系，relations_out 应为空，实际 %v", targetsOf(quon.Data.RelationsOut))
+	}
+	if got := korFroms(quon.Data.RelationsIn); strings.Join(got, ",") != korPoriID {
+		t.Fatalf("quon.relations_in = %v，期望 [o-pori(o→o 反向真实边)]", got)
+	}
+	if got := korReasonOf(quon.Data.RelationsIn, korPoriID); got != korRPoriQuon {
+		t.Fatalf("o→o 反向边 reason 应为权威原值 %q，实际 %q", korRPoriQuon, got)
+	}
+}
+
+// —— ②″ `--to` 校验与存在性统一为 k/o 端点宇宙；补 To=o-id 的真实正 / 反向证据 ——
+
+// TestReadPathKORelToEndpoint 钉 8b833a6 缺的第二处核心 API：`--to` 收窄到 k/o 端点，
+// 存在性判定走**统一端点宇宙**（Knowledge ∪ Opinion）。逐项覆盖：
+//   - To=o-id 命中真实正向边（k→o、o→o）；
+//   - To=o-id 命中真实反向边（焦点为卡、对端为观点的 `o→k` 反向）；
+//   - To 指向存在但无边的 o-id → 正反向皆空，且**不在无 --to 基线上新增 Q2**（端点存在，只是没边）；
+//   - To 指向库中不存在的端点 → 正反向皆空 + 在基线上**恰新增一条 Q2**（对端不存在优于条目照常输出）。
+//
+// korVault 里 k-alpha→o-ghost 的悬空边恒产一条**全局** Q2（danglingDiagnostics 扫全库卡），
+// 故这里以「无 --to 基线 Q2 计数」为参照断言 --to 是否新增 Q2，稳健于全局悬空噪声。
+func TestReadPathKORelToEndpoint(t *testing.T) {
+	root := korVault(t)
+
+	// baseQ2 = 某焦点在**无 --to** 时的 Q2 计数（含全局悬空噪声）。
+	baseQ2 := func(focus string) int {
+		rv, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(focus)})
+		if err != nil {
+			t.Fatalf("baseline rel %s：%v", focus, err)
+		}
+		return countCode(rv.Diagnostics, CodeQ2)
+	}
+
+	// ① To=o-pori（k→o 正向）：k-alpha --to o-pori 只留正向 k-alpha→o-pori，反向为空；不新增 Q2。
+	kToPori, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korAlphaID), To: korPoriID})
+	if err != nil {
+		t.Fatalf("rel k-alpha --to o-pori：%v", err)
+	}
+	if got := targetsOf(kToPori.Data.RelationsOut); strings.Join(got, ",") != korPoriID {
+		t.Fatalf("k-alpha --to o-pori 正向 = %v，期望恰 [o-pori]（k→o 真实正向边）", got)
+	}
+	if got := korReasonToTarget(kToPori.Data.RelationsOut, korPoriID); got != korRAlphaPori {
+		t.Fatalf("k→o 正向边 reason 应权威 %q，实际 %q", korRAlphaPori, got)
+	}
+	if len(kToPori.Data.RelationsIn) != 0 {
+		t.Fatalf("k-alpha 无反向来源，--to o-pori 反向应为空，实际 %v", korFroms(kToPori.Data.RelationsIn))
+	}
+	if got, base := countCode(kToPori.Diagnostics, CodeQ2), baseQ2(korAlphaID); got != base {
+		t.Fatalf("--to 指向存在的 o-pori 不应新增 Q2：期望 %d 实际 %d（%v）", base, got, codesOf(kToPori.Diagnostics))
+	}
+
+	// ② To=o-quon（o→o 正向）：o-pori --to o-quon 只留正向 o-pori→o-quon。
+	poriToQuon, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korPoriID), To: korQuonID})
+	if err != nil {
+		t.Fatalf("rel o-pori --to o-quon：%v", err)
+	}
+	if got := targetsOf(poriToQuon.Data.RelationsOut); strings.Join(got, ",") != korQuonID {
+		t.Fatalf("o-pori --to o-quon 正向 = %v，期望恰 [o-quon]（o→o 真实正向边）", got)
+	}
+
+	// ③ To=o-pori（反向命中）：k-beta --to o-pori 只留反向 o-pori→k-beta（对端是观点的 o→k 反向边）。
+	betaToPori, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korBetaID), To: korPoriID})
+	if err != nil {
+		t.Fatalf("rel k-beta --to o-pori：%v", err)
+	}
+	if len(betaToPori.Data.RelationsOut) != 0 {
+		t.Fatalf("k-beta 无正向关系，--to o-pori 正向应为空，实际 %v", targetsOf(betaToPori.Data.RelationsOut))
+	}
+	if got := korFroms(betaToPori.Data.RelationsIn); strings.Join(got, ",") != korPoriID {
+		t.Fatalf("k-beta --to o-pori 反向 = %v，期望恰 [o-pori]（o→k 真实反向边）", got)
+	}
+	if got := korReasonOf(betaToPori.Data.RelationsIn, korPoriID); got != korRPoriBeta {
+		t.Fatalf("反向边 reason 应权威 %q，实际 %q", korRPoriBeta, got)
+	}
+
+	// ④ To 指向存在但无此边的 o-id：k-beta --to o-quon → 正反向皆空，且**不新增 Q2**（o-quon 真实存在）。
+	betaToQuon, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korBetaID), To: korQuonID})
+	if err != nil {
+		t.Fatalf("rel k-beta --to o-quon：%v", err)
+	}
+	if len(betaToQuon.Data.RelationsOut) != 0 || len(betaToQuon.Data.RelationsIn) != 0 {
+		t.Fatalf("k-beta 与 o-quon 之间无边，正反向都应为空，实际 out=%v in=%v",
+			targetsOf(betaToQuon.Data.RelationsOut), korFroms(betaToQuon.Data.RelationsIn))
+	}
+	if got, base := countCode(betaToQuon.Diagnostics, CodeQ2), baseQ2(korBetaID); got != base {
+		t.Fatalf("--to 指向存在的 o-quon（只是无边）不应新增 Q2：期望 %d 实际 %d（%v）", base, got, codesOf(betaToQuon.Diagnostics))
+	}
+
+	// ⑤ To 指向库中不存在的 o-id：k-beta --to o-ghost → 正反向皆空 + 在基线上恰新增一条 Q2。
+	// 统一端点宇宙里查不到 o-ghost，故按「对端不存在」置空并记这条 Q2（口径优于条目照常输出）。
+	betaToGhost, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korBetaID), To: korGhostID})
+	if err != nil {
+		t.Fatalf("rel k-beta --to o-ghost：%v", err)
+	}
+	if len(betaToGhost.Data.RelationsOut) != 0 || len(betaToGhost.Data.RelationsIn) != 0 {
+		t.Fatalf("--to 指向不存在的 o-ghost 应把正反向置空，实际 out=%v in=%v",
+			targetsOf(betaToGhost.Data.RelationsOut), korFroms(betaToGhost.Data.RelationsIn))
+	}
+	if got, base := countCode(betaToGhost.Diagnostics, CodeQ2), baseQ2(korBetaID); got != base+1 {
+		t.Fatalf("--to 指向不存在端点应恰新增一条 Q2：期望 %d 实际 %d（%v）", base+1, got, codesOf(betaToGhost.Diagnostics))
 	}
 }
 
@@ -384,7 +469,7 @@ func TestReadPathKOZeroSideEffects(t *testing.T) {
 	if _, err := osShow(root, korQuonID); err != nil {
 		t.Fatalf("opinion show quon：%v", err)
 	}
-	if _, err := bkRel(root, RelRequest{ID: model.CardID(korBetaID)}); err != nil {
+	if _, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(korBetaID)}); err != nil {
 		t.Fatalf("rel beta：%v", err)
 	}
 
@@ -401,7 +486,9 @@ func TestReadPathKOZeroSideEffects(t *testing.T) {
 	}
 }
 
-// korSnapshot 把 vault 下全部文件折成「路径:大小:mtime」的确定性指纹串。
+// korSnapshot 把 vault 下全部文件折成「路径:大小:mtime纳秒:内容sha256」的确定性指纹串。
+// 内容哈希使读前后比对不止看大小 / mtime，还逐字节比内容——覆盖 `.index/eg.db`（含内容与
+// mtime）、Markdown 源文件与 `.git`（若存在），任何一格被读路径改动都会立刻被这串指纹揪出。
 func korSnapshot(t *testing.T, root string) string {
 	t.Helper()
 	var lines []string
@@ -416,8 +503,13 @@ func korSnapshot(t *testing.T, root string) string {
 		if rerr != nil {
 			return rerr
 		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		sum := sha256.Sum256(raw)
 		lines = append(lines, filepath.ToSlash(rel)+":"+
-			itoa(info.Size())+":"+itoa(info.ModTime().UnixNano()))
+			itoa(info.Size())+":"+itoa(info.ModTime().UnixNano())+":"+hex.EncodeToString(sum[:]))
 		return nil
 	})
 	if err != nil {

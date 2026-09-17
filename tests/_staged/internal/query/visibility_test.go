@@ -129,7 +129,7 @@ func showInc(t *testing.T, root, id string) *query.CardShowResult {
 
 func relDefault(t *testing.T, root, id string) *query.RelResult {
 	t.Helper()
-	res, err := query.RelView(root, query.RelRequest{ID: model.CardID(id)})
+	res, err := query.RelView(root, query.RelRequest{ID: model.RelationEndpoint(id)})
 	if err != nil {
 		t.Fatalf("RelView(%s)：%v", id, err)
 	}
@@ -138,7 +138,7 @@ func relDefault(t *testing.T, root, id string) *query.RelResult {
 
 func relInc(t *testing.T, root, id string) *query.RelResult {
 	t.Helper()
-	res, err := query.RelView(root, query.RelRequest{ID: model.CardID(id), IncludeDeprecated: true})
+	res, err := query.RelView(root, query.RelRequest{ID: model.RelationEndpoint(id), IncludeDeprecated: true})
 	if err != nil {
 		t.Fatalf("RelView(%s, include)：%v", id, err)
 	}

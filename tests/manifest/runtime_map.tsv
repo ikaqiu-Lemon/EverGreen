@@ -129,6 +129,7 @@ tests/_staged/internal/query/diagnostic_placement_test.go	internal/query/diagnos
 tests/_staged/internal/query/filter/fuzz_test.go	internal/query/filter/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unreviewed_test.go	evergreen	unit	go
 tests/_staged/internal/query/fuzz_test.go	internal/query/fuzz_test.go	evergreen	unit	go
+tests/_staged/internal/query/index_backed_ko_readpath_test.go	internal/query/index_backed_ko_readpath_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_opinion_test.go	internal/query/index_backed_opinion_test.go	evergreen	unit	go
 tests/_staged/internal/query/markers_test.go	internal/query/markers_test.go	evergreen	unit	go
 tests/_staged/internal/query/opinion_show_test.go	internal/query/opinion_show_test.go	evergreen	unit	go

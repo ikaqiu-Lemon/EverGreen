@@ -282,7 +282,7 @@ func contextExposure(t *testing.T, root string, id string) (bool, bool) {
 // （既查正向 relations_out[] 的对端，也查反向 relations_in[] 的来源端）。
 func endpointShown(t *testing.T, root string, id string) bool {
 	t.Helper()
-	res, err := query.RelView(root, query.RelRequest{ID: model.CardID("k-20260901-live")})
+	res, err := query.RelView(root, query.RelRequest{ID: model.RelationEndpoint("k-20260901-live")})
 	if err != nil {
 		t.Fatalf("RelView：%v", err)
 	}
@@ -314,7 +314,7 @@ func TestRelationEndpointFiltering_RecordsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := query.RelView(root, query.RelRequest{ID: model.CardID("k-20260901-live")})
+	res, err := query.RelView(root, query.RelRequest{ID: model.RelationEndpoint("k-20260901-live")})
 	if err != nil {
 		t.Fatalf("RelView：%v", err)
 	}
@@ -337,7 +337,7 @@ func TestRelationEndpointFiltering_RecordsUntouched(t *testing.T) {
 	// --include-deprecated：只放开 deprecated 维度——正向只剩 supports→dep 一条（del / both
 	// 因已删除维度仍隐藏，正交性 §3.2）；反向仍不含已删除端点。
 	resInc, err := query.RelView(root, query.RelRequest{
-		ID: model.CardID("k-20260901-live"), IncludeDeprecated: true})
+		ID: model.RelationEndpoint("k-20260901-live"), IncludeDeprecated: true})
 	if err != nil {
 		t.Fatalf("RelView(include-deprecated)：%v", err)
 	}

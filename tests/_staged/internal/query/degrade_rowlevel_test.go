@@ -135,7 +135,7 @@ func TestRowLevelLieDegradesReadPath(t *testing.T) {
 // 权威卡投影后仍判 fresh、仍走索引后端、仍不产 Q5。防止行级核对把健康库误伤成降级。
 func TestRowLevelHealthyIndexStillUsesIndex(t *testing.T) {
 	root := bkHealthyVault(t)
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-attention")})
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-attention")})
 	if err != nil {
 		t.Fatalf("RelView：%v", err)
 	}

@@ -12,10 +12,20 @@ package query
 // **不建索引、不引 SQLite / FTS5**（均属 S4）；不做多跳展开（S2）、不做截断分页（S4）。
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 )
+
+// ErrInvalidEndpoint 是 `eg rel <id>` / `--to <id>` 的**关系端点形态非法**：不是 k-/o- 前缀
+// 的合法 ID（s- / n- / r- / p- 及任何不可解析 ID 一律拒绝）。论证关系只发生在两条论证性
+// 产物（知识卡 / 观点）之间，故端点只认 k- / o- 两种前缀（model.ParseRelationEndpoint）。
+var ErrInvalidEndpoint = errors.New("关系端点 ID 形态非法")
+
+// ErrEndpointNotFound 是**端点形态合法但库中不存在**（焦点实体在 Knowledge ∪ Opinion
+// 全库都找不到 → 退 1、零副作用）。
+var ErrEndpointNotFound = errors.New("关系端点不存在")
 
 // RelRequest 是一次关系查询的输入（合同 §3.1 参数表）。
 //
@@ -24,7 +34,10 @@ import (
 // IncludeDeprecated 对应 `--include-deprecated`（T-…-061，owner 裁决②）：默认 false =
 // 隐藏对端 deprecated 的条目；true 只放开 deprecated 维度，**不影响**已删除维度（正交）。
 type RelRequest struct {
-	ID                model.CardID
+	// ID 是焦点实体端点（k- / o-）：论证关系跨类型，焦点既可以是知识卡也可以是观点，
+	// 故类型是 model.RelationEndpoint 而非 CardID。`RelView(o-id)` 因此可读一条观点的
+	// 正向（自身 relations[]）与反向（全库谁指向了它）。落盘 / JSON 键形态一格不变。
+	ID                model.RelationEndpoint
 	To                string
 	IncludeDeprecated bool
 	// Index 是 A-44 水位线判定所需的注入口径（S4，见 backend.go 的 IndexDeps）。
@@ -81,42 +94,67 @@ type RelResult struct {
 	Page Page
 }
 
-// RelView 组装关系视图：全库扫描 → 正向读本卡 frontmatter → 反向反查「谁指向了我」。
+// RelView 组装关系视图：全库扫描 → 正向读焦点实体 frontmatter → 反向反查「谁指向了我」。
 //
-// 正向 `relations_out[]`：只读本卡 frontmatter 的 `relations[]`，`from` 恒为本卡 ID。
-// 反向 `relations_in[]`：**全库 Markdown 反向扫描**，`from` 为写下该条关系的卡。
+// 焦点实体端点跨类型（k- / o-）：ParseRelationEndpoint 只接受知识卡 / 观点，其余前缀
+// （s- / n- / r- / p-）与畸形 ID 一律拒绝。焦点从 Knowledge ∪ Opinion 全库定位并读取其
+// **自身** relations[] 作为正向；反向走 RelationsInAll（卡 ∪ 观点全库反查）。因此
+// `RelView(o-id)` 的正反向都可用（o→k / o→o 正向、`*→o` 反向都如实现身）。
+//
+// 正向 `relations_out[]`：只读焦点实体 frontmatter 的 `relations[]`，`from` 恒为焦点 ID。
+// 反向 `relations_in[]`：**全库 Markdown 反向扫描**，`from` 为写下该条关系的卡 / 观点。
 // `opposing` **单向存储**（EG-CVG-05）：库里只有一条记录，读路径**不补对称条目、不去重合并**。
 func RelView(root string, req RelRequest) (*RelResult, error) {
-	if !req.ID.Valid() {
-		return nil, fmt.Errorf("%w：%q 不是 k-YYYYMMDD-slug 形态的知识卡 ID",
-			ErrInvalidCardID, string(req.ID))
+	if _, err := model.ParseRelationEndpoint(string(req.ID)); err != nil {
+		return nil, fmt.Errorf("%w：%q 不是 k-/o-YYYYMMDD-slug 形态的关系端点（论证关系只连知识卡或观点）",
+			ErrInvalidEndpoint, string(req.ID))
 	}
 	if err := req.Page.Validate(); err != nil {
 		return nil, err
 	}
-	if req.To != "" && !model.CardID(req.To).Valid() {
-		return nil, fmt.Errorf("%w：--to=%q 不是 k-YYYYMMDD-slug 形态的知识卡 ID",
-			ErrInvalidCardID, req.To)
+	if req.To != "" {
+		if _, err := model.ParseRelationEndpoint(req.To); err != nil {
+			return nil, fmt.Errorf("%w：--to=%q 不是 k-/o-YYYYMMDD-slug 形态的关系端点",
+				ErrInvalidEndpoint, req.To)
+		}
 	}
 	// 取数：后端选择走**唯一单点**（索引健康 → 索引后端按 relations.dst_id 精确反查出
-	// 来源卡再回权威取逐字 reason；缺失 / 损坏 / 陈旧 → 确定性降级为全量扫描 + W2x + Q5）。
+	// 来源再回权威取逐字 reason，焦点实体自身也回权威解析；缺失 / 损坏 / 陈旧 → 确定性降级
+	// 为全量扫描 + W2x + Q5）。
 	need := relNeed(string(req.ID), req.Index)
 	scan, backend, err := loadVault(root, ScanOptions{}, need, SelectBackend(root, need))
 	if err != nil {
 		return nil, err
 	}
-	// scan.Cards 已按 path 升序稳定排序：同 ID 重复时首个命中即路径字典序最小者
-	// （重复本身由扫描层记 Q1，不静默择一）。
-	var target *CardEntry
+	// 焦点从 Knowledge ∪ Opinion 定位（ID 全库唯一，k-* 与 o-* 不撞号）：先在卡面找、再在
+	// 观点面找。两面均已按 path 升序稳定排序，同 ID 重复时首个命中即路径字典序最小者
+	// （重复本身由扫描层记 Q1，不静默择一）。正向边取焦点实体自身 relations[]（relationEdgesFrom
+	// 对卡 / 观点逐字同构）。
+	var rawOut []RelationEdge
+	var focusPath string
+	found := false
 	for i := range scan.Cards {
 		if scan.Cards[i].ID == string(req.ID) {
-			target = &scan.Cards[i]
+			rawOut = RelationsOut(scan.Cards[i])
+			focusPath = scan.Cards[i].Path
+			found = true
 			break
 		}
 	}
-	if target == nil {
+	if !found {
+		for i := range scan.Opinions {
+			if scan.Opinions[i].ID == string(req.ID) {
+				rawOut = relationEdgesFrom(scan.Opinions[i].ID, scan.Opinions[i].Path,
+					scan.Opinions[i].Relations)
+				focusPath = scan.Opinions[i].Path
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
 		return nil, fmt.Errorf("%w：%s 在库中不存在（已全库扫描 %d 个 .md）",
-			ErrCardNotFound, string(req.ID), scan.ScannedFiles)
+			ErrEndpointNotFound, string(req.ID), scan.ScannedFiles)
 	}
 
 	// 顺序要点（T-…-061 修正）：**先按 --to 收窄原始边，再做可见性过滤 / 计数**。
@@ -125,7 +163,7 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 明明把对端隐藏了却不报 Q4（违反 Q4 的 N≥1 条件与正交性）；这里改为收窄在前、可见性在后。
 	// 视图切换（T-…-068）：默认是论证关系 relations[]；`--replaced-by` 换成替代指针的
 	// 正反双向（reverse.go）。两种视图**同构**：都是五键条目、同一套排序、同一套可见性。
-	rawOut, rawIn := RelationsOut(*target), RelationsInAll(scan, string(req.ID))
+	rawIn := RelationsInAll(scan, string(req.ID))
 	if req.ReplacedBy {
 		rawOut = ReplacedByForward(root, scan.Cards, string(req.ID))
 		rawIn = ReplacedByReverse(root, scan.Cards, string(req.ID))
@@ -151,15 +189,17 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	}, pol)
 	hidden := hiddenOut + hiddenIn
 	diags := scan.Diagnostics
-	if req.To != "" && !hasCard(scan.Cards, req.To) {
+	if req.To != "" && !hasEndpoint(universe, req.To) {
 		// 合同 §3.1：`--to` 指向不存在的 ID → **结果为空** + 一条 Q2（如实说明，不静默返回空）。
-		// 置空是逐字判据：即使本卡有一条悬空 relations[] 恰好指向这个不存在的 ID，
-		// 也不能因此让 relations_out[] 非空——「对端卡不存在」的口径优于「条目照常输出」。
-		// 对端不存在者不在库、不可能 deprecated，故隐藏计数在此归零（不产 Q4，只产该 Q2）。
+		// 置空是逐字判据：即使焦点有一条悬空 relations[] 恰好指向这个不存在的 ID，
+		// 也不能因此让 relations_out[] 非空——「对端不存在」的口径优于「条目照常输出」。
+		// 存在性判定走**统一端点宇宙**（Knowledge ∪ Opinion）：`--to o-id` 指向真实观点即命中，
+		// 指向不存在的 k/o 端点才置空。对端不存在者不在库、不可能 deprecated，故隐藏计数在此
+		// 归零（不产 Q4，只产该 Q2）。
 		out, in = []RelationEdge{}, []RelationEdge{}
 		hidden = 0
 		diags = finalizeDiagnostics(append(append([]Diagnostic{}, scan.Diagnostics...),
-			newQ2(target.Path, "--to 指定的对端卡 %s 在库中不存在：正反向结果均为空", req.To)))
+			newQ2(focusPath, "--to 指定的对端 %s 在库中不存在：正反向结果均为空", req.To)))
 	}
 	// 分页施加在可见性过滤**之后**（默认视图看到几条，就从这几条里分页），并且是
 	// **一个全局** limit/offset：正反两个列表合并成一条确定序列后全局取区间，再切回两段
@@ -196,10 +236,12 @@ func filterEdges(edges []RelationEdge, keep func(RelationEdge) bool) []RelationE
 	return out
 }
 
-// hasCard 报告库中是否存在该 ID 的卡。
-// 线性判定：M2 没有索引（索引属 S4），一次命令一次扫描，不设性能门槛。
-func hasCard(cards []CardEntry, id string) bool {
-	for _, c := range cards {
+// hasEndpoint 报告统一端点宇宙（Knowledge ∪ Opinion，endpointUniverse 折叠而来）里是否
+// 存在该 ID 的端点。`--to <id>` 的存在性判定据此裁决：`--to o-id` 指向真实观点即命中，
+// 只有指向库中不存在的 k/o 端点才把结果置空并记一条 Q2。
+// 线性判定：读路径一次命令一次扫描，不设性能门槛（索引路径已在取数层折算完毕）。
+func hasEndpoint(universe []CardEntry, id string) bool {
+	for _, c := range universe {
 		if c.ID == id {
 			return true
 		}

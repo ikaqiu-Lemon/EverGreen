@@ -121,7 +121,7 @@ func TestLimitZeroMeansNoLimit(t *testing.T) {
 
 	// 端到端：三条读路径在 --limit 0 下一条 W25 都不许有。
 	root := pgVault(t)
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-hub"), Page: PageSpec{Limit: 0}})
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-hub"), Page: PageSpec{Limit: 0}})
 	if err != nil {
 		t.Fatalf("rel --limit 0：%v", err)
 	}
@@ -155,7 +155,7 @@ func TestOffsetBeyondEndEmptyNotError(t *testing.T) {
 
 	root := pgVault(t)
 	// rel：正反向都为空、无错误；total 仍是库里的条数事实。
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-hub"),
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-hub"),
 		Page: PageSpec{Limit: 2, Offset: 100}})
 	if err != nil {
 		t.Fatalf("offset 超界不应是错误，实际 %v", err)
@@ -192,7 +192,7 @@ func TestTruncationEmitsW25(t *testing.T) {
 	root := pgVault(t)
 
 	// ① rel：6 条条目、limit 2 —— 正反两个列表都被截断，仍必须**恰一条** W25。
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-hub"), Page: PageSpec{Limit: 2}})
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-hub"), Page: PageSpec{Limit: 2}})
 	if err != nil {
 		t.Fatalf("rel：%v", err)
 	}
@@ -227,7 +227,7 @@ func TestTruncationEmitsW25(t *testing.T) {
 	}
 
 	// ③ 边界：total == offset + limit 恰好不截断（合同判据是严格大于）。
-	res, err = bkRel(root, RelRequest{ID: model.CardID("k-20261201-hub"),
+	res, err = bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-hub"),
 		Page: PageSpec{Limit: 4, Offset: 2}})
 	if err != nil {
 		t.Fatalf("rel：%v", err)
@@ -243,7 +243,7 @@ func TestPaginationNoDupNoGap(t *testing.T) {
 	root := pgVault(t)
 	id := model.CardID("k-20261201-hub")
 
-	full, err := bkRel(root, RelRequest{ID: id, Page: PageSpec{Limit: 0}})
+	full, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), Page: PageSpec{Limit: 0}})
 	if err != nil {
 		t.Fatalf("全量 rel：%v", err)
 	}
@@ -255,7 +255,7 @@ func TestPaginationNoDupNoGap(t *testing.T) {
 	for _, size := range []int{1, 2, 4, 5, 6, 7} {
 		got := []string{}
 		for offset := 0; ; offset += size {
-			res, err := bkRel(root, RelRequest{ID: id, Page: PageSpec{Limit: size, Offset: offset}})
+			res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), Page: PageSpec{Limit: size, Offset: offset}})
 			if err != nil {
 				t.Fatalf("rel(limit=%d offset=%d)：%v", size, offset, err)
 			}
@@ -318,7 +318,7 @@ func TestRelLimitIsGlobalNotPerList(t *testing.T) {
 		if want > total {
 			want = total
 		}
-		res, err := bkRel(root, RelRequest{ID: id, Page: PageSpec{Limit: limit}})
+		res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), Page: PageSpec{Limit: limit}})
 		if err != nil {
 			t.Fatalf("rel(limit=%d)：%v", limit, err)
 		}
@@ -418,7 +418,7 @@ func TestPageInvalidParamsRejected(t *testing.T) {
 		if err := p.Validate(); err == nil || !isInvalidPage(err) {
 			t.Fatalf("PageSpec%+v 应判非法（ErrInvalidPage），实际 %v", p, err)
 		}
-		if _, err := bkRel(root, RelRequest{ID: id, Page: p}); !isInvalidPage(err) {
+		if _, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), Page: p}); !isInvalidPage(err) {
 			t.Fatalf("rel 未拒绝 %+v：%v", p, err)
 		}
 		if _, err := ShowCardPaged(root, id, bkDeps, p); !isInvalidPage(err) {

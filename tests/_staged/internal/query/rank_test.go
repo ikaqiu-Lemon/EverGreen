@@ -262,12 +262,12 @@ func TestRelationSortIndexEqualsScan(t *testing.T) {
 	}
 
 	for _, id := range []string{"k-20261201-dup", "k-20261201-attention"} {
-		withIndex, err := bkRel(root, RelRequest{ID: model.CardID(id)})
+		withIndex, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id)})
 		if err != nil {
 			t.Fatalf("索引后端 rel(%s)：%v", id, err)
 		}
 		bkDropIndex(t, root)
-		withScan, err := bkRel(root, RelRequest{ID: model.CardID(id)})
+		withScan, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id)})
 		if err != nil {
 			t.Fatalf("扫描后端 rel(%s)：%v", id, err)
 		}

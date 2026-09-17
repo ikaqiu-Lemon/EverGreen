@@ -109,7 +109,7 @@ func TestReplacedByReverseLookup(t *testing.T) {
 
 	// 端到端（可见性层）：新卡的反向对端是 deprecated 的旧卡 —— 默认隐藏 + Q4，
 	// 显式放开后逐字可见。这两件事**同时**成立才是 §8.4 与既有策略的正交。
-	def, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-new"), ReplacedBy: true})
+	def, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-new"), ReplacedBy: true})
 	if err != nil {
 		t.Fatalf("rel --replaced-by：%v", err)
 	}
@@ -117,7 +117,7 @@ func TestReplacedByReverseLookup(t *testing.T) {
 		t.Fatalf("默认视图应隐藏 deprecated 对端并计 1 条，实际 in=%d hidden=%d",
 			len(def.Data.RelationsIn), def.HiddenDeprecated)
 	}
-	opened, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-new"),
+	opened, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-new"),
 		ReplacedBy: true, IncludeDeprecated: true})
 	if err != nil {
 		t.Fatalf("rel --replaced-by --include-deprecated：%v", err)
@@ -202,7 +202,7 @@ func TestReplacedByChainBothDirections(t *testing.T) {
 	}
 
 	// 端到端：B 的两个方向在 --include-deprecated 下同时出现，且各恰一条。
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-b"),
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-b"),
 		ReplacedBy: true, IncludeDeprecated: true})
 	if err != nil {
 		t.Fatalf("rel：%v", err)
@@ -226,7 +226,7 @@ func TestReplacedByReverseOrthogonalToDeleted(t *testing.T) {
 
 	// 可见性层：对端已删除 ⇒ 任何 flag 下都隐藏，且**不计入** Q4 的 deprecated 计数。
 	for _, incl := range []bool{false, true} {
-		res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-new"),
+		res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-new"),
 			ReplacedBy: true, IncludeDeprecated: incl})
 		if err != nil {
 			t.Fatalf("rel(include-deprecated=%t)：%v", incl, err)
@@ -244,7 +244,7 @@ func TestReplacedByReverseOrthogonalToDeleted(t *testing.T) {
 	}
 	// 反方向：旧卡自己（已删除 + deprecated）的正向对端是 active 的新卡 ⇒ 照常可见。
 	// 这正是「四象限正交」：筛的是**对端**的状态，不是被查询卡自身的状态。
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-old"), ReplacedBy: true})
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-old"), ReplacedBy: true})
 	if err != nil {
 		t.Fatalf("rel(old)：%v", err)
 	}
@@ -259,7 +259,7 @@ func TestReplacedByReverseRespectsDeprecatedPolicy(t *testing.T) {
 	root := rvVaultAB(t, false)
 	id := model.CardID("k-20261201-new")
 
-	def, err := bkRel(root, RelRequest{ID: id, ReplacedBy: true})
+	def, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), ReplacedBy: true})
 	if err != nil {
 		t.Fatalf("rel 默认：%v", err)
 	}
@@ -270,7 +270,7 @@ func TestReplacedByReverseRespectsDeprecatedPolicy(t *testing.T) {
 		t.Fatalf("未放开时不应有已展示的 deprecated 对端，实际 %v", def.DeprecatedPeers)
 	}
 
-	opened, err := bkRel(root, RelRequest{ID: id, ReplacedBy: true, IncludeDeprecated: true})
+	opened, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), ReplacedBy: true, IncludeDeprecated: true})
 	if err != nil {
 		t.Fatalf("rel --include-deprecated：%v", err)
 	}
@@ -282,7 +282,7 @@ func TestReplacedByReverseRespectsDeprecatedPolicy(t *testing.T) {
 			opened.DeprecatedPeers, want)
 	}
 	// 可见性与分页正交：放开 deprecated 后再限量 1 条，仍恰 1 条、且分页事实自洽。
-	paged, err := bkRel(root, RelRequest{ID: id, ReplacedBy: true, IncludeDeprecated: true,
+	paged, err := bkRel(root, RelRequest{ID: model.RelationEndpoint(id), ReplacedBy: true, IncludeDeprecated: true,
 		Page: PageSpec{Limit: 1}})
 	if err != nil {
 		t.Fatalf("rel --include-deprecated --limit 1：%v", err)

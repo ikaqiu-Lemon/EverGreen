@@ -48,7 +48,7 @@ func seedRelVault(t *testing.T) string {
 
 func mustRelView(t *testing.T, root, id string, to string) *query.RelResult {
 	t.Helper()
-	res, err := query.RelView(root, query.RelRequest{ID: model.CardID(id), To: to})
+	res, err := query.RelView(root, query.RelRequest{ID: model.RelationEndpoint(id), To: to})
 	if err != nil {
 		t.Fatalf("RelView(%s, to=%q)：%v", id, to, err)
 	}
@@ -233,21 +233,25 @@ func TestRelQueryUnparsableQ1(t *testing.T) {
 	}
 }
 
-// TestRelQueryNotFoundAndInvalidID —— 卡不存在 / ID 形态非法（含 --to）返回可判定的哨兵错误，
-// CLI 据此退 1；错误路径零副作用。
+// TestRelQueryNotFoundAndInvalidID —— 端点不存在 / 端点形态非法（含 --to）返回可判定的哨兵
+// 错误，CLI 据此退 1；错误路径零副作用。关系端点只认 k- / o-：s- / n- / r- / p- 及畸形一律拒绝。
 func TestRelQueryNotFoundAndInvalidID(t *testing.T) {
 	root := seedRelVault(t)
 	before := treeSnapshot(t, root)
-	if _, err := query.RelView(root, query.RelRequest{ID: "k-20260909-missing"}); !errors.Is(err, query.ErrCardNotFound) {
-		t.Fatalf("卡不存在应返回 ErrCardNotFound，实际 %v", err)
+	if _, err := query.RelView(root, query.RelRequest{ID: "k-20260909-missing"}); !errors.Is(err, query.ErrEndpointNotFound) {
+		t.Fatalf("端点不存在应返回 ErrEndpointNotFound，实际 %v", err)
 	}
-	for _, bad := range []string{"", "not-an-id", "s-20260901-x"} {
-		if _, err := query.RelView(root, query.RelRequest{ID: model.CardID(bad)}); !errors.Is(err, query.ErrInvalidCardID) {
-			t.Fatalf("ID %q 应返回 ErrInvalidCardID，实际 %v", bad, err)
+	// 形态非法：空串、畸形、以及 s- / n- / r- / p- 前缀（论证关系不指向原文 / 笔记 / 综述 / 提案）。
+	for _, bad := range []string{"", "not-an-id", "s-20260901-x", "n-20260901-x", "r-20260901-x", "p-20260901-x"} {
+		if _, err := query.RelView(root, query.RelRequest{ID: model.RelationEndpoint(bad)}); !errors.Is(err, query.ErrInvalidEndpoint) {
+			t.Fatalf("ID %q 应返回 ErrInvalidEndpoint，实际 %v", bad, err)
 		}
 	}
-	if _, err := query.RelView(root, query.RelRequest{ID: "k-20260901-a", To: "not-an-id"}); !errors.Is(err, query.ErrInvalidCardID) {
-		t.Fatal("--to 形态非法应返回 ErrInvalidCardID")
+	// --to 形态非法同样拒绝（同一 k/o 端点校验）：s- / n- / r- / p- 与畸形都不是合法关系端点。
+	for _, badTo := range []string{"not-an-id", "s-20260901-x", "n-20260901-x", "r-20260901-x", "p-20260901-x"} {
+		if _, err := query.RelView(root, query.RelRequest{ID: "k-20260901-a", To: badTo}); !errors.Is(err, query.ErrInvalidEndpoint) {
+			t.Fatalf("--to=%q 形态非法应返回 ErrInvalidEndpoint，实际 %v", badTo, err)
+		}
 	}
 	if after := treeSnapshot(t, root); after != before {
 		t.Fatalf("错误路径改动了文件：\n%s\n%s", before, after)

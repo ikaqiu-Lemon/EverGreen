@@ -321,12 +321,13 @@ func planFor(need Need, opt ScanOptions) parsePlan {
 //	   「在册卡集合」与「哪些文件索引里没有」，不提供也不假装提供 tags / updated_at。
 //	② plan.focus（`eg card show` / `eg rel`）：只解析
 //
-//	   {焦点卡自身} ∪ {relations.dst_id = focus 的反向来源（卡或观点）} ∪ {索引未收录的文件}
+//	   {焦点实体自身（卡或观点）} ∪ {relations.dst_id = focus 的反向来源（卡或观点）} ∪ {索引未收录的文件}
 //
 // 三段的必要性与充分性（等价性证明，逐条对应下游消费者）：
 //
-//	① 焦点卡：五分区正文 / tags / 时间戳 / sources[] / 正向 relations[] 全部只在它自己的
-//	   文件里 ⇒ 解析它一个文件即可，且必须解析（索引不存正文与 reason）；
+//	① 焦点实体：五分区正文 / tags / 时间戳 / sources[] / 正向 relations[] 全部只在它自己的
+//	   文件里 ⇒ 解析它一个文件即可，且必须解析（索引不存正文与 reason）。焦点是知识卡走 need、
+//	   是观点走 needOpinion（`RelView(o-id)` 的正向边取观点自身 relations[] 的逐字 reason）；
 //	② 反向来源（卡或观点）：`relations` 表存**全部**正向边（含观点持有的 `o-* → k-*`），按
 //	   `dst_id` 反查即得「谁指向了 focus」的精确集合（无假阴性）；每条边的 `reason` 回源文件取
 //	   逐字原值 ⇒ 必须解析这几个文件——来源是知识卡走 need，是观点走 needOpinion（因索引
@@ -465,6 +466,14 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 		for _, e := range entries {
 			if e.ID == plan.focus {
 				need[e.Path] = true
+			}
+		}
+		// 焦点本身也可能是**观点**（`RelView(o-id)`）：其自身 relations[] 的逐字 reason 只在
+		// 观点文件里，索引 relations 表不存 reason，故焦点观点必须回权威解析（走 needOpinion，
+		// 下面的覆盖循环把 stub 换成权威条目，o→k / o→o 的正向 reason 便与扫描后端逐字一致）。
+		for _, o := range opinions {
+			if o.ID == plan.focus {
+				needOpinion[o.Path] = true
 			}
 		}
 		for _, r := range rels {

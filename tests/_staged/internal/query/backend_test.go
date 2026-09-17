@@ -222,7 +222,7 @@ func bkReadAll(t *testing.T, root string) (*SearchResult, *CardShowResult, *RelR
 	if err != nil {
 		t.Fatalf("ShowCard：%v", err)
 	}
-	rv, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-attention")})
+	rv, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-attention")})
 	if err != nil {
 		t.Fatalf("RelView：%v", err)
 	}
@@ -341,7 +341,7 @@ func TestCardShowUsesIndexWhenHealthy(t *testing.T) {
 // 是从**权威源文件**取的（索引 relations 表不存 reason）。
 func TestRelUsesIndexWhenHealthy(t *testing.T) {
 	root := bkHealthyVault(t)
-	res, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-attention")})
+	res, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-attention")})
 	if err != nil {
 		t.Fatalf("RelView：%v", err)
 	}
@@ -888,7 +888,7 @@ func TestRelDataKeysStillFive(t *testing.T) {
 
 	// 两条后端上都不许扩张：健康索引与删掉索引各跑一次，键集合逐字相同。
 	root := bkHealthyVault(t)
-	idx, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-attention")})
+	idx, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-attention")})
 	if err != nil {
 		t.Fatalf("RelView（索引后端）：%v", err)
 	}
@@ -896,7 +896,7 @@ func TestRelDataKeysStillFive(t *testing.T) {
 		t.Fatalf("前置不成立：应走索引后端，实际 %s", idx.backend.Kind)
 	}
 	bkDropIndex(t, root)
-	scan, err := bkRel(root, RelRequest{ID: model.CardID("k-20261201-attention")})
+	scan, err := bkRel(root, RelRequest{ID: model.RelationEndpoint("k-20261201-attention")})
 	if err != nil {
 		t.Fatalf("RelView（扫描后端）：%v", err)
 	}

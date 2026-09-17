@@ -142,7 +142,7 @@ func (r *Root) runRelQuery(inv *Invocation) (*Result, error) {
 		return nil, err
 	}
 	res, err := query.RelView(inv.VaultRoot, query.RelRequest{
-		ID: model.CardID(inv.Args[0]), To: inv.String("to"),
+		ID: model.RelationEndpoint(inv.Args[0]), To: inv.String("to"),
 		IncludeDeprecated: inv.String("include-deprecated") == "true",
 		// S4：注入 A-44 水位线口径（B3 content_hash + Git HEAD）。
 		Index: readIndexDeps(inv.VaultRoot),
@@ -151,7 +151,7 @@ func (r *Root) runRelQuery(inv *Invocation) (*Result, error) {
 		ReplacedBy: inv.String(query.ReplacedByFlag) == "true",
 	})
 	if err != nil {
-		if errors.Is(err, query.ErrInvalidCardID) || errors.Is(err, query.ErrCardNotFound) {
+		if errors.Is(err, query.ErrInvalidEndpoint) || errors.Is(err, query.ErrEndpointNotFound) {
 			return nil, &UsageError{Msg: err.Error()}
 		}
 		return nil, err
