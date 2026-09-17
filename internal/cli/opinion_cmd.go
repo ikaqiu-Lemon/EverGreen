@@ -72,7 +72,7 @@ func opinionCommand() *Command {
 		// 框架的零副作用断言就会与那两条写子命令冲突。search 路径的只读性由 runOpinionSearch
 		// 自身「不碰任何写口」保证，不靠命令级 ReadOnly 标记。
 		Usage: `eg opinion search <q> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--include-deleted] [--limit <n>] [--offset <n>] [--json]
-eg opinion show <o-id> [--json]
+eg opinion show <o-id> [--include-deprecated] [--limit <n>] [--offset <n>] [--json]
 eg opinion validate <o-id> [--json]
 eg opinion reject <o-id> [--json]
 
@@ -89,13 +89,20 @@ search 的检索 / 分页参数（与 eg search 同名同义；**刻意不含 --
   --limit <n>            否，默认 50；最多返回条数，0 = 不限量；截断产恰一条 W25（total 仍为截断前总数）
   --offset <n>           否，默认 0；跳过的条数；超出总数返回空结果且仍退 0；两者为负 / 非整 → 退 1
 
+show 的查看参数（只读单条观点视图；只吃 --include-deprecated 与分页，绝不吃检索过滤 flag）：
+  --include-deprecated   否，默认 false；展示对端 deprecated 的关系条目（默认隐藏并计 Q4；不影响已删除维度）
+  --limit <n> / --offset <n>  否；一个全局 limit/offset 跨 supports/limits/opposing 三组正反共六段，截断产恰一条 W25
+
 search 已接通：只读检索观点（domains/<d>/opinions/**.md），validation 三态（pending /
 validated / rejected）全部召回、绝不隐式过滤；每条命中带 validation 与 supports/limits/opposing
-关系计数；失效观点标 [失效]、已删除观点经 --include-deleted 带回并标 [已删除]。只读：零文件
-变化、零 commit。show / validate / reject **仍是未实现骨架**：合法形态退 1（业务实现尚未挂载）、
-零写入零 commit。非 search 子命令显式带任一 search-only flag → 退 1（不静默接受）。
+关系计数；失效观点标 [失效]、已删除观点经 --include-deleted 带回并标 [已删除]。
+show 已接通：按 <o-id> 全库定位单条观点，显式给出 validation、五分区正文、sources、supports /
+limits / opposing 三组各正反两段（空段写“无”）；悬空对端标“目标不存在”并产 Q2；对端 deprecated
+默认隐藏并计 Q4，--include-deprecated 才展示；已删除观点仍可显式查看并标 [已删除]。
+两条都只读：零文件变化、零 commit。validate / reject **仍是未实现骨架**：合法形态退 1（业务实现
+尚未挂载）、零写入零 commit。子命令显式带不属于自己分域的读 flag → 退 1（不静默接受）。
 缺 / 未知子命令、位置参数个数不符、ID 形态非法 → 一律退 1、零写入。
-退出码：0（零命中也退 0） | 1 参数非法 / 领域未登记 / 实现未挂载（均零写入）
+退出码：0（零命中 / 单条视图也退 0） | 1 参数非法 / 领域未登记 / 观点不存在 / 实现未挂载（均零写入）
 `,
 		Flags: func(fs *flagSet) {
 			// 与 eg search 同名同义的检索面（search.go 的 runSearch 复用同一套口径）。
@@ -105,7 +112,11 @@ validated / rejected）全部召回、绝不隐式过滤；每条命中带 valid
 			fs.String("since", "", "updated_at 日期下界（YYYY-MM-DD，闭区间）")
 			fs.String("until", "", "updated_at 日期上界（YYYY-MM-DD，闭区间）")
 			fs.Bool(SearchIncludeDeletedFlag, false, "显式把已删除观点带回结果（默认视图不返回）")
-			// 分页（S4 · T-…-068）：注册点唯一，见 page.go。
+			// show 专属：与 eg card show / eg rel 同名同义的对端可见性开关（读路径 flag）。
+			// 注册点**逐字**用 "include-deprecated" 字面量，与 rel.go / card.go 的 fs.Bool 注册点
+			// 完全一致（M4 §3.4 静态反证 grep 按注册点逐字搜源码，产品侧恰命中三处）。
+			fs.Bool("include-deprecated", false, "展示对端 deprecated 的关系条目（默认隐藏；不影响已删除维度）")
+			// 分页（S4 · T-…-068）：注册点唯一，见 page.go。search 与 show 共用。
 			pageFlags(fs)
 			// **不注册 --kind**：opinion 检索面天然只搜观点（见文件头「参数面」）。
 		},
@@ -113,32 +124,50 @@ validated / rejected）全部召回、绝不隐式过滤；每条命中带 valid
 	}
 }
 
-// opinionSearchOnlyFlags 是「只在 search 子命令成立」的 flag 集合（次序固定，供拒绝与用例逐格比对）。
+// opinionSearchFilterFlags 是「只在 search 子命令成立」的检索过滤 flag（次序固定，供拒绝与用例逐格比对）。
 //
 // 这些 flag 注册在 opinion 父命令上，show / validate / reject 与 search 共享同一个 FlagSet，
-// 因此那三条子命令能**解析**到它们；必须在 Validate 阶段显式拒绝，否则
-// `eg opinion show o-… --domain x` 会被静默忽略 —— 「参数写了却不生效」比报错更坏。
-func opinionSearchOnlyFlags() []string {
-	return []string{"domain", "tag", "since", "until",
-		SearchIncludeDeletedFlag, query.PageLimitFlag, query.PageOffsetFlag}
+// 因此那三条子命令能**解析**到它们；show 视图按 <o-id> 精确定位、不做检索过滤，validate/reject
+// 尚未挂载，都必须在 Validate 阶段显式拒绝——否则 `eg opinion show o-… --domain x` 会被静默
+// 忽略，「参数写了却不生效」比报错更坏。分页（limit/offset）不在此列：search 与 show 都吃它。
+func opinionSearchFilterFlags() []string {
+	return []string{"domain", "tag", "since", "until", SearchIncludeDeletedFlag}
 }
 
-// rejectOpinionSearchOnlyFlags 在非 search 子命令上显式拒绝 search-only flag：退 1、零写入。
-func rejectOpinionSearchOnlyFlags(inv *Invocation) error {
-	for _, name := range opinionSearchOnlyFlags() {
+// opinionPageFlags 是 search 与 show 共用的分页 flag（validate/reject 尚未挂载，显式带即退 1）。
+func opinionPageFlags() []string {
+	return []string{query.PageLimitFlag, query.PageOffsetFlag}
+}
+
+// opinionReadFlags 汇总全部读路径 flag（检索过滤 + show 可见性 + 分页），供 validate/reject 整片拒绝。
+func opinionReadFlags() []string {
+	out := append([]string{}, opinionSearchFilterFlags()...)
+	out = append(out, "include-deprecated")
+	return append(out, opinionPageFlags()...)
+}
+
+// rejectOpinionFlags 在子命令上显式拒绝不属于其分域的读 flag：退 1、零写入。措辞逐字点名该 flag，
+// 使拒绝可判定（反证拒绝确由 flag 触发，而非缺参数）。
+func rejectOpinionFlags(inv *Invocation, names []string, hint string) error {
+	for _, name := range names {
 		if inv.Set(name) {
 			return &UsageError{Msg: fmt.Sprintf(
-				"eg opinion %s 不接受 --%s：该参数只作用于 opinion search 检索路径", inv.Sub, name)}
+				"eg opinion %s 不接受 --%s：%s", inv.Sub, name, hint)}
 		}
 	}
 	return nil
 }
 
-// validateOpinionArgs 做**参数形态**校验：位置参数个数、<o-id> 形态、非 search 子命令的 flag 拒绝。
+// validateOpinionArgs 做**参数形态**校验：位置参数个数、<o-id> 形态、按子命令精确分域拒绝读 flag。
 //
-// search 恰 1 个 <q>；show / validate / reject 恰 1 个 <o-id>（须经 model.OpinionID.Valid），
-// 且不得显式带任一 search-only flag。缺 / 未知子命令由 dispatch 的 SubRequired 分支先行拦下，
-// 这里的兜底 default 只覆盖「子命令为空」这一残余路径，措辞与 dispatch 一致。
+// search 恰 1 个 <q>，只做检索：显式带 show 专属的 --include-deprecated 一律退 1。
+// show / validate / reject 恰 1 个 <o-id>（须经 model.OpinionID.Valid）：
+//   - show 只吃 --include-deprecated 与分页，显式带任一检索过滤 flag（domain/tag/since/until/
+//     include-deleted）退 1；
+//   - validate / reject 尚未挂载业务，显式带任一读路径 flag（检索过滤 / 可见性 / 分页）退 1。
+//
+// 缺 / 未知子命令由 dispatch 的 SubRequired 分支先行拦下，这里的兜底 default 只覆盖「子命令为空」
+// 这一残余路径，措辞与 dispatch 一致。
 func validateOpinionArgs(inv *Invocation) error {
 	switch inv.Sub {
 	case SubOpinionSearch:
@@ -146,8 +175,9 @@ func validateOpinionArgs(inv *Invocation) error {
 			return &UsageError{Msg: fmt.Sprintf(
 				"eg opinion search 需要恰 1 个位置参数 <q>，实际 %d 个", len(inv.Args))}
 		}
-		return nil
-	case SubOpinionShow, SubOpinionValidate, SubOpinionReject:
+		return rejectOpinionFlags(inv, []string{"include-deprecated"},
+			"该参数只作用于 opinion show（观点视图对端可见性开关），检索路径不解读它")
+	case SubOpinionShow:
 		if len(inv.Args) != 1 {
 			return &UsageError{Msg: fmt.Sprintf(
 				"eg opinion %s 需要恰 1 个位置参数 <o-id>，实际 %d 个", inv.Sub, len(inv.Args))}
@@ -156,22 +186,152 @@ func validateOpinionArgs(inv *Invocation) error {
 			return &UsageError{Msg: fmt.Sprintf(
 				"观点 ID %q 形态非法：必须以 o- 为前缀（避免把 k-/n-/s- 串当成观点 ID）", inv.Args[0])}
 		}
-		return rejectOpinionSearchOnlyFlags(inv)
+		return rejectOpinionFlags(inv, opinionSearchFilterFlags(),
+			"该参数只作用于 opinion search 检索路径，show 视图按 <o-id> 精确定位、不做检索过滤")
+	case SubOpinionValidate, SubOpinionReject:
+		if len(inv.Args) != 1 {
+			return &UsageError{Msg: fmt.Sprintf(
+				"eg opinion %s 需要恰 1 个位置参数 <o-id>，实际 %d 个", inv.Sub, len(inv.Args))}
+		}
+		if !model.OpinionID(inv.Args[0]).Valid() {
+			return &UsageError{Msg: fmt.Sprintf(
+				"观点 ID %q 形态非法：必须以 o- 为前缀（避免把 k-/n-/s- 串当成观点 ID）", inv.Args[0])}
+		}
+		return rejectOpinionFlags(inv, opinionReadFlags(),
+			"该参数属只读检索 / 查看路径，验证 / 驳回子命令（尚未挂载）不接受任何读 flag")
 	}
 	return &UsageError{Msg: fmt.Sprintf("eg opinion 必须带子命令：%s",
 		strings.Join(OpinionSubcommands(), " | "))}
 }
 
-// runOpinion 是 `eg opinion` 的分发壳：search 走已接通的只读检索，其余三条仍为未实现骨架。
+// runOpinion 是 `eg opinion` 的分发壳：search / show 走已接通的只读视图，validate / reject 仍为未实现骨架。
 //
-// search 之外的子命令一律返回 NotWiredError —— 与框架「命令已注册、Handler 未挂载」时
-// dispatch 自发的错误**逐字同源**（退 1、零文件变化、零 commit）。后续批次接管时只需在此
-// 增分派、填实现，本壳的「未实现即退 1、零写入」边界不放宽。
+// validate / reject 一律返回 NotWiredError —— 与框架「命令已注册、Handler 未挂载」时 dispatch
+// 自发的错误**逐字同源**（退 1、零文件变化、零 commit）。后续批次接管时只需在此增分派、填实现，
+// 本壳的「未实现即退 1、零写入」边界不放宽。
 func (r *Root) runOpinion(inv *Invocation) (*Result, error) {
-	if inv.Sub == SubOpinionSearch {
+	switch inv.Sub {
+	case SubOpinionSearch:
 		return r.runOpinionSearch(inv)
+	case SubOpinionShow:
+		return r.runOpinionShow(inv)
 	}
 	return nil, &NotWiredError{Command: inv.Cmd.Display, Owner: inv.Cmd.Owner}
+}
+
+// runOpinionShow 实现 `eg opinion show`：按 <o-id> 全库定位单条观点，只读投影成
+// query.ShowOpinionPaged 的权威结果，再折成文本 / JSON 双渲染（同源同事实）。
+//
+// 复用 card show 的每一处口径 —— readIndexDeps 注入的 A-44 水位线、pageSpecFrom 的分页规格、
+// VisibilityPolicy 的对端 deprecated 可见性、ErrInvalidOpinionID / ErrOpinionNotFound → 退 1、
+// Q / W 系列 diagnostics 透出 —— 只把「单卡」换成「单观点」，DTO 键序换成 query.OpinionDataKeys()。
+// 全程零写入、零 commit：退出码只可能 0（单条视图也退 0）/ 1（形态非法 / 观点不存在）。
+func (r *Root) runOpinionShow(inv *Invocation) (*Result, error) {
+	page, err := pageSpecFrom(inv)
+	if err != nil {
+		return nil, err
+	}
+	view, err := query.ShowOpinionPaged(inv.VaultRoot, model.OpinionID(inv.Args[0]),
+		readIndexDeps(inv.VaultRoot), page,
+		query.VisibilityPolicy{IncludeDeprecated: inv.String("include-deprecated") == "true"})
+	if err != nil {
+		if errors.Is(err, query.ErrInvalidOpinionID) || errors.Is(err, query.ErrOpinionNotFound) {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+		return nil, err
+	}
+
+	o := view.Opinion
+	// data 键序**逐字**取 query.OpinionDataKeys()（新投影，与 CardDataKeys / Search*Keys 解耦）；
+	// supports / limits / opposing 各自 marshal 成固定的 forward / reverse 两段（RelationGroup）。
+	out := &Result{
+		Data: map[string]interface{}{
+			"id": o.ID, "title": o.Title, "domain": o.Domain, "status": o.Status,
+			"deprecated": o.Deprecated, "validation": o.Validation,
+			"created_at": o.CreatedAt, "updated_at": o.UpdatedAt, "path": o.Path,
+			"tags": o.Tags, "markers": o.Markers, "sections": o.Sections, "sources": o.Sources,
+			"supports": o.Supports, "limits": o.Limits, "opposing": o.Opposing,
+			query.FieldDeleted: o.Deleted,
+		},
+		DataOrder: query.OpinionDataKeys(),
+	}
+	out.Summary = append(out.Summary, opinionShowLines(view)...)
+	out.Summary = append(out.Summary, pageSummaryLines(view.Page, "关系条目")...)
+	out.Warnings = append(out.Warnings, queryDiagnostics(view.Diagnostics)...)
+	return out, nil
+}
+
+// opinionShowLines 渲染单条观点的人类可读视图。与 --json **同源同事实**：吃的是同一份
+// view.Opinion（标记、validation、五分区、sources、supports / limits / opposing 三组正反向），
+// 每一行都能在 data 里逐字对上。悬空目标标「（目标不存在）」（据 view.MissingTargets），
+// 已展示的 deprecated 对端标 [失效]（据 view.DeprecatedPeers，仅 --include-deprecated 下非空）。
+func opinionShowLines(view *query.OpinionShowResult) []string {
+	o := view.Opinion
+	lines := []string{
+		fmt.Sprintf("%s%s  %s  [%s] %s", strings.Join(o.Markers, ""), o.ID, o.Title, o.Domain,
+			strings.Join(o.Tags, ",")),
+		fmt.Sprintf("状态：%s（deprecated=%t）  validation=%s  created_at=%s  updated_at=%s  路径：%s",
+			o.Status, o.Deprecated, o.Validation, o.CreatedAt, o.UpdatedAt, o.Path),
+	}
+	// 五分区（固定序）：缺分区键仍在、显式标注「（本分区缺失）」——分区缺失不属 Q 系列。
+	for _, name := range o.Sections.Keys() {
+		if o.Sections.Missing(name) {
+			lines = append(lines, fmt.Sprintf("分区 %s：（本分区缺失）", name))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("分区 %s：%s", name, firstLine(o.Sections.Get(name))))
+	}
+	// 材料出处 sources[]（空写「无」）。
+	if len(o.Sources) == 0 {
+		lines = append(lines, "材料出处 sources[]：无")
+	}
+	for _, s := range o.Sources {
+		lines = append(lines, fmt.Sprintf("材料出处：%s / %s  rel=%s  理由：%s",
+			s.Source, s.Note, s.Rel, s.Reason))
+	}
+	missing := map[string]bool{}
+	for _, id := range view.MissingTargets {
+		missing[id] = true
+	}
+	deprecated := map[string]bool{}
+	for _, id := range view.DeprecatedPeers {
+		deprecated[id] = true
+	}
+	// 支持 / 限制 / 反对三组，每组正向 + 反向两段（固定序；derives 已在 query 层排除）。
+	lines = append(lines, opinionGroupLines("支持", o.Supports, missing, deprecated)...)
+	lines = append(lines, opinionGroupLines("限制", o.Limits, missing, deprecated)...)
+	lines = append(lines, opinionGroupLines("反对", o.Opposing, missing, deprecated)...)
+	lines = append(lines, fmt.Sprintf(
+		"opinion show：扫描 %d 个 .md，跳过 %d 个（只读，零写入零 commit）",
+		view.ScannedFiles, view.SkippedFiles))
+	return lines
+}
+
+// opinionGroupLines 渲染一组论证关系的正向 + 反向两段：空段显式写「无」，绝不省略段落
+// （否则读者分不清「该组无正向」与「渲染漏了」）。悬空正向目标标「（目标不存在）」，
+// 已展示的 deprecated 对端标 [失效]，与 card show 的对端标注口径逐字一致。
+func opinionGroupLines(label string, g query.RelationGroup,
+	missing, deprecated map[string]bool) []string {
+	lines := []string{}
+	if len(g.Forward) == 0 {
+		lines = append(lines, fmt.Sprintf("%s·正向：无", label))
+	}
+	for _, e := range g.Forward {
+		note := ""
+		if missing[e.Target] {
+			note = "（目标不存在）"
+		}
+		lines = append(lines, fmt.Sprintf("%s·正向：%s --%s--> %s%s%s  理由：%s",
+			label, e.From, e.Type, e.Target, peerDeprecatedMark(deprecated, e.Target), note, e.Reason))
+	}
+	if len(g.Reverse) == 0 {
+		lines = append(lines, fmt.Sprintf("%s·反向：无", label))
+	}
+	for _, e := range g.Reverse {
+		lines = append(lines, fmt.Sprintf("%s·反向：%s%s --%s--> %s  理由：%s（来源：%s）",
+			label, e.From, peerDeprecatedMark(deprecated, e.From), e.Type, e.Target, e.Reason, e.Path))
+	}
+	return lines
 }
 
 // runOpinionSearch 实现 `eg opinion search`：只读检索观点，严格等于 query.Search(Kind=opinion)。

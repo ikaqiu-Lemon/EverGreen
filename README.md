@@ -661,7 +661,8 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg card show <k-id>` | One card: five sections, sources, both link directions |
 | `eg rel <k-id>` | Argument relationships; `--replaced-by` switches to replacement pointers |
 | `eg opinion search <q>` | Read-only opinion search: like `eg search` but fixed to opinions (`o-*`), with the same domain/tag/since/until/include-deleted/limit/offset flags (no `--kind`). Every hit carries `validation` (pending/validated/rejected, all returned — never implicitly filtered) plus `relation_summary` counts (`supports`/`limits`/`opposing`). Zero writes, zero commit. |
-| `eg opinion show\|validate\|reject <o-id>` | Registered skeleton only: still unimplemented — every legal invocation exits `1` with zero writes and zero commit; the actual inspect/validate/reject behavior lands in later batches. |
+| `eg opinion show <o-id>` | Read-only single-opinion view: five sections, `validation`, sources, and the support/limit/opposing relation groups (each with forward and reverse segments; empty segments are shown explicitly). Accepts only `--include-deprecated`/`--limit`/`--offset` (never the search filter flags); dangling targets are flagged, deprecated peers are hidden by default. Zero writes, zero commit. `eg card show` on an `o-*` id exits `1` and points you here. |
+| `eg opinion validate\|reject <o-id>` | Registered skeleton only: still unimplemented — every legal invocation exits `1` with zero writes and zero commit; the validate/reject lifecycle lands in later batches. |
 
 **Editing and lifecycle** (all user-initiated)
 

@@ -430,10 +430,10 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 新增命令**几乎全部属于用户显式路径**，本节写清 Agent 的边界；越界的 plan 会被退 `2`，不是被容忍。
 （**M4 起顶层命令是 20 个**：在这 18 条之上新增 S3 对账面的 `reconcile` 与 `check`，规程见 §9；
 **M5 起是 22 个**：再新增 S4 的 `index`（派生索引）与 `bench`（性能采样），规程见 §10；
-**读路径拆分批次起是 23 个**：再新增 `eg opinion`（观点子系统顶层命令，**`search` 子命令已接通只读检索、另三条仍是命令骨架**，口径见 §8.5.1）；
+**读路径拆分批次起是 23 个**：再新增 `eg opinion`（观点子系统顶层命令，**`search` / `show` 子命令已接通只读检索 / 查看、`validate` / `reject` 仍是命令骨架**，口径见 §8.5.1）；
 本节的 S2 / M3 口径一字不变。）
 
-**当前 23 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费；末条 `eg opinion` 为读路径拆分批次新增——`search` 已接通、`show` / `validate` / `reject` 仍是命令骨架，口径见 §8.5.1）：
+**当前 23 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费；末条 `eg opinion` 为读路径拆分批次新增——`search` / `show` 已接通、`validate` / `reject` 仍是命令骨架，口径见 §8.5.1）：
 `eg init`、`eg config`、`eg capture`、`eg context`、`eg apply`、`eg search`、`eg card show`、
 `eg rel`、`eg report --last`、`eg deprecate`、`eg restore`、`eg replaced-by`、`eg proposal`、
 `eg delete`、`eg undelete`、`eg mark-reviewed`、`eg unreviewed`、`eg edit`、`eg reconcile`、`eg check`、
@@ -497,16 +497,17 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 - `eg edit` 的可编辑分区白名单**恰三个**：知识内容 / 解释与依据 / 条件与边界；它是用户命令，
   缺 `--user-request` → 退 `2` 零写入，`content_hash` 过期 → 跳过退 `3`，**不产生** `6`。
 
-### 8.5.1 `eg opinion`：`search` 已接通，其余三条仍是命令骨架
+### 8.5.1 `eg opinion`：`search` / `show` 已接通，`validate` / `reject` 仍是命令骨架
 
-读路径拆分批次新增了顶层命令 `eg opinion`，子命令**恰四条、顺序固定**：`search` / `show` / `validate` / `reject`。**当前 `search` 已接通只读检索，另三条仍只是命令骨架、行为尚未落地**：
+读路径拆分批次新增了顶层命令 `eg opinion`，子命令**恰四条、顺序固定**：`search` / `show` / `validate` / `reject`。**当前 `search` / `show` 已接通只读检索 / 查看，`validate` / `reject` 仍只是命令骨架、行为尚未落地**：
 
 - `eg opinion search <q>`：**已可用**的只读观点检索。等价于 `eg search` 但检索面固定为观点（`o-*`），复用同一套 `--domain` / 可重复 `--tag` / `--since` / `--until` / `--include-deleted` / `--limit` / `--offset` 参数（**不提供 `--kind`**）。`validation`（`pending` / `validated` / `rejected`）三态**全部召回、绝不隐式过滤**；每条命中额外带 `validation` 与 `relation_summary`（`supports` / `limits` / `opposing` 三类关系计数）。**零文件变化、零 commit**；零命中仍退 `0`，参数非法 / 领域未登记退 `1`。
-- `eg opinion show` / `validate` / `reject <o-id>`：仍是命令骨架，业务实现尚未挂载。合法调用（恰 1 个合法 `o-` 前缀观点 ID）一律退 `1`、**零文件变化、零 commit**。
-- 非 `search` 子命令显式带任一 search-only flag（`--domain` / `--tag` / `--since` / `--until` / `--include-deleted` / `--limit` / `--offset`）→ 退 `1`、**零写入**（不静默接受）。
+- `eg opinion show <o-id>`：**已可用**的只读单条观点视图。按 `o-id` 全库定位一条观点，显式给出 `validation`、五分区正文、`sources`，以及**支持 / 限制 / 反对三组、每组各正向 + 反向两段**（空段显式写「无」，绝不省略）。悬空目标标「目标不存在」并产 `Q2`；对端 `deprecated` 默认隐藏并计 `Q4`，加 `--include-deprecated` 才展示；已删除观点仍可显式查看并标 `[已删除]`。**只吃** `--include-deprecated` / `--limit` / `--offset`（一个全局 `limit`/`offset` 跨六段，截断产恰一条 `W25`），**绝不吃**检索过滤 flag。**零文件变化、零 commit**；单条视图退 `0`，ID 形态非法 / 观点不存在退 `1`。`eg card show` 收到合法 `o-*` 会退 `1` 并指引改用 `eg opinion show`（不读 vault）。
+- `eg opinion validate` / `reject <o-id>`：仍是命令骨架，业务实现尚未挂载。合法调用（恰 1 个合法 `o-` 前缀观点 ID）一律退 `1`、**零文件变化、零 commit**。
+- flag **按子命令分域**：`search` 拒 `--include-deprecated`；`show` 拒全部检索过滤 flag（`--domain` / `--tag` / `--since` / `--until` / `--include-deleted`）；`validate` / `reject` 拒全部只读 flag。显式带不属于本子命令的 flag → 退 `1`、**零写入**（不静默接受）。
 - 缺 / 未知子命令、位置参数个数不符、观点 ID 形态非法（非 `o-` 前缀）同样退 `1`、**零写入**。
 
-**Agent 硬约束**：`eg opinion search` 可正常用于观点检索；但**不得**调用 `show` / `validate` / `reject` 去查看 / 采纳 / 驳回观点，**不得**把这三条当作可用能力，**更不得**在报告里声称它们返回了结果——它们此刻只有命令表面、没有任何行为，任何合法调用只会得到退 `1`。五分区渲染、支持 / 限制 / 反对关系视图与验证生命周期（`validate` / `reject` 状态机）的完整规程，随后续行为批次与文档同步批次落地，届时本节替换为正式口径。
+**Agent 硬约束**：`eg opinion search` / `eg opinion show` 可正常用于观点检索与查看；但**不得**调用 `validate` / `reject` 去采纳 / 驳回观点，**不得**把这两条当作可用能力，**更不得**在报告里声称它们返回了结果——它们此刻只有命令表面、没有任何行为，任何合法调用只会得到退 `1`。验证生命周期（`validate` / `reject` 状态机）的完整规程随后续行为批次落地，届时本节替换为正式口径。
 
 ### 8.6 可跑示例
 

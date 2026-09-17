@@ -1,18 +1,20 @@
 package cli
 
-// `eg opinion` 命令面的机器判据（读路径 CLI 拆分设计 §5.4；T-…-006 批次 B1a 起，B1b-cli 接通 search）。
+// `eg opinion` 命令面的机器判据（读路径 CLI 拆分设计 §5.4；T-…-006 批次 B1a 起，B2b 接通 show）。
 //
 // 命令面不变量（跨批次恒成立）：一次性注册 opinion 顶层命令，子命令集合与顺序**恰**为
 // search|show|validate|reject，顶层名册 22 → 23。非法形态（缺/未知子命令、位置参数个数不符、
 // <o-id> 形态非法）一律 UsageError（退 1、零写入）。
 //
-// B1b-cli 起：`search` 子命令**已接通**只读检索（退 0、零副作用；行为判据见 opinion_search_test.go），
-// 其余三条 show/validate/reject **仍是未挂载骨架**（合法形态走 NotWiredError，退 1、零写入零 commit）。
+// B1b-cli 起：`search` 子命令**已接通**只读检索；B2b 起：`show` 子命令**已接通**只读单条观点视图
+// （行为判据见 opinion_search_test.go / opinion_show_test.go）。其余两条 validate/reject **仍是
+// 未挂载骨架**（合法形态走 NotWiredError，退 1、零写入零 commit）。
 //
 // 覆盖：① 子命令封闭集与顺序；② --help 恰列 23 条且 opinion 恰一行；③ 命令数 22+1=23
 // 加法等式；④ 缺/未知子命令退 1；⑤ search/show/validate/reject 位置参数个数校验；
-// ⑥ <o-id> 形态校验（必须经 model.OpinionID.Valid）；⑦ search 已接通退 0、其余三条确定性
-// NotWired、退 1、零写入零 commit。
+// ⑥ <o-id> 形态校验（必须经 model.OpinionID.Valid）；⑦ search/show 已接通（search 空库退 0、
+// show 穿过 Validate 与 guard 落到已挂载 Handler，观点不存在退 1 且**非** NotWired）、
+// validate/reject 仍确定性 NotWired、退 1、零写入零 commit。
 
 import (
 	"strings"
@@ -228,9 +230,9 @@ func TestOpinionIDShapeRejected(t *testing.T) {
 	}
 }
 
-// —— ⑦ search 已接通、show/validate/reject 仍确定性 NotWired（退 1、零写入零 commit）——
+// —— ⑦ search/show 已接通、validate/reject 仍确定性 NotWired（退 1、零写入零 commit）——
 
-func TestOpinionSearchWiredOthersNotWired(t *testing.T) {
+func TestOpinionSearchShowWiredValidateRejectNotWired(t *testing.T) {
 	dir := captureVault(t)
 	statusBefore, logBefore := opinionVaultSnapshot(t, dir)
 
@@ -243,13 +245,29 @@ func TestOpinionSearchWiredOthersNotWired(t *testing.T) {
 		t.Fatal("eg opinion search 是只读检索：不得改动工作区或产生 commit")
 	}
 
-	// 其余三条仍是未挂载骨架：合法形态一律 NotWired（退 1、零写入零 commit）。
+	// show 已接通：形态合法但空库无此观点 → 退 1，但错误是**观点不存在**（NotFound），
+	// 绝不是 NotWired。这证明合法形态确实穿过了 Validate 与 guard、落到了已挂载的 show Handler，
+	// 只是止步于 query 层的 ErrOpinionNotFound（而非止步于未挂载的 Handler）。仍零写入零 commit。
 	const validID = "o-20260101-demo"
+	code, _, errOut := runOpinionCLI(t, dir, "show", validID)
+	if code != ExitUsage {
+		t.Fatalf("eg opinion show 已接通，空库缺该观点应退 1（NotFound），实得 %d：%s", code, errOut)
+	}
+	if strings.Contains(errOut, "尚未挂载") {
+		t.Fatalf("eg opinion show 已接通，不应再出现 NotWired 措辞（应止步于 NotFound）：%s", errOut)
+	}
+	if !strings.Contains(errOut, "不存在") {
+		t.Fatalf("eg opinion show 空库缺观点应报「观点不存在」，实得：%s", errOut)
+	}
+	if statusAfter, logAfter := opinionVaultSnapshot(t, dir); statusAfter != statusBefore || logAfter != logBefore {
+		t.Fatal("eg opinion show 是只读视图：不得改动工作区或产生 commit")
+	}
+
+	// validate / reject 仍是未挂载骨架：合法形态一律 NotWired（退 1、零写入零 commit）。
 	for _, tc := range []struct {
 		name string
 		args []string
 	}{
-		{"show <o-id>", []string{"show", validID}},
 		{"validate <o-id>", []string{"validate", validID}},
 		{"reject <o-id>", []string{"reject", validID}},
 	} {

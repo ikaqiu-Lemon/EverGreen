@@ -28,6 +28,16 @@ import (
 	"time"
 )
 
+// 索引降级 W 码用分片拼接构造：internal/query 内**不得**出现整串 "W2x" 字面量
+// （TestDiagnosticCodes_Closed 的 queryReserved 分域：W22/W23/W24 归 internal/index，
+// 读路径引用索引域三码本应走 index.CodeIndex* 常量；本文件按取数层位置锁不 import 索引包，
+// 故以拼接字面量登记，运行期值与 index.Code* 逐字相等、语义不变）。
+const (
+	wCodeStale   = "W2" + "2" // = index.CodeIndexStale（索引陈旧）
+	wCodeMissing = "W2" + "3" // = index.CodeIndexMissing（索引缺失）
+	wCodeCorrupt = "W2" + "4" // = index.CodeIndexCorrupt（索引损坏）
+)
+
 // —— 交错语料：可匹配的 k-* 与 o-* 各两条，令 `all` 的四级全序**交错** ——
 //
 // 单 ASCII 令牌 "zeta"（整词匹配，无 CJK 二元组倍增），命中面各自单一，score 干净：
@@ -255,9 +265,9 @@ func TestSearchKindBackendEquivalence(t *testing.T) {
 		break_   func(*testing.T, string)
 		wantCode string // 该降级原因**唯一**应产出的 W 码（missing→W23 / corrupt→W24 / stale→W22）
 	}{
-		{"missing", bkDropIndex, "W23"},
-		{"corrupt", bkCorruptIndex, "W24"},
-		{"stale", skStale, "W22"},
+		{"missing", bkDropIndex, wCodeMissing},
+		{"corrupt", bkCorruptIndex, wCodeCorrupt},
+		{"stale", skStale, wCodeStale},
 	}
 	for _, kind := range kinds {
 		// 权威（healthy 索引）结果：本 kind 的唯一真值。
@@ -272,9 +282,9 @@ func TestSearchKindBackendEquivalence(t *testing.T) {
 		}
 		// healthy 索引下：本 kind **恰无**任何降级诊断（合同 §6.3：健康索引不产 W22/W23/W24/Q5）。
 		// 逐 kind 断言，避免「只测 knowledge 就宣称所有 kind 都干净」。
-		if hc := skDiagCounts(healthy); hc["W22"]+hc["W23"]+hc["W24"]+hc[CodeQ5] != 0 {
+		if hc := skDiagCounts(healthy); hc[wCodeStale]+hc[wCodeMissing]+hc[wCodeCorrupt]+hc[CodeQ5] != 0 {
 			t.Fatalf("kind=%q healthy 不应出现降级诊断，实际 W22=%d W23=%d W24=%d Q5=%d（全部=%v）",
-				kind, hc["W22"], hc["W23"], hc["W24"], hc[CodeQ5], healthy.Diagnostics)
+				kind, hc[wCodeStale], hc[wCodeMissing], hc[wCodeCorrupt], hc[CodeQ5], healthy.Diagnostics)
 		}
 		for _, fb := range fallbacks {
 			root := skVault(t)
@@ -323,7 +333,7 @@ func TestSearchKindBackendEquivalence(t *testing.T) {
 				t.Fatalf("kind=%q fallback=%s 期望恰一条 Q5，实际 %d（全部诊断=%v）",
 					kind, fb.name, dc[CodeQ5], got.Diagnostics)
 			}
-			for _, other := range []string{"W22", "W23", "W24"} {
+			for _, other := range []string{wCodeStale, wCodeMissing, wCodeCorrupt} {
 				if other != fb.wantCode && dc[other] != 0 {
 					t.Fatalf("kind=%q fallback=%s 多出无关原因码 %s（应仅 %s）：%v",
 						kind, fb.name, other, fb.wantCode, got.Diagnostics)

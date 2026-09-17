@@ -62,6 +62,15 @@ limit 条条目，**不会**因为有两个列表而给到 2×limit 条；截断
 				return &UsageError{Msg: fmt.Sprintf(
 					"eg card show 需要恰一个位置参数 <k-id>，实际 %d 个：%v", len(inv.Args), inv.Args)}
 			}
+			// 合法的观点 ID（o-*）走**观点**读面：card show 只看知识卡，绝不读 vault 去
+			// 找一个注定不是知识卡的 o-*。在 Validate 阶段就退 1 并显式改派到 `eg opinion show`，
+			// 零文件变化、零 commit（其它 k-id / 形态非法串行为不变：仍落到 runCardShow 的
+			// query 层，由 ErrInvalidCardID / ErrCardNotFound 判定）。
+			if model.OpinionID(inv.Args[0]).Valid() {
+				return &UsageError{Msg: fmt.Sprintf(
+					"%q 是观点 ID（o-*），不是知识卡：请改用 eg opinion show %s（card show 只查知识卡）",
+					inv.Args[0], inv.Args[0])}
+			}
 			return nil
 		},
 		Flags: func(fs *flagSet) {

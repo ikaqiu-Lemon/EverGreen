@@ -3,11 +3,14 @@ package cli
 // [M4 / T-…-061] internal/cli/visibility_matrix_test.go：owner 裁决②的 **CLI 侧**矩阵
 // G7 / G8 / G9（G1 ~ G6、G10 属 query 侧，见 internal/query/visibility_test.go）。
 //
-// 判据来源：M4 可见性合同 §3.4（flag 逐字、作用面恰 2 命令、不作用面恰 5 命令传入退 1）、
+// 判据来源：M4 可见性合同 §3.4（flag 逐字、作用面 rel/card 两读命令传入退 0、不作用面传入退 1）、
 // §3.5（data 键集合不扩张）、§3.5.2（Q4 完整口径与 Q3 正交）、§4.6（被推翻用例复算留痕）。
+// T-…-006-B2b 诚实扩面：opinion show 作为**第三个**合法读面接入 --include-deprecated
+// （对端 deprecated 可见性开关，与 rel / card show 同名同义），作用面因此 2 → 3、源码注册计数
+// 2 → 3；opinion search 与其余读 flag 一样按分域**拒绝** include-deprecated，纳入拒绝面采样。
 //
-//   - G7 TestG7FlagRejectedByFiveCommands：恰 2 命令接受 --include-deprecated、
-//     恰 5 命令传入即退 1 且零写入零 commit；
+//   - G7 TestG7FlagRejectedBySixCommands：恰 3 命令接受 --include-deprecated（rel / card show /
+//     opinion show）、采样 6 命令传入即退 1 且零写入零 commit；源码注册计数恰 3。
 //   - G8 TestG8DataKeysNotExpanded：rel / card × 默认 / include 四种组合下 data 键集合完全一致，
 //     且逐字等于 M2 冻结的 RelDataKeys() / CardDataKeys()；含 §4.6 被推翻用例复算清单的留痕断言；
 //   - G9 TestG9Q3NotTriggeredByQ4：A-39 获批（Q 码四条）下 Q4 进 warnings[]，
@@ -27,10 +30,11 @@ import (
 // visFlag 是本 task 唯一新增的读路径 flag（逐字，无短选项无别名）。
 const visFlag = "--include-deprecated"
 
-// flagAcceptCommands / flagRejectCommands 是 §3.4 冻结的作用面（恰 2）与拒绝面（恰 5）。
+// flagAcceptCommands / flagRejectCommands 是 §3.4（B2b 扩面后）的作用面（恰 3）与拒绝面采样（恰 6）。
 var flagAcceptCommands = [][]string{
 	{"rel", "k-20260901-a"},
 	{"card", "show", "k-20260901-a"},
+	{"opinion", "show", "o-20260901-op"},
 }
 
 var flagRejectCommands = [][]string{
@@ -39,6 +43,10 @@ var flagRejectCommands = [][]string{
 	{"unreviewed"},
 	{"reconcile"},
 	{"check"},
+	// opinion search 与其它读 flag 同理按分域拒绝 include-deprecated：flag 注册在 opinion 父命令
+	// 上（search 也能解析到），但它只作用于 opinion show；search 显式带它由 validateOpinionArgs
+	// 当场退 1（不静默接受）。取材 opinion search 以证明「同一命令族内 flag 仍按子命令分域」。
+	{"opinion", "search", "注意力"},
 }
 
 // matrixVault 造一份 CLI 侧语料：config + 一张 active hub（正向指向 active B / deprecated C）
@@ -70,18 +78,28 @@ func matrixVault(t *testing.T) string {
 	writeFileMk(t, filepath.Join(dir, "domains", "ai-infra", "notes", "n-20260901-x.md"),
 		"---\nid: n-20260901-x\nsource: s-20260901-x\ncreated_at: '2026-09-01'\n"+
 			"updated_at: '2026-09-01T10:00:00+08:00'\n---\n\n## 摘录\n\n注意力 摘录。\n")
+	// 一条观点：supports 正向指向 active B / deprecated C —— 供 opinion show 作为第三个读面消费
+	// --include-deprecated（默认隐藏对端 C 并计 Q4，显式放开才展示）。仅需**存在**即可让
+	// `eg opinion show o-20260901-op` 退 0；与 rel/card 的读面互不影响（G8 只比键集合、不比值）。
+	writeFileMk(t, filepath.Join(dir, "domains", "ai-infra", "opinions", "o-20260901-op.md"),
+		"---\nid: o-20260901-op\nstatus: active\ncreated_at: '2026-09-01'\n"+
+			"updated_at: '2026-09-05T10:00:00+08:00'\ntitle: 注意力 观点\nvalidation: pending\n"+
+			"sources: []\nrelations:\n"+
+			"  - type: supports\n    target: k-20260902-b\n    reason: 支持 B\n"+
+			"  - type: supports\n    target: k-20260903-c\n    reason: 支持 C（该卡已失效）\n"+
+			"---\n\n## 观点\n\n注意力 主张。\n")
 	return dir
 }
 
-// TestG7FlagRejectedByFiveCommands —— G7：作用面恰 2、拒绝面恰 5。
+// TestG7FlagRejectedBySixCommands —— G7：作用面恰 3、拒绝面采样恰 6。
 //
-//	接受面（rel / card show）带 flag → 退 0；
-//	拒绝面（search / context / unreviewed / reconcile / check）带 flag → 退 1、零写入零 commit，
-//	且错误逐字点名该 flag（反证拒绝确由 flag 触发，而非缺参数）。
-func TestG7FlagRejectedByFiveCommands(t *testing.T) {
-	// —— 接受面恰 2：带 flag 退 0 ——
-	if len(flagAcceptCommands) != 2 {
-		t.Fatalf("作用面必须恰 2 个命令，实际 %d", len(flagAcceptCommands))
+//	接受面（rel / card show / opinion show）带 flag → 退 0；
+//	拒绝面采样（search / context / unreviewed / reconcile / check / opinion search）带 flag → 退 1、
+//	零写入零 commit，且错误逐字点名该 flag（反证拒绝确由 flag 触发，而非缺参数）。
+func TestG7FlagRejectedBySixCommands(t *testing.T) {
+	// —— 接受面恰 3：带 flag 退 0 ——
+	if len(flagAcceptCommands) != 3 {
+		t.Fatalf("作用面必须恰 3 个命令，实际 %d", len(flagAcceptCommands))
 	}
 	for _, args := range flagAcceptCommands {
 		dir := matrixVault(t)
@@ -94,9 +112,9 @@ func TestG7FlagRejectedByFiveCommands(t *testing.T) {
 		}
 	}
 
-	// —— 拒绝面恰 5：带 flag 退 1、零写入、错误点名 flag ——
-	if len(flagRejectCommands) != 5 {
-		t.Fatalf("拒绝面必须恰 5 个命令，实际 %d", len(flagRejectCommands))
+	// —— 拒绝面采样恰 6：带 flag 退 1、零写入、错误点名 flag ——
+	if len(flagRejectCommands) != 6 {
+		t.Fatalf("拒绝面采样必须恰 6 个命令，实际 %d", len(flagRejectCommands))
 	}
 	for _, args := range flagRejectCommands {
 		dir := matrixVault(t)
@@ -106,7 +124,7 @@ func TestG7FlagRejectedByFiveCommands(t *testing.T) {
 		full = append(full, visFlag)
 		code, out, errOut := runCLI(t, r, full...)
 		if code != ExitUsage {
-			t.Fatalf("拒绝面 %v 带 %s 应退 1（未定义 flag），实际 %d（%s / %s）",
+			t.Fatalf("拒绝面 %v 带 %s 应退 1，实际 %d（%s / %s）",
 				args, visFlag, code, out, errOut)
 		}
 		if !strings.Contains(out+errOut, "include-deprecated") {
@@ -117,21 +135,22 @@ func TestG7FlagRejectedByFiveCommands(t *testing.T) {
 		}
 	}
 
-	// —— 源码级：恰 2 个 .go 源文件**注册**该 flag（check.go 只在注释里提及，不算注册）——
-	if got := registeredFlagFiles(t); got != 2 {
-		t.Fatalf("恰 2 个源文件注册 %s，实际 %d", visFlag, got)
+	// —— 源码级：恰 3 个 .go 源文件**注册**该 flag（check.go 只在注释里提及，不算注册）——
+	if got := registeredFlagFiles(t); got != 3 {
+		t.Fatalf("恰 3 个源文件注册 %s，实际 %d", visFlag, got)
 	}
 }
 
 // registeredFlagFiles 统计 internal/cli 下**注册**了该 flag 的源文件数
 // （以 fs.Bool 注册点为准，避免把注释/拒绝面里的字符串提及计入）。
-// 注意：needle 用分片拼接构造，避免本测试源码本身命中 §3.4「注册面恰 2」的静态反证 grep
-// （该反证按 fs.Bool 注册点逐字搜源码，产品侧只应命中 rel.go / card.go 两处）。
+// 注意：needle 用分片拼接构造，避免本测试源码本身命中 §3.4「注册面」的静态反证 grep
+// （该反证按 fs.Bool 注册点逐字搜源码，产品侧只应命中 rel.go / card.go / opinion_cmd.go 三处）。
 func registeredFlagFiles(t *testing.T) int {
 	t.Helper()
 	needle := "fs.Bool(\"include-" + "deprecated\"" // 运行期拼回 fs.Bool 注册点原文
 	n := 0
-	for _, f := range []string{"rel.go", "card.go", "check.go", "search.go", "context.go", "reconcile.go"} {
+	for _, f := range []string{"rel.go", "card.go", "opinion_cmd.go",
+		"check.go", "search.go", "context.go", "reconcile.go"} {
 		raw := readSource(t, f)
 		if strings.Contains(raw, needle) {
 			n++

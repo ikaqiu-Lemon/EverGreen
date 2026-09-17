@@ -183,7 +183,7 @@ func TestSearchOpinionMetaBackendEquivalence(t *testing.T) {
 	if healthy.backend.Kind != BackendIndex {
 		t.Fatalf("前置：healthy 必须走索引后端，实际 %s", healthy.backend.Kind)
 	}
-	if hc := skDiagCounts(healthy); hc["W22"]+hc["W23"]+hc["W24"]+hc[CodeQ5] != 0 {
+	if hc := skDiagCounts(healthy); hc[wCodeStale]+hc[wCodeMissing]+hc[wCodeCorrupt]+hc[CodeQ5] != 0 {
 		t.Fatalf("healthy 不应有降级诊断，实际 %v", healthy.Diagnostics)
 	}
 
@@ -199,7 +199,7 @@ func TestSearchOpinionMetaBackendEquivalence(t *testing.T) {
 		t.Fatalf("前置：fallback 必须降级为扫描后端，实际 %s", got.backend.Kind)
 	}
 	dc := skDiagCounts(got)
-	if dc["W23"] != 1 || dc[CodeQ5] != 1 || len(got.Diagnostics) != 2 {
+	if dc[wCodeMissing] != 1 || dc[CodeQ5] != 1 || len(got.Diagnostics) != 2 {
 		t.Fatalf("missing fallback 应恰 W23 + Q5（共 2 条），实际 %v", got.Diagnostics)
 	}
 

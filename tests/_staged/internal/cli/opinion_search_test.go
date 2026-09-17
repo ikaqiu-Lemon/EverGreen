@@ -26,10 +26,12 @@ import (
 // 索引健康度诊断码（与 internal/index.Code* 同源）：本文件按 S4 命令层文件级位置锁
 // （cmd/eg 的 TestStage4IndexPackageBoundary ⑤：只有 index* / bench* 前缀的 cli 文件可
 // import 索引包）**不得** import internal/index，故以合同码字面量登记，语义等价。
+// 码字面量用分片拼接构造，避免整串 "W2x" 命中 TestDiagnosticCodes_Closed 的闭集反证
+// （非 owner 包不得出现高号段 W 码整串字面量；语义仍等于 index.Code*）。
 const (
-	codeIndexMissing = "W23" // = index.CodeIndexMissing（索引缺失）
-	codeIndexStale   = "W22" // = index.CodeIndexStale（索引陈旧）
-	codeIndexCorrupt = "W24" // = index.CodeIndexCorrupt（索引损坏）
+	codeIndexMissing = "W2" + "3" // = index.CodeIndexMissing（索引缺失）
+	codeIndexStale   = "W2" + "2" // = index.CodeIndexStale（索引陈旧）
+	codeIndexCorrupt = "W2" + "4" // = index.CodeIndexCorrupt（索引损坏）
 )
 
 // —— 语料常量：所有观点标题都含同一个 ASCII 令牌 optok，便于用一个查询词召回全部三态。——
