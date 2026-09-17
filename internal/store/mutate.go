@@ -92,7 +92,7 @@ func (s *Store) ApplyRemoveRelation(spec RemoveRelationSpec) (RemoveRelationResu
 	out.Hash = f.Hash
 	var hit []int
 	for i, exist := range card.Relations {
-		if exist.Type == spec.Type && exist.Target == spec.Target {
+		if exist.Type == spec.Type && string(exist.Target) == string(spec.Target) {
 			hit = append(hit, i)
 		}
 	}

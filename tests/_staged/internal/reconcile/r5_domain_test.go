@@ -361,7 +361,7 @@ func TestR5ReportOnlyNoMoveNoRelationFix(t *testing.T) {
 	cards := []query.CardEntry{
 		r5Card(r5Alpha, domAI, domInfra),
 		{ID: r5Beta, Path: r5Path(domAI, r5Beta), Domain: domAI,
-			Relations: []model.Relation{{Type: model.RelationSupports, Target: model.CardID(r5Alpha)}}},
+			Relations: []model.Relation{{Type: model.RelationSupports, Target: model.RelationEndpoint(r5Alpha)}}},
 	}
 	in := R5ScanOf(dir, r5Scan(cards...), []RenameFact{r5Move(r5Beta, domInfra, domAI, "mv")})
 	fs1, rs1 := checkR5DomainMoved(in)
@@ -380,7 +380,7 @@ func TestR5ReportOnlyNoMoveNoRelationFix(t *testing.T) {
 	}
 	// 入参逐字未改：关系条目、路径、自报领域都还是原值。
 	if len(in.Scan.Cards[1].Relations) != 1 ||
-		in.Scan.Cards[1].Relations[0].Target != model.CardID(r5Alpha) {
+		in.Scan.Cards[1].Relations[0].Target != model.RelationEndpoint(r5Alpha) {
 		t.Fatalf("入参 relations 被改动（R5 不补关系）：%+v", in.Scan.Cards[1].Relations)
 	}
 	if in.Scan.Cards[0].Domain != domInfra || in.Scan.Cards[0].Path != r5Path(domAI, r5Alpha) {
@@ -529,7 +529,7 @@ func TestR5NoDoubleCountWithR4DuplicateID(t *testing.T) {
 // TestR5NoDoubleCountWithR1R2R3：同一份输入里 R1 / R2 / R3 / R5 各记各自那一件事实，
 // 谁都不替谁记账 —— R5 不读 Status（未提交）、不读 reviewed_at、不读 relations[]。
 func TestR5NoDoubleCountWithR1R2R3(t *testing.T) {
-	rel := model.Relation{Type: model.RelationSupports, Target: model.CardID("k-20261199-gone")}
+	rel := model.Relation{Type: model.RelationSupports, Target: model.RelationEndpoint("k-20261199-gone")}
 	card := query.CardEntry{
 		ID: r5Alpha, Path: r5Path(domAI, r5Alpha), Domain: domInfra,
 		UpdatedAt: "2026-11-26T10:00:00+08:00", Relations: []model.Relation{rel},

@@ -518,7 +518,7 @@ func TestR7NoDoubleCountWithR4Orphan(t *testing.T) {
 	// R7 与 relations[] 无关：给同一张卡加满关系，W20 逐字不变（W17 因此消失）。
 	linked := lonely
 	linked.Relations = []model.Relation{{
-		Type: model.RelationSupports, Target: model.CardID(r7Card2), Reason: "用例造数",
+		Type: model.RelationSupports, Target: model.RelationEndpoint(r7Card2), Reason: "用例造数",
 	}}
 	res2 := Run(r7In([]query.CardEntry{linked, r7CardEntry(r7Card2, "active",
 		r7Ref(r7Src, r7Note, model.MaterialSupport))}, notes, sources))

@@ -115,7 +115,7 @@ func (s *Store) ApplyRelation(spec RelationSpec) (Result, error) {
 		return res, fmt.Errorf("%w：relations[].target 必须是 %s 前缀的卡 ID，得到 %q",
 			ErrRelationTargetType, model.PrefixCard, rel.Target)
 	}
-	if rel.Target == spec.From {
+	if string(rel.Target) == string(spec.From) {
 		return res, fmt.Errorf("%w：%s", ErrSelfRelation, rel.Target)
 	}
 	if rel.Type == model.RelationOpposing && string(spec.From) > string(rel.Target) {

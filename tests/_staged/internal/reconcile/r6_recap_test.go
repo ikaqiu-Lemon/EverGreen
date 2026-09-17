@@ -649,7 +649,7 @@ func TestR6NoDoubleCountWithOtherChecks(t *testing.T) {
 	//    E14 恰 1 条、W19 恰 1 条，两条说的是两件不同的落盘事实（不是同一件被记两次）。
 	bad := r6Deprecated(r6Card(r6CardA, r6TEarly))
 	bad.Relations = []model.Relation{{
-		Type: model.RelationSupports, Target: model.CardID("n-20261128-note"), Reason: "用例造数",
+		Type: model.RelationSupports, Target: model.RelationEndpoint("n-20261128-note"), Reason: "用例造数",
 	}}
 	res = Run(r6In([]RecapFact{r6Fact(r6CardA)}, bad))
 	if got := countCheck(res.Findings, CheckRelationPrefixInvalid); got != 1 {

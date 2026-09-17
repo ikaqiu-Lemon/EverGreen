@@ -575,7 +575,7 @@ func (v *validator) removeRelation(op *Op) {
 	removal := RelationRemoval{Type: string(relType), Target: op.Target}
 	id, rel := op.From, fromRel
 	if relType == model.RelationOpposing {
-		pair := rules.Opposing(model.CardID(op.From), model.CardID(op.Target))
+		pair := rules.Opposing(model.RelationEndpoint(op.From), model.RelationEndpoint(op.Target))
 		if pair.Normalized {
 			d := warnAt(W8, op.Index, opPath(op.Index, "from"),
 				"opposing 方向未规范化：已按字典序改为 from=%s / target=%s 后匹配（单向存储，删除方向无关）",

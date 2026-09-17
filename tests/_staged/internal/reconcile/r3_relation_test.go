@@ -38,7 +38,7 @@ const (
 
 // r3Rel 构造一条关系条目（type / target 逐字落盘，不做任何补默认）。
 func r3Rel(typ model.RelationType, target string) model.Relation {
-	return model.Relation{Type: typ, Target: model.CardID(target), Reason: "单测事实"}
+	return model.Relation{Type: typ, Target: model.RelationEndpoint(target), Reason: "单测事实"}
 }
 
 // r3Card 构造一张带任意类型关系的知识卡（路径由 ID 派生，保证扫描序稳定可复算）。

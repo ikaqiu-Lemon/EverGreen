@@ -398,3 +398,63 @@ func TestConfigShape(t *testing.T) {
 		t.Fatalf("S1 只两个可操作键，实际 %v", ConfigKeys())
 	}
 }
+
+// —— 论证关系端点：跨类型仅 k / o（RelationEndpoint，T-…-006-B2c Phase 1）——
+
+// TestRelationEndpointAcceptsKnowledgeAndOpinion：端点恰接受 k- / o- 两种前缀，
+// k→k 旧形态照旧合法（兼容），o- 新形态也合法。
+func TestRelationEndpointAcceptsKnowledgeAndOpinion(t *testing.T) {
+	for _, raw := range []string{"k-20260901-attention", "o-20260901-scaling"} {
+		got, err := ParseRelationEndpoint(raw)
+		if err != nil {
+			t.Fatalf("ParseRelationEndpoint(%q) 应成功（论证关系可连知识卡或观点）：%v", raw, err)
+		}
+		if string(got) != raw {
+			t.Fatalf("ParseRelationEndpoint(%q) 应逐字回带 ID，实得 %q", raw, got)
+		}
+		if !RelationEndpoint(raw).Valid() {
+			t.Fatalf("RelationEndpoint(%q).Valid() 应为真", raw)
+		}
+	}
+}
+
+// TestRelationEndpointRejectsOtherKinds：s- / n- / r- / p- 前缀与不可解析 ID 一律拒绝
+// （论证关系永远发生在两条论证性产物之间，不指向原文 / 笔记 / 综述 / 提案）。
+func TestRelationEndpointRejectsOtherKinds(t *testing.T) {
+	for _, bad := range []string{
+		"s-20260901-src", "n-20260901-note", "r-20260901-review", "p-20260901-0001",
+		"x-20260901-nope", "k20260901nodash", "k-2026-short", "k-20260901-", "",
+	} {
+		if _, err := ParseRelationEndpoint(bad); err == nil {
+			t.Fatalf("ParseRelationEndpoint(%q) 应报错（端点前缀只允许 k- / o-，形态须合法）", bad)
+		}
+		if RelationEndpoint(bad).Valid() {
+			t.Fatalf("RelationEndpoint(%q).Valid() 应为假", bad)
+		}
+	}
+	if got := RelationEndpointPrefixes(); len(got) != 2 || got[0] != PrefixCard || got[1] != PrefixOpinion {
+		t.Fatalf("RelationEndpointPrefixes() 应恰为 [k- o-]，实得 %v", got)
+	}
+}
+
+// TestRelationTargetKeyShapeUnchanged：Relation 的 target 泛化成 RelationEndpoint 后，
+// YAML / JSON 键形态与旧版逐字一致（仍是一个 `target: <id>` 标量），字段仍恰三键。
+func TestRelationTargetKeyShapeUnchanged(t *testing.T) {
+	var r Relation
+	if err := yaml.Unmarshal([]byte("type: opposing\ntarget: o-20260901-scaling\nreason: 结论相反\n"), &r); err != nil {
+		t.Fatalf("Relation 反序列化失败：%v", err)
+	}
+	if r.Target != RelationEndpoint("o-20260901-scaling") {
+		t.Fatalf("target 应解析成 o-20260901-scaling，实得 %q", r.Target)
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("Relation JSON 序列化失败：%v", err)
+	}
+	if got := string(b); !strings.Contains(got, `"target":"o-20260901-scaling"`) {
+		t.Fatalf("JSON 键形态应含 \"target\":\"o-20260901-scaling\"，实得 %s", got)
+	}
+	if n := reflect.TypeOf(Relation{}).NumField(); n != 3 {
+		t.Fatalf("Relation 字段数应恰 3（type / target / reason），实得 %d", n)
+	}
+}

@@ -165,6 +165,43 @@ func (id OpinionID) Valid() bool {
 	return err == nil
 }
 
+// RelationEndpoint 是论证关系的一个端点 ID（`relations[].target` 的落盘类型）。
+//
+// 论证关系是**跨类型**的：它可连知识卡（k-）或观点（o-）——两者是同级论证性产物，
+// 因此端点不再收窄成 CardID。端点**只接受** k- / o- 两种前缀：s- / n- / r- / p-
+// 以及任何不可解析 ID 一律拒绝（论证关系永远发生在两条论证性产物之间，不指向
+// 原文 / 笔记 / 综述 / 提案）。底层是 string，YAML/JSON 落盘仍是一个 `target: <id>`
+// 标量，键形态与旧版逐字一致（本次只泛化类型，不动 schema）。
+type RelationEndpoint string
+
+func (e RelationEndpoint) String() string { return string(e) }
+
+// RelationEndpointPrefixes 返回关系端点允许的前缀（k- / o-，顺序稳定）。
+func RelationEndpointPrefixes() []string {
+	return []string{PrefixCard, PrefixOpinion}
+}
+
+// ParseRelationEndpoint 解析并校验关系端点：形态合法且前缀恰为 k- / o-。
+// 其余前缀（s- / n- / r- / p-）与不可解析 ID 一律拒绝。
+func ParseRelationEndpoint(raw string) (RelationEndpoint, error) {
+	p, err := ParseID(raw)
+	if err != nil {
+		return "", err
+	}
+	if p.Prefix != PrefixCard && p.Prefix != PrefixOpinion {
+		return "", fmt.Errorf(
+			"关系端点 %q 的前缀是 %q，期望 %s / %s（论证关系只连知识卡或观点）",
+			raw, p.Prefix, PrefixCard, PrefixOpinion)
+	}
+	return RelationEndpoint(raw), nil
+}
+
+// Valid 报告关系端点是否形态合法且前缀在 { k-, o- } 内。
+func (e RelationEndpoint) Valid() bool {
+	_, err := ParseRelationEndpoint(string(e))
+	return err == nil
+}
+
 // NewSourceID / NewNoteID / NewCardID / NewOpinionID 生成稳定 ID。同一 (日期, 标题) 幂等。
 func NewSourceID(d Date, title string) SourceID { return SourceID(newID(PrefixSource, d, title)) }
 func NewNoteID(d Date, title string) NoteID     { return NoteID(newID(PrefixNote, d, title)) }

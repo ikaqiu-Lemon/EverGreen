@@ -181,7 +181,7 @@ func TestRelationE2UnresolvedTarget(t *testing.T) {
 	for _, target := range []string{"k-20260101-missing", "note-3"} {
 		res, err := s.ApplyRelation(RelationSpec{Rel: cardPath("k-20260901-attention"),
 			From:     "k-20260901-attention",
-			Relation: model.Relation{Type: model.RelationLimits, Target: model.CardID(target), Reason: "限定"}})
+			Relation: model.Relation{Type: model.RelationLimits, Target: model.RelationEndpoint(target), Reason: "限定"}})
 		if err == nil || res.Written {
 			t.Fatalf("target=%q 必须拒绝：%v / %+v", target, err, res)
 		}
@@ -194,7 +194,7 @@ func TestRelationE2UnresolvedTarget(t *testing.T) {
 // ---------- opposing 规范化与去重（EG-CVG-05） ----------
 
 func TestRelationOpposingIsStoredOnceOnLexicalSmallerEnd(t *testing.T) {
-	for _, order := range [][2]model.CardID{
+	for _, order := range [][2]model.RelationEndpoint{
 		{"k-20260901-attention", "k-20260815-rnn"},
 		{"k-20260815-rnn", "k-20260901-attention"},
 	} {
@@ -203,7 +203,7 @@ func TestRelationOpposingIsStoredOnceOnLexicalSmallerEnd(t *testing.T) {
 		if pair.From != "k-20260815-rnn" {
 			t.Fatalf("规范化后写入端应是字典序较小者，实得 %s", pair.From)
 		}
-		res, err := s.ApplyRelation(RelationSpec{From: pair.From,
+		res, err := s.ApplyRelation(RelationSpec{From: model.CardID(pair.From),
 			Relation: model.Relation{Type: model.RelationOpposing, Target: pair.Target,
 				Reason: "两者对长序列的结论相反"}})
 		if err != nil || !res.Written {
@@ -235,7 +235,7 @@ func TestRelationOpposingIsStoredOnceOnLexicalSmallerEnd(t *testing.T) {
 func TestRelationOpposingDuplicateIsIdempotent(t *testing.T) {
 	s, root := relVault(t)
 	pair := rules.Opposing("k-20260901-attention", "k-20260815-rnn")
-	spec := RelationSpec{From: pair.From,
+	spec := RelationSpec{From: model.CardID(pair.From),
 		Relation: model.Relation{Type: model.RelationOpposing, Target: pair.Target, Reason: "结论相反"}}
 	if _, err := s.ApplyRelation(spec); err != nil {
 		t.Fatalf("首次写入：%v", err)

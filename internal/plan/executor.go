@@ -515,7 +515,7 @@ func (e *executor) relationWrite(a Action) {
 		From:         model.CardID(a.ID),
 		Relation: model.Relation{
 			Type:   model.RelationType(rel.Type),
-			Target: model.CardID(rel.Target),
+			Target: model.RelationEndpoint(rel.Target),
 			Reason: rel.Reason,
 		},
 		Index: e.opt.Index,

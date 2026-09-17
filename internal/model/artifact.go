@@ -104,11 +104,14 @@ func (r SourceRef) MissingFields() []string {
 // Complete 报告四要素是否齐全。
 func (r SourceRef) Complete() bool { return len(r.MissingFields()) == 0 }
 
-// Relation 是论证关系：落在**来源卡**的 relations[]，单向一条。
+// Relation 是论证关系：落在**来源实体**的 relations[]，单向一条。
+//
+// Target 是**跨类型**端点（RelationEndpoint，前缀 k- / o-）：论证关系可连知识卡或
+// 观点，二者同级。字段仍恰三键（type / target / reason），YAML/JSON 键形态不变。
 type Relation struct {
-	Type   RelationType `yaml:"type" json:"type"`
-	Target CardID       `yaml:"target" json:"target"`
-	Reason string       `yaml:"reason" json:"reason"`
+	Type   RelationType     `yaml:"type" json:"type"`
+	Target RelationEndpoint `yaml:"target" json:"target"`
+	Reason string           `yaml:"reason" json:"reason"`
 }
 
 // Note 是材料笔记（§4.3）。

@@ -4,6 +4,8 @@ package rules
 //
 // 无向语义单向存储：按两端稳定 ID **字典序**取小者为写入端（唯一规范方向），
 // 写入前对同一对去重——已存在则只更新 `reason`，**不产生第二条**。
+// 端点是**跨类型**的（RelationEndpoint，k- / o- 皆可）：字典序只比 ID 全串本身，
+// 与端点是知识卡还是观点无关，因此 k↔k / k↔o / o↔k / o↔o 四种组合走同一套规范化。
 // 一对一条记录：不引入议题组、不聚合成任何第三方对象、不自动补全关系图。
 // 方向不规范或同对重复由上层登记 W8（照写 + 进报告，不影响退出码）。
 
@@ -11,14 +13,14 @@ import "github.com/ikaqiu-Lemon/EverGreen/internal/model"
 
 // OpposingPair 是规范化后的一条 opposing：From 永远是字典序较小的一端。
 type OpposingPair struct {
-	From   model.CardID
-	Target model.CardID
+	From   model.RelationEndpoint
+	Target model.RelationEndpoint
 	// Normalized 为真表示输入方向不是规范方向，已被调换（上层据此登记 W8）。
 	Normalized bool
 }
 
 // Opposing 把输入的两端规范化成唯一方向。两端相同时原样返回（自反关系由上层拒绝）。
-func Opposing(from, target model.CardID) OpposingPair {
+func Opposing(from, target model.RelationEndpoint) OpposingPair {
 	if string(target) < string(from) {
 		return OpposingPair{From: target, Target: from, Normalized: true}
 	}

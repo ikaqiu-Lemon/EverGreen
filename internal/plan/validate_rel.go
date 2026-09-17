@@ -153,7 +153,7 @@ func (v *validator) relation(op *Op) {
 	write := RelationWrite{Type: string(relType), Target: op.Target, Reason: op.Reason}
 	id, rel := op.From, fromRel
 	if relType == model.RelationOpposing {
-		pair := rules.Opposing(model.CardID(op.From), model.CardID(op.Target))
+		pair := rules.Opposing(model.RelationEndpoint(op.From), model.RelationEndpoint(op.Target))
 		if pair.Normalized {
 			d := warnAt(W8, op.Index, opPath(op.Index, "from"),
 				"opposing 方向未规范化：已按字典序改为 from=%s / target=%s（单向存储，一对一条记录）",
@@ -170,7 +170,7 @@ func (v *validator) relation(op *Op) {
 			}
 			rel = newRel
 		}
-		if v.opposingExists(rel, model.CardID(write.Target)) {
+		if v.opposingExists(rel, model.RelationEndpoint(write.Target)) {
 			write.Duplicate = true
 			d := warnAt(W8, op.Index, opPath(op.Index, "target"),
 				"opposing 同对已存在：幂等跳过，不产生第二条（reason 的更新属 S2 块替换，"+
@@ -187,7 +187,7 @@ func (v *validator) relation(op *Op) {
 }
 
 // opposingExists 报告该卡的 relations[] 里是否已有同对 opposing（同对判定与方向无关）。
-func (v *validator) opposingExists(rel string, target model.CardID) bool {
+func (v *validator) opposingExists(rel string, target model.RelationEndpoint) bool {
 	raw, ok := v.readExisting(rel)
 	if !ok {
 		return false
@@ -197,7 +197,7 @@ func (v *validator) opposingExists(rel string, target model.CardID) bool {
 		return false
 	}
 	return rules.OpposingDuplicate(card.Relations,
-		rules.Opposing(card.ID, target))
+		rules.Opposing(model.RelationEndpoint(card.ID), target))
 }
 
 // RelationStatusWarning 构造 W3 诊断（论证关系某端不是 `status: active`）。

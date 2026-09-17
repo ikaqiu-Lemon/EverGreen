@@ -31,7 +31,7 @@ func card(id, path string, rels ...string) query.CardEntry {
 	c := query.CardEntry{ID: id, Path: path}
 	for _, r := range rels {
 		c.Relations = append(c.Relations,
-			model.Relation{Type: model.RelationSupports, Target: model.CardID(r), Reason: "e2e 事实"})
+			model.Relation{Type: model.RelationSupports, Target: model.RelationEndpoint(r), Reason: "e2e 事实"})
 	}
 	return c
 }

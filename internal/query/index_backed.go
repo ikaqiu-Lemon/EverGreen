@@ -360,7 +360,7 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 	relBySrc := map[string][]model.Relation{}
 	for _, r := range rels {
 		relBySrc[r.SrcID] = append(relBySrc[r.SrcID], model.Relation{
-			Type: model.RelationType(r.Verb), Target: model.CardID(r.DstID),
+			Type: model.RelationType(r.Verb), Target: model.RelationEndpoint(r.DstID),
 		})
 	}
 	indexedPaths := make(map[string]bool, len(cards))
