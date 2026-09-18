@@ -4,9 +4,11 @@ package query_test
 // EG-NOTE-04 字段级断言、content_hash 与 store 重算交叉一致、打分确定性、只读零副作用。
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -308,6 +310,9 @@ func dump(ctx *query.Context) string {
 	for _, c := range ctx.Candidates {
 		b.WriteString("cand=" + c.ID + " " + c.Path + " " + c.Title + " " + strings.Join(c.Reasons, ",") + "\n")
 	}
+	for _, c := range ctx.OpinionCandidates {
+		b.WriteString("opcand=" + c.ID + " " + c.Path + " " + c.Title + " " + strings.Join(c.Reasons, ",") + "\n")
+	}
 	for _, k := range sortedBaseKeys(ctx.Base) {
 		b.WriteString("base=" + k + " " + ctx.Base[k] + "\n")
 	}
@@ -602,5 +607,250 @@ func TestContextDeprecatedNotRecommended(t *testing.T) {
 	}
 	if strings.Join(ids, ",") != "k-20260901-far,k-20260901-new" {
 		t.Fatalf("cards[] 应恰含两张 active 卡（按扫描口径），实际 %v", ids)
+	}
+}
+
+// ================= T-…-006 阶段 6E：context 双候选 + candidates 兼容（D-3） =================
+//
+// 判据来源：schema v2 设计 §5.3 + 决策 D-3、T-…-006 Acceptance「eg context --json 同时输出
+// knowledge_candidates / opinion_candidates；candidates 仍在且等于 knowledge_candidates」。
+// 本组用例只钉 query.Context 侧事实（字段闭集、legacy alias 深等价、Opinion 候选复用同一
+// 确定性评分/排序单点、每类独立 limit、validation 三态正交、他域/失效/删除/零分排除、
+// base 同时注入 k/o 候选路径且 store 重算一致）；I1 / CLI 渲染事实在 internal/cli 侧钉。
+
+// polishOpinion 造一条可控标题 / 状态 / validation 的观点（schema v2；必填分区「观点」）。
+// 复用打分口径与知识卡同源（同一 candidates()），因此这里只提供 frontmatter 事实，
+// 不重复任何评分逻辑。
+func polishOpinion(id, title, status, validation string, tags ...string) string {
+	fm := "---\nid: " + id + "\nstatus: " + status + "\n" +
+		"created_at: '2026-09-01'\nupdated_at: '2026-09-01T10:00:00+08:00'\n" +
+		"title: " + title + "\nvalidation: " + validation + "\nsources: []\n"
+	if len(tags) > 0 {
+		fm += "tags:\n"
+		for _, tg := range tags {
+			fm += "  - " + tg + "\n"
+		}
+	}
+	return fm + "---\n\n# " + title + "\n\n## 观点\n\n正文占位。\n"
+}
+
+// polishDeletedOpinion 造一条 active 但已删除（deleted_at 有值）的观点。
+func polishDeletedOpinion(id, title string) string {
+	return "---\nid: " + id + "\nstatus: active\n" +
+		"created_at: '2026-09-01'\nupdated_at: '2026-09-01T10:00:00+08:00'\n" +
+		"deleted_at: '2026-09-02T10:00:00+08:00'\ndeleted_reason: 结论被推翻\n" +
+		"title: " + title + "\nvalidation: rejected\nsources: []\n" +
+		"---\n\n# " + title + "\n\n## 观点\n\n正文占位。\n"
+}
+
+// opinionSig 把观点候选序列摊成「ID|得分|理由条数|理由」，用于顺序与等价断言。
+func opinionSig(ctx *query.Context) []string {
+	out := make([]string, 0, len(ctx.OpinionCandidates))
+	for _, c := range ctx.OpinionCandidates {
+		out = append(out, c.ID+"|"+itoa(c.Score)+"|"+itoa(len(c.Reasons))+"|"+
+			strings.Join(c.Reasons, "；"))
+	}
+	return out
+}
+
+// —— ① 字段键闭集 + 三候选字段都是 [] 而非 null + candidates ≡ knowledge_candidates ——
+
+func TestContextCandidateFieldKeysClosedAndAlias(t *testing.T) {
+	root := fixture(t) // 该 vault 命中一张知识卡、零观点：正好覆盖「有 knowledge、无 opinion」
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+
+	raw, err := json.Marshal(ctx)
+	if err != nil {
+		t.Fatalf("Context 不可序列化：%v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("Context JSON 不可解析：%v\n%s", err, raw)
+	}
+	var keys []string
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	want := []string{"base", "candidates", "cards", "diagnostics", "domain",
+		"knowledge_candidates", "notes", "opinion_candidates", "proposals", "source", "warnings"}
+	if strings.Join(keys, ",") != strings.Join(want, ",") {
+		t.Fatalf("Context 字段键闭集 = %v，期望 %v", keys, want)
+	}
+	// 三个候选字段即便为空也必须是 []（不是 null）：调用方拿到的恒是数组。
+	for _, k := range []string{"candidates", "knowledge_candidates", "opinion_candidates"} {
+		if string(m[k]) == "null" {
+			t.Fatalf("%s 必须序列化成 [] 而非 null，实得 %s", k, m[k])
+		}
+	}
+	// legacy alias 深等价：candidates 内容 / 顺序逐项恒等于 knowledge_candidates。
+	if !reflect.DeepEqual(ctx.Candidates, ctx.KnowledgeCandidates) {
+		t.Fatalf("candidates 必须逐项恒等于 knowledge_candidates：\ncandidates=%+v\nknowledge=%+v",
+			ctx.Candidates, ctx.KnowledgeCandidates)
+	}
+	if string(m["candidates"]) != string(m["knowledge_candidates"]) {
+		t.Fatalf("candidates 与 knowledge_candidates 的 JSON 必须逐字相等：\n%s\n%s",
+			m["candidates"], m["knowledge_candidates"])
+	}
+	// 该 vault 无观点：opinion_candidates 必须为空数组，且 knowledge 侧仍命中旧语义那张卡。
+	if len(ctx.OpinionCandidates) != 0 {
+		t.Fatalf("无观点的 vault 里 opinion_candidates 应为空，实得 %+v", ctx.OpinionCandidates)
+	}
+	if len(ctx.KnowledgeCandidates) != 1 || ctx.KnowledgeCandidates[0].ID != "c-20260412-attention" {
+		t.Fatalf("knowledge_candidates 未保持旧语义，实得 %v", candSig(ctx))
+	}
+}
+
+// polishOpinionVault 在 polishVault（目标原文标题「注意力机制入门」）基础上，
+// 额外铺一组覆盖面完整的观点：命中(三种 validation)、失效、删除、零分、他域。
+func polishOpinionVault(t *testing.T) string {
+	t.Helper()
+	return polishVault(t, map[string]string{
+		// 一张命中的知识卡：证明 knowledge 与 opinion 两路并存、互不串味。
+		"domains/ai-infra/knowledge/k-20260901-kc.md": polishCard("k-20260901-kc", "注意力机制"),
+		// 命中的观点，三种 validation 都应召回（validation 与候选评分正交）。
+		"domains/ai-infra/opinions/o-20260901-p.md": polishOpinion("o-20260901-p", "注意力机制", "active", "pending"),
+		"domains/ai-infra/opinions/o-20260901-v.md": polishOpinion("o-20260901-v", "注意力入门", "active", "validated"),
+		"domains/ai-infra/opinions/o-20260901-r.md": polishOpinion("o-20260901-r", "机制入门", "active", "rejected"),
+		// 失效（deprecated）观点：不进候选（active 口径）。
+		"domains/ai-infra/opinions/o-20260901-dep.md": polishOpinion("o-20260901-dep", "注意力机制", "deprecated", "pending"),
+		// 已删除观点：不进候选。
+		"domains/ai-infra/opinions/o-20260901-del.md": polishDeletedOpinion("o-20260901-del", "注意力机制"),
+		// 零共同词观点：得分 0，不进候选。
+		"domains/ai-infra/opinions/o-20260901-far.md": polishOpinion("o-20260901-far", "磁盘调度", "active", "pending"),
+		// 他域观点：领域由目录决定，绝不能进 ai-infra 的上下文。
+		"domains/mlsys/opinions/o-20260901-x.md": polishOpinion("o-20260901-x", "注意力机制", "active", "pending"),
+	})
+}
+
+// —— ② Opinion 候选：validation 三态正交召回、失效/删除/零分/他域排除、不混入 cards ——
+
+func TestContextOpinionCandidates(t *testing.T) {
+	root := polishOpinionVault(t)
+	ctx := polishContext(t, root)
+
+	got := map[string]bool{}
+	for _, c := range ctx.OpinionCandidates {
+		got[c.ID] = true
+		if c.Score <= 0 || len(c.Reasons) == 0 {
+			t.Fatalf("观点候选必须同时有正得分与非空理由：%+v", c)
+		}
+	}
+	want := []string{"o-20260901-p", "o-20260901-r", "o-20260901-v"}
+	var gotIDs []string
+	for id := range got {
+		gotIDs = append(gotIDs, id)
+	}
+	sort.Strings(gotIDs)
+	if strings.Join(gotIDs, ",") != strings.Join(want, ",") {
+		t.Fatalf("opinion_candidates = %v，期望恰 %v（三种 validation 都召回、失效/删除/零分/他域排除）\nsig=%v",
+			gotIDs, want, opinionSig(ctx))
+	}
+	// 排除项一个都不能出现在任何字段。
+	blob := dump(ctx)
+	for _, banned := range []string{"o-20260901-dep", "o-20260901-del", "o-20260901-far",
+		"o-20260901-x", "domains/mlsys/"} {
+		if strings.Contains(blob, banned) {
+			t.Fatalf("排除项 %q 泄漏进 context：\n%s", banned, blob)
+		}
+	}
+	// 观点绝不混入 cards[]（cards 只装知识卡）。
+	for _, c := range ctx.Cards {
+		if strings.HasPrefix(c.ID, "o-") {
+			t.Fatalf("观点混进了 cards[]：%+v", c)
+		}
+	}
+	// knowledge 侧不受影响：仅命中知识卡。
+	if len(ctx.KnowledgeCandidates) != 1 || ctx.KnowledgeCandidates[0].ID != "k-20260901-kc" {
+		t.Fatalf("knowledge_candidates 应只含命中的知识卡，实得 %v", candSig(ctx))
+	}
+	// base 同时含被选中的知识卡与观点候选路径，且 store 重算一致；未命中/排除项不进 base。
+	st := store.New(root)
+	mustBase := []string{
+		"domains/ai-infra/knowledge/k-20260901-kc.md",
+		"domains/ai-infra/opinions/o-20260901-p.md",
+		"domains/ai-infra/opinions/o-20260901-v.md",
+		"domains/ai-infra/opinions/o-20260901-r.md",
+	}
+	for _, rel := range mustBase {
+		h, ok := ctx.Base[rel]
+		if !ok {
+			t.Fatalf("被选中的候选路径必须进 base：缺 %s（base=%v）", rel, ctx.Base)
+		}
+		f, err := st.Read(rel)
+		if err != nil {
+			t.Fatalf("store.Read(%s)：%v", rel, err)
+		}
+		if got := store.ContentHash(f.Bytes); got != h {
+			t.Fatalf("%s 的 content_hash 与 store 重算不一致：context=%s store=%s", rel, h, got)
+		}
+	}
+	for _, rel := range []string{
+		"domains/ai-infra/opinions/o-20260901-far.md",
+		"domains/ai-infra/opinions/o-20260901-dep.md",
+		"domains/ai-infra/opinions/o-20260901-del.md",
+	} {
+		if _, ok := ctx.Base[rel]; ok {
+			t.Fatalf("未命中/排除的观点不得进 base：%s", rel)
+		}
+	}
+}
+
+// —— ③ 每类独立 limit：知识候选与观点候选各自不超过 CandidateLimit ——
+
+func TestContextCandidatePerTypeLimit(t *testing.T) {
+	files := map[string]string{}
+	// 各铺 12 张命中卡 / 12 条命中观点（标题「注意力机制」→ 同分 12），各类应各自截到 10。
+	for i := 1; i <= 12; i++ {
+		suffix := itoa(i)
+		if i < 10 {
+			suffix = "0" + suffix
+		}
+		files["domains/ai-infra/knowledge/k-20260901-"+suffix+".md"] =
+			polishCard("k-20260901-"+suffix, "注意力机制")
+		files["domains/ai-infra/opinions/o-20260901-"+suffix+".md"] =
+			polishOpinion("o-20260901-"+suffix, "注意力机制", "active", "pending")
+	}
+	ctx := polishContext(t, polishVault(t, files))
+	if len(ctx.KnowledgeCandidates) != query.CandidateLimit {
+		t.Fatalf("knowledge_candidates 应截到 CandidateLimit=%d，实得 %d",
+			query.CandidateLimit, len(ctx.KnowledgeCandidates))
+	}
+	if len(ctx.OpinionCandidates) != query.CandidateLimit {
+		t.Fatalf("opinion_candidates 应独立截到 CandidateLimit=%d，实得 %d",
+			query.CandidateLimit, len(ctx.OpinionCandidates))
+	}
+	// candidates 兼容字段跟随 knowledge：同样恰 CandidateLimit。
+	if len(ctx.Candidates) != query.CandidateLimit {
+		t.Fatalf("candidates（兼容）应跟随 knowledge_candidates 截到 %d，实得 %d",
+			query.CandidateLimit, len(ctx.Candidates))
+	}
+}
+
+// —— ④ Opinion 候选复用同一确定性排序单点：同分全序（理由条数降序 → ID 升序）——
+
+func TestContextOpinionCandidateTotalOrder(t *testing.T) {
+	// 造三条同分 12 的观点，与知识卡同款构造：两条纯标题命中（1 条理由）、一条标题+tags（2 条理由）。
+	root := polishVault(t, map[string]string{
+		"domains/ai-infra/opinions/o-20260901-b.md": polishOpinion("o-20260901-b", "注意力机制", "active", "pending"),
+		"domains/ai-infra/opinions/o-20260901-a.md": polishOpinion("o-20260901-a", "注意力机制", "active", "validated"),
+		"domains/ai-infra/opinions/o-20260901-c.md": polishOpinion("o-20260901-c", "机制入", "active", "rejected", "注意", "意力", "力机"),
+	})
+	ctx := polishContext(t, root)
+	if len(ctx.OpinionCandidates) != 3 {
+		t.Fatalf("三条观点都应命中，实际 %d：%v", len(ctx.OpinionCandidates), opinionSig(ctx))
+	}
+	for _, c := range ctx.OpinionCandidates {
+		if c.Score != 12 {
+			t.Fatalf("用例前提被打破：%s 得分应为 12，实际 %d（%v）", c.ID, c.Score, c.Reasons)
+		}
+	}
+	// 同分：理由条数多者在前（c 有 tags + title 两条）。
+	if ctx.OpinionCandidates[0].ID != "o-20260901-c" {
+		t.Fatalf("同分应按理由条数降序，期望 o-20260901-c 首位，实得 %v", opinionSig(ctx))
+	}
+	// 同分且同理由条数：按 ID 升序（a 在 b 前），与遍历顺序无关。
+	if ctx.OpinionCandidates[1].ID != "o-20260901-a" || ctx.OpinionCandidates[2].ID != "o-20260901-b" {
+		t.Fatalf("同分同理由条数应按 ID 升序，实得 %v", opinionSig(ctx))
 	}
 }

@@ -109,14 +109,25 @@ type Candidate struct {
 // （「这条我是不是已经提过了」）。提案正文**不进上下文**：ProposalSummary 里
 // 没有任何承载七个 H2 内容的字段，因此「只给摘要」是结构性的，不靠调用方自律。
 type Context struct {
-	Domain     string            `json:"domain"`
-	Source     *SourceView       `json:"source"`
-	Notes      []NoteView        `json:"notes"`
-	Cards      []CardView        `json:"cards"`
-	Candidates []Candidate       `json:"candidates"`
-	Proposals  []ProposalSummary `json:"proposals"`
-	Base       map[string]string `json:"base"`
-	Warnings   []string          `json:"warnings"`
+	Domain string      `json:"domain"`
+	Source *SourceView `json:"source"`
+	Notes  []NoteView  `json:"notes"`
+	Cards  []CardView  `json:"cards"`
+	// Candidates 是 D-3 的**过渡兼容字段**：内容 / 顺序逐项恒等于 KnowledgeCandidates
+	// （同一底层切片，JSON 逐字相等）。0.7.x 起弃用，调用方应改读 knowledge_candidates；
+	// 弃用提示（I1）在 CLI 出口产出，本结构只保证「三字段并存且都是数组（非 null）」。
+	Candidates []Candidate `json:"candidates"`
+	// KnowledgeCandidates 是**知识卡**候选：保持旧实现逐字语义（同一 candidates() 单点、
+	// 同一三级全序、同一 CandidateLimit），不引入默认集合 / 打分 / base 行为回归。
+	KnowledgeCandidates []Candidate `json:"knowledge_candidates"`
+	// OpinionCandidates 是**观点**候选：复用与知识卡**同一个** candidates() 确定性评分 / 排序
+	// 单点（不复制算法），输入是 scan.Opinions 经 opinionAsCandidate 投影出的同构候选集。
+	// 仅同域、active、非 deleted 的观点可入（candidates() 内的失效 / 删除 / 零分过滤同时成立）；
+	// validation（pending/validated/rejected）与候选评分正交，三态均可召回；观点绝不混入 Cards。
+	OpinionCandidates []Candidate       `json:"opinion_candidates"`
+	Proposals         []ProposalSummary `json:"proposals"`
+	Base              map[string]string `json:"base"`
+	Warnings          []string          `json:"warnings"`
 
 	// Diagnostics 是本次组装的 Q 系列只读诊断（M2 合同 §5）。
 	// 一律 warning，不影响退出码；CLI 层原样透出到 --json 的 warnings[] 与纯文本输出。
@@ -132,12 +143,15 @@ func Build(req Request, hash Hasher) (*Context, error) {
 		return nil, ErrHasherRequired
 	}
 	ctx := &Context{
-		Domain:      req.Domain,
-		Notes:       []NoteView{},
-		Cards:       []CardView{},
-		Proposals:   []ProposalSummary{},
-		Base:        map[string]string{},
-		Diagnostics: []Diagnostic{},
+		Domain:              req.Domain,
+		Notes:               []NoteView{},
+		Cards:               []CardView{},
+		Candidates:          []Candidate{},
+		KnowledgeCandidates: []Candidate{},
+		OpinionCandidates:   []Candidate{},
+		Proposals:           []ProposalSummary{},
+		Base:                map[string]string{},
+		Diagnostics:         []Diagnostic{},
 	}
 
 	// 只扫本领域目录（EG-DOM-02：他域产物在扫描阶段就进不来）。
@@ -179,12 +193,28 @@ func Build(req Request, hash Hasher) (*Context, error) {
 		})
 	}
 
-	// ③ 候选相似卡：确定性打分。
-	ctx.Candidates = candidates(targetTitle(ctx), cards)
-	for _, cand := range ctx.Candidates {
+	// ③ 候选相似项：知识卡与观点各自走**同一个**确定性评分 / 排序单点 candidates()，
+	//    不复制算法（观点先经 opinionAsCandidate 投影成同构候选集，再与知识卡同款打分 /
+	//    三级全序 / CandidateLimit 截断）。两类各自独立截断，互不串味。
+	ctx.KnowledgeCandidates = candidates(targetTitle(ctx), cards)
+	// candidates 兼容字段（D-3）：指向同一底层切片，因此内容 / 顺序逐项恒等于
+	// knowledge_candidates，JSON 也逐字相等；调用方读哪个都拿到同一份知识候选。
+	ctx.Candidates = ctx.KnowledgeCandidates
+	ctx.OpinionCandidates = candidates(targetTitle(ctx), opinionCandidates(scan.Opinions))
+
+	// 被选中的知识 / 观点候选路径都进 base（B3 并发保护），content_hash 唯一注入
+	// store.ContentHash（与 apply 写前重算逐字一致）。未命中 / 被排除项不进 base。
+	for _, cand := range ctx.KnowledgeCandidates {
 		for _, c := range cards {
 			if c.Path == cand.Path {
 				ctx.Base[c.Path] = hash(c.Raw)
+			}
+		}
+	}
+	for _, cand := range ctx.OpinionCandidates {
+		for _, o := range scan.Opinions {
+			if o.Path == cand.Path {
+				ctx.Base[o.Path] = hash(o.Raw)
 			}
 		}
 	}

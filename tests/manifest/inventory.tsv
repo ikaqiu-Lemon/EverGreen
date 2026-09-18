@@ -10,7 +10,7 @@ tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.int
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	10	20078
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24284
 tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	55058
-tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	10	15510
+tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	14	28862
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
 tests/_staged/internal/cli/delete_release_order_test.go	unit	go	cli-core	unit.internal.cli	1	2670
@@ -127,7 +127,7 @@ tests/_staged/internal/proposal/superseded_test.go	unit	go	proposal	unit.interna
 tests/_staged/internal/query/adr20_isolation_test.go	unit	go	card-query	unit.internal.query	1	5746
 tests/_staged/internal/query/backend_test.go	unit	go	card-query	unit.internal.query	21	39358
 tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query	12	15157
-tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	11	21279
+tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	15	33223
 tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6619
 tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	unit.internal.query	1	3363
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350

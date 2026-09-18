@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
@@ -57,8 +58,12 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 		"source":                  ctx.Source,
 		"notes":                   ctx.Notes,
 		"cards":                   ctx.Cards,
-		"candidates":              ctx.Candidates,
-		"base":                    ctx.Base,
+		// D-3：candidates 兼容字段（≡ knowledge_candidates）与拆分后的双候选字段同时输出。
+		// 三者都恒是数组（query 侧已初始化空切片），调用方读哪个都拿到数组而非 null。
+		"candidates":           ctx.Candidates,
+		"knowledge_candidates": ctx.KnowledgeCandidates,
+		"opinion_candidates":   ctx.OpinionCandidates,
+		"base":                 ctx.Base,
 		// M3（T-…-033）：提案控制面**只给摘要**——每项仅 id / path / title / targets，
 		// 供 Agent 判断「同一件事是否已有在办提案」以免重复提案；提案正文七分区一律不出，
 		// 提案也不进 cards / candidates / base（提案不是知识数据，见提案合同 §10.3）。
@@ -78,6 +83,14 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 				"只供回读原始提炼，不参与知识收敛、不进候选相似卡（EG-NOTE-04）", domain, len(ctx.Notes)),
 		})
 	}
+	// D-3 兼容提示：candidates 已弃用 —— **恰一条 I1 info**（与 report §4.5.1 的 info 编号
+	// 同码），明确「改读 knowledge_candidates」。它是**无条件**产出的兼容说明，与 Q 系列诊断、
+	// 默认领域回退（warning）、notes info 都正交：不因它们在场而重复、也不被降级成 warning，
+	// 更不触发 Q3（Q3 只汇总扫描期的「结果不完整」）。--json 的 warnings[] 与纯文本同源同事实。
+	res.Warnings = append(res.Warnings, Diagnostic{
+		Code: report.CodeI1, Level: LevelInfo, Path: "candidates", OpIndex: NonOpDiagnostic,
+		Message: "`candidates` 已弃用，改读 `knowledge_candidates`",
+	})
 	// Q 系列只读诊断（M2 合同 §5）：扫不动的文件、悬空引用与「结果不完整」汇总一律如实透出。
 	// 一律 warning、**不影响退出码**（context 仍退 0）；--json 的 warnings[] 与纯文本输出同源同事实，
 	// 缺失结果绝不能看起来像完整结果。
@@ -88,25 +101,29 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 		})
 	}
 	res.Summary = append(res.Summary, fmt.Sprintf(
-		"context：领域 %s，材料笔记 %d 篇，同领域 active 卡 %d 张，候选相似卡 %d 张，base %d 项（只读，零写入零 commit）",
-		ctx.Domain, len(ctx.Notes), len(ctx.Cards), len(ctx.Candidates), len(ctx.Base)))
-	res.Summary = append(res.Summary, candidateLines(ctx.Candidates)...)
+		"context：领域 %s，材料笔记 %d 篇，同领域 active 卡 %d 张，知识候选 %d 张，观点候选 %d 条，base %d 项（只读，零写入零 commit）",
+		ctx.Domain, len(ctx.Notes), len(ctx.Cards),
+		len(ctx.KnowledgeCandidates), len(ctx.OpinionCandidates), len(ctx.Base)))
+	// 知识候选与观点候选两块**分别**逐项渲染，与 --json 的 knowledge_candidates /
+	// opinion_candidates 同源同事实；兼容字段 candidates 不再单独渲染一遍（它 ≡ 知识候选）。
+	res.Summary = append(res.Summary, candidateLines(knowledgeCandidatePrefix, ctx.KnowledgeCandidates)...)
+	res.Summary = append(res.Summary, candidateLines(opinionCandidatePrefix, ctx.OpinionCandidates)...)
 	res.Summary = append(res.Summary, proposalLines(ctx.Proposals)...)
 	return res, nil
 }
 
-// candidateLines 把候选相似卡逐张渲染成人类可读行（T-…-025）。
+// candidateLines 把候选相似项逐条渲染成人类可读行（T-…-025 / T-…-006 阶段 6E）。
 //
-// 与 `--json` 的 `data.candidates` **同源同事实**：顺序逐字一致、
-// 得分与命中理由都取自同一份 query.Candidate，人读模式不再只打一个总数。
-// 每张卡一行「<k-id>　得分 <n>　<标题>」，其后每条命中理由缩进一行；
-// 理由为空的卡不会进 candidates（query 侧已保证推荐必可解释），
-// 这里不做任何补写、不引入 JSON 里没有的事实。
-func candidateLines(cands []query.Candidate) []string {
+// 与 `--json` 的 `data.knowledge_candidates` / `data.opinion_candidates` **同源同事实**：
+// 顺序逐字一致、得分与命中理由都取自同一份 query.Candidate，人读模式不再只打一个总数。
+// 每项一行「<prefix><id>　得分 <n>　<标题>」，其后每条命中理由缩进一行；
+// 理由为空的项不会进候选（query 侧已保证推荐必可解释），这里不做任何补写、不引入
+// JSON 里没有的事实。prefix 由调用方按类别（知识 / 观点）传入，两类各渲一块、不混排。
+func candidateLines(prefix string, cands []query.Candidate) []string {
 	lines := make([]string, 0, len(cands)*2)
 	for _, c := range cands {
 		lines = append(lines, fmt.Sprintf("%s%s　得分 %d　%s",
-			candidateLinePrefix, c.ID, c.Score, c.Title))
+			prefix, c.ID, c.Score, c.Title))
 		for _, why := range c.Reasons {
 			lines = append(lines, candidateReasonPrefix+why)
 		}
@@ -114,10 +131,12 @@ func candidateLines(cands []query.Candidate) []string {
 	return lines
 }
 
-// 候选卡行与理由行的固定前缀（供渲染与测试共用，不散落字面量）。
+// 候选项行与理由行的固定前缀（供渲染与测试共用，不散落字面量）。
+// 知识候选与观点候选各用独立前缀，人读模式据此区分两类；理由行前缀两类共用。
 const (
-	candidateLinePrefix   = "  候选 "
-	candidateReasonPrefix = "      · "
+	knowledgeCandidatePrefix = "  知识候选 "
+	opinionCandidatePrefix   = "  观点候选 "
+	candidateReasonPrefix    = "      · "
 )
 
 // proposalLines 把在库提案渲染成人类可读的**摘要行**（T-…-033）。
