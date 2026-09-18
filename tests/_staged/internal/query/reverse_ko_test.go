@@ -265,3 +265,76 @@ func korFromsLocal(edges []RelationEdge) []string {
 	}
 	return out
 }
+
+// —— 正向：可见性筛的是 target 对端，不看焦点宿主自身（与上面的宿主侧 orthogonal 互补）——
+
+// TestReplacedByForwardTargetVisibilityOrthogonal 钉正向读的**目标侧**可见性正交：正向边
+// host→target 的可见性只看 **target 对端**，与焦点宿主（host）自身的 status / 删除维度无关。
+// 两个焦点宿主都写成 deprecated（若可见性错看焦点宿主自身，这两条边会被无差别隐藏），只让
+// **target 侧**分别取「deprecated 观点」与「已删除知识卡」，据此分离 deprecated / deleted 两维度：
+//
+//	A：target = deprecated 观点 → 默认隐藏 + 恰一条 Q4，--include-deprecated 后可见；
+//	   且焦点宿主 hostA 自身也是 deprecated，放开后这条边仍如实现身 —— 反证「不看焦点宿主自身」。
+//	B：target = 已删除知识卡（status active，仅 deleted_at 置位）→ 两种 include 取值都隐藏，
+//	   删除维度既不计入 HiddenDeprecated 也不产 Q4（与 deprecated 维度正交）。
+//
+// 与 TestReplacedByKOVisibilityOrthogonal（宿主侧：反向边看宿主对端）互补，把同一套端点可见性
+// 合同在正反两个对端方向上都钉死。
+func TestReplacedByForwardTargetVisibilityOrthogonal(t *testing.T) {
+	root := t.TempDir()
+	// A：焦点宿主 deprecated，target 是 deprecated 观点。
+	rvWriteK(t, root, "k-20261202-hosta", "宿主A", "deprecated", "o-20261202-tgtdep", "被弃用观点取代", false)
+	rvWriteO(t, root, "o-20261202-tgtdep", "弃用目标观点", "deprecated", "rejected", "", "", false)
+	// B：焦点宿主 deprecated，target 是已删除知识卡（status active，仅 deleted_at 置位）。
+	rvWriteK(t, root, "k-20261202-hostb", "宿主B", "deprecated", "k-20261202-tgtdel", "被删卡取代", false)
+	rvWriteK(t, root, "k-20261202-tgtdel", "已删目标卡", "active", "", "", true)
+
+	hostA := model.RelationEndpoint("k-20261202-hosta")
+	hostB := model.RelationEndpoint("k-20261202-hostb")
+
+	// A/默认：target 观点 deprecated → 正向边隐藏，恰一条 Q4，HiddenDeprecated=1。
+	defA, err := bkRel(root, RelRequest{ID: hostA, ReplacedBy: true})
+	if err != nil {
+		t.Fatalf("rel hostA 默认：%v", err)
+	}
+	if len(defA.Data.RelationsOut) != 0 {
+		t.Fatalf("A/默认：target 观点 deprecated 应隐藏正向边，实际 %v", rvSig(defA.Data.RelationsOut))
+	}
+	if defA.HiddenDeprecated != 1 {
+		t.Fatalf("A/默认：deprecated target 应计恰一条 HiddenDeprecated，实际 %d", defA.HiddenDeprecated)
+	}
+	if n := pgCount(defA.Diagnostics, CodeQ4); n != 1 {
+		t.Fatalf("A/默认：隐藏 deprecated target 应产恰一条 Q4，实际 %d", n)
+	}
+
+	// A/放开：--include-deprecated 后正向边现身。焦点宿主 hostA 自身 deprecated 并不妨碍这条边
+	// 展示 —— 直接反证「正向可见性筛的是 target 对端，不看焦点宿主自身」。
+	openA, err := bkRel(root, RelRequest{ID: hostA, ReplacedBy: true, IncludeDeprecated: true})
+	if err != nil {
+		t.Fatalf("rel hostA 放开：%v", err)
+	}
+	wantA := []string{"k-20261202-hosta|replaced_by|o-20261202-tgtdep|被弃用观点取代"}
+	if got := rvSig(openA.Data.RelationsOut); !reflect.DeepEqual(got, wantA) {
+		t.Fatalf("A/放开：deprecated target 应可见恰一条，实际 %v，期望 %v", got, wantA)
+	}
+	if openA.HiddenDeprecated != 0 {
+		t.Fatalf("A/放开：放开 deprecated 后不应再计隐藏，实际 %d", openA.HiddenDeprecated)
+	}
+
+	// B：target 已删除 → 两种 include 取值都隐藏，且删除维度不计 HiddenDeprecated、不产 Q4。
+	for _, incl := range []bool{false, true} {
+		res, err := bkRel(root, RelRequest{ID: hostB, ReplacedBy: true, IncludeDeprecated: incl})
+		if err != nil {
+			t.Fatalf("rel hostB(incl=%t)：%v", incl, err)
+		}
+		if len(res.Data.RelationsOut) != 0 {
+			t.Fatalf("incl=%t：已删除 target 仍展示正向边 %v", incl, rvSig(res.Data.RelationsOut))
+		}
+		if res.HiddenDeprecated != 0 {
+			t.Fatalf("incl=%t：已删除 target 不应计入 deprecated 隐藏数，实际 %d", incl, res.HiddenDeprecated)
+		}
+		if n := pgCount(res.Diagnostics, CodeQ4); n != 0 {
+			t.Fatalf("incl=%t：已删除 target 不应触发 Q4，实际 %d", incl, n)
+		}
+	}
+}

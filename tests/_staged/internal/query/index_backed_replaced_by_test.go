@@ -195,3 +195,62 @@ func TestReplacedByKOFourBackendEquivalence(t *testing.T) {
 		})
 	}
 }
+
+// —— 索引后端 `--replaced-by` 读路径零副作用（与扫描侧 / 论证关系索引侧负控互补）——
+
+// TestReplacedByIndexedReadZeroSideEffects —— healthy 索引下 `eg rel --replaced-by` 的
+// **完整 vault 零副作用**负控：对权威产物（`.index/eg.db` 逐字节 + mtime、全部 Markdown、
+// 以及可能存在的 `.git`）做读前快照，跑遍 **k/o 宿主正向**与 **k/o 目标反向**（四条读命令都
+// 必须走索引后端，覆盖 index_backed.go 的 plan.replacedBy「按 cards.replaced_by 反查宿主 +
+// 回权威取 reason」这条支），再做读后快照，要求逐字相等；并断言只读打开落下的 `-wal` 为
+// **零数据帧**（读没有向索引写入任何提交）。
+//
+// 这正是 32f5933 提交说明所称「完整 vault 零副作用」缺失的那条机器证据：既有四后端等价
+// （TestReplacedByKOFourBackendEquivalence）只快照 Markdown 投影、不碰 `.index/eg.db` 字节 +
+// mtime、`.git` 与 WAL 帧。本用例把 healthy-index 侧补齐，与
+// TestReadPathKOIndexedReadZeroSideEffects（论证关系读路径）互为镜像。
+//
+// 复用 index_backed_ko_readpath_test.go 的 korSnapshotAuthoritative / korWALFrameBytes
+// （**不复制 helper**）；语料复用本文件 rbkoVault + bkoBuildIndexWithOpinions。
+func TestReplacedByIndexedReadZeroSideEffects(t *testing.T) {
+	root := rbkoVault(t)
+	bkoBuildIndexWithOpinions(t, root)
+
+	// 前置：应已建好 .index 主库（否则 UseIndex 恒假，负控退化成假绿）。
+	if _, err := os.Stat(index.DBPath(root)); err != nil {
+		t.Fatalf("前置：应已建好 .index/eg.db，实际 %v", err)
+	}
+	before := korSnapshotAuthoritative(t, root)
+
+	// 四条读命令：k/o 宿主正向（target 为 active，默认视图即命中）+ k/o 目标反向（宿主 deprecated，
+	// 放开 deprecated 才逐条现身，从而真正走到反查宿主 + 回权威取 reason 的索引支）。
+	reads := []struct {
+		label string
+		req   RelRequest
+	}{
+		{"fwd hkk(k 宿主)", RelRequest{ID: model.RelationEndpoint(rbHkk), ReplacedBy: true}},
+		{"fwd hoo(o 宿主)", RelRequest{ID: model.RelationEndpoint(rbHoo), ReplacedBy: true}},
+		{"rev tgtk(反查 k/o 宿主)", RelRequest{ID: model.RelationEndpoint(rbTgtK), ReplacedBy: true, IncludeDeprecated: true}},
+		{"rev tgto(反查 k/o 宿主)", RelRequest{ID: model.RelationEndpoint(rbTgtO), ReplacedBy: true, IncludeDeprecated: true}},
+	}
+	for _, r := range reads {
+		res, err := bkRel(root, r.req)
+		if err != nil {
+			t.Fatalf("%s：%v", r.label, err)
+		}
+		if !res.backend.UseIndex() {
+			t.Fatalf("前置：healthy 索引下 %s 应走索引后端，实际 %s（%s）",
+				r.label, res.backend.Kind, res.backend.Message)
+		}
+	}
+
+	after := korSnapshotAuthoritative(t, root)
+	if before != after {
+		t.Fatalf("索引后端 --replaced-by 读路径改动了 vault 权威产物（含 .index/eg.db、Markdown、.git）——零副作用被破坏：\nbefore=%s\nafter =%s",
+			before, after)
+	}
+	// 读不得向索引写入任何数据帧：只读打开落下的 `-wal`（若有）必须是 0 字节（零帧）。
+	if n := korWALFrameBytes(t, root); n != 0 {
+		t.Fatalf("索引只读打开不得写入 WAL 帧，实际 -wal 有 %d 字节数据（--replaced-by 读路径疑似回写索引）", n)
+	}
+}
