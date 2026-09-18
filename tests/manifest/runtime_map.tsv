@@ -61,6 +61,7 @@ tests/_staged/internal/cli/recover_hook_test.go	internal/cli/recover_hook_test.g
 tests/_staged/internal/cli/rel_add_test.go	internal/cli/rel_add_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_ko_test.go	internal/cli/rel_ko_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_remove_test.go	internal/cli/rel_remove_test.go	evergreen	unit	go
+tests/_staged/internal/cli/rel_replaced_by_read_test.go	internal/cli/rel_replaced_by_read_test.go	evergreen	unit	go
 tests/_staged/internal/cli/rel_test.go	internal/cli/rel_test.go	evergreen	unit	go
 tests/_staged/internal/cli/replaced_by_ko_cli_test.go	internal/cli/replaced_by_ko_cli_test.go	evergreen	unit	go
 tests/_staged/internal/cli/report_test.go	internal/cli/report_test.go	evergreen	unit	go
@@ -134,6 +135,7 @@ tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unr
 tests/_staged/internal/query/fuzz_test.go	internal/query/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_ko_readpath_test.go	internal/query/index_backed_ko_readpath_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_opinion_test.go	internal/query/index_backed_opinion_test.go	evergreen	unit	go
+tests/_staged/internal/query/index_backed_replaced_by_test.go	internal/query/index_backed_replaced_by_test.go	evergreen	unit	go
 tests/_staged/internal/query/markers_test.go	internal/query/markers_test.go	evergreen	unit	go
 tests/_staged/internal/query/opinion_show_test.go	internal/query/opinion_show_test.go	evergreen	unit	go
 tests/_staged/internal/query/page_test.go	internal/query/page_test.go	evergreen	unit	go
@@ -142,6 +144,7 @@ tests/_staged/internal/query/queryset/queryset_test.go	internal/query/queryset/q
 tests/_staged/internal/query/rank_test.go	internal/query/rank_test.go	evergreen	unit	go
 tests/_staged/internal/query/relation_ko_readpath_test.go	internal/query/relation_ko_readpath_test.go	evergreen	unit	go
 tests/_staged/internal/query/relation_test.go	internal/query/relation_test.go	evergreen	unit	go
+tests/_staged/internal/query/reverse_ko_test.go	internal/query/reverse_ko_test.go	evergreen	unit	go
 tests/_staged/internal/query/reverse_test.go	internal/query/reverse_test.go	evergreen	unit	go
 tests/_staged/internal/query/scan_test.go	internal/query/scan_test.go	evergreen	unit	go
 tests/_staged/internal/query/search_kind_test.go	internal/query/search_kind_test.go	evergreen	unit	go

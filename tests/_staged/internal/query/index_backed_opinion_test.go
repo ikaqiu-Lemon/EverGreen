@@ -112,7 +112,7 @@ func bkoBuildIndexWithOpinions(t *testing.T, root string) {
 	}
 	snap := index.Snapshot{}
 	add := func(id, path, domain, title, status string, deprecated, deleted bool,
-		body string, raw []byte, kind, validation string, rels []struct {
+		body string, raw []byte, kind, validation, replacedBy string, rels []struct {
 			verb, target string
 		}) {
 		st, serr := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
@@ -124,7 +124,7 @@ func bkoBuildIndexWithOpinions(t *testing.T, root string) {
 			ID: id, Path: path, Domain: domain, Title: title, Status: status,
 			Deprecated: deprecated, Deleted: deleted, Body: body,
 			ContentHash: hash, MTimeUnix: st.ModTime().Unix(),
-			Kind: kind, Validation: validation,
+			Kind: kind, Validation: validation, ReplacedBy: replacedBy,
 		})
 		snap.Files = append(snap.Files, index.File{
 			Path: path, ContentHash: hash, Size: st.Size(), MTimeUnix: st.ModTime().Unix(),
@@ -141,7 +141,7 @@ func bkoBuildIndexWithOpinions(t *testing.T, root string) {
 			rels = append(rels, struct{ verb, target string }{string(r.Type), string(r.Target)})
 		}
 		add(c.ID, c.Path, c.Domain, c.Title, c.Status, c.Deprecated, c.Deleted,
-			c.Body(), c.Raw, string(index.CardKindKnowledge), "", rels)
+			c.Body(), c.Raw, string(index.CardKindKnowledge), "", c.ReplacedByTarget, rels)
 	}
 	for _, o := range scan.Opinions {
 		var rels []struct{ verb, target string }
@@ -149,7 +149,7 @@ func bkoBuildIndexWithOpinions(t *testing.T, root string) {
 			rels = append(rels, struct{ verb, target string }{string(r.Type), string(r.Target)})
 		}
 		add(o.ID, o.Path, o.Domain, o.Title, o.Status, o.Deprecated, o.Deleted,
-			o.Body(), o.Raw, string(index.CardKindOpinion), o.Validation, rels)
+			o.Body(), o.Raw, string(index.CardKindOpinion), o.Validation, o.ReplacedByTarget, rels)
 	}
 	if _, err := index.Build(index.DirPath(root), snap,
 		index.Options{Now: func() time.Time { return bkFixedNow }}); err != nil {

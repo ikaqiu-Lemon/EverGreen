@@ -116,6 +116,12 @@ type Need struct {
 	NotesInScope bool
 	// Why 是「不可由索引表达」时的逐字理由（进人类可读诊断与测试断言）。
 	Why string
+	// ReplacedBy 为真 = 本次 `eg rel` 走的是**替代指针视图**（`--replaced-by`）。
+	// 它只影响索引后端「必须回权威解析哪些文件」的解析计划：替代指针的**反向来源**
+	// （`replaced_by.target == focus` 的宿主端点）不在 `relations` 表里，索引又不存
+	// `replaced_by.reason` 列，故这些宿主必须回权威补齐逐字 reason（与论证关系反向来源
+	// 走 needOpinion / need 同一条纪律）。默认视图（论证关系）此位为 false，解析集合一格不变。
+	ReplacedBy bool
 	// deps 是 A-44 水位线判定所需的注入口径（见 IndexDeps）。
 	// 刻意**不导出**：它不是「这次读要什么」的一部分，而是「这次读由谁提供判定口径」，
 	// 由各读路径从自己的请求结构体里取出后经 needXxx 构造函数带进来，外部改不到。

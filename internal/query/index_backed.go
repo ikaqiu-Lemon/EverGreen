@@ -302,13 +302,17 @@ type parsePlan struct {
 	focus string
 	// all 为真 = 候选集取**全集**并逐个解析（search：需要 tags / updated_at / 正文原值）。
 	all bool
+	// replacedBy 为真 = `eg rel --replaced-by`：除焦点与论证关系反向来源外，还要把替代指针的
+	// 反向来源宿主（`replaced_by.target == focus`）回权威解析补齐逐字 reason（索引不存 reason 列）。
+	replacedBy bool
 	// domains 限定扫描面（空 = 全库），口径与 ScanOptions.Domains 逐字相同。
 	domains []string
 }
 
 // planFor 把 Need 与本次扫描面折成解析计划：**唯一**的 Need → plan 映射。
 func planFor(need Need, opt ScanOptions) parsePlan {
-	return parsePlan{focus: need.Focus, all: need.FullCardFields, domains: opt.Domains}
+	return parsePlan{focus: need.Focus, all: need.FullCardFields,
+		replacedBy: need.ReplacedBy, domains: opt.Domains}
 }
 
 // indexVault 用索引后端组装一份与 VaultScan **同构**的 ScanResult。
@@ -398,7 +402,7 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 		entries = append(entries, CardEntry{
 			ID: c.ID, Path: c.Path, Domain: c.Domain, Title: c.Title,
 			Status: c.Status, Deprecated: c.Deprecated, Deleted: c.Deleted,
-			Relations: relBySrc[c.ID],
+			ReplacedByTarget: c.ReplacedBy, Relations: relBySrc[c.ID],
 		})
 	}
 
@@ -486,6 +490,23 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 				needOpinion[r.SrcPath] = true
 			} else {
 				need[r.SrcPath] = true
+			}
+		}
+		// 替代指针视图（`--replaced-by`）额外一类反向来源：`replaced_by.target == focus` 的
+		// 宿主端点。它们**不在** `relations` 表里（替代指针不是论证关系），且索引不存
+		// `replaced_by.reason` 列 —— 只拿 stub 的 `cards.replaced_by`（target）反查能定位来源，
+		// 但 reason 会是空串、与扫描后端分叉。故按 target 定位后回权威解析补齐逐字 reason，
+		// 宿主是知识卡走 need、是观点走 needOpinion（与论证关系反向来源同一条纪律）。
+		if plan.replacedBy {
+			for _, e := range entries {
+				if e.ReplacedByTarget == plan.focus {
+					need[e.Path] = true
+				}
+			}
+			for _, o := range opinions {
+				if o.ReplacedByTarget == plan.focus {
+					needOpinion[o.Path] = true
+				}
 			}
 		}
 	}

@@ -46,8 +46,9 @@ type RelRequest struct {
 	// Page 是分页口径（S4 · T-…-068，合同 §8.2）：**零值 = 不限量**，正反两个列表各自分页。
 	Page PageSpec
 	// ReplacedBy 对应 `--replaced-by`（S4 · T-…-068，合同 §8.4）：把视图从
-	// **论证关系**切到**替代指针**——正向 = 谁取代了本卡（至多一条），
-	// 反向 = 本卡取代了谁（0..N 条）。data 键与元素键一格不变（仍各恰五键），
+	// **论证关系**切到**替代指针**——正向 = 谁取代了本端点（至多一条），
+	// 反向 = 本端点取代了谁（0..N 条）。焦点端点跨类型（Knowledge 或 Opinion），
+	// 两个方向都在 Knowledge ∪ Opinion 上取数。data 键与元素键一格不变（仍各恰五键），
 	// 可见性 / 诊断 / 排序全部复用既有单点，不引入第二套规则。
 	ReplacedBy bool
 }
@@ -122,6 +123,8 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 来源再回权威取逐字 reason，焦点实体自身也回权威解析；缺失 / 损坏 / 陈旧 → 确定性降级
 	// 为全量扫描 + W2x + Q5）。
 	need := relNeed(string(req.ID), req.Index)
+	// 替代指针视图要多解析一类文件（反向来源宿主），据此让索引后端回权威补齐 reason。
+	need.ReplacedBy = req.ReplacedBy
 	scan, backend, err := loadVault(root, ScanOptions{}, need, SelectBackend(root, need))
 	if err != nil {
 		return nil, err
@@ -165,10 +168,12 @@ func RelView(root string, req RelRequest) (*RelResult, error) {
 	// 明明把对端隐藏了却不报 Q4（违反 Q4 的 N≥1 条件与正交性）；这里改为收窄在前、可见性在后。
 	// 视图切换（T-…-068）：默认是论证关系 relations[]；`--replaced-by` 换成替代指针的
 	// 正反双向（reverse.go）。两种视图**同构**：都是五键条目、同一套排序、同一套可见性。
+	// 替代指针读路径复用同一次全库 Scan 结果里的端点投影（Knowledge ∪ Opinion 的
+	// ReplacedByTarget / ReplacedByReason），不回权威二次解码。
 	rawIn := RelationsInAll(scan, string(req.ID))
 	if req.ReplacedBy {
-		rawOut = ReplacedByForward(root, scan.Cards, string(req.ID))
-		rawIn = ReplacedByReverse(root, scan.Cards, string(req.ID))
+		rawOut = ReplacedByForward(scan, string(req.ID))
+		rawIn = ReplacedByReverse(scan, string(req.ID))
 	}
 	if req.To != "" {
 		rawOut = filterEdges(rawOut, func(e RelationEdge) bool { return e.Target == req.To })

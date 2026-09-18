@@ -51,8 +51,8 @@ eg rel remove <from> <type> <to> --reason <text> [--strict] [--json]   # 写（�
   --to <id>         否；只保留对端 == 该 ID 的条目（正反向同时过滤）；ID 不存在 → 结果为空 + 一条 Q2
   --include-deprecated  否；默认隐藏对端 deprecated 的关系条目，加此 flag 才展示（仍带 [失效] 标记，
                     见 owner 裁决 A-38/A-39，归 M4 规划）；只放开 deprecated 维度，不影响已删除维度；与 --to 正交
-  --replaced-by     否；把视图从**论证关系**切到**替代指针**：正向 = 谁取代了本卡（至多一条）、
-                    反向 = 本卡取代了谁（0..N 条）；条目仍恰五键、type 逐字 replaced_by；
+  --replaced-by     否；把视图从**论证关系**切到**替代指针**：正向 = 谁取代了本端点（至多一条）、
+                    反向 = 本端点取代了谁（0..N 条；端点为知识卡或观点）；条目仍恰五键、type 逐字 replaced_by；
                     与 --to / --include-deprecated 正交（M5 合同 §8.4）
   --limit <n>       否，默认 50；**本次最多返回的关系条数**（0 = 不限量）
   --offset <n>      否，默认 0；跳过的关系条数；超出总数返回空列表且仍退 0；
@@ -98,7 +98,7 @@ Agent 自动路径（无用户显式命令）删关系被矩阵 #11 拦下：退
 			fs.Bool("include-deprecated", false, "展示对端 deprecated 的关系条目（默认隐藏；不影响已删除维度）")
 			// --replaced-by / 分页（S4 · T-…-068）：只作用于读路径；写子命令传入即被
 			// 各自的 Validate 拦下（rel add / rel remove 的参数面一格不变）。
-			fs.Bool(query.ReplacedByFlag, false, "查替代指针的正反双向（谁取代了本卡 / 本卡取代了谁）")
+			fs.Bool(query.ReplacedByFlag, false, "查替代指针的正反双向（谁取代了本端点 / 本端点取代了谁；端点为知识卡或观点）")
 			// --strict（M6 · T-…-074）：只对 rel add / rel remove 两条写子命令的写前强校验
 			// 生效；读路径不进事务、Precheck 恒空返回，故设了也无副作用。
 			registerStrictFlag(fs)

@@ -54,9 +54,16 @@ type CardEntry struct {
 	Sources       []model.SourceRef
 	// ReplacedByTarget 是 `replaced_by.target` 的**逐字原值**，缺省即空串（不回填默认值）。
 	// 扫描层解码 frontmatter 时**一并带出**这个事实：对账域 R4 的 `dangling_ref`（E12）
-	// 要判「失效卡的替代指针指向不存在的知识卡」，索引层要把它写进 `cards.replaced_by` 列，
-	// 两处都读这一个字段 —— 绝不各自再解码一次 frontmatter（同一事实只一处抽取）。
+	// 要判「失效端点（Knowledge 或 Opinion）的替代指针指向不存在的端点」，索引层要把它
+	// 写进 `cards.replaced_by` 列，两处都读这一个字段 —— 绝不各自再解码一次 frontmatter
+	// （同一事实只一处抽取）。
 	ReplacedByTarget string
+	// ReplacedByReason 是 `replaced_by.reason` 的逐字原值（缺省即空串，不回填默认值）。
+	// 与 ReplacedByTarget 在**同一次** frontmatter 解码里一并带出：`eg rel --replaced-by`
+	// 的边 reason 因此从这个投影字段读取，不再回权威文件重解一次（reverse.go）。索引列集合
+	// 不收 reason，故索引后端在按 target 定位到替代指针端点后仍回权威解析补齐（index_backed.go），
+	// 与论证关系反向来源取逐字 reason 的口径一致。
+	ReplacedByReason string
 	Raw              []byte
 	Doc              *mdfile.Doc
 
@@ -138,8 +145,11 @@ type OpinionEntry struct {
 	// Sources 是 `sources[]` 的逐字原值（材料层引用：原文 + 来源笔记）。
 	Sources []model.SourceRef
 	// ReplacedByTarget 是 `replaced_by.target` 的逐字原值（缺省即空串，不回填默认值），
-	// 口径与 CardEntry.ReplacedByTarget 逐字相同（同一字段键、同一目标类型）。
+	// 口径与 CardEntry.ReplacedByTarget 逐字相同（同一字段键、同一端点目标类型）。
 	ReplacedByTarget string
+	// ReplacedByReason 是 `replaced_by.reason` 的逐字原值（缺省即空串，不回填默认值），
+	// 口径与 CardEntry.ReplacedByReason 逐字相同（同一字段键、同一次解码带出）。
+	ReplacedByReason string
 	// Raw 保留原始字节（供调用方算 content_hash）；Doc 供取分区正文——扫描层不改写字节。
 	Raw []byte
 	Doc *mdfile.Doc
@@ -301,21 +311,33 @@ func CardEntryFrom(rel, domain string, raw []byte) (CardEntry, Diagnostic, bool)
 		DeletedAt:  stampText(card.DeletedAt), DeletedReason: card.DeletedReason,
 		Deleted:   DeletedFromStamp(stampText(card.DeletedAt)),
 		Relations: card.Relations, Sources: card.Sources,
-		ReplacedByTarget: replacedByTargetOf(card.ReplacedBy), Raw: raw, Doc: doc,
+		ReplacedByTarget: replacedByTargetOf(card.ReplacedBy),
+		ReplacedByReason: replacedByReasonOf(card.ReplacedBy), Raw: raw, Doc: doc,
 	}, Diagnostic{}, true
 }
 
 // replacedByTargetOf 取 `replaced_by.target` 的逐字原值（未设置即空串）。
 //
-// 与 internal/reverse.go 的 replacedByOf 同一份落盘事实、同一个解码结果：这里在扫描解码
-// 时顺手带出，让下游（对账 R4 / 索引构建）**共用**同一个字段而不各自再解码一次 frontmatter。
-// 知识卡与观点共用本函数：`replaced_by` 是同一个字段键、同一个目标类型（知识卡 ID），
-// 两类产物不该各写一份取值实现。
+// 与 internal/query/reverse.go 的替代指针读路径同一份落盘事实、同一个解码结果：这里在扫描
+// 解码时顺手带出，让下游（对账 R4 / 索引构建 / rel 读路径）**共用**同一个字段而不各自再解码
+// 一次 frontmatter。知识卡与观点共用本函数：`replaced_by` 是同一个字段键、目标是同一种关系
+// 端点（Knowledge 或 Opinion），两类产物不该各写一份取值实现。
 func replacedByTargetOf(rb *model.ReplacedBy) string {
 	if rb == nil {
 		return ""
 	}
 	return string(rb.Target)
+}
+
+// replacedByReasonOf 取 `replaced_by.reason` 的逐字原值（未设置即空串）。
+//
+// 与 replacedByTargetOf 取自**同一个** `replaced_by` 结构、同一次解码：target 与 reason 成对
+// 带出，`eg rel --replaced-by` 的边因此不必回权威文件二次解码就拿齐五键（reverse.go）。
+func replacedByReasonOf(rb *model.ReplacedBy) string {
+	if rb == nil {
+		return ""
+	}
+	return rb.Reason
 }
 
 // scanOpinionDir 扫描单个领域的 opinions/（schema v2 的观点分区）。
@@ -362,6 +384,7 @@ func OpinionEntryFrom(rel, domain string, raw []byte) (OpinionEntry, Diagnostic,
 		Validation: string(op.Validation),
 		Relations:  op.Relations, Sources: op.Sources,
 		ReplacedByTarget: replacedByTargetOf(op.ReplacedBy),
+		ReplacedByReason: replacedByReasonOf(op.ReplacedBy),
 		Raw:              raw, Doc: doc,
 	}, Diagnostic{}, true
 }

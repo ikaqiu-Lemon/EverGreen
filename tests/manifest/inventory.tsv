@@ -61,6 +61,7 @@ tests/_staged/internal/cli/recover_hook_test.go	unit	go	cli-core	unit.internal.c
 tests/_staged/internal/cli/rel_add_test.go	unit	go	cli-core	unit.internal.cli	8	20580
 tests/_staged/internal/cli/rel_ko_test.go	unit	go	cli-core	unit.internal.cli	8	27391
 tests/_staged/internal/cli/rel_remove_test.go	unit	go	cli-core	unit.internal.cli	3	7970
+tests/_staged/internal/cli/rel_replaced_by_read_test.go	unit	go	cli-core	unit.internal.cli	3	7935
 tests/_staged/internal/cli/rel_test.go	unit	go	cli-core	unit.internal.cli	10	14729
 tests/_staged/internal/cli/replaced_by_ko_cli_test.go	unit	go	cli-core	unit.internal.cli	2	5116
 tests/_staged/internal/cli/report_test.go	unit	go	cli-core	unit.internal.cli	10	16557
@@ -133,7 +134,8 @@ tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.interna
 tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.internal.query.filter	3	4972
 tests/_staged/internal/query/fuzz_test.go	unit	go	card-query	unit.internal.query	2	3912
 tests/_staged/internal/query/index_backed_ko_readpath_test.go	unit	go	card-query	unit.internal.query	2	9699
-tests/_staged/internal/query/index_backed_opinion_test.go	unit	go	card-query	unit.internal.query	1	13287
+tests/_staged/internal/query/index_backed_opinion_test.go	unit	go	card-query	unit.internal.query	1	13363
+tests/_staged/internal/query/index_backed_replaced_by_test.go	unit	go	card-query	unit.internal.query	1	9048
 tests/_staged/internal/query/markers_test.go	unit	go	card-query	unit.internal.query	3	17190
 tests/_staged/internal/query/opinion_show_test.go	unit	go	card-query	unit.internal.query	9	29516
 tests/_staged/internal/query/page_test.go	unit	go	card-query	unit.internal.query	8	17512
@@ -142,7 +144,8 @@ tests/_staged/internal/query/queryset/queryset_test.go	unit	go	queryset	unit.int
 tests/_staged/internal/query/rank_test.go	unit	go	card-query	unit.internal.query	6	12824
 tests/_staged/internal/query/relation_ko_readpath_test.go	unit	go	card-query	unit.internal.query	5	24147
 tests/_staged/internal/query/relation_test.go	unit	go	card-query	unit.internal.query	10	12916
-tests/_staged/internal/query/reverse_test.go	unit	go	card-query	unit.internal.query	4	13381
+tests/_staged/internal/query/reverse_ko_test.go	unit	go	card-query	unit.internal.query	5	13151
+tests/_staged/internal/query/reverse_test.go	unit	go	card-query	unit.internal.query	4	13659
 tests/_staged/internal/query/scan_test.go	unit	go	card-query	unit.internal.query	10	15063
 tests/_staged/internal/query/search_kind_test.go	unit	go	card-query	unit.internal.query	10	26433
 tests/_staged/internal/query/search_opinion_meta_test.go	unit	go	card-query	unit.internal.query	6	12072

@@ -43,13 +43,16 @@ func rvCard(id, title, status, replacedTarget, replacedReason string, deleted bo
 }
 
 // rvScan 给出语料的全库扫描结果（取数层判据直接吃它，不经可见性层）。
-func rvScan(t *testing.T, root string) []CardEntry {
+//
+// 替代指针读路径吃的是**统一端点投影**（Knowledge ∪ Opinion），故返回整个 ScanResult
+// （含 Cards 与 Opinions），而不再只给 Cards 一面。
+func rvScan(t *testing.T, root string) *ScanResult {
 	t.Helper()
 	scan, err := VaultScan(root, ScanOptions{})
 	if err != nil {
 		t.Fatalf("VaultScan：%v", err)
 	}
-	return scan.Cards
+	return scan
 }
 
 // rvSig 把条目压成可逐格比对的签名（from|type|target|reason）。
@@ -77,14 +80,14 @@ func rvVaultAB(t *testing.T, deletedA bool) string {
 func TestReplacedByReverseLookup(t *testing.T) {
 	root := rvVaultAB(t, false)
 	before := rvSnapshot(t, root)
-	cards := rvScan(t, root)
+	scan := rvScan(t, root)
 
-	fwd := ReplacedByForward(root, cards, "k-20261201-old")
+	fwd := ReplacedByForward(scan, "k-20261201-old")
 	wantFwd := []string{"k-20261201-old|replaced_by|k-20261201-new|结论已被新证据推翻"}
 	if got := rvSig(fwd); !reflect.DeepEqual(got, wantFwd) {
 		t.Fatalf("旧卡的正向（谁取代了我）= %v，期望 %v", got, wantFwd)
 	}
-	rev := ReplacedByReverse(root, cards, "k-20261201-new")
+	rev := ReplacedByReverse(scan, "k-20261201-new")
 	if got := rvSig(rev); !reflect.DeepEqual(got, wantFwd) {
 		t.Fatalf("新卡的反向（我取代了谁）= %v，期望与正向同一条记录 %v", got, wantFwd)
 	}
@@ -93,18 +96,22 @@ func TestReplacedByReverseLookup(t *testing.T) {
 		t.Fatalf("正反两个方向读出的不是同一条记录：%+v vs %+v", fwd[0], rev[0])
 	}
 	// 方向不可颠倒：新卡没有正向（没人取代它），旧卡没有反向（它没取代任何人）。
-	if got := ReplacedByForward(root, cards, "k-20261201-new"); len(got) != 0 {
+	if got := ReplacedByForward(scan, "k-20261201-new"); len(got) != 0 {
 		t.Fatalf("新卡不应有正向替代指针，实际 %v", rvSig(got))
 	}
-	if got := ReplacedByReverse(root, cards, "k-20261201-old"); len(got) != 0 {
+	if got := ReplacedByReverse(scan, "k-20261201-old"); len(got) != 0 {
 		t.Fatalf("旧卡不应有反向条目，实际 %v", rvSig(got))
 	}
 	// 自指不构造：即便有人写了自引用也不出现在任一方向（写路径已拦，读路径也不造）。
 	self := t.TempDir()
 	bkWrite(t, self, "domains/ai-infra/knowledge/k-20261201-self.md",
 		rvCard("k-20261201-self", "自引用", "deprecated", "k-20261201-self", "自指", false))
-	if got := ReplacedByReverse(self, rvScan(t, self), "k-20261201-self"); len(got) != 0 {
+	selfScan := rvScan(t, self)
+	if got := ReplacedByReverse(selfScan, "k-20261201-self"); len(got) != 0 {
 		t.Fatalf("自指不应出现在反向结果里，实际 %v", rvSig(got))
+	}
+	if got := ReplacedByForward(selfScan, "k-20261201-self"); len(got) != 0 {
+		t.Fatalf("自指不应出现在正向结果里，实际 %v", rvSig(got))
 	}
 
 	// 端到端（可见性层）：新卡的反向对端是 deprecated 的旧卡 —— 默认隐藏 + Q4，
@@ -181,23 +188,23 @@ func TestReplacedByChainBothDirections(t *testing.T) {
 	bkWrite(t, root, k+"k-20261201-b.md", rvCard("k-20261201-b", "B 卡",
 		"deprecated", "k-20261201-c", "B 又被 C 取代", false))
 	bkWrite(t, root, k+"k-20261201-c.md", rvCard("k-20261201-c", "C 卡", "active", "", "", false))
-	cards := rvScan(t, root)
+	scan := rvScan(t, root)
 
 	// 中间卡 B：正向恰一条（谁取代了 B = C）、反向恰一条（B 取代了谁 = A）。
-	if got, want := rvSig(ReplacedByForward(root, cards, "k-20261201-b")),
+	if got, want := rvSig(ReplacedByForward(scan, "k-20261201-b")),
 		[]string{"k-20261201-b|replaced_by|k-20261201-c|B 又被 C 取代"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("B 的正向 = %v，期望 %v", got, want)
 	}
-	if got, want := rvSig(ReplacedByReverse(root, cards, "k-20261201-b")),
+	if got, want := rvSig(ReplacedByReverse(scan, "k-20261201-b")),
 		[]string{"k-20261201-a|replaced_by|k-20261201-b|A 被 B 取代"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("B 的反向 = %v，期望 %v", got, want)
 	}
 	// 链**不传递**：C 的反向只有 B，没有 A（一次查询只看一跳，跨跳由调用方自己走）。
-	if got, want := rvSig(ReplacedByReverse(root, cards, "k-20261201-c")),
+	if got, want := rvSig(ReplacedByReverse(scan, "k-20261201-c")),
 		[]string{"k-20261201-b|replaced_by|k-20261201-c|B 又被 C 取代"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("C 的反向 = %v，期望只含 B 这一跳 %v", got, want)
 	}
-	if got := ReplacedByForward(root, cards, "k-20261201-a"); len(got) != 1 {
+	if got := ReplacedByForward(scan, "k-20261201-a"); len(got) != 1 {
 		t.Fatalf("A 的正向应恰一条，实际 %v", rvSig(got))
 	}
 
@@ -217,10 +224,10 @@ func TestReplacedByChainBothDirections(t *testing.T) {
 
 func TestReplacedByReverseOrthogonalToDeleted(t *testing.T) {
 	root := rvVaultAB(t, true) // 旧卡同时被逻辑删除
-	cards := rvScan(t, root)
+	scan := rvScan(t, root)
 
 	// 取数层：删除**不影响**记录本身能被读出（删除是可见性维度，不是取数维度）。
-	if got := ReplacedByReverse(root, cards, "k-20261201-new"); len(got) != 1 {
+	if got := ReplacedByReverse(scan, "k-20261201-new"); len(got) != 1 {
 		t.Fatalf("取数层应仍读出那条记录（删除只影响可见性），实际 %v", rvSig(got))
 	}
 
