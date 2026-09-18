@@ -19,6 +19,7 @@ package cli
 // validate/reject 仍确定性 NotWired、退 1、零写入零 commit。
 
 import (
+	"flag"
 	"strings"
 	"testing"
 )
@@ -293,5 +294,71 @@ func TestOpinionSearchShowWiredValidateRejectNotWired(t *testing.T) {
 		if logAfter != logBefore {
 			t.Fatalf("[%s] 产生了 commit（骨架必须零 commit）", tc.name)
 		}
+	}
+}
+
+// —— A2 · --reopen 参数面：注册且默认 false；help 仅在 validate 用法显示 [--reopen] 并说明复议回 pending ——
+//
+// 设计出处：观点 schema v2 设计 §6.2「回到 pending（复议）复用 eg opinion validate --reopen，避免再加命令」。
+// 本批只补参数面与分域合同：--reopen 注册在父命令上（bool，默认 false），但仅 validate 分域接受；
+// 帮助文本只在 validate 用法行出现 [--reopen]，reject / search / show 用法行一律不出现它。
+
+func TestOpinionReopenFlagRegisteredDefaultFalse(t *testing.T) {
+	cmd := New().Lookup("opinion")
+	if cmd == nil || cmd.Flags == nil {
+		t.Fatal("eg opinion 必须已注册且有 flag 面")
+	}
+	fs := flag.NewFlagSet("eg opinion", flag.ContinueOnError)
+	cmd.Flags(fs)
+	f := fs.Lookup("reopen")
+	if f == nil {
+		t.Fatal("eg opinion 必须注册 --reopen（观点复议 flag；设计 §6.2）")
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("--reopen 默认值 = %q，期望 false（bool 开关默认关）", f.DefValue)
+	}
+}
+
+func TestOpinionReopenHelpOnlyInValidateUsage(t *testing.T) {
+	cmd := New().Lookup("opinion")
+	if cmd == nil {
+		t.Fatal("eg opinion 未注册")
+	}
+	usage := cmd.Usage
+	var validateLine, rejectLine, searchLine, showLine, reopenDesc string
+	for _, l := range strings.Split(usage, "\n") {
+		switch {
+		case strings.HasPrefix(l, "eg opinion validate "):
+			validateLine = l
+		case strings.HasPrefix(l, "eg opinion reject "):
+			rejectLine = l
+		case strings.HasPrefix(l, "eg opinion search "):
+			searchLine = l
+		case strings.HasPrefix(l, "eg opinion show "):
+			showLine = l
+		}
+		// --reopen 的说明行（非 `eg opinion` 用法行的那一处含 --reopen 的正文）。
+		if reopenDesc == "" && strings.Contains(l, "--reopen") && !strings.HasPrefix(l, "eg opinion") {
+			reopenDesc = l
+		}
+	}
+	if validateLine == "" || rejectLine == "" || searchLine == "" || showLine == "" {
+		t.Fatalf("用法块缺子命令用法行：\n%s", usage)
+	}
+	if !strings.Contains(validateLine, "[--reopen]") {
+		t.Fatalf("validate 用法行须以可选项形态显示 [--reopen]：%q", validateLine)
+	}
+	for _, tc := range []struct{ name, line string }{
+		{"reject", rejectLine}, {"search", searchLine}, {"show", showLine},
+	} {
+		if strings.Contains(tc.line, "--reopen") {
+			t.Fatalf("%s 用法行不得出现 --reopen（仅 validate 接受）：%q", tc.name, tc.line)
+		}
+	}
+	if reopenDesc == "" {
+		t.Fatalf("帮助正文缺 --reopen 说明行：\n%s", usage)
+	}
+	if !strings.Contains(reopenDesc, "pending") {
+		t.Fatalf("--reopen 说明须点明复议回 pending：%q", reopenDesc)
 	}
 }

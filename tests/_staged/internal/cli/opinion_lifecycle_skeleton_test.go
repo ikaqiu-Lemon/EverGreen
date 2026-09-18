@@ -257,3 +257,95 @@ func TestOpinionValidateRejectAuthorizedStillNotWired(t *testing.T) {
 		}
 	}
 }
+
+// —— A2 · --reopen 分域合同：只 validate 接受；reject / search / show 显式带即退 1、逐字点名、零副作用 ——
+//
+// 设计出处：观点 schema v2 设计 §6.1 状态机 + §6.2「回到 pending（复议）复用 eg opinion validate --reopen，
+// 避免再加命令」。本批**只补 --reopen 的参数面与分域合同、不接状态机**：validate 接受它但授权齐备仍
+// NotWired（零写入零 commit），reject / search / show 一律显式拒绝（逐字点名 --reopen）。
+//
+// 关键判定顺序（逐字锁）：--reopen 分域**先于** reason / 授权判定。因此
+//   - reject --reopen（哪怕同时缺 reason）→ 退 1 且点名 --reopen，绝不冒名成缺 reason 用法错；
+//   - validate --reopen 路径仍是「reason 先于授权」：缺 reason 退 1（点名 --reason）、reason 齐备缺
+//     --user-request 退 2（E19）、reason + --user-request 齐备仍 NotWired 退 1。
+
+func TestOpinionReopenRejectedOutsideValidate(t *testing.T) {
+	dir := captureVault(t)
+	statusBefore, logBefore := opinionVaultSnapshot(t, dir)
+
+	const validID = "o-20260101-demo"
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"search 带 --reopen", []string{"search", "语言模型", "--reopen"}},
+		{"show 带 --reopen", []string{"show", validID, "--reopen"}},
+		// reject 带 --reopen 且缺 reason：--reopen 分域**先于**缺 reason，须点名 --reopen（不冒名成缺 reason）。
+		{"reject 带 --reopen（缺 reason）", []string{"reject", validID, "--reopen"}},
+		// reject 带 --reopen 且 reason 齐备：仍因 --reopen 不属 reject 分域而退 1、点名 --reopen。
+		{"reject 带 --reopen（reason 齐备）", []string{"reject", validID, "--reason", "论证不成立", "--reopen"}},
+	} {
+		code, _, errOut := runOpinionCLI(t, dir, tc.args...)
+		if code != ExitUsage {
+			t.Fatalf("[%s] 退出码 = %d，期望 1（--reopen 只作用于 validate）：%s", tc.name, code, errOut)
+		}
+		if strings.Contains(errOut, "尚未挂载") {
+			t.Fatalf("[%s] 应止步于 flag 分域用法错，而非放行到 NotWired：%s", tc.name, errOut)
+		}
+		if !strings.Contains(errOut, "不接受 --reopen") {
+			t.Fatalf("[%s] 用法错须逐字点名 --reopen（拒绝可判定）：%s", tc.name, errOut)
+		}
+		if strings.Contains(errOut, "需要 --reason") {
+			t.Fatalf("[%s] --reopen 分域应先于缺 reason 判定，不得冒名成缺 reason：%s", tc.name, errOut)
+		}
+	}
+
+	if statusAfter, logAfter := opinionVaultSnapshot(t, dir); statusAfter != statusBefore || logAfter != logBefore {
+		t.Fatal("拒绝 --reopen 的路径改变了工作区或 commit 数（必须零写入）")
+	}
+}
+
+// —— A2 · validate 接受 --reopen：判定顺序 reason 先于授权；授权齐备仍 NotWired、零副作用 ——
+
+func TestOpinionValidateReopenDecisionOrder(t *testing.T) {
+	dir := captureVault(t)
+	statusBefore, logBefore := opinionVaultSnapshot(t, dir)
+	const validID = "o-20260101-demo"
+
+	// ① validate --reopen 缺 reason（哪怕带 --user-request）：reason **先于**授权 → 退 1、点名 --reason
+	//    （绝不冒名成授权失败退 2，也绝不把 validate 的 --reopen 判成分域拒绝）。
+	code, _, errOut := runOpinionCLI(t, dir, "validate", validID, "--reopen", "--user-request")
+	if code != ExitUsage {
+		t.Fatalf("validate --reopen 缺 reason 退出码 = %d，期望 1（reason 先于授权）：%s", code, errOut)
+	}
+	if !strings.Contains(errOut, "需要 --reason") {
+		t.Fatalf("validate --reopen 缺 reason 须点名 --reason：%s", errOut)
+	}
+	if strings.Contains(errOut, "不接受 --reopen") {
+		t.Fatalf("validate 必须**接受** --reopen，不得点名拒绝它：%s", errOut)
+	}
+
+	// ② validate --reopen + reason 齐备但缺 --user-request → 授权失败退 2，data.errors[] 恰 1 条 E19。
+	code2, env, combined := runOpinionCLIJSON(t, dir, "validate", validID, "--reopen", "--reason", "出现新反例")
+	if code2 != ExitValidation {
+		t.Fatalf("validate --reopen reason 齐备缺 --user-request 退出码 = %d，期望 2（E19）：%s", code2, combined)
+	}
+	diags := opinionErrorDiags(t, env)
+	if len(diags) != 1 || diags[0].Code != E19 {
+		t.Fatalf("validate --reopen 缺授权 data.errors[] 应恰 1 条 E19，实得 %+v", diags)
+	}
+
+	// ③ validate --reopen 授权齐备（非空 reason + --user-request）→ 越过授权，止步于未挂载状态机 →
+	//    NotWired 退 1（本批只做参数面，绝不接状态机 / store / plan / txn）。
+	code3, _, errOut3 := runOpinionCLI(t, dir, "validate", validID, "--reopen", "--reason", "出现新反例", "--user-request")
+	if code3 != ExitUsage {
+		t.Fatalf("validate --reopen 授权齐备退出码 = %d，期望 1（NotWired 骨架）：%s", code3, errOut3)
+	}
+	if !strings.Contains(errOut3, "尚未挂载") {
+		t.Fatalf("validate --reopen 授权齐备应止步于未挂载状态机（NotWired）：%s", errOut3)
+	}
+
+	if statusAfter, logAfter := opinionVaultSnapshot(t, dir); statusAfter != statusBefore || logAfter != logBefore {
+		t.Fatal("validate --reopen 全路径改变了工作区或 commit 数（本批零写入零 commit）")
+	}
+}

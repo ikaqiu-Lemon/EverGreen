@@ -10,20 +10,23 @@ package cli
 // （缺/空 reason 或读 flag → 退 1；缺 --user-request → 退 2、E19；授权齐备 → 仍 NotWired 退 1）
 // 与授权面（命令行 --user-request 显式佐证，N-1 反伪造）。观点验证生命周期状态机与任何写入归
 // T-007，本骨架一格不碰 store / plan / txn（零文件变化、零 commit）。子命令集合与顺序**恰**为
-// search|show|validate|reject，不增删。**刻意不注册/不实现 --reopen**（观点重开归 T-007）。
+// search|show|validate|reject，不增删。T-007 批次 A2 起：注册 `--reopen` 参数面与分域合同
+// （bool、默认 false，**仅 validate 接受**：把验证态复议回 pending），但仍不接状态机 / 写入。
 //
-// # 参数面（父命令注册 8 个读 flag + 1 个写路径 flag --reason，恰不含 --kind / --reopen）
+// # 参数面（父命令注册 8 个读 flag + 2 个写路径 flag --reason / --reopen，恰不含 --kind）
 //
 // 读 flag：domain / 可重复 tag / since / until / include-deleted / include-deprecated / limit /
 // offset —— 与 `eg search` / `eg card show` 同名同义，供 search / show 复用同一套口径。
-// 写路径 flag：--reason —— 观点验证 / 驳回的理由，**只允许** validate/reject 使用。
-// **刻意不注册 --kind**：opinion 检索面天然只搜观点（runOpinionSearch 把 Kind 固定成 opinion），
-// 再给 kind 开关即多余且可诱导误用；`eg opinion search --kind …` 因此被参数解析当场判成
-// 「未定义 flag」→ 退 1、零写入。
+// 写路径 flag：--reason —— 观点验证 / 驳回的理由，**只允许** validate/reject 使用；
+// --reopen —— 观点复议开关（bool、默认 false），**只允许** validate 使用（rejected/validated →
+// pending 复议边；观点 schema v2 设计 §6.1/§6.2）。**刻意不注册 --kind**：opinion 检索面天然只搜
+// 观点（runOpinionSearch 把 Kind 固定成 opinion），再给 kind 开关即多余且可诱导误用；
+// `eg opinion search --kind …` 因此被参数解析当场判成「未定义 flag」→ 退 1、零写入。
 //
 // 这些 flag 都注册在父命令上（FlagSet 分不清子命令），每条子命令都会**解析**到它们；各子命令按
-// 分域显式拒绝不属于自己的 flag（见 rejectOpinionFlags）：search 拒 include-deprecated + reason、
-// show 拒检索过滤 flag + reason、validate/reject 拒全部读 flag 但**必带**非空 --reason，
+// 分域显式拒绝不属于自己的 flag（见 rejectOpinionFlags）：search 拒 include-deprecated + reason +
+// reopen、show 拒检索过滤 flag + reason + reopen、reject 拒全部读 flag + reopen 但**必带**非空
+// --reason、validate 拒全部读 flag、**接受** --reopen 但仍**必带**非空 --reason，
 // 绝不静默接受 —— 「参数写了却不生效」比报错更坏。
 //
 // # 专用 DTO
@@ -40,7 +43,8 @@ package cli
 //
 // # 阶段边界（本批不做，后续批次做）
 //
-//   - validate / reject 的验证生命周期状态机与写参数合同、--reopen 重开 → T-007。本批不造任何写行为。
+//   - validate / reject 的验证生命周期状态机与写参数合同、--reopen 复议**写行为** → T-007 后续批次。
+//     本批（A2）只补 --reopen 的参数面与分域合同，不造任何写行为。
 
 import (
 	"errors"
@@ -64,6 +68,16 @@ const (
 // OpinionReasonFlag 是 validate/reject 的写路径理由 flag 名（注册点与分域拒绝逐字共用同一字面量）。
 const OpinionReasonFlag = "reason"
 
+// OpinionReopenFlag 是 validate 的观点复议 flag 名（bool，默认 false；注册点与分域拒绝逐字共用同一字面量）。
+// 语义（观点 schema v2 设计 §6.1/§6.2）：把观点验证态**复议回 pending**（rejected/validated → pending，
+// 出现新反例时降级），复用 `eg opinion validate --reopen` 而不新增命令。**只作用于 validate**：
+// reject / search / show 显式带它一律退 1（逐字点名 --reopen）。本批只补参数面与分域合同、不接状态机。
+const OpinionReopenFlag = "reopen"
+
+// opinionReopenValidateOnlyHint 是 reject / search / show 显式带 --reopen 时用法错的逐字理由
+// （分域拒绝可判定：措辞点名该 flag 只作用于 validate）。
+const opinionReopenValidateOnlyHint = "该参数只作用于 opinion validate（观点复议：把验证态复议回 pending），驳回 / 检索 / 查看路径不解读它"
+
 // OpinionSubcommands 返回 `eg opinion` 的子命令集合（顺序即 --help 顺序）。
 func OpinionSubcommands() []string {
 	return []string{SubOpinionSearch, SubOpinionShow, SubOpinionValidate, SubOpinionReject}
@@ -82,7 +96,7 @@ func opinionCommand() *Command {
 		// search / show 的只读性由各自 run 函数「不碰任何写口」保证，不靠命令级 ReadOnly 标记。
 		Usage: `eg opinion search <q> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--include-deleted] [--limit <n>] [--offset <n>] [--json]
 eg opinion show <o-id> [--include-deprecated] [--limit <n>] [--offset <n>] [--json]
-eg opinion validate <o-id> --reason <text> --user-request [--json]
+eg opinion validate <o-id> --reason <text> --user-request [--reopen] [--json]
 eg opinion reject <o-id> --reason <text> --user-request [--json]
 
 参数（位置参数）：
@@ -106,6 +120,8 @@ validate / reject 的写路径参数（骨架合同：状态机随 T-007 落地�
   --reason <text>        是；采纳 / 驳回的理由（缺 / 空串 / 纯空白 → 退 1；search / show 显式带它也 → 退 1）
   --user-request         是（全局 flag）；本次调用由用户显式发起的命令行佐证（观点验证属写路径，
                          文件内容不能自证，N-1）。缺它 → 退 2、零写入，data.errors[] 恰一条 E19（path=--user-request）
+  --reopen               否，默认 false，**仅 validate**；把观点验证态复议回 pending（rejected/validated
+                         → pending，出现新反例时降级）；reject / search / show 显式带它 → 退 1（逐字点名 --reopen）
 
 search 已接通：只读检索观点（domains/<d>/opinions/**.md），validation 三态（pending /
 validated / rejected）全部召回、绝不隐式过滤；每条命中带 validation 与 supports/limits/opposing
@@ -134,9 +150,14 @@ search / show 都只读：零文件变化、零 commit。validate / reject **仍
 			fs.Bool("include-deprecated", false, "展示对端 deprecated 的关系条目（默认隐藏；不影响已删除维度）")
 			// validate/reject 专属写路径 flag：观点采纳 / 驳回理由。注册在父命令上（FlagSet 分不清
 			// 子命令），因此 search / show 也能解析到它 —— 那两条只读子命令显式带 --reason 一律退 1
-			// （见 validateOpinionArgs 的 rejectOpinionFlags），绝不静默接受。**刻意不注册 --reopen**：
-			// 观点重开属 T-007 状态机，本骨架批一格不碰。
+			// （见 validateOpinionArgs 的 rejectOpinionFlags），绝不静默接受。
 			fs.String("reason", "", "验证 / 驳回理由（仅 validate/reject；非空）")
+			// validate 专属写路径 flag：观点复议开关（bool，默认 false）。同样注册在父命令上，
+			// 因此 reject / search / show 也能解析到它 —— 但它**只作用于 validate**（把验证态复议回
+			// pending；观点 schema v2 设计 §6.1/§6.2），其余三条子命令显式带 --reopen 一律退 1、
+			// 逐字点名（见 validateOpinionArgs 的 rejectOpinionFlags）。本批只补参数面与分域合同、
+			// 不接状态机：validate --reopen 授权齐备仍 NotWired（零写入零 commit）。
+			fs.Bool(OpinionReopenFlag, false, "观点复议：把验证态复议回 pending（仅 validate；rejected/validated → pending）")
 			// 分页（S4 · T-…-068）：注册点唯一，见 page.go。search 与 show 共用。
 			pageFlags(fs)
 			// **不注册 --kind**：opinion 检索面天然只搜观点（见文件头「参数面」）。
@@ -203,6 +224,9 @@ func validateOpinionArgs(inv *Invocation) error {
 			"该参数只作用于 opinion show（观点视图对端可见性开关），检索路径不解读它"); err != nil {
 			return err
 		}
+		if err := rejectOpinionFlags(inv, []string{OpinionReopenFlag}, opinionReopenValidateOnlyHint); err != nil {
+			return err
+		}
 		return rejectOpinionFlags(inv, []string{OpinionReasonFlag},
 			"该参数只作用于 opinion validate/reject（观点采纳 / 驳回理由），只读检索路径不解读它")
 	case SubOpinionShow:
@@ -216,6 +240,9 @@ func validateOpinionArgs(inv *Invocation) error {
 		}
 		if err := rejectOpinionFlags(inv, opinionSearchFilterFlags(),
 			"该参数只作用于 opinion search 检索路径，show 视图按 <o-id> 精确定位、不做检索过滤"); err != nil {
+			return err
+		}
+		if err := rejectOpinionFlags(inv, []string{OpinionReopenFlag}, opinionReopenValidateOnlyHint); err != nil {
 			return err
 		}
 		return rejectOpinionFlags(inv, []string{OpinionReasonFlag},
@@ -234,6 +261,14 @@ func validateOpinionArgs(inv *Invocation) error {
 		if err := rejectOpinionFlags(inv, opinionReadFlags(),
 			"该参数属只读检索 / 查看路径，验证 / 驳回子命令（写路径骨架）不接受任何读 flag"); err != nil {
 			return err
+		}
+		// --reopen 分域：**只 validate 接受**（把验证态复议回 pending），reject 显式带它 → 退 1、
+		// 逐字点名 --reopen。此判定**先于**缺 / 空 reason（reject --reopen 哪怕同时缺 reason，也须
+		// 点名 --reopen，绝不冒名成缺 reason 用法错）。validate 分域不在此拒绝之列 —— 它接受 --reopen。
+		if inv.Sub == SubOpinionReject {
+			if err := rejectOpinionFlags(inv, []string{OpinionReopenFlag}, opinionReopenValidateOnlyHint); err != nil {
+				return err
+			}
 		}
 		// 缺 / 空 reason **先于**授权判定（授权在 runOpinionLifecycleSkeleton；这里退 1、那里退 2，
 		// 两码绝不互相冒名）：空串 / 纯空白同样按缺失处理，写路径不接受空理由。
