@@ -57,7 +57,7 @@ func opWithSourceRef(o query.OpinionEntry, source, noteID string) query.OpinionE
 	return o
 }
 
-// opWithReplacedBy 给观点设置 replaced_by.target（失效观点的替代指针，指向知识卡）。
+// opWithReplacedBy 给观点设置 replaced_by.target（失效观点的替代指针，指向端点：知识卡或观点）。
 func opWithReplacedBy(o query.OpinionEntry, target string) query.OpinionEntry {
 	o.ReplacedByTarget = target
 	return o
@@ -375,7 +375,8 @@ func TestOpinionLegalVaultProducesNoFindings(t *testing.T) {
 // TestOpinionDanglingReferenceFields：观点 frontmatter 的引用承载字段悬空 → 逐字段恰 1 条 E12。
 //
 // 三类：`opinion.sources[].note→材料笔记`、`opinion.sources[].source→原文`、
-// `replaced_by.target→知识卡`（末者与知识卡共用同一类，字段键与语义逐字相同）。
+// `replaced_by.target→端点（知识卡或观点）`（末者与知识卡共用同一类，字段键与语义逐字相同，
+// 目标端是论证关系端点宇宙：知识卡 ∪ 观点）。
 func TestOpinionDanglingReferenceFields(t *testing.T) {
 	sources := []SourceFact{{ID: "s-paper", Path: "sources/s-paper.md"}}
 	okNote := note("n-read", "domains/ai/notes/n-read.md", "s-paper")
@@ -397,7 +398,7 @@ func TestOpinionDanglingReferenceFields(t *testing.T) {
 			wantFrom:  oA, wantTo: "s-gone",
 		},
 		{
-			name:      "观点的 replaced_by.target→知识卡 悬空",
+			name:      "观点的 replaced_by.target→端点（知识卡或观点） 悬空",
 			underTest: opWithReplacedBy(opOpinion(oA), kGone),
 			wantFrom:  oA, wantTo: kGone,
 		},

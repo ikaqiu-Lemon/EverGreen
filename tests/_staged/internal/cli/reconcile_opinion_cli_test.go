@@ -257,6 +257,123 @@ func TestCheckCLIOnOpinionVaultStaysSevenChecksReadOnly(t *testing.T) {
 	}
 }
 
+// opSetReplacedBy 用**外部编辑**给一份产物的 frontmatter 写入 `replaced_by: {target, reason}`。
+//
+// 为什么用外部编辑而不是 `eg replaced-by`：写命令会在落盘前校验 target 端点是否真实存在
+// （指向缺失端点会被当场拒绝），而本用例恰恰要造「指向缺失端点」这条磁盘真事实来考对账的
+// 存在性判定。插入点在 frontmatter 结束分隔符之前，不动任何既有键的整行字节。
+func opSetReplacedBy(t *testing.T, dir, rel, target string) {
+	t.Helper()
+	path := absIn(dir, rel)
+	raw := string(mustRead(t, path))
+	const head = "---\n"
+	if !strings.HasPrefix(raw, head) {
+		t.Fatalf("%s 不是带 frontmatter 的产物：\n%s", rel, raw)
+	}
+	j := strings.Index(raw[len(head):], "\n---\n")
+	if j < 0 {
+		t.Fatalf("%s 的 frontmatter 没有结束分隔符：\n%s", rel, raw)
+	}
+	end := len(head) + j + 1
+	block := "replaced_by:\n  target: " + target +
+		"\n  reason: 外部编辑写入的替代指针\n"
+	if err := os.WriteFile(path, []byte(raw[:end]+block+raw[end:]), 0o644); err != nil {
+		t.Fatalf("外部编辑 %s 失败：%v", rel, err)
+	}
+}
+
+// TestCheckReplacedByTargetEndpointUniverseCLI：`eg check` / `eg reconcile --dry-run` 对
+// `replaced_by.target` 的存在性判定面是**论证关系端点宇宙**（知识卡 ∪ 观点），真 CLI 端到端复核。
+//
+//   - target 指向库内**真实存在**的观点（`o-*`）→ 零 E12：两条命令都不因替代指针点名宿主卡
+//     （旧实现只查 KindCard，会把它误报成悬空引用）。
+//   - target 指向**形态合法但库内缺失**的观点 → 恰 1 条 error 级 `dangling_ref`（E12），
+//     且 `eg check` 只读：零写入、恒 0 次提交、不开事务、工作区仍如外部编辑后的状态。
+func TestCheckReplacedByTargetEndpointUniverseCLI(t *testing.T) {
+	// ① 指向真实存在的观点端点：零 E12。
+	t.Run("target 指向存在的观点端点 → 零 dangling_ref", func(t *testing.T) {
+		dir, cardRel, _ := opinionVault(t)
+		opSetReplacedBy(t, dir, cardRel, applyOpinionID) // applyOpinionID 是库内真实存在的观点
+
+		code, out, errOut := runCheckCLI(t, dir)
+		if code != ExitOK {
+			t.Fatalf("replaced_by.target 指向存在观点，eg check 应退 0，实得 %d：%s\n%s", code, errOut, out)
+		}
+		for _, f := range opFindingsMentioning(chkFindings(t, out), applyCardID) {
+			if f.Check == "dangling_ref" {
+				t.Fatalf("指向存在观点端点不得报 dangling_ref：%+v", f)
+			}
+		}
+		// eg reconcile 同一事实同样不得因替代指针报 E12。
+		_, rout, _ := runReconcileCLI(t, newTestRoot(t, dir), dir, "--dry-run")
+		rfs := rcAssertReconcileShape(t, rcRawAt(t, []byte(rout), "data", "reconcile"))
+		for _, f := range opFindingsMentioning(rfs, applyCardID) {
+			if f.Check == "dangling_ref" {
+				t.Fatalf("eg reconcile 也不得因指向存在观点报 dangling_ref：%+v", f)
+			}
+		}
+	})
+
+	// ② 指向形态合法但缺失的观点端点：恰 1 条 error 级 E12 + 只读零副作用。
+	t.Run("target 指向缺失的观点端点 → E12 且 eg check 只读", func(t *testing.T) {
+		const missOpinion = "o-20261231-absent"
+		dir, cardRel, _ := opinionVault(t)
+		opSetReplacedBy(t, dir, cardRel, missOpinion)
+
+		beforeBytes := opVaultBytes(t, dir)
+		beforeCommits := gitLogCount(t, dir)
+		beforeTxns := txnIDsOn(t, dir)
+
+		code, out, _ := runCheckCLI(t, dir)
+		if code != ExitValidation {
+			t.Fatalf("replaced_by.target 指向缺失观点，eg check 应退 2（存在 error 级 finding），实得 %d\n%s", code, out)
+		}
+		hit := opFindingsMentioning(chkFindings(t, out), applyCardID)
+		var dangling []rcFinding
+		for _, f := range hit {
+			if f.Check == "dangling_ref" {
+				dangling = append(dangling, f)
+			}
+		}
+		if len(dangling) != 1 {
+			t.Fatalf("指向缺失观点端点应恰 1 条 dangling_ref，实得 %d 条：%+v", len(dangling), hit)
+		}
+		f := dangling[0]
+		if f.Severity != "error" {
+			t.Fatalf("dangling_ref 应是 error 级，实得 %q", f.Severity)
+		}
+		want := []string{applyCardID, missOpinion}
+		sort.Strings(want)
+		if !reflect.DeepEqual(sortedCopy(f.Targets), want) {
+			t.Fatalf("targets 期望 %v，实得 %v", want, f.Targets)
+		}
+
+		// —— 只读性：权威字节、commit、事务三格逐一不变（缺失目标不改变 eg check 的零副作用）——
+		if got := opVaultBytes(t, dir); !reflect.DeepEqual(got, beforeBytes) {
+			t.Fatalf("eg check 必须零写入：权威字节发生变化\n前 %v\n后 %v",
+				opSortedKeys(beforeBytes), opSortedKeys(got))
+		}
+		if got := gitLogCount(t, dir); got != beforeCommits {
+			t.Fatalf("eg check 恒 0 次提交：commit 数 %d → %d", beforeCommits, got)
+		}
+		if got := txnIDsOn(t, dir); !reflect.DeepEqual(sortedCopy(got), sortedCopy(beforeTxns)) {
+			t.Fatalf("eg check 不得开事务：事务集合 %v → %v", beforeTxns, got)
+		}
+		// eg reconcile --dry-run 同一事实同样可见（不是只有 check 看得见）。
+		_, rout, _ := runReconcileCLI(t, newTestRoot(t, dir), dir, "--dry-run")
+		rfs := rcAssertReconcileShape(t, rcRawAt(t, []byte(rout), "data", "reconcile"))
+		var rdang int
+		for _, rf := range opFindingsMentioning(rfs, applyCardID) {
+			if rf.Check == "dangling_ref" {
+				rdang++
+			}
+		}
+		if rdang != 1 {
+			t.Fatalf("eg reconcile 也应恰 1 条 dangling_ref 点名宿主卡，实得 %d：%+v", rdang, rfs)
+		}
+	})
+}
+
 // —— ③ 判据 3：命令层透传 C1 的 R3 / R4 诊断（悬空 o-* 关系必被点名）——
 
 // TestOpinionDanglingRelationSurfacedByBothCommands：观点 `relations[]` 指向库内查无此
@@ -545,6 +662,14 @@ func TestCheckHelpDanglingCoverageDerivedFromSource(t *testing.T) {
 	// ③ 类别数如实（用真源渲染，不是又抄一个数字）。
 	if want := "恰 " + itoaSmall(reconcile.DanglingRefKindCount) + " 类"; !strings.Contains(usage, want) {
 		t.Fatalf("帮助文本应含 %q：\n%s", want, usage)
+	}
+	// ④ replaced_by.target 的端点措辞必须是「端点（知识卡或观点）」这一新口径（真源已放宽到
+	// 知识卡 ∪ 观点端点宇宙）；写死的旧「→知识卡」抄本不许再出现在用户可见的帮助里。
+	if !strings.Contains(usage, "replaced_by.target→端点（知识卡或观点）") {
+		t.Fatalf("eg check 帮助文本应含 replaced_by.target 的端点措辞（知识卡或观点）：\n%s", usage)
+	}
+	if strings.Contains(usage, "replaced_by.target→知识卡") {
+		t.Fatalf("帮助文本仍写着旧口径 replaced_by.target→知识卡（真源已放宽到端点宇宙）：\n%s", usage)
 	}
 }
 

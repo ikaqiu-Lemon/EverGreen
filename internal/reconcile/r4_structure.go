@@ -381,12 +381,12 @@ func labelOf(kind string) string {
 //
 // 历史 M4 合同 §6.2 只冻结了前两类（note.source / card.sources[].note）；
 // I-evergreen.system_assurance-158614-019 的实现侧完整修复枚举并冻结了知识卡 / 笔记侧
-// **全部**引用承载字段（另加 `card.sources[].source→原文` 与 `replaced_by.target→知识卡`）。
+// **全部**引用承载字段（另加 `card.sources[].source→原文` 与 `replaced_by.target→端点`）。
 // schema v2 的观点带来第三个引用承载方，于是本码在**同一件事同一码**的原则下追加两类：
 // `opinion.sources[].note→材料笔记` 与 `opinion.sources[].source→原文`；
-// 观点的 `replaced_by.target` 与知识卡是同一个字段键、同一个目标类型（知识卡），
-// 因此**复用第四类**、不另立类别。观点 `relations[]` 的 target 仍归 R3（E13 / E14），
-// 一件事不许两码重复计。
+// 观点的 `replaced_by.target` 与知识卡是同一个字段键、同一个目标语义（替代指针），
+// 目标端是**论证关系端点宇宙**（知识卡 ∪ 观点），因此**复用第四类**、不另立类别。
+// 观点 `relations[]` 的 target 仍归 R3（E13 / E14），一件事不许两码重复计。
 const DanglingRefKindCount = 6
 
 // 六类引用的机器串（进 detail，供逐条复算）。
@@ -394,7 +394,7 @@ const (
 	danglingNoteSource    = "note.source→原文"
 	danglingCardNote      = "card.sources[].note→材料笔记"
 	danglingCardSource    = "card.sources[].source→原文"
-	danglingReplacedBy    = "replaced_by.target→知识卡"
+	danglingReplacedBy    = "replaced_by.target→端点（知识卡或观点）"
 	danglingOpinionNote   = "opinion.sources[].note→材料笔记"
 	danglingOpinionSource = "opinion.sources[].source→原文"
 )
@@ -423,8 +423,9 @@ type refFact struct{ from, to, kind, path string }
 // 三处判定口径：
 //   - 来源笔记端：存在性看落盘事实（不做删除过滤，删除维度归 R7 的 W20）；
 //   - 原文端：仅在 `sources/` 已采样时判定（不把「没采样」说成「不存在」）；
-//   - 替代指针：`replaced_by.target` 必须指向一张真实存在的**知识卡**，
-//     类别串两类产物共用（同一字段键、同一目标类型）。
+//   - 替代指针：`replaced_by.target` 必须指向一个真实存在的**论证关系端点**
+//     （知识卡 `k-` 或观点 `o-`，存在性复用同包 hasRelationEndpoint 的端点宇宙判定），
+//     类别串两类产物共用（同一字段键、同一目标语义）。
 func materialRefs(x StructureIndex, holder, path string, sources []model.SourceRef,
 	replacedBy, noteKind, sourceKind string) []refFact {
 	from := strings.TrimSpace(holder)
@@ -441,7 +442,7 @@ func materialRefs(x StructureIndex, holder, path string, sources []model.SourceR
 			out = append(out, refFact{from: from, to: src, kind: sourceKind, path: path})
 		}
 	}
-	if tgt := strings.TrimSpace(replacedBy); tgt != "" && !x.Has(tgt, KindCard) {
+	if tgt := strings.TrimSpace(replacedBy); tgt != "" && !hasRelationEndpoint(x, tgt) {
 		out = append(out, refFact{from: from, to: tgt, kind: danglingReplacedBy, path: path})
 	}
 	return out
@@ -452,7 +453,7 @@ func materialRefs(x StructureIndex, holder, path string, sources []model.SourceR
 //	① 材料笔记 frontmatter 的 `source` 指向的原文不存在；
 //	② 知识卡 frontmatter `sources[].note` 指向的来源笔记不存在；
 //	③ 知识卡 frontmatter `sources[].source` 指向的原文不存在；
-//	④ 知识卡 / 观点 frontmatter `replaced_by.target` 指向的替代卡不存在；
+//	④ 知识卡 / 观点 frontmatter `replaced_by.target` 指向的替代端点（知识卡或观点）不存在；
 //	⑤ 观点 frontmatter `sources[].note` 指向的来源笔记不存在；
 //	⑥ 观点 frontmatter `sources[].source` 指向的原文不存在。
 //

@@ -31,7 +31,8 @@ package reconcile
 //
 // 合同 §6.2 末句逐字：「关系条目的 target 缺失不走这条 —— 它属 R3 的
 // `relation_target_missing`」。因此本文件的判定面**恰是** `relations[]` 条目，
-// 而 R4 的 E12 判定面**恰是** frontmatter 的两类引用（`note.source` 与 `card.sources[].note`）：
+// 而 R4 的 E12 判定面**恰是** frontmatter 的引用承载字段（含 `replaced_by.target→端点`，
+// 其存在性与本文件同宇宙：知识卡 ∪ 观点，复用 hasRelationEndpoint）：
 // 两个判定面在集合上不相交，同一条落盘事实只会被一个码报一次
 // （双侧反证：本文件的 TestR3NoDoubleCountWithR4DanglingRef + R4 侧的
 // TestR4RelationTargetNotInDanglingRef）。

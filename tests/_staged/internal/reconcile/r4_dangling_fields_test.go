@@ -15,6 +15,7 @@ package reconcile
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
@@ -67,7 +68,7 @@ func TestR4DanglingRefAllReferenceFields(t *testing.T) {
 			wantFrom:  "k-a", wantTo: "s-gone",
 		},
 		{
-			name:      "replaced_by.target→知识卡 悬空",
+			name:      "replaced_by.target→端点（知识卡或观点） 悬空",
 			underTest: withReplacedBy(card("k-a", "domains/ai/knowledge/k-a.md"), "k-gone"),
 			extraNote: okNote,
 			wantFrom:  "k-a", wantTo: "k-gone",
@@ -115,6 +116,94 @@ func TestR4DanglingRefAllReferenceFields(t *testing.T) {
 	if DanglingRefKindCount != 6 {
 		t.Fatalf("dangling_ref 覆盖面应恰 6 类（卡 / 笔记侧 4 类 + 观点侧 2 类），"+
 			"DanglingRefKindCount = %d", DanglingRefKindCount)
+	}
+}
+
+// TestR4ReplacedByTargetEndpointUniverse：`replaced_by.target` 的存在性判定面是**论证关系
+// 端点宇宙**（知识卡 ∪ 观点），与 R3 关系端点同源。宿主可为知识卡或观点、target 可为知识卡
+// 或观点：四组合（k→k / k→o / o→k / o→o）目标存在时一律零 E12；目标形态合法但库内缺失时
+// 一律恰 1 条 E12（targets = [宿主, 缺失目标]、code=E12、severity=error、detail 用端点类别措辞）。
+//
+// **先红点**：旧实现用 `x.Has(target, KindCard)` 判存在性，会把「`replaced_by.target` 指向一条
+// 真实存在的观点（`o-*`）」误报成悬空引用（E12）——k→o 与 o→o 两行在补丁前必红；缺失目标
+// 各行的 detail 端点措辞在术语统一前也必红。
+func TestR4ReplacedByTargetEndpointUniverse(t *testing.T) {
+	const (
+		kHost = "k-20260918-host"
+		oHost = "o-20260918-host"
+		kTgt  = "k-20260918-target"
+		oTgt  = "o-20260918-target"
+		kMiss = "k-20260918-missing"
+		oMiss = "o-20260918-missing"
+	)
+	cp := func(id string) string { return "domains/ai/knowledge/" + id + ".md" }
+	op := func(id string) string { return "domains/ai/opinions/" + id + ".md" }
+
+	// 落盘存在的两个可指向端点：一张知识卡 + 一条观点（都不带 replaced_by，纯作存在目标）。
+	baseCards := []query.CardEntry{card(kTgt, cp(kTgt))}
+	baseOpinions := []query.OpinionEntry{opOpinionAt(oTgt, op(oTgt))}
+
+	build := func(host string, hostIsOpinion bool, target string) Input {
+		cards := append([]query.CardEntry{}, baseCards...)
+		opinions := append([]query.OpinionEntry{}, baseOpinions...)
+		if hostIsOpinion {
+			opinions = append(opinions, opWithReplacedBy(opOpinionAt(host, op(host)), target))
+		} else {
+			cards = append(cards, withReplacedBy(card(host, cp(host)), target))
+		}
+		return Input{Scan: opScanOf(cards, nil, opinions)}
+	}
+
+	existing := []struct {
+		name          string
+		host          string
+		hostIsOpinion bool
+		target        string
+	}{
+		{"k→k 目标存在 → 零 E12", kHost, false, kTgt},
+		{"k→o 目标存在 → 零 E12（旧实现在此误报）", kHost, false, oTgt},
+		{"o→k 目标存在 → 零 E12", oHost, true, kTgt},
+		{"o→o 目标存在 → 零 E12（旧实现在此误报）", oHost, true, oTgt},
+	}
+	for _, c := range existing {
+		t.Run(c.name, func(t *testing.T) {
+			if got := pick(findingsOf(t, build(c.host, c.hostIsOpinion, c.target)),
+				CheckDanglingRef); len(got) != 0 {
+				t.Fatalf("replaced_by.target 指向存在端点不得报 E12：%+v", got)
+			}
+		})
+	}
+
+	missing := []struct {
+		name          string
+		host          string
+		hostIsOpinion bool
+		target        string
+	}{
+		{"k→缺失 k → 恰 1 条 E12", kHost, false, kMiss},
+		{"k→缺失 o → 恰 1 条 E12", kHost, false, oMiss},
+		{"o→缺失 k → 恰 1 条 E12", oHost, true, kMiss},
+		{"o→缺失 o → 恰 1 条 E12", oHost, true, oMiss},
+	}
+	for _, c := range missing {
+		t.Run(c.name, func(t *testing.T) {
+			refs := pick(findingsOf(t, build(c.host, c.hostIsOpinion, c.target)), CheckDanglingRef)
+			if len(refs) != 1 {
+				t.Fatalf("replaced_by.target 指向缺失端点应恰 1 条 E12，实得 %d 条：%+v", len(refs), refs)
+			}
+			f := refs[0]
+			if f.Code() != CodeE12 || f.Severity != SeverityError {
+				t.Fatalf("悬空 replaced_by 必须 error 级 + %s，实得 %s / %s", CodeE12, f.Severity, f.Code())
+			}
+			want := []string{c.host, c.target}
+			sort.Strings(want)
+			if !reflect.DeepEqual(f.Targets, want) {
+				t.Fatalf("targets 期望 %v，实得 %v", want, f.Targets)
+			}
+			if !strings.Contains(f.Detail, "replaced_by.target→端点（知识卡或观点）") {
+				t.Fatalf("detail 应含端点类别措辞（知识卡或观点），实得：%s", f.Detail)
+			}
+		})
 	}
 }
 
