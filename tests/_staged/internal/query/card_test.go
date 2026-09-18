@@ -132,6 +132,64 @@ func TestCardShowSectionsKeyOrderFixed(t *testing.T) {
 	}
 }
 
+// TestCardShowUnknownSectionsExposeLegacyV1 —— I-…-007：card show 的 unknown_sections
+// 把存量 v1 卡里的非固定分区（`解释与依据` / `理解自检`）按 Markdown 源码出现顺序、
+// 名称与**完整正文**暴露出来；固定 sections 仍恰三键、不含任何 v1 分区；纯 v2 卡的
+// unknown_sections 归一为空数组（`[]` 而非 nil）。JSON 里 unknown_sections 紧随 sections，
+// 元素键序固定 name/body。
+func TestCardShowUnknownSectionsExposeLegacyV1(t *testing.T) {
+	root := cardShowVault(t)
+	card := mustShowCard(t, root, "k-20260901-a").Card
+
+	// 固定 sections 仍恰三键、不混入任何 v1 分区。
+	if !reflect.DeepEqual(card.Sections.Keys(), mdfile.CardSections()) {
+		t.Fatalf("固定 sections 键集合被改动：%v", card.Sections.Keys())
+	}
+	for _, legacy := range mdfile.LegacyV1Sections(mdfile.KindCard) {
+		if card.Sections.Get(legacy) != "" || !card.Sections.Missing(legacy) {
+			t.Fatalf("v1 分区 %q 不应混入固定 sections", legacy)
+		}
+	}
+
+	// unknown_sections 恰两段，按源码出现顺序：解释与依据 → 理解自检，正文逐字完整。
+	got := card.UnknownSections
+	if len(got) != 2 {
+		t.Fatalf("unknown_sections 应恰 2 段，实际 %d：%+v", len(got), got)
+	}
+	if got[0].Name != mdfile.SecRationale || got[1].Name != mdfile.SecSelfCheck {
+		t.Fatalf("unknown_sections 顺序 = [%q,%q]，期望 [解释与依据,理解自检]", got[0].Name, got[1].Name)
+	}
+	if got[0].Body != "依据正文。" || got[1].Body != "自检问题。" {
+		t.Fatalf("unknown_sections 正文不是完整权威文本：%+v", got)
+	}
+
+	// 纯 v2 卡（只有固定分区）：unknown_sections 是空数组（非 nil）。
+	v2 := mustShowCard(t, root, "k-20260902-b").Card
+	if v2.UnknownSections == nil {
+		t.Fatal("无未知分区应为 []（非 nil）")
+	}
+	if len(v2.UnknownSections) != 0 {
+		t.Fatalf("纯 v2 卡 unknown_sections 应为空，实际 %+v", v2.UnknownSections)
+	}
+
+	// JSON：unknown_sections 紧随 sections，元素键序固定 name/body。
+	raw, err := json.Marshal(card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(raw)
+	secAt := strings.Index(s, `"sections":`)
+	unkAt := strings.Index(s, `"unknown_sections":`)
+	if secAt < 0 || unkAt < 0 || unkAt < secAt {
+		t.Fatalf("unknown_sections 应紧随 sections：%s", s)
+	}
+	nameAt := strings.Index(s[unkAt:], `"name":`)
+	bodyAt := strings.Index(s[unkAt:], `"body":`)
+	if nameAt < 0 || bodyAt < 0 || bodyAt < nameAt {
+		t.Fatalf("unknown_sections 元素键序应为 name/body：%s", s)
+	}
+}
+
 // TestCardShowSourcesPassThrough —— sources[] 四要素原样透出；无材料时是空数组不是 null。
 func TestCardShowSourcesPassThrough(t *testing.T) {
 	root := cardShowVault(t)

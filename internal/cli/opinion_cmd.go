@@ -249,7 +249,8 @@ func (r *Root) runOpinionShow(inv *Invocation) (*Result, error) {
 			"id": o.ID, "title": o.Title, "domain": o.Domain, "status": o.Status,
 			"deprecated": o.Deprecated, "validation": o.Validation,
 			"created_at": o.CreatedAt, "updated_at": o.UpdatedAt, "path": o.Path,
-			"tags": o.Tags, "markers": o.Markers, "sections": o.Sections, "sources": o.Sources,
+			"tags": o.Tags, "markers": o.Markers, "sections": o.Sections,
+			"unknown_sections": o.UnknownSections, "sources": o.Sources,
 			"supports": o.Supports, "limits": o.Limits, "opposing": o.Opposing,
 			query.FieldDeleted: o.Deleted,
 		},
@@ -281,6 +282,9 @@ func opinionShowLines(view *query.OpinionShowResult) []string {
 		}
 		lines = append(lines, fmt.Sprintf("分区 %s：%s", name, firstLine(o.Sections.Get(name))))
 	}
+	// 非固定分区（用户自建 H2）：与 --json 的 unknown_sections 同源，共享 helper 渲染完整正文；
+	// 空数组不产生任何行（I-…-007，与 card show 同一口径）。
+	lines = append(lines, unknownSectionLines(o.UnknownSections)...)
 	// 材料出处 sources[]（空写「无」）。
 	if len(o.Sources) == 0 {
 		lines = append(lines, "材料出处 sources[]：无")

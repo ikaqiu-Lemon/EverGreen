@@ -106,6 +106,16 @@ func TestReadPathKOFourBackendEquivalence(t *testing.T) {
 	for i, d := range hdiags {
 		korAssertDegradeCodes(t, "healthy/"+labels[i], d, "")
 	}
+	// I-…-007：确保等价比对**非空覆盖** unknown_sections——healthy 投影里贝塔卡的非固定分区
+	// （解释与依据）与波里观点的非固定分区（附录）逐字令牌都在，四后端逐字等价才是真判据。
+	if !strings.Contains(healthy.CardJSON, korBetaUnknownTok) ||
+		!strings.Contains(healthy.CardJSON, "解释与依据") {
+		t.Fatalf("healthy 卡投影未包含 unknown_sections（贝塔遗留分区），等价比对将失去意义：%s", healthy.CardJSON)
+	}
+	if !strings.Contains(healthy.OpnJSON, korPoriUnknownTok) ||
+		!strings.Contains(healthy.OpnJSON, "附录") {
+		t.Fatalf("healthy 观点投影未包含 unknown_sections（波里附录），等价比对将失去意义：%s", healthy.OpnJSON)
+	}
 
 	// missing / corrupt / stale：各自在**新建的 healthy vault** 上破坏，再取投影（应降级为扫描）。
 	// 逐项断言降级码：missing 恰 W23+Q5、stale 恰 W22+Q5、corrupt 恰 W24+Q5；业务投影与 healthy 逐字等价。

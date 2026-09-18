@@ -83,20 +83,25 @@ func (s Sections) MarshalJSON() ([]byte, error) {
 
 // CardDetail 是单卡视图的 data 载荷（合同 §2.2 键表，**结构体字段序即键序**）。
 type CardDetail struct {
-	ID           string            `json:"id"`
-	Title        string            `json:"title"`
-	Domain       string            `json:"domain"`
-	Status       string            `json:"status"`
-	Deprecated   bool              `json:"deprecated"`
-	CreatedAt    string            `json:"created_at"`
-	UpdatedAt    string            `json:"updated_at"`
-	Path         string            `json:"path"`
-	Tags         []string          `json:"tags"`
-	Markers      []string          `json:"markers"`
-	Sections     Sections          `json:"sections"`
-	Sources      []model.SourceRef `json:"sources"`
-	RelationsOut []RelationEdge    `json:"relations_out"`
-	RelationsIn  []RelationEdge    `json:"relations_in"`
+	ID         string   `json:"id"`
+	Title      string   `json:"title"`
+	Domain     string   `json:"domain"`
+	Status     string   `json:"status"`
+	Deprecated bool     `json:"deprecated"`
+	CreatedAt  string   `json:"created_at"`
+	UpdatedAt  string   `json:"updated_at"`
+	Path       string   `json:"path"`
+	Tags       []string `json:"tags"`
+	Markers    []string `json:"markers"`
+	Sections   Sections `json:"sections"`
+	// UnknownSections 是**非固定分区**（v1 存量被移除的分区 + 用户自建 H2）的有序投影，紧随
+	// sections（I-…-007）。它与固定 sections 是两个正交字段：sections 键集合恒定为
+	// mdfile.CardSections() 三键、绝不因非固定分区扩张；被移除的 `解释与依据` / `理解自检`
+	// 只经此字段暴露。无非固定分区时是空数组（`[]`）。card 与 opinion 共用 UnknownSection 型。
+	UnknownSections []UnknownSection  `json:"unknown_sections"`
+	Sources         []model.SourceRef `json:"sources"`
+	RelationsOut    []RelationEdge    `json:"relations_out"`
+	RelationsIn     []RelationEdge    `json:"relations_in"`
 	// Deleted / Unreviewed 是 S2 两个新维度的判定值（合同 §6.2 的 `deleted` / `unreviewed`）。
 	// **追加在键表末尾**：§2.2 既有 14 键的名字与次序一字不改，只多两个新维度的事实字段。
 	// Unreviewed 由命令层经 WithUnreviewed 注入（判定只在 internal/query/filter，ADR-20）。
@@ -107,7 +112,7 @@ type CardDetail struct {
 // CardDataKeys 是 `card show` 的 data 键次序（合同 §2.2 键表次序）。
 func CardDataKeys() []string {
 	return []string{"id", "title", "domain", "status", "deprecated", "created_at",
-		"updated_at", "path", "tags", "markers", "sections", "sources",
+		"updated_at", "path", "tags", "markers", "sections", "unknown_sections", "sources",
 		"relations_out", "relations_in", FieldDeleted, FieldUnreviewed}
 }
 
@@ -240,8 +245,10 @@ func ShowCardPaged(root string, id model.CardID, deps IndexDeps, page PageSpec,
 			Status: target.Status, Deprecated: target.Deprecated,
 			CreatedAt: target.CreatedAt, UpdatedAt: target.UpdatedAt, Path: target.Path,
 			Tags: stringsOrEmpty(target.Tags), Markers: cardMarkers(*target),
-			Sections: cardSections(*target), Sources: sourcesOrEmpty(target.Sources),
-			RelationsOut: out, RelationsIn: in,
+			Sections:        cardSections(*target),
+			UnknownSections: unknownSections(target.Doc, target.Raw, mdfile.KindCard),
+			Sources:         sourcesOrEmpty(target.Sources),
+			RelationsOut:    out, RelationsIn: in,
 			Deleted: target.Deleted,
 		},
 		MissingTargets: missingTargets(universe, out),

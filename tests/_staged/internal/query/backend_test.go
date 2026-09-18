@@ -908,12 +908,14 @@ func TestRelDataKeysStillFive(t *testing.T) {
 	}
 }
 
-// TestCardShowDataKeysNotExpanded —— `eg card show` 的 data 键集合与次序**一字未动**。
+// TestCardShowDataKeysNotExpanded —— `eg card show` 的 data 键集合与次序钉死到**当前**权威合同。
 //
-// 判据是与 M3 冻结键表的**逐字**比对（不是「包含」也不是「至少」）：S4 一个键都没加。
+// 判据是与冻结键表的**逐字**比对（不是「包含」也不是「至少」）：I-…-007 起在 sections 后新增
+// unknown_sections（独立字段、暴露 v1 存量非固定分区），除此之外既有键的名字与次序一字不改；
+// 索引 / 后端事实仍绝不进 data（合同 §6.4）。
 func TestCardShowDataKeysNotExpanded(t *testing.T) {
 	want := []string{"id", "title", "domain", "status", "deprecated", "created_at",
-		"updated_at", "path", "tags", "markers", "sections", "sources",
+		"updated_at", "path", "tags", "markers", "sections", "unknown_sections", "sources",
 		"relations_out", "relations_in", FieldDeleted, FieldUnreviewed}
 	if !reflect.DeepEqual(CardDataKeys(), want) {
 		t.Fatalf("card show 的 data 键集合 / 次序被改动了：实际 %v，期望 %v", CardDataKeys(), want)

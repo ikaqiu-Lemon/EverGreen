@@ -144,9 +144,11 @@ func TestMarkers_JSONFields(t *testing.T) {
 			t.Fatalf("JSON 缺 %s：%s", want, raw)
 		}
 	}
-	// data 键序里两个新字段在末尾追加（既有 14 键的名字与次序不动）。
+	// data 键序里删除 / 过目两个新维度字段仍在**末尾**（既有键的名字与次序不动）：
+	// I-…-007 在 sections 后插入 unknown_sections，使总键数 15→16→17，deleted / unreviewed
+	// 相应右移到末两位，但两者「恒在表尾、按此固定顺序」的口径不变。
 	keys := query.CardDataKeys()
-	if len(keys) != 16 || keys[14] != "deleted" || keys[15] != model.FieldUnreviewed {
+	if len(keys) != 17 || keys[15] != "deleted" || keys[16] != model.FieldUnreviewed {
 		t.Fatalf("CardDataKeys 末两键应是 deleted / %s，实际 %v", model.FieldUnreviewed, keys)
 	}
 }

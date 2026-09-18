@@ -43,6 +43,10 @@ const (
 	osCounterTok = "zopinioncounterq"
 	osVerifyTok  = "zopinionverifyq"
 	osAppendTok  = "zopinionappendq"
+	// 两个非固定（未知）H2 分区的唯一令牌：一个跨多行、一个含围栏代码块内的伪 H2，
+	// 用来逐字反证 unknown_sections 取的是权威原文（多行 / 代码块逐字保留、不被误切）。
+	osExtra1Tok = "zopinionextraoneq"
+	osExtra2Tok = "zopinionextratwoq"
 )
 
 const osRichID = "o-20261207-scaling"
@@ -82,7 +86,10 @@ func osRichOpinion() string {
 		"## 论据与推理\n\n推理链条 " + osArgTok + "。\n\n" +
 		"## 条件与反例\n\n反例：短序列 " + osCounterTok + "。\n\n" +
 		"## 待验证\n\n待验证项 " + osVerifyTok + "。\n\n" +
-		"## 用户补充\n\n用户补充 " + osAppendTok + "。\n"
+		"## 用户补充\n\n用户补充 " + osAppendTok + "。\n\n" +
+		// 两个非固定 H2（自定义分区），落在五个固定分区之后，按源码顺序 附录一 → 附录二：
+		"## 附录一\n\n附录第一行 " + osExtra1Tok + "\n\n第二行仍在同一分区。\n\n" +
+		"## 附录二\n\n```\n## 伪标题不应被切成分区 " + osExtra2Tok + "\n```\n尾随文本。\n"
 }
 
 const osPlainID = "o-20261207-plain"
@@ -213,6 +220,59 @@ func TestShowOpinionSectionsValidationMarkersSources(t *testing.T) {
 	if len(o.Sources) != 1 || string(o.Sources[0].Source) != "s-20261207-paper" ||
 		string(o.Sources[0].Rel) != "support" {
 		t.Fatalf("sources = %+v，期望恰一条 s-20261207-paper/support", o.Sources)
+	}
+}
+
+// TestShowOpinionUnknownSectionsSharedIdiom —— I-…-007：opinion show 的 unknown_sections
+// 与 card show **共用同一套 DTO / 顺序 / 完整正文口径**（证明不是 card 特判）：自定义未知 H2
+// 按源码顺序、完整多行 / 代码块正文进入 unknown_sections；固定五键一格不变；无未知归一为 []。
+func TestShowOpinionUnknownSectionsSharedIdiom(t *testing.T) {
+	root := osVault(t)
+	rich, err := osShow(root, osRichID)
+	if err != nil {
+		t.Fatalf("Opinion show 失败：%v", err)
+	}
+	o := rich.Opinion
+
+	// 与 card 共用同一个 query.UnknownSection 类型（结构相同，非 card 私有）。
+	var _ []UnknownSection = o.UnknownSections
+
+	// 固定五键一格不变、不被未知分区扩张。
+	if got, want := strings.Join(o.Sections.Keys(), "|"),
+		strings.Join(mdfile.OpinionSections(), "|"); got != want {
+		t.Fatalf("固定五键被改动：%q，期望 %q", got, want)
+	}
+	for _, name := range mdfile.OpinionSections() {
+		if name == "附录一" || name == "附录二" {
+			t.Fatalf("未知分区混入固定五键：%v", o.Sections.Keys())
+		}
+	}
+
+	// unknown_sections 恰两段，按源码顺序 附录一 → 附录二。
+	if len(o.UnknownSections) != 2 {
+		t.Fatalf("unknown_sections 应恰 2 段，实际 %d：%+v", len(o.UnknownSections), o.UnknownSections)
+	}
+	if o.UnknownSections[0].Name != "附录一" || o.UnknownSections[1].Name != "附录二" {
+		t.Fatalf("unknown_sections 顺序错：%+v", o.UnknownSections)
+	}
+	// 附录一：多行正文逐字保留（含第二行）。
+	if !strings.Contains(o.UnknownSections[0].Body, osExtra1Tok) ||
+		!strings.Contains(o.UnknownSections[0].Body, "第二行仍在同一分区。") {
+		t.Fatalf("附录一 正文非完整多行：%q", o.UnknownSections[0].Body)
+	}
+	// 附录二：围栏代码块内的伪 H2 不得被切成新分区，令牌与 `## 伪标题` 逐字保留在正文里。
+	if !strings.Contains(o.UnknownSections[1].Body, osExtra2Tok) ||
+		!strings.Contains(o.UnknownSections[1].Body, "## 伪标题不应被切成分区") {
+		t.Fatalf("附录二 正文应逐字保留代码块内容：%q", o.UnknownSections[1].Body)
+	}
+
+	// 纯净观点（只有必填分区）：unknown_sections 归一为 []（非 nil）。
+	plain, err := osShow(root, osPlainID)
+	if err != nil {
+		t.Fatalf("Opinion show（plain）失败：%v", err)
+	}
+	if plain.Opinion.UnknownSections == nil || len(plain.Opinion.UnknownSections) != 0 {
+		t.Fatalf("plain 观点 unknown_sections 应为 []，实际 %+v", plain.Opinion.UnknownSections)
 	}
 }
 
@@ -579,9 +639,9 @@ func TestShowOpinionIDSemantics(t *testing.T) {
 // TestOpinionShowDoesNotExpandExistingContracts —— ⑤：既有 card / search JSON 键集合逐字不变；
 // 新投影的键序自洽且与既有合同解耦。
 func TestOpinionShowDoesNotExpandExistingContracts(t *testing.T) {
-	// card show data 键仍是冻结的 16 键（一字不改、不扩张）。
+	// card show data 键：I-…-007 起在 sections 后新增 unknown_sections（独立字段、不扩张固定 sections）。
 	wantCard := "id,title,domain,status,deprecated,created_at,updated_at,path,tags," +
-		"markers,sections,sources,relations_out,relations_in,deleted,unreviewed"
+		"markers,sections,unknown_sections,sources,relations_out,relations_in,deleted,unreviewed"
 	if got := strings.Join(CardDataKeys(), ","); got != wantCard {
 		t.Fatalf("CardDataKeys 被改动：\n got=%s\nwant=%s", got, wantCard)
 	}

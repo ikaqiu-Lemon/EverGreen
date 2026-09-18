@@ -38,8 +38,8 @@ func cardVault(t *testing.T) string {
 			"  - type: supports\n    target: k-20260902-b\n    reason: 支持 B\n"+
 			"  - type: opposing\n    target: k-20260903-c\n    reason: 与 C 冲突\n"+
 			"  - type: limits\n    target: k-20260909-none\n    reason: 指向不存在的卡\n"+
-			"---\n\n## 知识内容\n\n结论正文。\n\n## 解释与依据\n\n依据正文。\n\n"+
-			"## 条件与边界\n\n边界正文。\n\n## 用户补充\n\n用户写的。\n\n## 理解自检\n\n自检问题。\n")
+			"---\n\n## 知识内容\n\n结论正文。\n\n## 解释与依据\n\n依据正文首行。\n\n依据正文尾行 zcardrationaletail。\n\n"+
+			"## 条件与边界\n\n边界正文。\n\n## 用户补充\n\n用户写的。\n\n## 理解自检\n\n自检问题首行。\n\n自检尾行 zcardselfchecktail。\n")
 	writeFileMk(t, filepath.Join(dir, "domains", "ai-infra", "knowledge", "k-20260902-b.md"),
 		"---\nid: k-20260902-b\nstatus: active\ncreated_at: '2026-09-02'\n"+
 			"updated_at: '2026-09-02T10:00:00+08:00'\n"+
@@ -94,8 +94,8 @@ func TestCardShowDataKeyOrderMatchesContract(t *testing.T) {
 	}
 	assertKeyOrder(t, out, strings.Index(out, `"data":`), []string{
 		`"id":`, `"title":`, `"domain":`, `"status":`, `"deprecated":`, `"created_at":`,
-		`"updated_at":`, `"path":`, `"tags":`, `"markers":`, `"sections":`, `"sources":`,
-		`"relations_out":`, `"relations_in":`})
+		`"updated_at":`, `"path":`, `"tags":`, `"markers":`, `"sections":`, `"unknown_sections":`,
+		`"sources":`, `"relations_out":`, `"relations_in":`})
 	secAt := strings.Index(out, `"sections":`)
 	var secKeys []string
 	for _, name := range mdfile.CardSections() {
@@ -171,6 +171,78 @@ func TestCardShowFixedSectionKeys(t *testing.T) {
 	_, out, _ := runCLI(t, r, "--vault", dir, "card", "show", "k-20260902-b")
 	if !strings.Contains(out, "分区 "+mdfile.SecBoundary+"：（本分区缺失）") {
 		t.Fatalf("文本模式应标注缺失分区：%s", out)
+	}
+}
+
+// TestCardShowUnknownSectionsDualRendering —— I-…-007：存量 v1 卡的非固定分区在 JSON 与文本
+// 里都可见且同源同事实。JSON 的 unknown_sections 元素恰 name/body 两键，按源码顺序含
+// 解释与依据 → 理解自检，正文完整（含尾部唯一令牌，反证不是只显示首行）；固定 sections 不扩张；
+// 文本模式含每段名称与尾部令牌；纯 v2 卡的 unknown_sections 为空数组、文本无未知分区噪声。
+func TestCardShowUnknownSectionsDualRendering(t *testing.T) {
+	dir := cardVault(t)
+
+	_, env, _ := runCardShowJSON(t, dir, "k-20260901-a")
+	data, _ := env["data"].(map[string]interface{})
+	unk, ok := data["unknown_sections"].([]interface{})
+	if !ok {
+		t.Fatalf("data.unknown_sections 不是数组：%v", data["unknown_sections"])
+	}
+	if len(unk) != 2 {
+		t.Fatalf("unknown_sections 应恰 2 段，实际 %d：%v", len(unk), unk)
+	}
+	names := []string{}
+	for _, e := range unk {
+		m, _ := e.(map[string]interface{})
+		if len(m) != 2 {
+			t.Fatalf("unknown_sections 元素键应恰 name/body 两键，实际 %v", m)
+		}
+		if _, ok := m["name"]; !ok {
+			t.Fatalf("unknown_sections 元素缺 name：%v", m)
+		}
+		if _, ok := m["body"]; !ok {
+			t.Fatalf("unknown_sections 元素缺 body：%v", m)
+		}
+		names = append(names, fmt.Sprint(m["name"]))
+	}
+	if strings.Join(names, ",") != mdfile.SecRationale+","+mdfile.SecSelfCheck {
+		t.Fatalf("unknown_sections 顺序 = %v，期望 [解释与依据,理解自检]", names)
+	}
+	// 正文完整（尾部唯一令牌都在），反证不是只截首行。
+	blob, _ := json.Marshal(unk)
+	for _, tail := range []string{"zcardrationaletail", "zcardselfchecktail"} {
+		if !strings.Contains(string(blob), tail) {
+			t.Fatalf("unknown_sections 正文缺尾部令牌 %q（疑似只显示首行）：%s", tail, blob)
+		}
+	}
+	// 固定 sections 不因未知分区扩张：仍恰 CardSections() 键数。
+	sec, _ := data["sections"].(map[string]interface{})
+	if len(sec) != len(mdfile.CardSections()) {
+		t.Fatalf("固定 sections 键数被未知分区扩张：%v", sec)
+	}
+
+	// 文本模式：含每段名称与尾部令牌（完整正文），与 JSON 同源同事实。
+	r := newTestRoot(t, dir)
+	_, out, _ := runCLI(t, r, "--vault", dir, "card", "show", "k-20260901-a")
+	for _, want := range []string{
+		"非固定分区 " + mdfile.SecRationale, "非固定分区 " + mdfile.SecSelfCheck,
+		"zcardrationaletail", "zcardselfchecktail",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("文本模式缺未知分区事实 %q：%s", want, out)
+		}
+	}
+
+	// 纯 v2 卡：unknown_sections 空数组；文本不制造未知分区噪声。
+	_, env2, _ := runCardShowJSON(t, dir, "k-20260902-b")
+	data2, _ := env2["data"].(map[string]interface{})
+	unk2, ok := data2["unknown_sections"].([]interface{})
+	if !ok || len(unk2) != 0 {
+		t.Fatalf("纯 v2 卡 unknown_sections 应为空数组，实际 %v", data2["unknown_sections"])
+	}
+	r2 := newTestRoot(t, dir)
+	_, out2, _ := runCLI(t, r2, "--vault", dir, "card", "show", "k-20260902-b")
+	if strings.Contains(out2, "非固定分区 ") {
+		t.Fatalf("无未知分区时文本不应出现未知分区渲染：%s", out2)
 	}
 }
 

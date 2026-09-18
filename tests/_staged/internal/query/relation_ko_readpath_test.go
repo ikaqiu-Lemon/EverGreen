@@ -62,6 +62,11 @@ const (
 	korRPoriQuon  = "波里限制库恩"
 	korRDepBeta   = "废弃观点支撑贝塔"
 	korRDeadBeta  = "已删观点支撑贝塔"
+
+	// I-…-007：贝塔卡 / 波里观点各挂一个非固定分区的唯一令牌，用于四后端等价 + 零副作用
+	// 负控里逐字反证 unknown_sections 的取数（索引后端也须回权威 Markdown 派生同一份内容）。
+	korBetaUnknownTok = "zkorbetaunknowntok"
+	korPoriUnknownTok = "zkorporiunknowntok"
 )
 
 // korOpinion 造一条最小合法观点（frontmatter 键序符合 model.Opinion）。
@@ -106,14 +111,18 @@ func korVault(t *testing.T) string {
 		korRel("supports", korBetaID, korRAlphaBeta)+
 			korRel("supports", korPoriID, korRAlphaPori)+
 			korRel("opposing", korGhostID, korRAlphaGho)))
+	// I-…-007：贝塔（反向目标卡）额外挂一个非固定（v1 遗留）分区，让四后端等价与零副作用负控
+	// 真实覆盖 unknown_sections 的取数——索引后端也必须回权威 Markdown 逐字派生同一份未知分区。
 	bkWrite(t, root, k+"k-20270101-beta.md", bkCard(korBetaID, "贝塔", "active",
-		"2027-01-02T10:00:00+08:00", "  - 核心\n", ""))
+		"2027-01-02T10:00:00+08:00", "  - 核心\n", "")+
+		"\n## 解释与依据\n\n贝塔遗留依据 "+korBetaUnknownTok+"。\n")
 	bkWrite(t, root, k+"k-20270101-noise.md", bkCard(korNoiseID, "噪声", "active",
 		"2027-01-02T10:00:00+08:00", "  - 核心\n", ""))
 	bkWrite(t, root, store.OpinionRel("ai-infra", korPoriID),
 		korOpinion(korPoriID, "波里", "active", "pending", "",
 			korRel("supports", korBetaID, korRPoriBeta)+
-				korRel("limits", korQuonID, korRPoriQuon)))
+				korRel("limits", korQuonID, korRPoriQuon))+
+			"\n## 附录\n\n波里附录正文 "+korPoriUnknownTok+"。\n")
 	bkWrite(t, root, store.OpinionRel("ai-infra", korQuonID),
 		korOpinion(korQuonID, "库恩", "active", "validated", "", ""))
 	bkWrite(t, root, store.OpinionRel("ai-infra", korDepID),

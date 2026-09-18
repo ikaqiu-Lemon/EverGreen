@@ -27,6 +27,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
 )
 
@@ -37,6 +38,9 @@ const (
 	ocsCounterTok = "zclishowcounterq"
 	ocsVerifyTok  = "zclishowverifyq"
 	ocsAppendTok  = "zclishowappendq"
+	// 非固定 H2 分区的尾部唯一令牌：反证文本渲染的是完整正文而不是只截首行。
+	ocsExtra1Tok = "zclishowextraonetail"
+	ocsExtra2Tok = "zclishowextratwotail"
 )
 
 const (
@@ -83,7 +87,10 @@ func opinionShowVault(t *testing.T) string {
 			"## 论据与推理\n\n推理链条 "+ocsArgTok+"。\n\n"+
 			"## 条件与反例\n\n反例 "+ocsCounterTok+"。\n\n"+
 			"## 待验证\n\n待验证项 "+ocsVerifyTok+"。\n\n"+
-			"## 用户补充\n\n用户补充 "+ocsAppendTok+"。\n")
+			"## 用户补充\n\n用户补充 "+ocsAppendTok+"。\n\n"+
+			// 两个非固定 H2（自定义分区），落在五个固定分区之后，源码顺序 附录一 → 附录二：
+			"## 附录一\n\n附录第一行。\n\n附录尾行 "+ocsExtra1Tok+"。\n\n"+
+			"## 附录二\n\n```\n## 伪标题不应被切成分区\n```\n尾随文本 "+ocsExtra2Tok+"。\n")
 
 	writeFileMk(t, filepath.Join(dir, "domains", "ai-infra", "opinions", ocsPlainID+".md"),
 		"---\nid: "+ocsPlainID+"\nstatus: active\ncreated_at: '2026-12-07'\n"+
@@ -135,7 +142,7 @@ func TestOpinionShowJSONShapeAndAuthoritativeFacts(t *testing.T) {
 	// data 键序逐字 == query.OpinionDataKeys()（新投影，与 card/search 解耦、不扩张）。
 	gotKeys := dataKeysFromCLI(t, dir, "opinion", "show", ocsRichID)
 	wantKeys := "id,title,domain,status,deprecated,validation,created_at,updated_at,path," +
-		"tags,markers,sections,sources,supports,limits,opposing,deleted"
+		"tags,markers,sections,unknown_sections,sources,supports,limits,opposing,deleted"
 	if strings.Join(gotKeys, ",") != wantKeys {
 		t.Fatalf("opinion show data 键序 = %v，期望 %s", gotKeys, wantKeys)
 	}
@@ -185,7 +192,7 @@ func TestOpinionShowJSONShapeAndAuthoritativeFacts(t *testing.T) {
 	// 既有 card/search JSON 键集合零扩张（CLI 侧再核一次，与 query 侧 TestOpinionShowDoesNotExpand 呼应）。
 	cardKeys := dataKeysFromCLI(t, dir, "card", "show", "k-20261201-attention")
 	wantCard := "id,title,domain,status,deprecated,created_at,updated_at,path,tags," +
-		"markers,sections,sources,relations_out,relations_in,deleted,unreviewed"
+		"markers,sections,unknown_sections,sources,relations_out,relations_in,deleted,unreviewed"
 	if strings.Join(cardKeys, ",") != wantCard {
 		t.Fatalf("card show data 键被 opinion 接通污染：%v", cardKeys)
 	}
@@ -220,6 +227,76 @@ func TestOpinionShowTextRendersAllFacets(t *testing.T) {
 		if !strings.Contains(pout, want) {
 			t.Fatalf("朴素观点文本缺 %q：\n%s", want, pout)
 		}
+	}
+}
+
+// —— I-…-007：opinion show 的 unknown_sections 与 card show 同源同口径（JSON + 文本双呈现）——
+//
+// 自定义未知 H2（`附录一` 多行、`附录二` 含围栏代码块内伪 H2）在 JSON 里进 data.unknown_sections
+// （元素恰 name/body、按源码顺序、完整正文含尾部唯一令牌），固定五分区不扩张；文本模式用与 card
+// 相同的「非固定分区 <名称>」口径显示每段名称与完整正文；纯净观点 unknown_sections 为 []、文本无噪声。
+func TestOpinionShowUnknownSectionsDualRendering(t *testing.T) {
+	dir := opinionShowVault(t)
+
+	_, env, _ := runOpinionShowJSON(t, dir, ocsRichID)
+	data, _ := env["data"].(map[string]interface{})
+	unk, ok := data["unknown_sections"].([]interface{})
+	if !ok {
+		t.Fatalf("data.unknown_sections 不是数组：%v", data["unknown_sections"])
+	}
+	if len(unk) != 2 {
+		t.Fatalf("unknown_sections 应恰 2 段，实际 %d：%v", len(unk), unk)
+	}
+	names := []string{}
+	for _, e := range unk {
+		m, _ := e.(map[string]interface{})
+		if len(m) != 2 {
+			t.Fatalf("unknown_sections 元素键应恰 name/body 两键，实际 %v", m)
+		}
+		if _, ok := m["name"]; !ok {
+			t.Fatalf("unknown_sections 元素缺 name：%v", m)
+		}
+		if _, ok := m["body"]; !ok {
+			t.Fatalf("unknown_sections 元素缺 body：%v", m)
+		}
+		names = append(names, fmt.Sprint(m["name"]))
+	}
+	if strings.Join(names, ",") != "附录一,附录二" {
+		t.Fatalf("unknown_sections 顺序 = %v，期望 [附录一,附录二]", names)
+	}
+	// 正文完整（尾部唯一令牌 + 代码块内伪 H2 都在），反证不是只截首行。
+	blob, _ := json.Marshal(unk)
+	for _, tail := range []string{ocsExtra1Tok, ocsExtra2Tok, "## 伪标题不应被切成分区"} {
+		if !strings.Contains(string(blob), tail) {
+			t.Fatalf("unknown_sections 正文缺 %q（疑似只显示首行或误切代码块）：%s", tail, blob)
+		}
+	}
+	// 固定五分区不因未知分区扩张。
+	sec, _ := data["sections"].(map[string]interface{})
+	if len(sec) != len(mdfile.OpinionSections()) {
+		t.Fatalf("固定 sections 键数被未知分区扩张：%v", sec)
+	}
+
+	// 文本模式：与 card 同口径「非固定分区 <名称>」，含每段名称与完整正文尾部令牌。
+	_, out, _ := runOpinionCLI(t, dir, "show", ocsRichID)
+	for _, want := range []string{
+		"非固定分区 附录一", "非固定分区 附录二", ocsExtra1Tok, ocsExtra2Tok,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("文本模式缺未知分区事实 %q：\n%s", want, out)
+		}
+	}
+
+	// 纯净观点：unknown_sections 空数组；文本不制造未知分区噪声。
+	_, penv, _ := runOpinionShowJSON(t, dir, ocsPlainID)
+	pdata, _ := penv["data"].(map[string]interface{})
+	punk, ok := pdata["unknown_sections"].([]interface{})
+	if !ok || len(punk) != 0 {
+		t.Fatalf("纯净观点 unknown_sections 应为空数组，实际 %v", pdata["unknown_sections"])
+	}
+	_, pout, _ := runOpinionCLI(t, dir, "show", ocsPlainID)
+	if strings.Contains(pout, "非固定分区 ") {
+		t.Fatalf("无未知分区时文本不应出现未知分区渲染：\n%s", pout)
 	}
 }
 

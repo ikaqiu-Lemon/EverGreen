@@ -41,10 +41,12 @@ func cardCommand() *Command {
 
 定位走全库扫描（卡 ID 全库唯一，不限定领域）。同一 ID 出现在两处 → 取路径字典序最小者
 并记一条 Q1 如实说明重复，不静默择一。
-data 键序固定（§2.2）：id / title / domain / status / deprecated / created_at / updated_at /
-path / tags / markers / sections / sources / relations_out / relations_in。
-sections 键序固定为五分区声明序（F5）：知识内容 → 解释与依据 → 条件与边界 → 用户补充 → 理解自检；
+data 键序固定（§2.2 + I-…-007）：id / title / domain / status / deprecated / created_at / updated_at /
+path / tags / markers / sections / unknown_sections / sources / relations_out / relations_in。
+sections 键序固定为知识卡三分区声明序（F5 + 契约 D-7）：知识内容 → 条件与边界 → 用户补充；
 分区缺失时键仍在、值为空串，文本模式标注「（本分区缺失）」——分区缺失不属于 Q 系列。
+unknown_sections 是**非固定分区**（v1 存量被移除的 解释与依据 / 理解自检、以及用户自建 H2）的有序投影，
+与固定 sections 正交、不扩张 sections；无非固定分区时是空数组 []。
 relations_out[] = 本卡 frontmatter relations[]；relations_in[] = 全库反向扫描（不走索引）。
 排序（§3.3 + M5 §7.4 四级全序）：type 固定次序 opposing → limits → supports → derives →
 对端 ID 升序 → path 升序 → 条目输出全等标识（from|type|target|reason）升序，与后端无关可复算。
@@ -117,7 +119,7 @@ func (r *Root) runCardShow(inv *Invocation) (*Result, error) {
 			"id": c.ID, "title": c.Title, "domain": c.Domain, "status": c.Status,
 			"deprecated": c.Deprecated, "created_at": c.CreatedAt, "updated_at": c.UpdatedAt,
 			"path": c.Path, "tags": c.Tags, "markers": c.Markers,
-			"sections": c.Sections, "sources": c.Sources,
+			"sections": c.Sections, "unknown_sections": c.UnknownSections, "sources": c.Sources,
 			"relations_out": c.RelationsOut, "relations_in": c.RelationsIn,
 			query.FieldDeleted: c.Deleted, query.FieldUnreviewed: c.Unreviewed,
 		},
@@ -146,6 +148,9 @@ func cardSummaryLines(view *query.CardShowResult, c query.CardDetail) []string {
 		}
 		lines = append(lines, fmt.Sprintf("分区 %s：%s", name, firstLine(c.Sections.Get(name))))
 	}
+	// 非固定分区（v1 存量被移除的分区 + 用户自建 H2）：与 --json 的 unknown_sections 同源，
+	// 用共享 helper 渲染**完整正文**（不截首行、不只报数量）；空数组不产生任何行（I-…-007）。
+	lines = append(lines, unknownSectionLines(c.UnknownSections)...)
 	if len(c.Sources) == 0 {
 		lines = append(lines, "材料出处 sources[]：无")
 	}

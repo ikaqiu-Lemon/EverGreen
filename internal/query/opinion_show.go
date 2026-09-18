@@ -113,19 +113,24 @@ type RelationGroup struct {
 
 // OpinionDetail 是单条观点视图的 data 载荷（**结构体字段序即键序**，见 OpinionDataKeys）。
 type OpinionDetail struct {
-	ID         string            `json:"id"`
-	Title      string            `json:"title"`
-	Domain     string            `json:"domain"`
-	Status     string            `json:"status"`
-	Deprecated bool              `json:"deprecated"`
-	Validation string            `json:"validation"`
-	CreatedAt  string            `json:"created_at"`
-	UpdatedAt  string            `json:"updated_at"`
-	Path       string            `json:"path"`
-	Tags       []string          `json:"tags"`
-	Markers    []string          `json:"markers"`
-	Sections   OpinionSections   `json:"sections"`
-	Sources    []model.SourceRef `json:"sources"`
+	ID         string          `json:"id"`
+	Title      string          `json:"title"`
+	Domain     string          `json:"domain"`
+	Status     string          `json:"status"`
+	Deprecated bool            `json:"deprecated"`
+	Validation string          `json:"validation"`
+	CreatedAt  string          `json:"created_at"`
+	UpdatedAt  string          `json:"updated_at"`
+	Path       string          `json:"path"`
+	Tags       []string        `json:"tags"`
+	Markers    []string        `json:"markers"`
+	Sections   OpinionSections `json:"sections"`
+	// UnknownSections 是**非固定分区**（用户在观点里自建的 H2）的有序投影，紧随 sections
+	// （I-…-007）。与固定五分区正交：sections 键集合恒定为 mdfile.OpinionSections() 五键、
+	// 绝不因非固定分区扩张。无非固定分区时是空数组（`[]`）。**与 card show 共用 UnknownSection
+	// 型与同一取数 helper**（unknown_sections.go），两条读命令口径必然一致。
+	UnknownSections []UnknownSection  `json:"unknown_sections"`
+	Sources         []model.SourceRef `json:"sources"`
 	// Supports / Limits / Opposing 是三组论证关系（固定次序）；derives 不在其中。
 	Supports RelationGroup `json:"supports"`
 	Limits   RelationGroup `json:"limits"`
@@ -140,7 +145,7 @@ type OpinionDetail struct {
 // 本批一个既有键都不改、不扩张，新键只落在这一处。
 func OpinionDataKeys() []string {
 	return []string{"id", "title", "domain", "status", "deprecated", "validation",
-		"created_at", "updated_at", "path", "tags", "markers", "sections", "sources",
+		"created_at", "updated_at", "path", "tags", "markers", "sections", "unknown_sections", "sources",
 		"supports", "limits", "opposing", "deleted"}
 }
 
@@ -270,14 +275,15 @@ func ShowOpinionPaged(root string, id model.OpinionID, deps IndexDeps, page Page
 			Status: target.Status, Deprecated: target.Deprecated,
 			Validation: target.Validation,
 			CreatedAt:  target.CreatedAt, UpdatedAt: target.UpdatedAt, Path: target.Path,
-			Tags:     stringsOrEmpty(target.Tags),
-			Markers:  Markers(MarkerState{Deprecated: target.Deprecated, Deleted: target.Deleted}),
-			Sections: opinionSections(*target),
-			Sources:  sourcesOrEmpty(target.Sources),
-			Supports: RelationGroup{Forward: segs[0], Reverse: segs[1]},
-			Limits:   RelationGroup{Forward: segs[2], Reverse: segs[3]},
-			Opposing: RelationGroup{Forward: segs[4], Reverse: segs[5]},
-			Deleted:  target.Deleted,
+			Tags:            stringsOrEmpty(target.Tags),
+			Markers:         Markers(MarkerState{Deprecated: target.Deprecated, Deleted: target.Deleted}),
+			Sections:        opinionSections(*target),
+			UnknownSections: unknownSections(target.Doc, target.Raw, mdfile.KindOpinion),
+			Sources:         sourcesOrEmpty(target.Sources),
+			Supports:        RelationGroup{Forward: segs[0], Reverse: segs[1]},
+			Limits:          RelationGroup{Forward: segs[2], Reverse: segs[3]},
+			Opposing:        RelationGroup{Forward: segs[4], Reverse: segs[5]},
+			Deleted:         target.Deleted,
 		},
 		backend: backend,
 		Diagnostics: withTruncationDiagnostic(withIndexDegradedDiagnostics(
