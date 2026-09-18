@@ -62,7 +62,7 @@ tests/_staged/internal/cli/rel_add_test.go	unit	go	cli-core	unit.internal.cli	8	
 tests/_staged/internal/cli/rel_ko_test.go	unit	go	cli-core	unit.internal.cli	8	27391
 tests/_staged/internal/cli/rel_remove_test.go	unit	go	cli-core	unit.internal.cli	3	7970
 tests/_staged/internal/cli/rel_test.go	unit	go	cli-core	unit.internal.cli	10	14729
-tests/_staged/internal/cli/replaced_by_ko_cli_test.go	unit	go	cli-core	unit.internal.cli	1	2954
+tests/_staged/internal/cli/replaced_by_ko_cli_test.go	unit	go	cli-core	unit.internal.cli	2	5087
 tests/_staged/internal/cli/report_test.go	unit	go	cli-core	unit.internal.cli	10	16557
 tests/_staged/internal/cli/reserved_runtime_exit5_test.go	unit	go	cli-core	unit.internal.cli	3	12074
 tests/_staged/internal/cli/reviewed_test.go	unit	go	cli-core	unit.internal.cli	9	20407
@@ -112,7 +112,7 @@ tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	
 tests/_staged/internal/plan/precheck_test.go	unit	go	proposal	unit.internal.plan	3	3614
 tests/_staged/internal/plan/relation_ko_chain_test.go	unit	go	proposal	unit.internal.plan	4	14420
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	unit	go	proposal	unit.internal.plan	1	4129
-tests/_staged/internal/plan/replaced_by_ko_test.go	unit	go	proposal	unit.internal.plan	5	9514
+tests/_staged/internal/plan/replaced_by_ko_test.go	unit	go	proposal	unit.internal.plan	5	10217
 tests/_staged/internal/plan/set_stale_test.go	unit	go	proposal	unit.internal.plan	8	11798
 tests/_staged/internal/plan/state_write_m3_test.go	unit	go	proposal	unit.internal.plan	5	8274
 tests/_staged/internal/proposal/execution_test.go	unit	go	proposal	unit.internal.proposal	7	23034

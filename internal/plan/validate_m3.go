@@ -41,7 +41,7 @@ const (
 	// ActSetStatus 覆盖 status 单键。deprecate 与 restore **共用**这一种形态，
 	// 由载荷里的目标状态区分——状态维度只有一格可写，形态多了反而给出第二条写路径。
 	ActSetStatus ActionKind = "set_status_write" // M3 / S2
-	// ActSetReplacedBy 在失效卡上写替代指针（单向存储：只动主体这一份文件）。
+	// ActSetReplacedBy 在宿主端点（知识卡或观点）上写替代指针（单向存储：只动宿主这一份文件）。
 	ActSetReplacedBy ActionKind = "set_replaced_by_write" // M3 / S2
 	// ActMarkReviewed 覆盖过目信号单键（M4 · A-33：R2 的补齐复用 `mark_reviewed`，
 	// **不新增 op 名**）。写入面**逐键封闭**为那一个键：状态维度、删除维度、替代指针

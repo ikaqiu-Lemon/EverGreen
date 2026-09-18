@@ -25,7 +25,7 @@ package store
 // §2.1 矩阵第 8 行「由 CLI 在实际写入时更新」，两条路径无差别；唯一实现 updated_at.go）。
 // `reviewed_at` 与 `stale` 两种形态**结构性豁免**（签名里没有这一格可传）：过目不是对
 // 内容的修改（§5.5 EG-CFM-06），失准标记也不改内容（对账合同 §9）。
-//   - SetReplacedBy 只写失效卡自己的 `replaced_by`：**单向存储**，被指向的目标卡文件
+//   - SetReplacedBy 只写宿主端点（知识卡或观点）自己的 `replaced_by`：**单向存储**，被指向端点文件
 //     绝不打开、绝不改写（避免双写产生不一致的两份真相）。
 //   - SetDeleted 只写 deleted_at + deleted_reason（ClearDeleted 是其反向），同样
 //     **绝不碰 status**（正交维度）；四类产物（知识卡 / 笔记 / 原文 / 综述）字段名与
@@ -104,7 +104,7 @@ func (s *Store) SetStatus(rel string, expectedHash string, status model.Status,
 		}))
 }
 
-// SetReplacedBy 在**失效卡**上写替代指针 `replaced_by: {target: <id>, reason: "<text>"}`。
+// SetReplacedBy 在**宿主端点**（知识卡或观点）上写替代指针 `replaced_by: {target: <id>, reason: "<text>"}`。
 //
 // 单向存储：只动 rel 这一份文件；target 指向的那份产物不打开、不读、不写。
 // target 是跨类型端点（k- / o- 前缀）：迁移会让原 k- 卡的 replaced_by 指向新 o- 观点
@@ -317,7 +317,7 @@ func dropFMScalarKeys(doc *mdfile.Doc, keys []string) ([]byte, error) {
 const (
 	// StateWriteStatus 覆盖 status 单键（deprecate / restore 共用）。
 	StateWriteStatus = "status"
-	// StateWriteReplacedBy 在失效卡上写替代指针（单向存储）。
+	// StateWriteReplacedBy 在宿主端点（知识卡或观点）上写替代指针（单向存储）。
 	StateWriteReplacedBy = "replaced_by"
 	// StateWriteDeleted 是逻辑删除维度（写 deleted_at + deleted_reason；Clear 为真时清空）。
 	StateWriteDeleted = "deleted"

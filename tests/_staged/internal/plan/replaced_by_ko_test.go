@@ -161,7 +161,7 @@ func TestSetReplacedByW12DeprecatedPointeeAcrossKinds(t *testing.T) {
 	}
 }
 
-// —— ④ o- 自指仍 E2；非 k/o 端点与不存在端点仍 E2，零展开 ——
+// —— ④ o- 自指仍 E2；非 k/o 端点、不存在端点、真正畸形 ID 仍 E2，零展开 ——
 
 func TestSetReplacedByRejectsSelfAndNonKO(t *testing.T) {
 	cases := []struct {
@@ -174,6 +174,13 @@ func TestSetReplacedByRejectsSelfAndNonKO(t *testing.T) {
 		{"host_source", "s-20260901-attention", "k-20260815-rnn"},
 		{"pointee_missing_opinion", "k-20260901-attention", "o-20270101-missing"},
 		{"pointee_missing_knowledge", "o-20260901-view", "k-20270101-missing"},
+		// 真正畸形 ID（既非合法但不存在，也非 s-/n- 前缀）：连端点语法都不成立，
+		// relationEndpoint 在 ParseRelationEndpoint 阶段即判 E2，两端逐例覆盖。
+		{"host_malformed_date", "k-2026-attention", "k-20260815-rnn"},           // 日期段非 8 位
+		{"host_malformed_garble", "garble", "k-20260815-rnn"},                   // 无任何已知前缀
+		{"pointee_malformed_noslug", "k-20260901-attention", "k-20260901"},      // 缺 <yyyymmdd>-<slug>
+		{"pointee_malformed_empty_slug", "k-20260901-attention", "o-20260901-"}, // slug 段为空
+		{"pointee_malformed_garble", "o-20260901-view", "definitely-not-an-id"}, // 无任何已知前缀
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

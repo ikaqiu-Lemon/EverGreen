@@ -70,3 +70,39 @@ func TestSetReplacedByCLIAcrossKinds(t *testing.T) {
 		})
 	}
 }
+
+// TestReplacedByMissingTargetUsage：eg replaced-by 缺 --target 的用法错文案必须点名
+// **跨类型宿主端点**（<k|o-id>），而不再沿用三条 card-only 状态命令的 <k-id> / 目标卡漂移；
+// 同一份 requireStateTargetAndReason 下，deprecate / restore 缺 --target 仍逐字是 <k-id> 目标卡。
+//
+// 用非 --json 路径跑：用法错在人类可读模式下落到 stderr（错误：<msg>），便于逐字断言文案。
+func TestReplacedByMissingTargetUsage(t *testing.T) {
+	dir := rbCLIVault(t)
+
+	// replaced-by 缺 --target：退 1，文案给 <k|o-id> + 替代宿主端点，且不出现 card-only 的 <k-id>。
+	code, _, errOut := runCLI(t, newTestRoot(t, dir), "--vault", dir,
+		"replaced-by", "--to", rbCLIKTo, "--reason", "占位")
+	if code != ExitUsage {
+		t.Fatalf("replaced-by 缺 --target 退出码 = %d，期望 %d：%s", code, ExitUsage, errOut)
+	}
+	if !strings.Contains(errOut, "<k|o-id>") || !strings.Contains(errOut, "替代宿主端点") {
+		t.Fatalf("replaced-by 缺 --target 文案应含 <k|o-id> 与「替代宿主端点」，实得：%s", errOut)
+	}
+	if strings.Contains(errOut, "缺必填参数 --target <k-id>") || strings.Contains(errOut, "点名目标卡") {
+		t.Fatalf("replaced-by 缺 --target 文案不得沿用 card-only 的 <k-id>/目标卡，实得：%s", errOut)
+	}
+
+	// 反证：deprecate / restore 是 card-only 状态命令，缺 --target 仍是 <k-id> + 目标卡，不受本次改动影响。
+	for _, cmd := range []string{"deprecate", "restore"} {
+		code, _, errOut := runCLI(t, newTestRoot(t, dir), "--vault", dir, cmd, "--reason", "占位")
+		if code != ExitUsage {
+			t.Fatalf("%s 缺 --target 退出码 = %d，期望 %d：%s", cmd, code, ExitUsage, errOut)
+		}
+		if !strings.Contains(errOut, "缺必填参数 --target <k-id>") || !strings.Contains(errOut, "点名目标卡") {
+			t.Fatalf("%s 缺 --target 文案应保持 card-only 的 <k-id> + 目标卡，实得：%s", cmd, errOut)
+		}
+		if strings.Contains(errOut, "<k|o-id>") {
+			t.Fatalf("%s 是 card-only 命令，缺 --target 文案不得出现 <k|o-id>，实得：%s", cmd, errOut)
+		}
+	}
+}

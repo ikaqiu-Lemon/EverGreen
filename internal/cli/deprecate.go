@@ -143,6 +143,12 @@ func requireStateTargetAndReason(inv *Invocation, cmd string) error {
 		return err
 	}
 	if strings.TrimSpace(inv.String("target")) == "" {
+		// replaced-by 的宿主是跨类型端点（知识卡 k- 或观点 o-），文案区别于四条
+		// card-only 状态命令（deprecate / restore / delete / undelete 仍是 <k-id>）。
+		if cmd == "replaced-by" {
+			return &UsageError{Msg: "eg replaced-by 缺必填参数 --target <k|o-id>：" +
+				"替代指针必须点名替代宿主端点"}
+		}
 		return &UsageError{Msg: fmt.Sprintf(
 			"eg %s 缺必填参数 --target <k-id>：状态写入必须点名目标卡", cmd)}
 	}
