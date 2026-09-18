@@ -20,7 +20,7 @@
 # 因此「解析层失败」这一面能长期存活。
 #
 # 本 suite 锁死的判据（真实二进制；事实只回读 stdout / 退出码 / 盘面）：
-#   A **22 条命令表面 × 子命令位 `--json`**：注入一个未知 flag 后，每条都须
+#   A **23 条命令表面 × 子命令位 `--json`**（M5 22 + T-…-006 opinion 1）：注入一个未知 flag 后，每条都须
 #     退 `1` + stdout 是**合法 JSON** + 恰五键 + `exit_code == 1`（与进程退出码逐字相同）
 #     + `status == "failed"` + `ok == false` + `data.errors[]` 至少 1 条 `level=error`
 #     且 `code` 非空并落编号域（I-…-015 纪律）。
@@ -167,11 +167,12 @@ mkdir -p "${VAULT}"
 "${EG}" --vault "${VAULT}" init >/dev/null 2>&1 || die "init 失败"
 ok "二进制就绪：$("${EG}" --version </dev/null | head -1)"
 
-# 22 条命令表面（顶层注册表，见 2027-01-17-m5-release-and-version.md）；
-# SubRequired 的四条（config / card / rel / proposal / index）连带一个合法子动词一起打。
+# 命令表面（M5 基线 22 条 + T-…-006 新增 opinion = 恰 23 条，
+# 见 2027-01-17-m5-release-and-version.md 与读路径 CLI 拆分设计 §5.4）；
+# SubRequired 的几条（config / card / rel / proposal / index / opinion）连带一个合法子动词一起打。
 CMDS=(init config capture context apply search card rel report deprecate restore
       replaced-by proposal delete undelete mark-reviewed unreviewed edit reconcile
-      check index bench)
+      check index bench opinion)
 # SUBS：命令 → 需要一起给出的子动词（其余为空）
 sub_of() {
   case "$1" in
@@ -180,15 +181,18 @@ sub_of() {
     rel)      echo "add" ;;
     proposal) echo "list" ;;
     index)    echo "status" ;;
+    # opinion 用**只读的 show**：解析失败发生在 flag 解析层（早于 Validate），
+    # 绝不触碰 validate/reject 写路径骨架，本 suite 只验解析层信封不缺键。
+    opinion)  echo "show" ;;
     *)        echo "" ;;
   esac
 }
-[ "${#CMDS[@]}" = "22" ] || die "命令表面应恰 22 条，实得 ${#CMDS[@]}"
+[ "${#CMDS[@]}" = "23" ] || die "命令表面应恰 23 条（M5 22 + opinion 1），实得 ${#CMDS[@]}"
 
 BEFORE_VAULT="$(snapshot)"
 
 # ---------------------------------------------------------------- 1. A 段
-step "A 22 条命令 × 子命令位 --json + 未知 flag：退 1 且五键信封在场"
+step "A 23 条命令 × 子命令位 --json + 未知 flag：退 1 且五键信封在场"
 A_FAIL=0
 for c in "${CMDS[@]}"; do
   s="$(sub_of "${c}")"
@@ -201,7 +205,7 @@ for c in "${CMDS[@]}"; do
   envelope_check "${RC}" "eg ${c} ${s} --bogus-flag-xyz --json" || A_FAIL=1
 done
 [ "${A_FAIL}" = "0" ] || die "A 段：子命令位 --json 在参数解析失败时丢了信封（合同 §3 五键必有）"
-ok "22 条命令表面在解析失败时全部输出五键信封（退 1、status=failed、errors[] 带编号）"
+ok "23 条命令表面在解析失败时全部输出五键信封（退 1、status=failed、errors[] 带编号）"
 
 # ---------------------------------------------------------------- 2. B 段
 step "B 反证：去掉 --json 时不得输出 JSON 信封（不许修成恒 JSON）"
@@ -218,7 +222,7 @@ for c in "${CMDS[@]}"; do
     die "eg ${c} ${s} 未带 --json 却输出了 JSON 信封 —— 修法错了（应按输出格式意图分流，不是恒 JSON）"
   fi
 done
-ok "22 条命令在不带 --json 时保持人类可读面（stdout 无信封）"
+ok "23 条命令在不带 --json 时保持人类可读面（stdout 无信封）"
 
 # ---------------------------------------------------------------- 3. C 段
 step "C 两个位置等价：全局位与子命令位的信封在 ok/exit_code/status 上逐字一致"

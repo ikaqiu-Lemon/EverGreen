@@ -9,7 +9,7 @@ tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	11	23378
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24284
-tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	55058
+tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	55449
 tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	15	37438
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
@@ -37,7 +37,8 @@ tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
-tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	7	12365
+tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	7	13152
+tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	unit	go	cli-core	unit.internal.cli	5	12117
 tests/_staged/internal/cli/opinion_search_test.go	unit	go	cli-core	unit.internal.cli	17	25149
 tests/_staged/internal/cli/opinion_show_test.go	unit	go	cli-core	unit.internal.cli	10	25264
 tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6989
@@ -249,10 +250,10 @@ tests/e2e/card-query/card_show.sh	e2e	shell	card-query	e2e.card-query.card_show	
 tests/e2e/card-query/context_polish.sh	e2e	shell	card-query	e2e.card-query.context_polish	40	10691
 tests/e2e/card-query/search.sh	e2e	shell	card-query	e2e.card-query.search	49	8964
 tests/e2e/cli-core/c2_error_code_numbered.sh	e2e	shell	cli-core	e2e.cli-core.c2_error_code_numbered	20	17846
-tests/e2e/cli-core/c2_json_envelope_parse_failure.sh	e2e	shell	cli-core	e2e.cli-core.c2_json_envelope_parse_failure	31	14175
+tests/e2e/cli-core/c2_json_envelope_parse_failure.sh	e2e	shell	cli-core	e2e.cli-core.c2_json_envelope_parse_failure	31	14548
 tests/e2e/cli-core/c2_readonly_exit_closed_set.sh	e2e	shell	cli-core	e2e.cli-core.c2_readonly_exit_closed_set	23	12030
 tests/e2e/cli-core/c2_warning_bucket_split.sh	e2e	shell	cli-core	e2e.cli-core.c2_warning_bucket_split	19	15913
-tests/e2e/cli-core/d1_cli_surface.sh	e2e	shell	cli-core	e2e.cli-core.d1_cli_surface	54	19190
+tests/e2e/cli-core/d1_cli_surface.sh	e2e	shell	cli-core	e2e.cli-core.d1_cli_surface	54	19882
 tests/e2e/cli-core/d2_error_authority.sh	e2e	shell	cli-core	e2e.cli-core.d2_error_authority	101	27900
 tests/e2e/docs-cli/d4_dist_docs_platform.sh	e2e	shell	docs-cli	e2e.docs-cli.d4_dist_docs_platform	124	29203
 tests/e2e/docs-cli/docs_cli_authorization_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_authorization_and_limits	60	21668

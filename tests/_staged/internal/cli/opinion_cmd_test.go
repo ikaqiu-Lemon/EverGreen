@@ -8,7 +8,9 @@ package cli
 //
 // B1b-cli 起：`search` 子命令**已接通**只读检索；B2b 起：`show` 子命令**已接通**只读单条观点视图
 // （行为判据见 opinion_search_test.go / opinion_show_test.go）。其余两条 validate/reject **仍是
-// 未挂载骨架**（合法形态走 NotWiredError，退 1、零写入零 commit）。
+// 未挂载骨架**：D 批补齐用法 / 退出码 / 授权合同后，授权齐备（非空 --reason + --user-request）才走到
+// NotWiredError（退 1、零写入零 commit）；缺 / 空 reason 或读 flag 先判用法错退 1，缺 --user-request
+// 判授权失败退 2（E19）—— 逐字段与顺序判据见 opinion_lifecycle_skeleton_test.go。
 //
 // 覆盖：① 子命令封闭集与顺序；② --help 恰列 23 条且 opinion 恰一行；③ 命令数 22+1=23
 // 加法等式；④ 缺/未知子命令退 1；⑤ search/show/validate/reject 位置参数个数校验；
@@ -263,13 +265,16 @@ func TestOpinionSearchShowWiredValidateRejectNotWired(t *testing.T) {
 		t.Fatal("eg opinion show 是只读视图：不得改动工作区或产生 commit")
 	}
 
-	// validate / reject 仍是未挂载骨架：合法形态一律 NotWired（退 1、零写入零 commit）。
+	// validate / reject 仍是未挂载骨架：**授权齐备**（非空 --reason + --user-request）时越过 Validate
+	// 与授权判定，止步于未挂载的状态机实现 → NotWired（退 1、零写入零 commit）。D 批补齐的骨架合同
+	// 下，validate/reject 必带非空 --reason 且必带命令行 --user-request 才走到这一步（缺任一分别退
+	// 1 / 2，见 opinion_lifecycle_skeleton_test.go）；这里只钉「授权齐备仍 NotWired」这一末端语义。
 	for _, tc := range []struct {
 		name string
 		args []string
 	}{
-		{"validate <o-id>", []string{"validate", validID}},
-		{"reject <o-id>", []string{"reject", validID}},
+		{"validate <o-id> 授权齐备", []string{"validate", validID, "--reason", "证据已充分复核", "--user-request"}},
+		{"reject <o-id> 授权齐备", []string{"reject", validID, "--reason", "论证不成立", "--user-request"}},
 	} {
 		code, _, errOut := runOpinionCLI(t, dir, tc.args...)
 		if code != ExitUsage {

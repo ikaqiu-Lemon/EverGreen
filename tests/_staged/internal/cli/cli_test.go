@@ -202,17 +202,20 @@ var wantFlags = map[string][]string{
 	// 全量重算 content_hash」只读开关，且只对 status 有语义）；`--limit` 等分页参数属
 	// T-…-068，仍不声明 → 传入即由参数解析当场判非法 → 退 1、零写入。
 	"index": {"strict"},
-	// 读路径 opinion 命令（T-…-006 批次 B2b：接通 search + show）：父命令注册 **8 个**读 flag
-	// —— search 复用 `eg search` 口径的检索 / 分页 flag（domain / 可重复 tag / since / until /
-	// include-deleted / limit / offset），外加 show 专属的对端可见性开关 include-deprecated。
-	// **刻意不注册 --kind**：opinion 检索面天然只搜观点（runOpinionSearch 把 Kind 固定成 opinion），
-	// 再给 kind 开关就是多余且可诱导误用；`eg opinion search --kind …` 因此被参数解析当场判成
-	// 「未定义 flag」→ 退 1、零写入。
-	// 这 8 个 flag 都注册在父命令上（FlagSet 分不清子命令），因此每条子命令都会**解析**到它们；
-	// 各子命令按分域显式拒绝不属于自己的读 flag（见 validateOpinionArgs 的 rejectOpinionFlags）：
-	// search 拒 include-deprecated、show 拒检索过滤 flag、validate/reject 拒全部读 flag，
-	// 绝不静默接受 —— 「参数写了却不生效」比报错更坏。
-	"opinion": {"domain", "tag", "since", "until", "include-deleted", "include-deprecated", "limit", "offset"},
+	// 读路径 opinion 命令（T-…-006 批次 B2b 接通 search + show；D 批补齐 validate/reject 骨架合同）：
+	// 父命令注册 **9 个** flag —— 8 个读 flag（search 复用 `eg search` 口径的检索 / 分页 flag：
+	// domain / 可重复 tag / since / until / include-deleted / limit / offset，外加 show 专属的对端
+	// 可见性开关 include-deprecated），再加 **1 个写路径 flag** `--reason`（观点验证 / 驳回理由，
+	// 只作用于 validate / reject）。**刻意不注册 --kind**：opinion 检索面天然只搜观点
+	// （runOpinionSearch 把 Kind 固定成 opinion），再给 kind 开关就是多余且可诱导误用；
+	// `eg opinion search --kind …` 因此被参数解析当场判成「未定义 flag」→ 退 1、零写入。
+	// **刻意不注册 --reopen**：观点重开属 T-007 状态机，本骨架批一格不碰。
+	// 这 9 个 flag 都注册在父命令上（FlagSet 分不清子命令），因此每条子命令都会**解析**到它们；
+	// 各子命令按分域显式拒绝不属于自己的 flag（见 validateOpinionArgs 的 rejectOpinionFlags）：
+	// search 拒 include-deprecated + reason、show 拒检索过滤 flag + reason、
+	// validate/reject 拒全部读 flag 但**必带**非空 --reason，绝不静默接受 ——
+	// 「参数写了却不生效」比报错更坏。--reason 的合同出处与 delete / proposal / capture 同源。
+	"opinion": {"domain", "tag", "since", "until", "include-deleted", "include-deprecated", "limit", "offset", "reason"},
 }
 
 var globalFlagNames = []string{"json", "vault", "help", "h"}

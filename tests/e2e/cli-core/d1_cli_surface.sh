@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# D1 审计：22 个 `eg` 命令的表面合同与用户工作流边界（system_assurance · T-…-009）。
+# D1 审计：23 个 `eg` 命令的表面合同与用户工作流边界（system_assurance · T-…-009）。
+# 总量口径：M5 历史基线 22 + T-006 opinion 1 = 当前 23（M5 合同文档一字不改，见下）。
 #
 # 判据来源（声明面）：
 #   `2026-09-01-eg-cli-contract.md` §1 命令面 / §3 `--json` 信封五键 / §4 退出码；
 #   `2026-09-19-m2-query-contract.md` §1.6 / §6（只读命令零副作用）；
 #   `2026-10-10-m3-user-authorization-contract.md`（P-A / P-U 写权限矩阵、二次确认）；
 #   `2026-10-10-m3-proposal-state-contract.md`（提案状态机与 delete 的提案前置）；
-#   `2027-01-17-m5-release-and-version.md`（顶层命令注册表总量 = 22）。
+#   `2027-01-17-m5-release-and-version.md`（顶层命令注册表 M5 基线总量 = 22；
+#     T-…-006 在其后新增 opinion 一条只读检索子系统 → 当前总量 = 23）。
 #
 # 为什么需要这支 suite：D1 审计（审计方法合同
 # `2027-03-10-system-audit-method-contract.md` §2 三面对照）发现下列「声明面有、实现面
@@ -16,12 +18,12 @@
 #
 # 本 suite 锁死的判据（每条都在真实临时 vault 上驱动真实二进制，事实只回读文件字节 /
 # git 自己 / eg 自己的 `--json` 信封，不看实现自报）：
-#   A 命令注册面：顶层 `--help` 命令区条目数恰 22；22 个命令名逐一在册；
+#   A 命令注册面：顶层 `--help` 命令区条目数恰 23（M5 22 + opinion 1）；23 个命令名逐一在册；
 #     每个 `eg <cmd> --help` 退 0（`--help` 合同）。
-#   B `--json` 信封面：22 个命令的裸调用输出恰含 `ok/data/warnings/exit_code/status`
+#   B `--json` 信封面：23 个命令的裸调用输出恰含 `ok/data/warnings/exit_code/status`
 #     五键（无论退出码），信封不因命令而缺键。
-#   C 只读零副作用：9 条只读读路径（context/search/card show/rel/report/unreviewed/
-#     check/index status/bench）前后 `git status --porcelain`、commit 数、
+#   C 只读零副作用：10 条只读读路径（context/search/card show/rel/report/unreviewed/
+#     check/index status/bench/opinion search）前后 `git status --porcelain`、commit 数、
 #     `domains|sources|proposals` 全量 sha256 逐字相等。
 #   D 参数面退出码 1：缺必填 / 未知 flag / 多余位置参数 / 未知子命令。
 #   E 目标不存在退出码 2（零写入）：deprecate/restore/mark-reviewed/edit/replaced-by。
@@ -74,10 +76,11 @@ command -v python3 >/dev/null || die "本脚本用 python3 做 --json 信封键�
 # 而不是「工作树必须干净」—— 后者会把「新文件还没提交」误判成越界。
 BEFORE_REPO_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 
-# 顶层命令注册表（M5 后恰 22 条，见 2027-01-17-m5-release-and-version.md）
+# 顶层命令注册表（M5 基线 22 条 + T-…-006 新增 opinion = 恰 23 条，
+# 见 2027-01-17-m5-release-and-version.md 与读路径 CLI 拆分设计 §5.4）
 CMDS=(init config capture context apply search card rel report deprecate restore
       replaced-by proposal delete undelete mark-reviewed unreviewed edit reconcile
-      check index bench)
+      check index bench opinion)
 
 # envelope_keys <json文件>：回显缺失的信封键（空 = 五键齐全）
 envelope_missing() {
@@ -119,7 +122,7 @@ step "构建 eg（CGO_ENABLED=0，与发布口径一致）"
 ok "二进制就绪：$("${EG}" --version </dev/null | head -1)"
 
 # ---------------------------------------------------------------- 1. A 命令注册面
-step "A 命令注册面：顶层 --help 命令区恰 22 条，且逐条 --help 退 0"
+step "A 命令注册面：顶层 --help 命令区恰 23 条（M5 22 + opinion 1），且逐条 --help 退 0"
 eg --help >"${WORK}/help.txt" 2>&1 || die "eg --help 应退 0"
 python3 - "${WORK}/help.txt" >"${WORK}/listed.txt" <<'PY'
 import re, sys
@@ -133,15 +136,15 @@ for l in lines[start + 1:end]:
 PY
 LISTED="$(sort -u "${WORK}/listed.txt")"
 LISTED_N="$(printf '%s\n' "${LISTED}" | grep -c . || true)"
-[ "${LISTED_N}" = "22" ] ||
-  die "顶层 --help 命令区应恰列 22 条命令，实际 ${LISTED_N} 条：$(printf '%s' "${LISTED}" | tr '\n' ' ')"
+[ "${LISTED_N}" = "23" ] ||
+  die "顶层 --help 命令区应恰列 23 条命令（M5 22 + opinion 1），实际 ${LISTED_N} 条：$(printf '%s' "${LISTED}" | tr '\n' ' ')"
 for c in "${CMDS[@]}"; do
   printf '%s\n' "${LISTED}" | grep -qx "${c}" || die "顶层 --help 未列出命令 ${c}"
 done
 for c in "${CMDS[@]}"; do
   [ "$(code "${c}" --help)" = "0" ] || { cat "${WORK}/out.txt"; die "eg ${c} --help 应退 0"; }
 done
-ok "命令区恰 22 条且与注册表逐一对应；22 个 <cmd> --help 全部退 0"
+ok "命令区恰 23 条且与注册表逐一对应；23 个 <cmd> --help 全部退 0"
 
 # ---------------------------------------------------------------- 2. seed vault
 step "seed：走真实主链路 init → config → capture → context → apply（不手工造盘面）"
@@ -186,16 +189,16 @@ PLAN
 ok "vault 就绪：1 篇原文 + 1 篇笔记 + 2 张卡，索引 healthy，工作区干净（commit 数 $(log_count)）"
 
 # ---------------------------------------------------------------- 3. B 信封五键
-step "B --json 信封面：22 个命令的裸调用恰含 ok/data/warnings/exit_code/status 五键"
+step "B --json 信封面：23 个命令的裸调用恰含 ok/data/warnings/exit_code/status 五键"
 for c in "${CMDS[@]}"; do
   code "${c}" --json >/dev/null || true
   miss="$(envelope_missing "${WORK}/out.txt")"
   [ -z "${miss}" ] || { cat "${WORK}/out.txt"; die "eg ${c} --json 信封缺键：${miss}"; }
 done
-ok "22 个命令的 --json 信封五键齐全（含参数非法/校验失败等非零路径）"
+ok "23 个命令的 --json 信封五键齐全（含参数非法/校验失败等非零路径）"
 
 # ---------------------------------------------------------------- 4. C 只读零副作用
-step "C 只读零副作用：9 条读路径前后权威面逐字相等（M2 §6）"
+step "C 只读零副作用：10 条读路径前后权威面逐字相等（M2 §6）"
 snapshot >"${WORK}/before.txt"
 RO_OK=0
 run_ro() { # $1=描述，其余=命令
@@ -214,6 +217,9 @@ run_ro "check" check
 run_ro "index status" index status
 run_ro "index status --strict" index status --strict
 run_ro "bench" bench
+# opinion 的只读检索子路径（T-…-006）：与其它读命令同口径零副作用；**刻意只跑 search**，
+# 绝不触碰 validate/reject 写路径骨架（那两条属写命令语义，不在只读零副作用面内）。
+run_ro "opinion search（只读观点检索）" opinion search 'D1'
 snapshot >"${WORK}/after.txt"
 diff -u "${WORK}/before.txt" "${WORK}/after.txt" >"${WORK}/ro.diff" ||
   { cat "${WORK}/ro.diff"; die "只读命令改动了权威面"; }
