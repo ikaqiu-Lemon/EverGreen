@@ -187,7 +187,7 @@ tests/_staged/internal/store/state_write_replaced_by_endpoint_test.go	unit	go	st
 tests/_staged/internal/store/state_write_stale_test.go	unit	go	storage-markdown	unit.internal.store	6	10360
 tests/_staged/internal/store/state_write_style_test.go	unit	go	storage-markdown	unit.internal.store	5	7583
 tests/_staged/internal/store/state_write_test.go	unit	go	storage-markdown	unit.internal.store	5	9424
-tests/_staged/internal/store/state_write_validation_test.go	unit	go	storage-markdown	unit.internal.store	11	15920
+tests/_staged/internal/store/state_write_validation_test.go	unit	go	storage-markdown	unit.internal.store	13	19721
 tests/_staged/internal/store/store_test.go	unit	go	storage-markdown	unit.internal.store	20	29033
 tests/_staged/internal/store/updated_at_test.go	unit	go	storage-markdown	unit.internal.store	8	13056
 tests/_staged/internal/store/writers_test.go	unit	go	storage-markdown	unit.internal.store	14	19831

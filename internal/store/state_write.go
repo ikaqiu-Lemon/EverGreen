@@ -275,8 +275,12 @@ func (s *Store) SetStale(rel string, expectedHash string, reason model.StaleReas
 //   - **action 不自报**：动作只能由 (from,to) 经 model.ValidationTransition 解析得到，
 //     自环 / rejected->validated 逆向跳变 / 非法端点在状态机处即被拒（零写入）。
 //   - **from 取自权威 frontmatter**：经 OpinionOf 读当前 validation，并借此确认目标确是
-//     合法 Opinion —— wrong-kind（知识卡等）/ 坏 FM / 缺 validation 键 / 重复键 / 非标量
-//     都在候选构造阶段失败，一律零字节写入。
+//     合法 Opinion —— wrong-kind（知识卡等分区不匹配）/ 坏 FM / 缺 validation 键 / 重复键 /
+//     非标量都在候选构造阶段失败，一律零字节写入。OpinionOf 只校验分区结构，**不校验 id 前缀**，
+//     故再显式 model.ParseOpinionID(op.ID)：id 非 o-（伪装成五分区的 k-* / 空 / 畸形）同样零写入。
+//   - **三键同成同败**：一次合法流转覆盖 validation、刷新 updated_at、追加审计块三者缺一不可；
+//     既有 updated_at 必须是唯一单行标量，缺键 / 重复键 / 非标量在任何区间改写之前即拒绝
+//     （零写入），不借共享 refreshUpdatedAt「缺键不新增」的历史口径把 updated_at 悄悄漏刷。
 //   - **绝不碰别的维度**：只覆盖 validation 单行，绝不碰 status（正交维度）、绝不动其它
 //     frontmatter 键 / 其它分区 / 未知字段 / 未知分区 / 用户补充；除三处受控改动外全文件
 //     字节保真（不做整文件 YAML 序列化回写）。
@@ -308,6 +312,24 @@ func (s *Store) SetValidation(rel string, expectedHash string, to model.Validati
 			op, err := OpinionOf(f.Bytes)
 			if err != nil {
 				return nil, err
+			}
+			// OpinionOf 只做 Decode + 分区结构校验，**不校验 id 前缀**：一份伪装成观点五分区、
+			// validation / updated_at 均合法、但 frontmatter id 为 k-* / 空 / 畸形前缀的文件会
+			// 通过 OpinionOf。此处显式校验 id 前缀（**只校验、不越界做路径 / ID 重构**），杜绝把
+			// 非观点当观点改写——不合法即在任何区间改写之前拒绝（零写入）。
+			if _, err := model.ParseOpinionID(string(op.ID)); err != nil {
+				return nil, err
+			}
+			// 本形态三键**同成同败**：除 validation 外，updated_at 必被刷新，因此它同样是本次真正
+			// 被改写的键。既有 updated_at 必须是唯一单行标量——缺键 / 重复键 / 非标量都在**任何
+			// 区间改写之前**一律拒绝（零写入），否则会落出「validation + 审计块写了、updated_at
+			// 没刷新」的半截产物。这是 SetValidation 的**局部**加严：共享 refreshUpdatedAt 对
+			// 「缺键不新增」的口径服务于其它历史写形态，本处不放宽、也不改写它。
+			if _, _, found, err := fmScalarKeySpan(doc, fmKeyUpdatedAt); err != nil {
+				return nil, err
+			} else if !found {
+				return nil, fmt.Errorf("%w：%s（validation 落盘要求既有 updated_at 与之同步刷新）",
+					ErrFMKeyNotFound, fmKeyUpdatedAt)
 			}
 			from := op.Validation
 			// action 只能由状态机从 (from,to) 解析：非法边（自环 / 逆跳）在此零写入拒绝。

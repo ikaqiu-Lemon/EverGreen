@@ -371,3 +371,78 @@ func TestSetValidation_OneGuardedWriteBySource(t *testing.T) {
 		t.Fatalf("SetValidation 内 mutateGuarded 调用数 = %d，必须恰 1（单次守卫写 / 单次 persist）", n)
 	}
 }
+
+// TestSetValidation_UpdatedAtMissingDuplicateNonScalarZeroWrite：本形态三键**同成同败**。
+// SetValidation 除覆盖 `validation` 外，还必然刷新既有 `updated_at`——因此 `updated_at`
+// 与 `validation` 一样，是本次真正被改写的键。缺 `updated_at` 键 / 重复键 / 非标量都必须在
+// 任何区间改写之前被拒（报错 + 全文零字节写入）：否则会落出「validation + 审计块写了、
+// updated_at 没刷新」的半截产物（共享 refreshUpdatedAt 对缺键是「原样返回不新增」，那条
+// 口径服务于历史写形态，不能让本形态借它把 updated_at 悄悄漏刷）。
+func TestSetValidation_UpdatedAtMissingDuplicateNonScalarZeroWrite(t *testing.T) {
+	cases := map[string]string{
+		"缺 updated_at 键": strings.Replace(opinionValidationSample,
+			"updated_at: '"+oldStampLiteral+"'\n", "", 1),
+		"updated_at 重复键": strings.Replace(opinionValidationSample,
+			"updated_at: '"+oldStampLiteral+"'\n",
+			"updated_at: '"+oldStampLiteral+"'\nupdated_at: '2026-09-02T10:00:00+08:00'\n", 1),
+		"updated_at 非标量": strings.Replace(opinionValidationSample,
+			"updated_at: '"+oldStampLiteral+"'\n", "updated_at:\n  nested: true\n", 1),
+	}
+	for name, content := range cases {
+		s, root := newVault(t)
+		abs := writeSeed(t, root, opinionValidationRel, content)
+		before := mustBytes(t, abs)
+		f, err := s.Read(opinionValidationRel)
+		if err != nil {
+			// 读阶段失败同样是零写入（文件未变）；直接比对字节。
+			if got := mustBytes(t, abs); !bytes.Equal(got, before) {
+				t.Fatalf("%s：读失败也必须零改动", name)
+			}
+			continue
+		}
+		res, err := s.SetValidation(opinionValidationRel, f.Hash,
+			model.ValidationValidated, "理由", mustStamp(t))
+		if err == nil || res.Written {
+			t.Fatalf("%s：必须拒写且零写入（三键同成同败）：%v / %+v", name, err, res)
+		}
+		if got := mustBytes(t, abs); !bytes.Equal(got, before) {
+			t.Fatalf("%s：拒写时全文字节必须逐字不变", name)
+		}
+	}
+}
+
+// TestSetValidation_DisguisedOpinionNonOpinionIDZeroWrite：文件正文伪装成**完整五分区**、
+// `validation` / `updated_at` 都合法，但 frontmatter `id` 不是 o- 前缀（合法知识卡 id k-* /
+// 空 id / 畸形前缀）。OpinionOf 只做 Decode + 分区结构校验、**不校验 id 前缀**，因此这类文件
+// 会通过 OpinionOf；SetValidation 必须显式校验 id（model.ParseOpinionID）并拒写、零字节改动，
+// 杜绝「把非观点当观点改写」。这补上原 wrong-kind 用例（用知识卡分区、只证分区不匹配）的盲区。
+func TestSetValidation_DisguisedOpinionNonOpinionIDZeroWrite(t *testing.T) {
+	cases := map[string]string{
+		"id 是合法知识卡前缀 k-": "id: k-20260901-lifecycle",
+		"id 前缀畸形 x-":     "id: x-20260901-lifecycle",
+		"id 为空":          "id:",
+	}
+	for name, idLine := range cases {
+		s, root := newVault(t)
+		content := strings.Replace(opinionValidationSample,
+			"id: o-20260901-lifecycle", idLine, 1)
+		abs := writeSeed(t, root, opinionValidationRel, content)
+		before := mustBytes(t, abs)
+		f, err := s.Read(opinionValidationRel)
+		if err != nil {
+			// 读阶段失败同样是零写入（文件未变）；直接比对字节。
+			if got := mustBytes(t, abs); !bytes.Equal(got, before) {
+				t.Fatalf("%s：读失败也必须零改动", name)
+			}
+			continue
+		}
+		res, err := s.SetValidation(opinionValidationRel, f.Hash,
+			model.ValidationValidated, "理由", mustStamp(t))
+		if err == nil || res.Written {
+			t.Fatalf("%s：伪装成五分区但 id 非 o- 必须拒写且零写入：%v / %+v", name, err, res)
+		}
+		if got := mustBytes(t, abs); !bytes.Equal(got, before) {
+			t.Fatalf("%s：拒写时全文字节必须逐字不变", name)
+		}
+	}
+}
