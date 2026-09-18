@@ -101,6 +101,7 @@ tests/_staged/internal/model/opinion_frontmatter_test.go	internal/model/opinion_
 tests/_staged/internal/model/opinion_test.go	internal/model/opinion_test.go	evergreen	unit	go
 tests/_staged/internal/model/stale_test.go	internal/model/stale_test.go	evergreen	unit	go
 tests/_staged/internal/model/status_values_test.go	internal/model/status_values_test.go	evergreen	unit	go
+tests/_staged/internal/model/validation_transition_test.go	internal/model/validation_transition_test.go	evergreen	unit	go
 tests/_staged/internal/plan/atomic_finalizer_test.go	internal/plan/atomic_finalizer_test.go	evergreen	unit	go
 tests/_staged/internal/plan/atomic_test.go	internal/plan/atomic_test.go	evergreen	unit	go
 tests/_staged/internal/plan/authorize_test.go	internal/plan/authorize_test.go	evergreen	unit	go
@@ -186,6 +187,7 @@ tests/_staged/internal/store/state_write_replaced_by_endpoint_test.go	internal/s
 tests/_staged/internal/store/state_write_stale_test.go	internal/store/state_write_stale_test.go	evergreen	unit	go
 tests/_staged/internal/store/state_write_style_test.go	internal/store/state_write_style_test.go	evergreen	unit	go
 tests/_staged/internal/store/state_write_test.go	internal/store/state_write_test.go	evergreen	unit	go
+tests/_staged/internal/store/state_write_validation_test.go	internal/store/state_write_validation_test.go	evergreen	unit	go
 tests/_staged/internal/store/store_test.go	internal/store/store_test.go	evergreen	unit	go
 tests/_staged/internal/store/updated_at_test.go	internal/store/updated_at_test.go	evergreen	unit	go
 tests/_staged/internal/store/writers_test.go	internal/store/writers_test.go	evergreen	unit	go

@@ -157,6 +157,71 @@ func (v *Validation) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// —— 观点验证状态机（Schema v2 §6.1）——
+//
+// ValidationAction 是验证生命周期的**封闭动作集**：恰 validate / reject / reopen 三值。
+// 动作从不由调用方自报——它只能由 (from,to) 经 ValidationTransition 唯一解析得到，
+// 因此同一个目标态在不同起点下可能对应不同动作（例如 ->pending 恒为 reopen，
+// ->rejected 恒为 reject，->validated 恒为 validate），语义由边而非终点决定。
+type ValidationAction string
+
+const (
+	// ValidationValidate：确认成立（pending -> validated）。
+	ValidationValidate ValidationAction = "validate"
+	// ValidationReject：确认不成立（pending -> rejected 或 validated -> rejected）。
+	ValidationReject ValidationAction = "reject"
+	// ValidationReopen：撤回定论、退回待定（validated/rejected -> pending）。
+	ValidationReopen ValidationAction = "reopen"
+)
+
+// ValidationActions 返回封闭动作集（顺序稳定：validate / reject / reopen）。
+func ValidationActions() []ValidationAction {
+	return []ValidationAction{ValidationValidate, ValidationReject, ValidationReopen}
+}
+
+// validationEdge 是一条 (from,to) 验证迁移，作 legalValidationEdges 的键。
+type validationEdge struct{ From, To Validation }
+
+// legalValidationEdges 是 §6.1 状态图逐边列出的**唯一真源**：恰五条合法边及其 action。
+// 3x3 网格（ValidValidations × ValidValidations）里凡不在本表的格子都是非法边，共四格 ——
+// 三个自环（pending/validated/rejected 各对自身）+ 逆向跳变 rejected -> validated
+// （撤销「已否决」必须先 reopen 回 pending，再重新 validate，不允许一步反跳）。
+// 状态机因此可由本表逐格复算，不散落 if/switch。
+var legalValidationEdges = map[validationEdge]ValidationAction{
+	{ValidationPending, ValidationValidated}:  ValidationValidate,
+	{ValidationPending, ValidationRejected}:   ValidationReject,
+	{ValidationValidated, ValidationRejected}: ValidationReject,
+	{ValidationValidated, ValidationPending}:  ValidationReopen,
+	{ValidationRejected, ValidationPending}:   ValidationReopen,
+}
+
+// ValidationTransition 是验证状态机的**唯一**判定入口：由 (from,to) 同时校验，
+// 合法则返回该边对应的 action，非法一律报错并返回空 action。三类拒绝：
+// 端点非法（第四值 / 空值）、自环、rejected -> validated 逆向跳变。
+// 调用方拿到 action 后据此写审计块，绝不自报 action。
+func ValidationTransition(from, to Validation) (ValidationAction, error) {
+	if !from.Valid() {
+		return "", fmt.Errorf("非法 validation 起点 %q：合法取值仅 %s（封闭三值）", from, joinValidations())
+	}
+	if !to.Valid() {
+		return "", fmt.Errorf("非法 validation 目标 %q：合法取值仅 %s（封闭三值）", to, joinValidations())
+	}
+	act, ok := legalValidationEdges[validationEdge{From: from, To: to}]
+	if !ok {
+		return "", fmt.Errorf("非法 validation 迁移 %s -> %s：合法仅五边（validate/reject/reopen）；"+
+			"自环与 rejected -> validated 逆向跳变被禁止（撤销否决须先 reopen 回 pending）", from, to)
+	}
+	return act, nil
+}
+
+func joinValidations() string {
+	names := make([]string, 0, len(ValidValidations()))
+	for _, v := range ValidValidations() {
+		names = append(names, string(v))
+	}
+	return strings.Join(names, " / ")
+}
+
 // —— 关系类型两组（冻结合同 F4）——
 
 // MaterialRel 是材料关系：知识卡 sources[].rel 的取值。

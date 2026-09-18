@@ -688,9 +688,13 @@ func TestNoSerializerAndNoS5Machinery(t *testing.T) {
 // T-…-055（M4 阶段 1）起正则再加第五个名字（**继续加严**）：`stale` / `stale_reason` 的
 // 受守卫写口 SetStale 同样只许在 store 包内被调用——R6 的写入经 ApplyStateWrite 进来，
 // internal/plan/ 与 internal/reconcile/ 必须零命中。
+//
+// T-007（Schema v2）起正则再加第六个名字（**继续加严**）：`validation` 的受守卫写口
+// SetValidation 同样只许在 store 包内被调用——观点验证生命周期的写入经 ApplyStateWrite
+// 进来，命令 / plan 层零命中。
 func TestStateWritePortIsUniqueToStore(t *testing.T) {
 	callSite := regexp.MustCompile(`\.(Set` + `Status|Set` + `ReplacedBy|Set` + `Deleted|Set` +
-		`ReviewedAt|Set` + `Stale)\(`)
+		`ReviewedAt|Set` + `Stale|Set` + `Validation)\(`)
 	internalRoot := ".."
 	storePrefix := filepath.Join(internalRoot, "store") + string(filepath.Separator)
 	hits := 0

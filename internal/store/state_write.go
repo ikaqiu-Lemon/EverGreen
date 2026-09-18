@@ -13,7 +13,12 @@ package store
 // [M4] 本文件在 M4 期追加**第五种**状态写形态 `SetStale`（`stale` + `stale_reason` 两键
 // 一次守卫写，R6 综述失准标记；对账合同 §9 / A-33 / A-34，T-…-055 阶段 1）。护栏同样加严：
 // 上面那条 grep 判据的名字集合随之加上 `SetReviewedAt` 与 `SetStale`（只增不减）。
-// 形态计数口径是加法等式：**M3 期恰四种 + M4 新增 1 种 = 恰五种**（M3 结论不改写）。
+//
+// [Schema v2] 本文件再追加**第六种**状态写形态 `SetValidation`（覆盖 `validation` 单行 +
+// 刷新 `updated_at` + 向「待验证」追加恰一个审计块，观点验证生命周期；§6.1 / §6.2，T-007）。
+// grep 判据的名字集合随之再加 `SetValidation`（只增不减）。
+// 形态计数口径是加法等式：**M3 期恰四种 + M4 新增 1 种 = 五种；Schema v2 再新增 1 种
+// （validation）= 现态恰六种**（M3 / M4 结论均不改写）。
 //
 // 三条边界（合同硬约束，不得放宽）：
 //   - SetStatus 只改 `status` 单键，**绝不碰 deleted_at / deleted_reason**：状态与
@@ -67,6 +72,12 @@ var (
 	// 第四种取值一律拒写。本层不猜、不归一化、不退化成自由文本——取值一开放，
 	// 「多因并存取第一个命中值」这条可复算判据当场失效。
 	ErrStaleReasonClosed = errors.New("stale_reason 取值封闭（恰三值），拒绝改写")
+	// ErrValidationReasonRequired 验证生命周期落盘必须给非空 reason：审计块里的 reason 是
+	// 「为什么做出这次定论」的唯一可追溯载体，允许空白等于把判定依据丢在盘外（fail fast）。
+	ErrValidationReasonRequired = errors.New("验证落盘必须给非空 reason（判定依据不可为空）")
+	// ErrValidationStampRequired 验证落盘必须给非零时刻：审计块的 `at` 与 `updated_at` 刷新
+	// 同取这一个时刻，零值 = 「没有发生时间的生命周期事件」，本层绝不代入「现在」。
+	ErrValidationStampRequired = errors.New("验证落盘必须给非零时刻")
 )
 
 const (
@@ -253,6 +264,110 @@ func (s *Store) SetStale(rel string, expectedHash string, reason model.StaleReas
 		})
 }
 
+// SetValidation 落地**观点验证生命周期**的一次合法状态转移（Schema v2 §6.1 / §6.2；第六形态）。
+//
+// 一次合法调用在**同一个** mutateGuarded 候选、**一次** persist 内完成三件、且只完成三件事：
+//  1. 覆盖既有 `validation` 单行为目标态；
+//  2. 刷新既有 `updated_at` 单行为本次时刻（走 withUpdatedAt 的唯一实现）；
+//  3. 向「待验证」尾部追加**恰一个**审计块（validationAuditBlock 逐字锁定的格式）。
+//
+// 六条边界（合同 §6 / B1 / B3；与既有五种状态写形态同源）：
+//   - **action 不自报**：动作只能由 (from,to) 经 model.ValidationTransition 解析得到，
+//     自环 / rejected->validated 逆向跳变 / 非法端点在状态机处即被拒（零写入）。
+//   - **from 取自权威 frontmatter**：经 OpinionOf 读当前 validation，并借此确认目标确是
+//     合法 Opinion —— wrong-kind（知识卡等）/ 坏 FM / 缺 validation 键 / 重复键 / 非标量
+//     都在候选构造阶段失败，一律零字节写入。
+//   - **绝不碰别的维度**：只覆盖 validation 单行，绝不碰 status（正交维度）、绝不动其它
+//     frontmatter 键 / 其它分区 / 未知字段 / 未知分区 / 用户补充；除三处受控改动外全文件
+//     字节保真（不做整文件 YAML 序列化回写）。
+//   - **reason 必带且非空白**：审计块的判定依据不可为空（ErrValidationReasonRequired）。
+//   - **时刻必带且非零**：审计 `at` 与 `updated_at` 刷新同取此刻（ErrValidationStampRequired），
+//     本层不读时钟。
+//   - **B3 不豁免**：hash 不符即 *SkipError{file_changed}，零写入。
+func (s *Store) SetValidation(rel string, expectedHash string, to model.Validation,
+	reason string, stamp model.Stamp) (Result, error) {
+	res := Result{Path: rel}
+	if rel == "" {
+		return res, ErrCardRelRequired
+	}
+	if _, err := model.ParseValidation(string(to)); err != nil {
+		return res, fmt.Errorf("validation 目标取值封闭（合法取值恰 %v）：%w",
+			model.ValidValidations(), err)
+	}
+	if len(bytes.TrimSpace([]byte(reason))) == 0 {
+		return res, ErrValidationReasonRequired
+	}
+	if stamp.IsZero() {
+		return res, ErrValidationStampRequired
+	}
+	// 目标 validation 一律 canonical 单引号标量（与建卡路径 content.go 的 fmLine 同风格）。
+	validationLine := fmScalarLine(model.FMKeyValidation, fmCanonicalScalar(string(to)))
+	return s.mutateGuarded(rel, expectedHash,
+		withUpdatedAt(stamp, func(f File, doc *mdfile.Doc) ([]byte, error) {
+			// 从权威 frontmatter 取 current validation，并借此确认目标确是合法 Opinion。
+			op, err := OpinionOf(f.Bytes)
+			if err != nil {
+				return nil, err
+			}
+			from := op.Validation
+			// action 只能由状态机从 (from,to) 解析：非法边（自环 / 逆跳）在此零写入拒绝。
+			action, err := model.ValidationTransition(from, to)
+			if err != nil {
+				return nil, err
+			}
+			// 覆盖既有 validation 单行（mustExist=true：缺键 / 重复键 / 非标量在此拒绝）。
+			afterFM, err := setFMScalarKey(doc, model.FMKeyValidation, validationLine, true)
+			if err != nil {
+				return nil, err
+			}
+			// 区间偏移在上一步拼接后已失效，重新解析后再向「待验证」尾部追加审计块，
+			// 两处改动因此落在**同一个**候选里（不是两次守卫写）。
+			redoc, err := mdfile.Parse(afterFM)
+			if err != nil {
+				return nil, err
+			}
+			return redoc.AppendToSection(mdfile.SecToVerify,
+				validationAuditBlock(action, from, to, stamp, reason))
+		}))
+}
+
+// validationAuditBlock 渲染「待验证」审计块的**逐字**格式（payload 前导一个换行、末尾换行）：
+//
+//	\n### validation audit\n\n
+//	- at: <RFC3339>\n
+//	- action: <validate|reject|reopen>\n
+//	- transition: <from> -> <to>\n
+//	- reason:\n
+//	<reason 每一原始行的可逆 blockquote>
+//
+// reason 逐行渲染：非空行前缀 `> `，空行只写 `>`（仅用 TrimSpace 判空，实际记录保留
+// 调用方原始字节——通过这层可逆前缀，多行 reason 既不压成单行也不丢中间空行）。
+// action 由调用方从 model.ValidationTransition 拿到后传入，本函数不自行判定动作。
+func validationAuditBlock(action model.ValidationAction, from, to model.Validation,
+	at model.Stamp, reason string) []byte {
+	var b bytes.Buffer
+	b.WriteString("\n### validation audit\n\n")
+	b.WriteString("- at: ")
+	b.WriteString(at.String())
+	b.WriteString("\n- action: ")
+	b.WriteString(string(action))
+	b.WriteString("\n- transition: ")
+	b.WriteString(string(from))
+	b.WriteString(" -> ")
+	b.WriteString(string(to))
+	b.WriteString("\n- reason:\n")
+	for _, line := range strings.Split(reason, "\n") {
+		if len(bytes.TrimSpace([]byte(line))) == 0 {
+			b.WriteString(">\n")
+			continue
+		}
+		b.WriteString("> ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.Bytes()
+}
+
 // fmKeyLine 是「某个顶层键要变成这一行」的意图（多键一次写时按序应用）。
 type fmKeyLine struct {
 	key  string
@@ -310,10 +425,12 @@ func dropFMScalarKeys(doc *mdfile.Doc, keys []string) ([]byte, error) {
 	return out, nil
 }
 
-// 五种状态写形态的封闭取值：executor 只能从这五个常量里选，写不出第六种。
+// 六种状态写形态的封闭取值：executor 只能从这六个常量里选，写不出第七种。
 //
-// 计数口径（加法等式，M3 期结论不改写）：**M3 期恰四种**（status / replaced_by /
-// deleted / reviewed_at）**+ M4 新增 1 种**（stale，A-33 的 R6 落盘口）= **恰五种**。
+// 计数口径（加法等式，历史结论不改写）：**M3 期恰四种**（status / replaced_by /
+// deleted / reviewed_at）**+ M4 新增 1 种**（stale，A-33 的 R6 落盘口）**= 五种**；
+// **Schema v2 再新增 1 种**（validation，观点验证生命周期落盘口，§6.1 / §6.2）
+// = **现态恰六种**（M3 / M4 结论均不改写）。
 const (
 	// StateWriteStatus 覆盖 status 单键（deprecate / restore 共用）。
 	StateWriteStatus = "status"
@@ -327,6 +444,10 @@ const (
 	// StateWriteStale 是**第五形态**：综述失准标记维度（stale + stale_reason 两键一次守卫写，
 	// M4 由对账 R6 触发，A-34 不需要 --user-request）。取值同样借 model 的键名常量。
 	StateWriteStale = model.FMKeyStale
+	// StateWriteValidation 是**第六形态**：观点验证生命周期维度（覆盖 validation 单行 +
+	// 刷新 updated_at + 向「待验证」追加恰一个审计块，Schema v2 §6.1 / §6.2）。
+	// 取值同样借 model 的键名常量，写入路径与筛选侧共用同一份字面量。
+	StateWriteValidation = model.FMKeyValidation
 )
 
 // StateWriteSpec 是一次状态落盘的意图。Op 决定用哪一个形态，其余字段按形态取用：
@@ -344,6 +465,10 @@ type StateWriteSpec struct {
 	// StaleReason 只对 stale 形态有意义（封闭三值）。**刻意不复用 Reason 那一格**：
 	// 自由文本 reason 与封闭枚举 reason 混用一格，迟早会有人把用户文本塞进来。
 	StaleReason model.StaleReason
+	// Validation 只对 validation 形态有意义（封闭三值，观点验证生命周期的**目标态**）。
+	// **刻意独立成一格**：既不复用 Status（正交维度）、也不复用 Reason（那格是审计块的
+	// 自由文本判定依据）—— 目标态是封闭枚举、reason 是自由文本，混用一格早晚出错。
+	Validation model.Validation
 	// Clear 只对 deleted 形态有意义：true = 清空删除标记（不新增第四种 Op，
 	// 因为「删除」与「恢复删除」是同一维度的两个方向，共用同一条守卫路径）。
 	Clear bool
@@ -363,7 +488,7 @@ type StateWriteSpec struct {
 // 的 grep 反证（store_test.go 的写口唯一护栏）恒成立。
 func (s *Store) ApplyStateWrite(spec StateWriteSpec) (Result, error) {
 	return s.stateWrite(spec.Op, spec.Rel, spec.ExpectedHash, spec.Status, spec.Target,
-		spec.Reason, spec.At, spec.StaleReason, spec.Clear, spec.Stamp)
+		spec.Reason, spec.At, spec.StaleReason, spec.Validation, spec.Clear, spec.Stamp)
 }
 
 // stateWrite 是**包内**状态落盘分发口：executor 经 ApplyStateWrite 进来，由这里再分发到
@@ -372,7 +497,8 @@ func (s *Store) ApplyStateWrite(spec StateWriteSpec) (Result, error) {
 // 这层就是那个唯一的包内调用点（护栏见 store_test.go 的写口唯一测试）。
 func (s *Store) stateWrite(op string, rel string, expectedHash string,
 	status model.Status, target model.RelationEndpoint, reason string, at model.Stamp,
-	staleReason model.StaleReason, clear bool, updatedAt model.Stamp) (Result, error) {
+	staleReason model.StaleReason, validation model.Validation, clear bool,
+	updatedAt model.Stamp) (Result, error) {
 	switch op {
 	case StateWriteStatus:
 		return s.SetStatus(rel, expectedHash, status, updatedAt)
@@ -390,10 +516,15 @@ func (s *Store) stateWrite(op string, rel string, expectedHash string,
 		// 只用 StaleReason：失准标记没有时刻这一格，也没有反向清空形态
 		// （合同 §9：不自动清除 stale、不自动重算综述）。
 		return s.SetStale(rel, expectedHash, staleReason)
+	case StateWriteValidation:
+		// 用 Validation（目标态）+ Reason（审计判定依据）+ updatedAt（审计 at 与
+		// updated_at 刷新同取此刻）：一次合法流转在一个候选内落 validation + updated_at +
+		// 「待验证」审计块。action 由状态机从 (from,to) 解析，spec 不带 action 这一格。
+		return s.SetValidation(rel, expectedHash, validation, reason, updatedAt)
 	default:
 		return Result{Path: rel}, fmt.Errorf(
-			"未知状态写形态 %q（恰五种：status / replaced_by / deleted / %s / %s）",
-			op, StateWriteReviewedAt, StateWriteStale)
+			"未知状态写形态 %q（恰六种：status / replaced_by / deleted / %s / %s / %s）",
+			op, StateWriteReviewedAt, StateWriteStale, StateWriteValidation)
 	}
 }
 

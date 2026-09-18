@@ -101,6 +101,7 @@ tests/_staged/internal/model/opinion_frontmatter_test.go	unit	go	storage-markdow
 tests/_staged/internal/model/opinion_test.go	unit	go	storage-markdown	unit.internal.model	8	5690
 tests/_staged/internal/model/stale_test.go	unit	go	storage-markdown	unit.internal.model	3	8034
 tests/_staged/internal/model/status_values_test.go	unit	go	storage-markdown	unit.internal.model	1	1229
+tests/_staged/internal/model/validation_transition_test.go	unit	go	storage-markdown	unit.internal.model	4	5832
 tests/_staged/internal/plan/atomic_finalizer_test.go	unit	go	proposal	unit.internal.plan	3	7712
 tests/_staged/internal/plan/atomic_test.go	unit	go	proposal	unit.internal.plan	5	11094
 tests/_staged/internal/plan/authorize_test.go	unit	go	proposal	unit.internal.plan	7	16222
@@ -183,10 +184,11 @@ tests/_staged/internal/store/section_write_test.go	unit	go	storage-markdown	unit
 tests/_staged/internal/store/source_test.go	unit	go	storage-markdown	unit.internal.store	4	4288
 tests/_staged/internal/store/state_write_deleted_test.go	unit	go	storage-markdown	unit.internal.store	5	11208
 tests/_staged/internal/store/state_write_replaced_by_endpoint_test.go	unit	go	storage-markdown	unit.internal.store	3	8027
-tests/_staged/internal/store/state_write_stale_test.go	unit	go	storage-markdown	unit.internal.store	6	10119
+tests/_staged/internal/store/state_write_stale_test.go	unit	go	storage-markdown	unit.internal.store	6	10360
 tests/_staged/internal/store/state_write_style_test.go	unit	go	storage-markdown	unit.internal.store	5	7583
 tests/_staged/internal/store/state_write_test.go	unit	go	storage-markdown	unit.internal.store	5	9424
-tests/_staged/internal/store/store_test.go	unit	go	storage-markdown	unit.internal.store	20	28746
+tests/_staged/internal/store/state_write_validation_test.go	unit	go	storage-markdown	unit.internal.store	11	15920
+tests/_staged/internal/store/store_test.go	unit	go	storage-markdown	unit.internal.store	20	29033
 tests/_staged/internal/store/updated_at_test.go	unit	go	storage-markdown	unit.internal.store	8	13056
 tests/_staged/internal/store/writers_test.go	unit	go	storage-markdown	unit.internal.store	14	19831
 tests/_staged/internal/txn/commit_test.go	unit	go	txn-atomicity	unit.internal.txn	10	16520

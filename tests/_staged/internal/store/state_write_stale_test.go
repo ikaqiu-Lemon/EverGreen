@@ -231,7 +231,8 @@ func TestSetStale_RewriteSameValueIsByteIdentical(t *testing.T) {
 }
 
 // TestApplyStateWriteStale_IsTheFifthShape：唯一对外入口能表达第五形态，
-// 且第六形态写不出来（default 报错文案钉「恰五种」）。
+// 且未知形态写不出来（default 报错文案在 validation 第六形态引入后钉「恰六种」；
+// stale 仍是历史上的第五形态，本结论不改写）。
 func TestApplyStateWriteStale_IsTheFifthShape(t *testing.T) {
 	s, abs, hash := seedStaleReview(t)
 	res, err := s.ApplyStateWrite(StateWriteSpec{Op: StateWriteStale, Rel: staleRel,
@@ -244,12 +245,13 @@ func TestApplyStateWriteStale_IsTheFifthShape(t *testing.T) {
 		!strings.Contains(fm, `stale_reason: '`+string(model.StaleReasonDeprecated)+"'\n") {
 		t.Fatalf("第五形态未按合同落盘：%s", fm)
 	}
-	// 第六形态：未知形态一律报错，且文案里必须钉住「恰五种」。
+	// 未知形态：一律报错，且文案里必须钉住「恰六种」（第六形态 validation 在 T-007 引入后，
+	// 状态写形态总数从五升到六；stale 仍是历史上的第五形态，本结论不改写）。
 	_, err = s.ApplyStateWrite(StateWriteSpec{Op: "stale_clear", Rel: staleRel, ExpectedHash: hash})
 	if err == nil {
-		t.Fatal("未知状态写形态必须报错（封闭五值）")
+		t.Fatal("未知状态写形态必须报错（封闭六值）")
 	}
-	if !strings.Contains(err.Error(), "恰五种") {
-		t.Fatalf("default 文案必须钉「恰五种」，实得：%v", err)
+	if !strings.Contains(err.Error(), "恰六种") {
+		t.Fatalf("default 文案必须钉「恰六种」，实得：%v", err)
 	}
 }
