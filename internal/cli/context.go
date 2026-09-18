@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
-	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
@@ -83,20 +82,14 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 				"只供回读原始提炼，不参与知识收敛、不进候选相似卡（EG-NOTE-04）", domain, len(ctx.Notes)),
 		})
 	}
-	// D-3 兼容提示：candidates 已弃用 —— **恰一条 I1 info**（与 report §4.5.1 的 info 编号
-	// 同码），明确「改读 knowledge_candidates」。它是**无条件**产出的兼容说明，与 Q 系列诊断、
-	// 默认领域回退（warning）、notes info 都正交：不因它们在场而重复、也不被降级成 warning，
-	// 更不触发 Q3（Q3 只汇总扫描期的「结果不完整」）。--json 的 warnings[] 与纯文本同源同事实。
-	res.Warnings = append(res.Warnings, Diagnostic{
-		Code: report.CodeI1, Level: LevelInfo, Path: "candidates", OpIndex: NonOpDiagnostic,
-		Message: "`candidates` 已弃用，改读 `knowledge_candidates`",
-	})
-	// Q 系列只读诊断（M2 合同 §5）：扫不动的文件、悬空引用与「结果不完整」汇总一律如实透出。
-	// 一律 warning、**不影响退出码**（context 仍退 0）；--json 的 warnings[] 与纯文本输出同源同事实，
-	// 缺失结果绝不能看起来像完整结果。
+	// query 只读诊断（M2 合同 §5）原样透出：Q 系列的「扫不动 / 结果不完整」（warning）
+	// 与 D-3 的 candidates 弃用提示 I1（info）同源于 ctx.Diagnostics。**逐条保留 d.Level**——
+	// 绝不把 info 硬编码成 warning：--json 的 warnings[] 与纯文本输出同源同事实，
+	// 缺失结果绝不能看起来像完整结果，弃用提示也不能被误读成告警。Q 类一律不影响退出码
+	// （context 仍退 0）。I1 由 query 侧无条件产出恰一条，CLI 不再各造一份。
 	for _, d := range ctx.Diagnostics {
 		res.Warnings = append(res.Warnings, Diagnostic{
-			Code: d.Code, Level: LevelWarning, Path: d.Path, OpIndex: NonOpDiagnostic,
+			Code: d.Code, Level: d.Level, Path: d.Path, OpIndex: NonOpDiagnostic,
 			Message: d.Message,
 		})
 	}

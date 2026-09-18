@@ -10,7 +10,7 @@ tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.int
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	10	20078
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24284
 tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	55058
-tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	14	28862
+tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	15	37438
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
 tests/_staged/internal/cli/delete_release_order_test.go	unit	go	cli-core	unit.internal.cli	1	2670
@@ -127,7 +127,7 @@ tests/_staged/internal/proposal/superseded_test.go	unit	go	proposal	unit.interna
 tests/_staged/internal/query/adr20_isolation_test.go	unit	go	card-query	unit.internal.query	1	5746
 tests/_staged/internal/query/backend_test.go	unit	go	card-query	unit.internal.query	21	39358
 tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query	12	15157
-tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	15	33223
+tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	17	37340
 tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6619
 tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	unit.internal.query	1	3363
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350
@@ -139,7 +139,7 @@ tests/_staged/internal/query/index_backed_replaced_by_test.go	unit	go	card-query
 tests/_staged/internal/query/markers_test.go	unit	go	card-query	unit.internal.query	3	17190
 tests/_staged/internal/query/opinion_show_test.go	unit	go	card-query	unit.internal.query	9	29516
 tests/_staged/internal/query/page_test.go	unit	go	card-query	unit.internal.query	8	17512
-tests/_staged/internal/query/proposal_test.go	unit	go	card-query	unit.internal.query	3	10957
+tests/_staged/internal/query/proposal_test.go	unit	go	card-query	unit.internal.query	3	11441
 tests/_staged/internal/query/queryset/queryset_test.go	unit	go	queryset	unit.internal.query.queryset	3	5239
 tests/_staged/internal/query/rank_test.go	unit	go	card-query	unit.internal.query	6	12824
 tests/_staged/internal/query/relation_ko_readpath_test.go	unit	go	card-query	unit.internal.query	5	24147

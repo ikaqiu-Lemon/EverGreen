@@ -115,7 +115,7 @@ type Context struct {
 	Cards  []CardView  `json:"cards"`
 	// Candidates 是 D-3 的**过渡兼容字段**：内容 / 顺序逐项恒等于 KnowledgeCandidates
 	// （同一底层切片，JSON 逐字相等）。0.7.x 起弃用，调用方应改读 knowledge_candidates；
-	// 弃用提示（I1）在 CLI 出口产出，本结构只保证「三字段并存且都是数组（非 null）」。
+	// 弃用提示（I1，info）由本包在 Diagnostics 里无条件产出恰一条，CLI 只原样透出、不另造。
 	Candidates []Candidate `json:"candidates"`
 	// KnowledgeCandidates 是**知识卡**候选：保持旧实现逐字语义（同一 candidates() 单点、
 	// 同一三级全序、同一 CandidateLimit），不引入默认集合 / 打分 / base 行为回归。
@@ -240,8 +240,13 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	// ⑥ 诚实诊断：扫描期的 Q1、定位原文期的 Q1、提案摘要期的 Q1 汇总后重排
 	//    （必要时补 Q3 汇总项）。Q 类一律 warning，**不影响退出码**——
 	//    eg context 仍退 0（合同 §5、§6）。
+	//    另外无条件追加 D-3 的 candidates 弃用提示 I1（info）：它是查询域事实，query.Build
+	//    的直接消费者与 CLI 由此看到同一套诊断（CLI 不再各造一份）。I1 是 info、不进 Q3
+	//    汇总统计（finalize 只数 Q1/Q2），排序后因 code "I1" < "Q…" 落在最前，Q3 恒末位不变。
 	merged := append(dropQ3(scan.Diagnostics), srcDiags...)
-	ctx.Diagnostics = finalizeDiagnostics(append(merged, propDiags...))
+	merged = append(merged, propDiags...)
+	merged = append(merged, newI1CandidatesDeprecated())
+	ctx.Diagnostics = finalizeDiagnostics(merged)
 	return ctx, nil
 }
 

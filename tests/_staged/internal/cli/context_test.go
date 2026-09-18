@@ -4,12 +4,16 @@ package cli
 // 用例名以 Context 开头，可用 `go test ./internal/cli/... -run Context` 单独跑。
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // writeVaultFile 往 vault 里放一个测试用文件（测试脚手架，不走产品写路径）。
@@ -559,6 +563,90 @@ func TestContextCandidatesDeprecationI1(t *testing.T) {
 	}
 }
 
+// —— ②′ CLI 反证：I1 与全部 query 诊断都**来自 ctx.Diagnostics**，CLI 只原样透出、保留 level ——
+//
+// 判据来源：T-…-006 Scope「弃用 I1 由 query context 的 diagnostics 产出」+「CLI 遍历
+// ctx.Diagnostics 时必须保留 d.Level，不能把所有诊断硬编码为 warning」。做法：以
+// query.Build 的 ctx.Diagnostics 为**唯一事实源**（oracle），逐字比对 CLI --json warnings[]
+// 里所有**带码**诊断（fallback / notes 是无码 info，天然被过滤）。若 CLI 另造一份 I1，
+// oracle 只有一条、CLI 就会多一条 → 序列不等 → 当场红；若 CLI 把 info 硬编码成 warning，
+// level 位不等 → 当场红。因此这条用例同时锁死「不另造」与「保留 level」两件事。
+
+// diagSig 把一条诊断摊成 `code|level|path|message`，用于逐字序列比对。
+func diagSig(code, level, path, message string) string {
+	return code + "|" + level + "|" + path + "|" + message
+}
+
+// codedWarningSigs 取 CLI --json 信封里**带码**诊断（即 query 域诊断）的签名序列（保序）。
+func codedWarningSigs(env Envelope) []string {
+	var out []string
+	for _, w := range env.Warnings {
+		if w.Code == "" {
+			continue // fallback（默认领域回退）/ notes 都是无码 info，不属 query 诊断
+		}
+		out = append(out, diagSig(w.Code, w.Level, w.Path, w.Message))
+	}
+	return out
+}
+
+// queryDiagSigs 直接调 query.Build 取 ctx.Diagnostics 的签名序列（CLI 的唯一事实源）。
+func queryDiagSigs(t *testing.T, dir, domain, source string) []string {
+	t.Helper()
+	ctx, err := query.Build(query.Request{Root: dir, Domain: domain, Source: source}, store.ContentHash)
+	if err != nil {
+		t.Fatalf("query.Build 失败：%v", err)
+	}
+	var out []string
+	for _, d := range ctx.Diagnostics {
+		out = append(out, diagSig(d.Code, d.Level, d.Path, d.Message))
+	}
+	return out
+}
+
+func TestContextDiagnosticsAreQueryPassThrough(t *testing.T) {
+	// 两个场景：干净 vault（只应有 I1 info）与坏卡 vault（I1 info + Q1/Q3 warning）。
+	// 两者都必须与 query.Build 的 ctx.Diagnostics 逐字相等，且各自恰一条 I1（info）。
+	scenarios := []struct {
+		name  string
+		setup func(t *testing.T) (string, string)
+	}{
+		{"clean", contextDualVault},
+		{"with-Q", func(t *testing.T) (string, string) {
+			dir, id := contextDualVault(t)
+			writeVaultFile(t, dir, "domains/ai-infra/knowledge/broken.md", "---\n- 1\n---\n\n# 坏卡\n")
+			return dir, id
+		}},
+	}
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			dir, id := s.setup(t)
+
+			code, env, errOut := runContextCLI(t, dir, "--source", id)
+			if code != ExitOK {
+				t.Fatalf("退出码 = %d：%s", code, errOut)
+			}
+			// CLI 带码诊断序列必须与 query.Build 的 ctx.Diagnostics 逐字相等
+			//（同码、同 level、同 path、同 message、同顺序）。
+			want := queryDiagSigs(t, dir, "ai-infra", id)
+			got := codedWarningSigs(env)
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Fatalf("CLI 诊断未原样透出 query.Diagnostics（可能另造 I1 或改写 level）：\nCLI  %v\nquery %v", got, want)
+			}
+			// 反向锁死 level 保留：oracle 里的 I1 必须是 info，且恰一条——若 CLI 硬编码
+			// 成 warning，上面的逐字比对已红；这里再单独钉「恰一条 info I1」。
+			var i1Info int
+			for _, sig := range want {
+				if strings.HasPrefix(sig, "I1|"+LevelInfo+"|") {
+					i1Info++
+				}
+			}
+			if i1Info != 1 {
+				t.Fatalf("%s：query 事实源里应恰一条 info 级 I1，实得 %d（%v）", s.name, i1Info, want)
+			}
+		})
+	}
+}
+
 // —— ③ 文本区分 Knowledge / Opinion 候选，与 JSON 同序同事实，不把 candidates 再渲染一遍 ——
 
 func TestContextTextDistinguishesKnowledgeOpinion(t *testing.T) {
@@ -630,39 +718,28 @@ const (
 	indexDBFileName = "eg.db"
 )
 
-func indexDirPath(dir string) string { return filepath.Join(dir, indexDirName) }
-func indexDBPath(dir string) string  { return filepath.Join(dir, indexDirName, indexDBFileName) }
-
-// indexSnapshot 采集 `.index/` 下每个文件的路径 + 字节 hash + mtime（缺目录返回空串）。
-func indexSnapshot(t *testing.T, dir string) string {
+// walDataFrameCount 按 SQLite WAL 文件格式推算 `.index/eg.db-wal` 里已写入的数据帧条数：
+// 头 32 字节是 WAL header（第 8–11 字节大端为 page_size），其后每帧 = 24 字节帧头 + page_size。
+// 文件缺失或仅有 header（≤32 字节）即 0 帧。build / rebuild / sync 收尾都会
+// `wal_checkpoint(TRUNCATE)` 把 WAL 截空，故健康库常态是 0 帧；context 从不打开索引，
+// 因此任何数据帧的出现或增长都必然意味着有人碰了索引——这条计数就是抓手。
+func walDataFrameCount(t *testing.T, dir string) int {
 	t.Helper()
-	idxDir := indexDirPath(dir)
-	if _, err := os.Stat(idxDir); os.IsNotExist(err) {
-		return ""
+	raw, err := os.ReadFile(filepath.Join(dir, indexDirName, indexDBFileName+"-wal"))
+	if os.IsNotExist(err) {
+		return 0
 	}
-	var lines []string
-	err := filepath.Walk(idxDir, func(p string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return err
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(dir, p)
-		sum := 0
-		for _, b := range raw {
-			sum = sum*131 + int(b)
-		}
-		lines = append(lines, filepath.ToSlash(rel)+" "+itoaCLI(len(raw))+" "+itoaCLI(sum)+" "+
-			info.ModTime().UTC().Format("2006-01-02T15:04:05.000000000"))
-		return nil
-	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("读 WAL 失败：%v", err)
 	}
-	sortStrings(lines)
-	return strings.Join(lines, "\n")
+	if len(raw) <= 32 {
+		return 0 // 只有 header（或空）：零数据帧
+	}
+	pageSize := int(binary.BigEndian.Uint32(raw[8:12]))
+	if pageSize <= 0 {
+		t.Fatalf("WAL header 的 page_size 非法：%d", pageSize)
+	}
+	return (len(raw) - 32) / (24 + pageSize)
 }
 
 // contextOutputs 跑一次 context，返回 JSON 与文本两份输出（供跨索引状态逐字比对）。
@@ -673,26 +750,62 @@ func contextOutputs(t *testing.T, dir, id string) (string, string) {
 	return jsonOut, text
 }
 
+// TestContextIgnoresIndexStateAndLeavesItUntouched —— context 走权威 Markdown scan、
+// **不接索引后端**，故四种索引状态下业务输出逐字等价；且 context 对索引 / vault / git /
+// 事务日志 / WAL 一律零副作用。
+//
+// 本轮强化两处：
+//  1. **stale 是真陈旧**：不再原字节重写（按 content_hash 终判可能仍 fresh），而是向一张
+//     **非候选**卡（k-20260901-z，零命中、不进 candidates/base，其正文不进 context 输出）
+//     追加真实字节；并用现有 `eg index status` helper **逐态**证明四个标签为真
+//     （missing / healthy-fresh / stale(--strict) / corrupt）。
+//  2. **零副作用用强 helper 取证**：非 .git 全树内容 hash+mtime（vaultSnapshot）、权威
+//     Markdown 字节+mtime（authorityMDStats）、git status 与 rev-list count、事务集合
+//     （txnIDsOn）、`.index/` 全子树字节（indexTreeSnapshot）与 WAL 数据帧计数，逐态
+//     在 context 前后逐字比对，任何出现 / 增长 / 改写都会被抓住——不再复制第二套弱 hash。
 func TestContextIgnoresIndexStateAndLeavesItUntouched(t *testing.T) {
+	// 基线：无索引状态下的业务输出（后续四态都必须逐字复现它）。
 	dir, id := contextDualVault(t)
-	// 基线：无索引状态下的业务输出。
 	baseJSON, baseText := contextOutputs(t, dir, id)
 
-	setStale := func(t *testing.T, dir string) {
-		// 先建健康索引，再把一张卡按原字节重写以推后 mtime → 索引水位线落后（stale），
-		// 但业务输出（ID / 得分 / 理由）不变。
-		if code, _, errOut := runIndexCLI(t, dir, "build"); code != ExitOK {
-			t.Fatalf("建索引失败：%s", errOut)
-		}
-		p := filepath.Join(dir, filepath.FromSlash("domains/ai-infra/knowledge/k-20260901-a.md"))
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, raw, 0o644); err != nil {
-			t.Fatal(err)
+	// nonCandidateCard 是零命中卡：它在 cards[] 里只露 id/path/title/tags（正文不出），
+	// 既不进 candidates 也不进 base，因此改它的**正文字节**能让索引真陈旧、却不动 context 输出。
+	const nonCandidateCard = "domains/ai-infra/knowledge/k-20260901-z.md"
+
+	// proveLabel 用现有 `eg index status` helper 逐态证明四个索引标签**为真**。
+	proveLabel := func(t *testing.T, d, state string) {
+		switch state {
+		case "missing":
+			_, out, _ := runIndexCLI(t, d, "status")
+			if h := idxHealth(t, out); h != "missing" {
+				t.Fatalf("missing 态 health = %q，期望 missing", h)
+			}
+		case "healthy":
+			_, out, _ := runIndexCLI(t, d, "status")
+			if h := idxHealth(t, out); h != "healthy" {
+				t.Fatalf("healthy 态 health = %q，期望 healthy", h)
+			}
+			if f := idxFreshness(t, out); f != "fresh" {
+				t.Fatalf("healthy 态 freshness = %q，期望 fresh", f)
+			}
+		case "stale":
+			// 用 --strict 走全量 content_hash 重算：这才是「真陈旧」的终判
+			//（默认快路径只看 size/mtime，可能被等长改写骗过）。
+			_, out, _ := runIndexCLI(t, d, "status", "--strict")
+			if h := idxHealth(t, out); h != "healthy" {
+				t.Fatalf("stale 态 health = %q，期望 healthy（陈旧不是损坏）", h)
+			}
+			if f := idxFreshness(t, out); f != "stale" {
+				t.Fatalf("stale 态 --strict freshness = %q，期望 stale（content_hash 终判）", f)
+			}
+		case "corrupt":
+			_, out, _ := runIndexCLI(t, d, "status")
+			if h := idxHealth(t, out); h != "corrupt" {
+				t.Fatalf("corrupt 态 health = %q，期望 corrupt", h)
+			}
 		}
 	}
+
 	states := []struct {
 		name  string
 		setup func(t *testing.T, dir string)
@@ -703,23 +816,45 @@ func TestContextIgnoresIndexStateAndLeavesItUntouched(t *testing.T) {
 				t.Fatalf("建索引失败：%s", errOut)
 			}
 		}},
-		{"stale", setStale},
+		{"stale", func(t *testing.T, dir string) {
+			if code, _, errOut := runIndexCLI(t, dir, "build"); code != ExitOK {
+				t.Fatalf("建索引失败：%s", errOut)
+			}
+			// 真陈旧：向非候选卡追加真实字节（content_hash 必变，--strict 一定判 stale）。
+			p := filepath.Join(dir, filepath.FromSlash(nonCandidateCard))
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, append(raw, []byte("\n补一句不影响 context 的正文。\n")...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
 		{"corrupt", func(t *testing.T, dir string) {
 			if code, _, errOut := runIndexCLI(t, dir, "build"); code != ExitOK {
 				t.Fatalf("建索引失败：%s", errOut)
 			}
-			if err := os.WriteFile(indexDBPath(dir), []byte("这不是 SQLite 文件"), 0o644); err != nil {
-				t.Fatal(err)
-			}
+			idxCorruptDB(t, dir) // 真实非法字节，非打桩
 		}},
 	}
 	for _, s := range states {
 		t.Run(s.name, func(t *testing.T) {
 			d, srcID := contextDualVault(t)
 			s.setup(t, d)
-			idxBefore := indexSnapshot(t, d)
-			fsBefore := snapshot(t, d)
 
+			// 先逐态证明索引标签为真（status 只读；其读侧副产物在 before 快照前落定）。
+			proveLabel(t, d, s.name)
+
+			// 强快照基线（context 之前）：全树字节 / 权威 Markdown / git / 事务 / 索引子树 / WAL。
+			vaultBefore := vaultSnapshot(t, d)
+			mdBefore := authorityMDStats(t, d)
+			gitStatusBefore := strings.TrimSpace(gitOut(t, d, "status", "--porcelain"))
+			commitsBefore := strings.TrimSpace(gitOut(t, d, "rev-list", "--count", "HEAD"))
+			txnBefore := txnIDsOn(t, d)
+			idxBefore := indexTreeSnapshot(t, d)
+			walBefore := walDataFrameCount(t, d)
+
+			// 业务输出：四态都必须逐字复现无索引基线。
 			gotJSON, gotText := contextOutputs(t, d, srcID)
 			if gotJSON != baseJSON {
 				t.Fatalf("索引状态 %s 下 JSON 输出与基线不同：\n%s\n----\n%s", s.name, gotJSON, baseJSON)
@@ -727,13 +862,32 @@ func TestContextIgnoresIndexStateAndLeavesItUntouched(t *testing.T) {
 			if gotText != baseText {
 				t.Fatalf("索引状态 %s 下文本输出与基线不同", s.name)
 			}
-			// 对 .index 零副作用：context 从不读写索引。
-			if after := indexSnapshot(t, d); after != idxBefore {
-				t.Fatalf("索引状态 %s：context 动了 .index：\n前=%s\n后=%s", s.name, idxBefore, after)
+
+			// —— 零副作用（context 之后逐字复核）——
+			// ① 非 .git 全树内容 hash + mtime（含 .index 子树、权威 Markdown、收件区……）。
+			if after := vaultSnapshot(t, d); after != vaultBefore {
+				t.Fatalf("索引状态 %s：context 改动了全树（内容 hash / mtime）", s.name)
 			}
-			// 全库零副作用。
-			if after := snapshot(t, d); after != fsBefore {
-				t.Fatalf("索引状态 %s：context 改动了文件树", s.name)
+			// ② 权威 Markdown 字节 + mtime 逐条不变（新增 / 改写 / 删除 / 触碰均报出）。
+			assertAuthorityMDUnchanged(t, d, mdBefore, "索引状态 "+s.name+"：context")
+			// ③ git：工作区状态与提交数都不动（零 commit、零暂存）。
+			if after := strings.TrimSpace(gitOut(t, d, "status", "--porcelain")); after != gitStatusBefore {
+				t.Fatalf("索引状态 %s：context 改动了 git 工作区：\n前=%q\n后=%q", s.name, gitStatusBefore, after)
+			}
+			if after := strings.TrimSpace(gitOut(t, d, "rev-list", "--count", "HEAD")); after != commitsBefore {
+				t.Fatalf("索引状态 %s：context 产生了 commit（%s → %s）", s.name, commitsBefore, after)
+			}
+			// ④ 事务集合前后相等：context 绝不开事务。
+			if after := txnIDsOn(t, d); strings.Join(after, ",") != strings.Join(txnBefore, ",") {
+				t.Fatalf("索引状态 %s：context 动了事务日志集合：\n前=%v\n后=%v", s.name, txnBefore, after)
+			}
+			// ⑤ `.index/` 全子树字节不变（run.lock 除外）：catch 索引库 / WAL / shm 的任何改写。
+			if diffs := diffSnapshots(idxBefore, indexTreeSnapshot(t, d)); len(diffs) != 0 {
+				t.Fatalf("索引状态 %s：context 动了 .index 子树：%v", s.name, diffs)
+			}
+			// ⑥ WAL 无数据帧、且不因 context 出现 / 增长（context 从不打开索引）。
+			if walAfter := walDataFrameCount(t, d); walAfter != 0 || walAfter != walBefore {
+				t.Fatalf("索引状态 %s：WAL 数据帧异常（前=%d 后=%d，期望恒 0）", s.name, walBefore, walAfter)
 			}
 		})
 	}

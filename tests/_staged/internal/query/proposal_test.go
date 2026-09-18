@@ -225,8 +225,15 @@ func TestContext_ProposalSummaryOnly(t *testing.T) {
 	if bctx.Proposals == nil || len(bctx.Proposals) != 0 {
 		t.Fatalf("无 proposals/ 时摘要必须是空数组，实得 %#v", bctx.Proposals)
 	}
-	if len(bctx.Diagnostics) != 0 {
-		t.Fatalf("无 proposals/ 时不得产生诊断：%v", diagCodes(bctx.Diagnostics))
+	// 缺提案目录不是「结果不完整」：**不产生任何 Q 系列诊断**。唯一应在的诊断是 D-3 的
+	// candidates 弃用提示 I1（info，query.Context.Diagnostics 无条件产出恰一条）。
+	if got := diagsByCode(bctx, query.CodeI1); len(got) != 1 || got[0].Level != query.DiagLevelInfo {
+		t.Fatalf("无 proposals/ 时应恰有一条 I1 info，实得 %v", diagCodeSeq(bctx))
+	}
+	for _, code := range diagCodeSeq(bctx) {
+		if code != query.CodeI1 {
+			t.Fatalf("无 proposals/ 时除 I1 外不得产生任何诊断（尤其无 Q 系列），实得 %v", diagCodeSeq(bctx))
+		}
 	}
 }
 

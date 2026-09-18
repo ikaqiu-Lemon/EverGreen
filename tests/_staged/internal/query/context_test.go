@@ -854,3 +854,94 @@ func TestContextOpinionCandidateTotalOrder(t *testing.T) {
 		t.Fatalf("同分同理由条数应按 ID 升序，实得 %v", opinionSig(ctx))
 	}
 }
+
+// ================= D-3：candidates 弃用提示 I1 由 query.Context.Diagnostics 产出 =================
+//
+// 判据来源：schema v2 设计 §5.3 / 决策 D-3 + T-…-006 Scope「弃用 I1 由 query context 的
+// diagnostics 产出」。要害是：query.Build 的**直接消费者**（不经 CLI）就必须能看到这条 I1，
+// 否则 query 与 CLI 各持一套事实。本组只钉 query 侧结构性事实——码 = I1、level = info、
+// path = candidates、消息明确「candidates 已弃用，改读 knowledge_candidates」，**无条件恰一条**，
+// 且与 Q 系列（warning、汇总扫描不完整）正交：不重复、不被带偏成 warning、绝不触发 Q3。
+
+// diagsByCode 收集 ctx.Diagnostics 里某个码的全部条目（保序）。
+func diagsByCode(ctx *query.Context, code string) []query.Diagnostic {
+	var out []query.Diagnostic
+	for _, d := range ctx.Diagnostics {
+		if d.Code == code {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// diagCodeSeq 摊平诊断码次序（用于「Q3 恒末位」这类次序断言）。
+func diagCodeSeq(ctx *query.Context) []string {
+	out := make([]string, 0, len(ctx.Diagnostics))
+	for _, d := range ctx.Diagnostics {
+		out = append(out, d.Code)
+	}
+	return out
+}
+
+// —— ① 干净 vault：query.Build 无条件产出恰一条 I1 info，且**别无它诊断** ——
+
+func TestContextI1EmittedByQueryDiagnostics(t *testing.T) {
+	root := fixture(t) // 无坏文件、无悬空引用：诊断集合里只应有这一条 info
+	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
+
+	i1 := diagsByCode(ctx, query.CodeI1)
+	if len(i1) != 1 {
+		t.Fatalf("query.Build 必须无条件产出恰一条 I1，实得 %d 条（序列 %v）",
+			len(i1), diagCodeSeq(ctx))
+	}
+	d := i1[0]
+	if d.Level != query.DiagLevelInfo {
+		t.Fatalf("I1 必须是 info 级，实得 %q", d.Level)
+	}
+	if d.Level == query.DiagLevel {
+		t.Fatalf("I1 绝不能被降级成 warning（DiagLevel），实得 %q", d.Level)
+	}
+	if d.Path != "candidates" {
+		t.Fatalf("I1 的 path 应逐字为 candidates，实得 %q", d.Path)
+	}
+	if !strings.Contains(d.Message, "candidates") || !strings.Contains(d.Message, "已弃用") ||
+		!strings.Contains(d.Message, "knowledge_candidates") {
+		t.Fatalf("I1 消息必须明确「candidates 已弃用，改读 knowledge_candidates」：%q", d.Message)
+	}
+	// 干净语料：整份诊断集合就这一条，一个 Q 都不该有（尤其不能冒出 Q3）。
+	if len(ctx.Diagnostics) != 1 {
+		t.Fatalf("干净 vault 的诊断集合应只含 I1 一条，实得 %v", diagCodeSeq(ctx))
+	}
+}
+
+// —— ② Q 系列在场：I1 仍恰一条 info，Q3 恒末位，I1 不触发 Q3 ——
+
+func TestContextI1CoexistsWithQSeriesAndQ3StaysLast(t *testing.T) {
+	root := polishVault(t, map[string]string{
+		// 一张命中的知识卡（保证候选非空）+ 一张坏卡（带出 Q1 → Q3）。
+		"domains/ai-infra/knowledge/k-20260901-hit.md": polishCard("k-20260901-hit", "注意力机制"),
+		"domains/ai-infra/knowledge/broken.md":         "---\n- 1\n---\n\n# 坏卡\n",
+	})
+	ctx := polishContext(t, root)
+
+	// I1 仍**恰一条** info：不因 Q 系列在场而重复、也不被带偏成 warning。
+	i1 := diagsByCode(ctx, query.CodeI1)
+	if len(i1) != 1 || i1[0].Level != query.DiagLevelInfo {
+		t.Fatalf("Q 系列在场时 I1 仍须恰一条 info，实得 %+v（序列 %v）", i1, diagCodeSeq(ctx))
+	}
+	// 坏卡带出恰一条 Q1 + 恰一条 Q3。
+	if got := len(diagsByCode(ctx, query.CodeQ1)); got != 1 {
+		t.Fatalf("坏卡应带出恰一条 Q1，实得 %d（%v）", got, diagCodeSeq(ctx))
+	}
+	if got := len(diagsByCode(ctx, query.CodeQ3)); got != 1 {
+		t.Fatalf("有 Q1 时应汇总恰一条 Q3，实得 %d（%v）", got, diagCodeSeq(ctx))
+	}
+	// Q3 恒末位；I1 排在诊断序列最前（code "I1" < "Q…"），可见它未被误当作汇总项去触发 Q3。
+	seq := diagCodeSeq(ctx)
+	if seq[len(seq)-1] != query.CodeQ3 {
+		t.Fatalf("Q3 必须恒末位，实际次序 %v", seq)
+	}
+	if seq[0] != query.CodeI1 {
+		t.Fatalf("I1 应排在诊断序列最前（info，不参与 Q 汇总），实际次序 %v", seq)
+	}
+}
