@@ -106,8 +106,8 @@ func (e *executor) setStatusWrite(a Action) {
 	e.out.CardsUpdated = append(e.out.CardsUpdated, a.ID)
 }
 
-// setReplacedByWrite 执行 set_replaced_by：只在主体卡上写替代指针（单向存储，
-// 被指向的目标卡不打开、不改写——避免双写产生两份真相）。
+// setReplacedByWrite 执行 set_replaced_by：只在宿主端点（知识卡或观点）上写替代指针
+// （单向存储，被指向端点不打开、不改写——避免双写产生两份真相）。
 func (e *executor) setReplacedByWrite(a Action) {
 	rb := a.Replaced
 	if rb == nil {

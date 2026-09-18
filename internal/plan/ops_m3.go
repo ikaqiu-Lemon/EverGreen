@@ -29,7 +29,7 @@ const (
 	OpDeprecate = "deprecate" // M3 / S2
 	// OpRestore 用户显式恢复一张失效卡（status → active）。
 	OpRestore = "restore" // M3 / S2
-	// OpSetReplacedBy 给失效卡挂替代指针 replaced_by。
+	// OpSetReplacedBy 给被替代的知识卡或观点挂替代指针 replaced_by。
 	OpSetReplacedBy = "set_replaced_by" // M3 / S2
 	// OpDelete 逻辑删除（必须引用 status=approved 提案）。
 	OpDelete = "delete" // M3 / S2
