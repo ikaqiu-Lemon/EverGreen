@@ -72,8 +72,8 @@ func TestSetReplacedByCLIAcrossKinds(t *testing.T) {
 }
 
 // TestReplacedByMissingTargetUsage：eg replaced-by 缺 --target 的用法错文案必须点名
-// **跨类型宿主端点**（<k|o-id>），而不再沿用三条 card-only 状态命令的 <k-id> / 目标卡漂移；
-// 同一份 requireStateTargetAndReason 下，deprecate / restore 缺 --target 仍逐字是 <k-id> 目标卡。
+// **跨类型宿主端点**（<k|o-id>），而不再沿用四条 card-only 状态命令的 <k-id> / 目标卡漂移；
+// 同一份 requireStateTargetAndReason 下，deprecate / restore（代表 delete / undelete）缺 --target 仍逐字是 <k-id> 目标卡。
 //
 // 用非 --json 路径跑：用法错在人类可读模式下落到 stderr（错误：<msg>），便于逐字断言文案。
 func TestReplacedByMissingTargetUsage(t *testing.T) {

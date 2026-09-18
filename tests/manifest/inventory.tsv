@@ -62,7 +62,7 @@ tests/_staged/internal/cli/rel_add_test.go	unit	go	cli-core	unit.internal.cli	8	
 tests/_staged/internal/cli/rel_ko_test.go	unit	go	cli-core	unit.internal.cli	8	27391
 tests/_staged/internal/cli/rel_remove_test.go	unit	go	cli-core	unit.internal.cli	3	7970
 tests/_staged/internal/cli/rel_test.go	unit	go	cli-core	unit.internal.cli	10	14729
-tests/_staged/internal/cli/replaced_by_ko_cli_test.go	unit	go	cli-core	unit.internal.cli	2	5087
+tests/_staged/internal/cli/replaced_by_ko_cli_test.go	unit	go	cli-core	unit.internal.cli	2	5116
 tests/_staged/internal/cli/report_test.go	unit	go	cli-core	unit.internal.cli	10	16557
 tests/_staged/internal/cli/reserved_runtime_exit5_test.go	unit	go	cli-core	unit.internal.cli	3	12074
 tests/_staged/internal/cli/reviewed_test.go	unit	go	cli-core	unit.internal.cli	9	20407

@@ -109,7 +109,7 @@ func (r *Root) buildStateOpPlan(inv *Invocation, opName, target, reason string,
 	}, nil
 }
 
-// stateOpBaseIDs 列出需要进 base 的 ID：主体卡恒在内；`replaced_by.target`
+// stateOpBaseIDs 列出需要进 base 的 ID：宿主目标恒在内；`replaced_by.target`
 // 一并计入是因为 plan 校验要读它的 status / deleted_at 来判 E10 / W12。
 func (r *Root) stateOpBaseIDs(target string, replaced *plan.ReplacedBy) []string {
 	if replaced == nil || replaced.Target == "" {
@@ -118,10 +118,10 @@ func (r *Root) stateOpBaseIDs(target string, replaced *plan.ReplacedBy) []string
 	return []string{target, replaced.Target}
 }
 
-// stateOpDomain 决定 plan.domain：目标卡**所在目录**的领域优先（EG-DOM-01，
+// stateOpDomain 决定 plan.domain：目标对象**所在目录**的领域优先（EG-DOM-01，
 // 领域由目录唯一决定，绝不从 frontmatter 猜）→ 其次 `default_domain`；
 // 两者皆无 → 退 1（CLI 绝不自选领域，EG-DOM-03）。三条状态命令不收 `--domain`：
-// 目标卡已落盘，其领域是既成事实，允许用户另指领域只会引入伪造空间。
+// 目标对象已落盘，其领域是既成事实，允许用户另指领域只会引入伪造空间。
 func stateOpDomain(inv *Invocation, targetPath string) (string, error) {
 	if d := domainOfPath(targetPath); d != "" {
 		return d, nil
@@ -130,7 +130,7 @@ func stateOpDomain(inv *Invocation, targetPath string) (string, error) {
 		return d, nil
 	}
 	return "", &UsageError{Msg: fmt.Sprintf(
-		"无法确定落位领域：目标卡不在任何领域目录下且 %s 未配置 default_domain"+
+		"无法确定落位领域：目标对象不在任何领域目录下且 %s 未配置 default_domain"+
 			"（CLI 绝不自选领域）", ConfigFileName)}
 }
 
