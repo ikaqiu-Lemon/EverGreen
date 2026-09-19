@@ -779,7 +779,7 @@ func TestR6RecapsNotSampledNoJudgement(t *testing.T) {
 }
 
 // TestR6WrittenKeySetClosed：待写键集合恒封闭两键（编译期数组 + 运行期断言），
-// 且 Finding 的封闭四键与 check 十二值封闭枚举一字不放宽。
+// 且 Finding 的封闭四键与 check 十三值封闭枚举（A-62 后）一字不放宽。
 func TestR6WrittenKeySetClosed(t *testing.T) {
 	keys := RecapStaleKeys()
 	if len(keys) != RecapStaleKeyCount {
@@ -801,7 +801,7 @@ func TestR6WrittenKeySetClosed(t *testing.T) {
 	if RecapStaleKeys()[0] == "tampered" {
 		t.Fatal("RecapStaleKeys() 返回的不是副本")
 	}
-	// Finding 四键与 check 封闭枚举不放宽（R6 入册后仍恰 12 值）。
+	// Finding 四键与 check 封闭枚举不放宽（R6 入册后仍与 CheckCount 一致，A-62 后为 13 值）。
 	if !reflect.DeepEqual(FindingKeys(), []string{"check", "severity", "targets", "detail"}) {
 		t.Fatalf("finding 键集合被改：%v", FindingKeys())
 	}

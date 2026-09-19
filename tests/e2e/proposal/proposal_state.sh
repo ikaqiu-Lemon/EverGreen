@@ -218,10 +218,10 @@ step "越界反证：本 task 不发编号、不引 M4–M6 能力"
 [ "$( { grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/cli/codes.go" || true; } |
   tr -d '"' | sort -u | tr '\n' ' ')" = "E17 E18 E19 E20 E21 E22 E23 E24 E25 " ] ||
   die "internal/cli/codes.go 的命令层码集合应恰 {E17…E25}（CLI 合同 §5 现态脚注）"
-[ "$( { grep -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-9]|W[3-9][0-9]|I[2-9])"' \
+[ "$( { grep -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-8]|W[3-9][0-9]|I[2-9])"' \
   "${REPO_ROOT}/internal/reconcile/" || true; } |
   wc -l | tr -d ' ')" = "0" ] ||
-  die "internal/reconcile 出现 M5–M6 号段编号"
+  die "internal/reconcile 出现 M5–M6 号段编号（W21–W28 / W30+；A-62 只解冻 W29）"
 # M6 域封闭双侧等号：internal/txn 恰 {E15,E16,W26,W28}、internal/mdfile 恰 {W27}。
 grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/txn/" | tr -d '"' | sort -u >"${WORK}/codes_m6_txn.txt"
 printf 'E15\nE16\nW26\nW28\n' | sort -u >"${WORK}/want_m6_txn.txt"

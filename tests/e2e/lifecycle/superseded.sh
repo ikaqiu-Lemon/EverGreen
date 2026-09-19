@@ -247,8 +247,8 @@ grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/cli/codes.go" | tr -d '"' 
 printf 'E17\nE18\nE19\nE20\nE21\nE22\nE23\nE24\nE25\n' | sort -u >"${WORK}/want_codes_cmd.txt"
 diff -u "${WORK}/want_codes_cmd.txt" "${WORK}/codes_cmd.txt" ||
   die "internal/cli/codes.go 的命令层码集合应恰 {E17…E25}（CLI 合同 §5 现态脚注）"
-count0 '越界编号（reconcile 内 M5–M6 号段）' \
-  -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-9]|W[3-9][0-9]|I[2-9])"' "${REPO_ROOT}/internal/reconcile/"
+count0 '越界编号（reconcile 内 M5–M6 号段 W21–W28 / W30+；A-62 只解冻 W29）' \
+  -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-8]|W[3-9][0-9]|I[2-9])"' "${REPO_ROOT}/internal/reconcile/"
 # M6 域封闭双侧等号：internal/txn 恰 4 值（E15 写前复核 / E16 锁忙 / W26 恢复留痕 / W28 锁重试）。
 grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/txn/" | tr -d '"' | sort -u >"${WORK}/codes_m6_txn.txt"
 printf 'E15\nE16\nW26\nW28\n' | sort -u >"${WORK}/want_m6_txn.txt"

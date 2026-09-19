@@ -20,7 +20,8 @@ package cli
 //   - 观点带来的新判定面**只属于** R3 / R4。R2 仍只针对知识卡 / 材料笔记的 `reviewed_at`，
 //     R6 仍只针对综述的 `stale`。本文件用 TestOpinionNeverEntersR2R6RepairSurface 把这条
 //     边界钉成机器判据：不给观点发明 `reviewed_at`、不发明 `stale`、不产新 RepairSpec。
-//   - `eg check` 的检查面恒 7 个 check，观点不改变这个数。
+//   - `eg check` 的检查面恰 8 个 check：A-62 前恒 7，A-62 起观点**恰新增** `opinion_unsupported_validated`
+//     （R3 · W29）这一个，其余基数不变；W29 仍在 R3/R4 面内，不给观点添任何写入面。
 //
 // # 为什么必须走命令入口，而不是在判定层再补几支
 //
@@ -206,11 +207,11 @@ func TestReconcileCLILegalOpinionVaultAllGreen(t *testing.T) {
 	}
 }
 
-// —— ② 判据 2：`eg check` 仍恰 7 个 check，且零权威写入 / 零事务 / 零 commit ——
+// —— ② 判据 2：`eg check` 恰 8 个 check（A-62 起含 W29），且零权威写入 / 零事务 / 零 commit ——
 
-// TestCheckCLIOnOpinionVaultStaysSevenChecksReadOnly：观点入库**不改变** `eg check` 的
-// 检查面基数，也不给它添任何写入面。
-func TestCheckCLIOnOpinionVaultStaysSevenChecksReadOnly(t *testing.T) {
+// TestCheckCLIOnOpinionVaultStaysEightChecksReadOnly：观点入库把 `eg check` 的检查面
+// 从 7 抬到 **8**（恰新增 opinion_unsupported_validated / R3·W29），且不给它添任何写入面。
+func TestCheckCLIOnOpinionVaultStaysEightChecksReadOnly(t *testing.T) {
 	dir, _, opinionRel := opinionVault(t)
 
 	beforeBytes := opVaultBytes(t, dir)
@@ -222,16 +223,16 @@ func TestCheckCLIOnOpinionVaultStaysSevenChecksReadOnly(t *testing.T) {
 		t.Fatalf("退出码 = %d，期望 0（合法库结构面无 error）：%s\n%s", code, errOut, out)
 	}
 
-	// —— 检查面恒 7：常量、派生集合、信封三处同时复算 ——
-	if CheckScopeCount != 7 {
-		t.Fatalf("CheckScopeCount = %d，期望恰 7（观点不新增 check）", CheckScopeCount)
+	// —— 检查面恰 8：常量、派生集合、信封三处同时复算 ——
+	if CheckScopeCount != 8 {
+		t.Fatalf("CheckScopeCount = %d，期望恰 8（A-62 起观点新增 opinion_unsupported_validated）", CheckScopeCount)
 	}
 	if CheckExcludedCount != 5 {
 		t.Fatalf("CheckExcludedCount = %d，期望恰 5", CheckExcludedCount)
 	}
-	if got := chkStringSlice(t, out, "scope"); len(got) != 7 ||
+	if got := chkStringSlice(t, out, "scope"); len(got) != 8 ||
 		!reflect.DeepEqual(got, chkWantScope) {
-		t.Fatalf("data.check.scope = %v，期望恰 7 个且逐字等于 %v", got, chkWantScope)
+		t.Fatalf("data.check.scope = %v，期望恰 8 个且逐字等于 %v", got, chkWantScope)
 	}
 	if got := chkStringSlice(t, out, "excluded"); !reflect.DeepEqual(got, chkWantExcluded) {
 		t.Fatalf("data.check.excluded = %v，期望逐字等于 %v", got, chkWantExcluded)

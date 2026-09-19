@@ -1,6 +1,6 @@
 package reconcile
 
-// R3 —— 关系一致性的四项**只读**检查（对账合同 §7；M4 · T-…-053）。
+// R3 —— 关系一致性的四项**只读**检查 + A-62 追加的观点支撑度检查（对账合同 §7；M4 · T-…-053 / 7C2）。
 //
 // 四项（`check` 值 / 诊断码 / severity 一律取自 check.go 的唯一真源表，本文件不另写字面量）：
 //
@@ -9,6 +9,13 @@ package reconcile
 //	relation_opposing_asymmetric  W15 warning `opposing` 方向不对称（按 ID 字典序规范化后判定）
 //	relation_duplicate            W16 warning 规范化 `(from,type,target)` 重复（同一文件内同一条边
 //	                                          写了 ≥ 2 次，或同一对 `opposing` 两向各有记录）
+//
+// A-62 追加的第五项（同属 R3、同为**只报告**）：
+//
+//	opinion_unsupported_validated W29 warning validation=validated 的观点没有任何**有效**
+//	                                          incoming `supports` 支持（只看未删除·非 duplicate-id
+//	                                          的 validated 观点；supporter 未删除才有效、deprecated 仍有效；
+//	                                          重复支持边按 (from,type,target) 去重；outgoing 不算）
 //
 // # 本文件**不做**的事（结构上做不到，不靠自律）
 //
@@ -75,19 +82,20 @@ import (
 // R3 是本检查项的 R 编号（与 checkTable 内四行 R3 的 R 列同值）。
 const R3 = "R3"
 
-// R3SubcheckCount 是 R3 的子检查数：恰 4（E13 / E14 / W15 / W16）。
-const R3SubcheckCount = 4
+// R3SubcheckCount 是 R3 的子检查数：恰 5（E13 / E14 / W15 / W16 + A-62 新增 W29）。
+const R3SubcheckCount = 5
 
-// r3SubcheckTable 是四个子检查的封闭全集（长度固定数组：第五个子检查加不进来），
-// 顺序 = 合同 §7 判定表行序 = 合同 §3 表格内四行 R3 的行序 = 本文件的 finding 产出顺序。
+// r3SubcheckTable 是五个子检查的封闭全集（长度固定数组：第六个子检查加不进来），
+// 顺序 = 合同 §7 判定表行序 = 合同 §3 表格内四行 R3 的行序 + A-62 追加的 W29 = 本文件的 finding 产出顺序。
 var r3SubcheckTable = [R3SubcheckCount]string{
 	CheckRelationTargetMissing,
 	CheckRelationPrefixInvalid,
 	CheckRelationOpposingAsymmetric,
 	CheckRelationDuplicate,
+	CheckOpinionUnsupportedValidated,
 }
 
-// R3Subchecks 返回四个子检查的 check 值副本（顺序即合同 §7 判定表行序）。
+// R3Subchecks 返回五个子检查的 check 值副本（顺序即合同 §7 判定表行序 + A-62 追加行）。
 func R3Subchecks() []string {
 	out := make([]string, 0, R3SubcheckCount)
 	out = append(out, r3SubcheckTable[:]...)
@@ -531,24 +539,125 @@ func duplicateRelationDetail(g *dupGroup) string {
 		g.from, g.typ, g.target, g.entries, shape, strings.Join(g.paths, "、"))
 }
 
+// —— W29：validated 观点零有效 incoming supports（合同 A-62 · R3 第五项）——
+
+// checkR3OpinionUnsupported 判定 W29：validation=validated 的观点若没有任何**有效**
+// incoming `supports` 支持，则报一条 warning（只报告，零 RepairSpec、零写入、零 validation 自动修改）。
+//
+// 判定面（逐条与 A-62 语义矩阵一致）：
+//   - 只看**未删除**、**非 duplicate-id** 的 validated 观点：已删除让位删除维度；同一 ID 落在
+//     多个文件让位 E11（duplicate_id），不在本码重复计。
+//   - 有效支持只算 incoming 边 `X --supports--> O`（target 恰是该观点）：观点自己 supports 别人的
+//     outgoing 边**不算**；边类型必须恰是 supports（limits / derives / opposing / against 一律不算）。
+//   - supporter 必须**存在且未删除**才有效；deprecated（失效但未删除）supporter 仍有效 ——
+//     与既有「存在性只看落盘事实」口径一致，删除维度才是有效性的分界。
+//   - 同一 supporter 的重复 supports 边按 `(from,type,target)` 去重，仍只算**一条**有效支持。
+//   - Scan 为 nil（未取数）时不判、不 panic。
+//
+// 每个命中观点恰**一条** finding，`targets = [o-id]`（观点这一个可定位标识）。产出按观点 ID 升序，
+// 与扫描序 / map 迭代序无关。本函数不引任何写 API、不改 validation、不产 RepairSpec。
+func checkR3OpinionUnsupported(scan *query.ScanResult, x StructureIndex) []Finding {
+	if scan == nil {
+		return nil
+	}
+	// 已删除对象集合（supporter 未删除才有效；deprecated 不进此集合，仍是有效 supporter）。
+	deleted := map[string]bool{}
+	for _, c := range scan.Cards {
+		if c.Deleted {
+			deleted[strings.TrimSpace(c.ID)] = true
+		}
+	}
+	for _, o := range scan.Opinions {
+		if o.Deleted {
+			deleted[strings.TrimSpace(o.ID)] = true
+		}
+	}
+	// 观点 ID → 去重后的有效 incoming supporter 集合（键 = supporter ID；type / target 在本分组内恒定，
+	// 因此按 from 去重即等价于按 (from,type,target) 去重）。
+	support := map[string]map[string]bool{}
+	for _, f := range collectRelationFacts(scan) {
+		if f.typ != string(model.RelationSupports) {
+			continue // 只有 supports 边算支持
+		}
+		from, target := strings.TrimSpace(f.from), strings.TrimSpace(f.target)
+		if from == "" || target == "" || deleted[from] {
+			continue // 无法定位的 supporter / 非 incoming 目标 / 已删除 supporter 一律不算
+		}
+		if support[target] == nil {
+			support[target] = map[string]bool{}
+		}
+		support[target][from] = true
+	}
+	// 逐观点判定，按观点 ID 升序产出；同 ID 只取一次（duplicate-id 让位 E11，随后被过滤）。
+	byID := map[string]query.OpinionEntry{}
+	ids := make([]string, 0, len(scan.Opinions))
+	for _, o := range scan.Opinions {
+		id := strings.TrimSpace(o.ID)
+		if id == "" {
+			continue
+		}
+		if _, ok := byID[id]; !ok {
+			byID[id] = o
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	var out []Finding
+	for _, id := range ids {
+		o := byID[id]
+		if o.Validation != string(model.ValidationValidated) {
+			continue // 只判 validated：pending / rejected 不判
+		}
+		if o.Deleted || deleted[id] {
+			continue // 已删除观点不判
+		}
+		if len(x.ObjectPaths[id]) > 1 {
+			continue // duplicate-id 让位 E11，本码不重复计
+		}
+		if len(support[id]) != 0 {
+			continue // 有有效 incoming 支持 → 不报
+		}
+		f, err := NewFinding(CheckOpinionUnsupportedValidated, []string{id},
+			opinionUnsupportedDetail(id, o.Path))
+		if err != nil {
+			continue // 防御性丢弃：只读检查不该让进程死在检查器里
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// opinionUnsupportedDetail 渲染 W29 的 detail（命中观点 ID + 落盘路径 + 判定口径，供逐条复算）。
+func opinionUnsupportedDetail(id, path string) string {
+	return fmt.Sprintf(
+		"validated 观点缺有效支撑：观点 %s 的论证进度已置 validated，但库内没有任何**有效** incoming "+
+			"supports 关系指向它（有效支持只算 X --supports--> %s、supporter 未删除，deprecated 仍算；"+
+			"outgoing 支持与非 supports 关系不算，重复支持边按 (from,type,target) 去重）；观点落盘于 %s。"+
+			"只报告——不自动改写 validation、不补关系、不落盘，修复交回用户显式操作",
+		id, id, path)
+}
+
 // —— 汇总与注册 ——
 
-// checkR3Relation 是 R3 检查项本体：一次建索引 + 一次事实归集，跑四项判定，
+// checkR3Relation 是 R3 检查项本体：一次建索引 + 一次事实归集，跑五项判定，
 // 产 finding、**零 RepairSpec**。
 //
 // 纯函数：同一 Input 恒得同一输出（含顺序）；不改入参、不产生任何副作用。
-// 产出顺序 = 合同 §7 判定表行序（E13 → E14 → W15 → W16），组内按判定键升序。
+// 产出顺序 = 合同 §7 判定表行序 + A-62 追加行（E13 → E14 → W15 → W16 → W29），组内按判定键升序。
 // Scan 为 nil（未取数）时返回空集合 —— 「没取数」不产 finding。
 func checkR3Relation(in Input) ([]Finding, []RepairSpec) {
-	facts := collectRelationFacts(in.Scan)
-	if len(facts) == 0 {
+	if in.Scan == nil {
 		return nil, nil
 	}
+	facts := collectRelationFacts(in.Scan)
 	x := NewStructureIndex(in)
 	var out []Finding
 	out = append(out, checkR3TargetMissingAndPrefix(facts, x)...)
 	out = append(out, checkR3OpposingAsymmetric(facts, x)...)
 	out = append(out, checkR3Duplicate(facts)...)
+	// A-62：观点支撑度检查看的是 validated 观点自身（零关系的孤立观点也要判），
+	// 因此**不**受 `len(facts)==0` 早退门槛约束，单独遍历扫描结果。
+	out = append(out, checkR3OpinionUnsupported(in.Scan, x)...)
 	if len(out) == 0 {
 		return nil, nil
 	}

@@ -1,6 +1,6 @@
 package reconcile
 
-// R3 四项只读关系检查（E13 / E14 / W15 / W16）的表驱动单测（M4 · T-…-053）。
+// R3 只读关系检查（E13 / E14 / W15 / W16 四项 + A-62 新增第五项 W29）的表驱动单测（M4 · T-…-053 / 7C2）。
 //
 // 六组（deliverables 逐字要求，用例名不得改字）：
 //  1. TestR3TargetMissing                 —— target 查无此对象 → E13 / error，聚合与去重可复算；
@@ -11,8 +11,14 @@ package reconcile
 //  5. TestR3ReportOnlyNoAutoFix            —— 只报告零自动修：零 RepairSpec / 零写盘 / 入参不改 / 幂等；
 //  6. TestR3RelationTypesStillEight        —— F4 关系类型仍恰 8 值封闭，Relation 仍恰 3 字段。
 //
+// A-62 新增（第五个 R3 子检查，不改上述任一用例名 / 语义）：
+//  7. TestR3OpinionUnsupportedValidated    —— validated 观点零有效 incoming supports → W29 / warning，
+//     只看未删除·非 duplicate-id 的 validated 观点；有效支持只算 incoming `X--supports-->O`、
+//     supporter 未删除才有效（deprecated 仍有效）、重复边按 (from,type,target) 去重、outgoing 不算、
+//     nil Scan 不判、每个命中恰一条 finding 且 targets=[o-id]、零 RepairSpec / 零写。
+//
 // 另加三组本 task 自守：与 R4 的 dangling_ref 零重复计数（反证形态双侧对称）、
-// targets 去重升序可复算、四子检查 ↔ 诊断码单射与产出顺序。
+// targets 去重升序可复算、五子检查 ↔ 诊断码单射与产出顺序。
 //
 // 全部用例只用**内存构造**的 query.ScanResult 快照，不建 vault、不读盘（唯一的读盘是
 // 自守用例对本包源文件做的 grep 反证）—— 检查器是纯函数，这正是收益。
@@ -51,6 +57,20 @@ func r3ScanOf(cards ...query.CardEntry) *query.ScanResult {
 	return &query.ScanResult{Cards: cards, ScannedFiles: len(cards)}
 }
 
+// r3CardDeleted 造一张逻辑删除的知识卡（A-62 · W29 的「supporter 已删除即无效」边界用）。
+func r3CardDeleted(id string, rels ...model.Relation) query.CardEntry {
+	c := r3Card(id, rels...)
+	c.Deleted = true
+	return c
+}
+
+// r3CardDeprecated 造一张失效（非删除）的知识卡（W29 的「deprecated supporter 仍有效」边界用）。
+func r3CardDeprecated(id string, rels ...model.Relation) query.CardEntry {
+	c := r3Card(id, rels...)
+	c.Deprecated = true
+	return c
+}
+
 // r3Of 跑 R3 检查项本体并逐条校验：四键 schema 合规 + **零 RepairSpec**（R3 只报告）。
 func r3Of(t *testing.T, in Input) []Finding {
 	t.Helper()
@@ -79,7 +99,7 @@ func r3One(t *testing.T, fs []Finding, check string) Finding {
 	return got[0]
 }
 
-// r3Counts 返回四个子检查的条数（顺序 = 合同 §7 判定表行序）。
+// r3Counts 返回五个子检查的条数（顺序 = 合同 §7 判定表行序，末位为 A-62 新增 W29）。
 func r3Counts(fs []Finding) [R3SubcheckCount]int {
 	var out [R3SubcheckCount]int
 	for i, c := range R3Subchecks() {
@@ -775,20 +795,27 @@ func TestR3NoDoubleCountWithR4DuplicateID(t *testing.T) {
 	}
 }
 
-// TestR3TargetsSortedDedupedAndOrdered：四码的 targets 恒去重升序，
+// TestR3TargetsSortedDedupedAndOrdered：五码的 targets 恒去重升序，
 // finding 产出顺序恒等于合同 §7 判定表行序（可逐字复算）。
 func TestR3TargetsSortedDedupedAndOrdered(t *testing.T) {
-	in := Input{Scan: r3ScanOf(
-		// 逆序 / 重复输入：产出仍恒定（不受扫描序与条目序影响）。
-		r3Card(kZ, r3Rel(model.RelationOpposing, kA), r3Rel(model.RelationSupports, kGone),
-			r3Rel(model.RelationSupports, kGone), r3Rel(model.RelationDerives, "bad-id")),
-		r3Card(kA),
-	)}
+	in := Input{Scan: &query.ScanResult{
+		Cards: []query.CardEntry{
+			// 逆序 / 重复输入：产出仍恒定（不受扫描序与条目序影响）。
+			r3Card(kZ, r3Rel(model.RelationOpposing, kA), r3Rel(model.RelationSupports, kGone),
+				r3Rel(model.RelationSupports, kGone), r3Rel(model.RelationDerives, "bad-id")),
+			r3Card(kA),
+		},
+		// A-62：一条零支持的 validated 观点 → 恰产 1 条 W29（末位子检查）。
+		Opinions: []query.OpinionEntry{
+			opValidated(opOpinion(oA)),
+		},
+		ScannedFiles: 3,
+	}}
 	fs := r3Of(t, in)
-	if got := r3Counts(fs); got != [R3SubcheckCount]int{1, 1, 1, 1} {
-		t.Fatalf("四码条数 = %v，期望各恰 1 条：%+v", got, fs)
+	if got := r3Counts(fs); got != [R3SubcheckCount]int{1, 1, 1, 1, 1} {
+		t.Fatalf("五码条数 = %v，期望各恰 1 条：%+v", got, fs)
 	}
-	// 产出顺序 = E13 → E14 → W15 → W16。
+	// 产出顺序 = E13 → E14 → W15 → W16 → W29。
 	order := make([]string, 0, len(fs))
 	for _, f := range fs {
 		order = append(order, f.Check)
@@ -809,8 +836,13 @@ func TestR3TargetsSortedDedupedAndOrdered(t *testing.T) {
 		[]string{kA, kZ}) {
 		t.Fatalf("W15 的 targets = %v，期望 [%s %s]", got, kA, kZ)
 	}
-	// 四子检查 ↔ 诊断码单射（顺序与 check.go 真源表逐字一致）。
-	wantCodes := []string{CodeE13, CodeE14, CodeW15, CodeW16}
+	// W29 的 targets 恒是命中观点这一个可定位标识。
+	if got := r3One(t, fs, CheckOpinionUnsupportedValidated).Targets; !reflect.DeepEqual(got,
+		[]string{oA}) {
+		t.Fatalf("W29 的 targets = %v，期望 [%s]", got, oA)
+	}
+	// 五子检查 ↔ 诊断码单射（顺序与 check.go 真源表逐字一致）。
+	wantCodes := []string{CodeE13, CodeE14, CodeW15, CodeW16, CodeW29}
 	for i, c := range R3Subchecks() {
 		code, ok := CodeOf(c)
 		if !ok || code != wantCodes[i] {
@@ -823,5 +855,129 @@ func TestR3TargetsSortedDedupedAndOrdered(t *testing.T) {
 	}
 	if len(R3Subchecks()) != R3SubcheckCount {
 		t.Fatalf("R3 子检查数 = %d，应恰 %d", len(R3Subchecks()), R3SubcheckCount)
+	}
+}
+
+// TestR3OpinionUnsupportedValidated 覆盖 A-62 · W29（opinion_unsupported_validated）的判定语义矩阵：
+// 只判未删除·非 duplicate-id 的 validated 观点；有效支持只算 incoming `X--supports-->O`、
+// supporter 未删除才有效（deprecated 仍有效）、重复边按 (from,type,target) 去重、outgoing 不算、
+// nil Scan 不判、每个命中观点恰一条 finding 且 targets=[o-id]、零 RepairSpec / 零写。
+func TestR3OpinionUnsupportedValidated(t *testing.T) {
+	w29 := CheckOpinionUnsupportedValidated
+	cases := []struct {
+		name    string
+		in      Input
+		wantW29 int
+	}{
+		{
+			name:    "validated 观点零 incoming supports → 恰 1 条 W29",
+			in:      Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
+			wantW29: 1,
+		},
+		{
+			name: "被现存未删除知识卡 supports → W29=0（有效 incoming 支持压制）",
+			in: Input{Scan: opScanOf([]query.CardEntry{r3Card(kA, r3Rel(model.RelationSupports, oA))},
+				nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
+			wantW29: 0,
+		},
+		{
+			name: "只有 outgoing supports（观点 supports 别人）→ W29=1（outgoing 不算）",
+			in: Input{Scan: opScanOf([]query.CardEntry{r3Card(kA)},
+				nil, []query.OpinionEntry{opValidated(opOpinion(oA, r3Rel(model.RelationSupports, kA)))})},
+			wantW29: 1,
+		},
+		{
+			name: "incoming supporter 已逻辑删除 → 支持无效 → W29=1",
+			in: Input{Scan: opScanOf([]query.CardEntry{r3CardDeleted(kA, r3Rel(model.RelationSupports, oA))},
+				nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
+			wantW29: 1,
+		},
+		{
+			name: "incoming supporter 是 deprecated（未删除）→ 仍有效 → W29=0",
+			in: Input{Scan: opScanOf([]query.CardEntry{r3CardDeprecated(kA, r3Rel(model.RelationSupports, oA))},
+				nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
+			wantW29: 0,
+		},
+		{
+			name: "同一 supporter 的重复 supports 边 → 去重后仍算 1 个有效支持 → W29=0",
+			in: Input{Scan: opScanOf(
+				[]query.CardEntry{r3Card(kA, r3Rel(model.RelationSupports, oA), r3Rel(model.RelationSupports, oA))},
+				nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
+			wantW29: 0,
+		},
+		{
+			name: "incoming 边类型不是 supports（limits）→ 不算支持 → W29=1",
+			in: Input{Scan: opScanOf([]query.CardEntry{r3Card(kA, r3Rel(model.RelationLimits, oA))},
+				nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
+			wantW29: 1,
+		},
+		{
+			name:    "pending 观点零支持 → 只判 validated → W29=0",
+			in:      Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{opWithValidation(opOpinion(oA), model.ValidationPending)})},
+			wantW29: 0,
+		},
+		{
+			name:    "rejected 观点零支持 → W29=0",
+			in:      Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{opWithValidation(opOpinion(oA), model.ValidationRejected)})},
+			wantW29: 0,
+		},
+		{
+			name:    "已删除的 validated 观点 → 不判已删除 → W29=0",
+			in:      Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{opDeleted(opValidated(opOpinion(oA)))})},
+			wantW29: 0,
+		},
+		{
+			name: "duplicate-id 的 validated 观点（同 ID 两文件）→ 让位 E11 → W29=0",
+			in: Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+				opValidated(opOpinionAt(oA, "domains/ai/opinions/"+oA+".md")),
+				opValidated(opOpinionAt(oA, "domains/infra/opinions/"+oA+".md")),
+			})},
+			wantW29: 0,
+		},
+		{
+			name:    "nil Scan → 不判、不 panic → W29=0",
+			in:      Input{Scan: nil},
+			wantW29: 0,
+		},
+		{
+			name: "两条零支持的 validated 观点 → 恰 2 条 W29（逐观点各一条）",
+			in: Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+				opValidated(opOpinion(oA)), opValidated(opOpinion(oB)),
+			})},
+			wantW29: 2,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fs := r3Of(t, c.in) // r3Of 内已逐条断言 R3 零 RepairSpec（W29 只报告 / 零写）
+			if got := len(pick(fs, w29)); got != c.wantW29 {
+				t.Fatalf("W29 条数 = %d，期望 %d：%+v", got, c.wantW29, fs)
+			}
+			for _, f := range pick(fs, w29) {
+				if len(f.Targets) != 1 {
+					t.Fatalf("每条 W29 的 targets 恰含命中观点一个标识，实得 %v", f.Targets)
+				}
+				if !strings.HasPrefix(f.Targets[0], "o-") {
+					t.Fatalf("W29 的 target 应是观点 ID（o- 前缀），实得 %q", f.Targets[0])
+				}
+			}
+		})
+	}
+	// targets 精确性 + detail 可复算：单条命中恰指向该观点，detail 如实含观点 ID。
+	fs := r3Of(t, Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{opValidated(opOpinion(oA))})})
+	f := r3One(t, fs, w29)
+	if !reflect.DeepEqual(f.Targets, []string{oA}) {
+		t.Fatalf("W29 的 targets = %v，期望 [%s]", f.Targets, oA)
+	}
+	if !strings.Contains(f.Detail, oA) {
+		t.Fatalf("W29 的 detail 未如实写出命中观点 ID %q：%q", oA, f.Detail)
+	}
+	// 严格零写：含 validated 观点的整表跑一遍注册表，零 RepairSpec（W29 绝不自动改 validation / 落盘）。
+	res := Run(Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{opValidated(opOpinion(oA))})})
+	if len(res.Repairs) != 0 {
+		t.Fatalf("W29 是只报告项，Run 不得产 RepairSpec：%+v", res.Repairs)
+	}
+	if got := len(pick(res.Findings, w29)); got != 1 {
+		t.Fatalf("Run 整表应恰产 1 条 W29（eg reconcile 入口等价），实得 %d：%+v", got, res.Findings)
 	}
 }

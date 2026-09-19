@@ -34,7 +34,7 @@
 #   ⑧ 与 R1 / R2 / R3 / R4 / R5 零重复计数：其余七项条数恒 0；对端**缺失**（而非删除）时
 #      让位给 E12 —— W20 不重复记这一件事；
 #   ⑨ 源码级边界反证（对账包三条零 / 状态写口与状态字段零命中 / 提示字面量分域计数 /
-#      `W2[1-9]` 恒 0 / 命令本体零注册 / checkers 恰 6 / op 恒 16 / `content_hash` 不减 /
+#      `W2[1-8]` 恒 0（A-62 起 W29 只许落 reconcile，另有双侧锁） / 命令本体零注册 / checkers 恰 6 / op 恒 16 / `content_hash` 不减 /
 #      M3 那张建议清单一字未动）。
 #
 # 为什么用 `go test` 驱动而不是 `eg check`：
@@ -407,7 +407,7 @@ cnt0 '越界产出 R1 / R2 / R3 / R5 / R6 的 check' -E \
   <(grep -o '"check":"[a-z_]*"' "${FACTS}" || true)
 ok "六项恒 0；材料支撑这件事只被 W20 记一次"
 
-step "边界反证：对账包三条零 / 状态写口零命中 / W2[1-9] 恒 0 / 命令零注册 / 计数面不动"
+step "边界反证：对账包三条零 / 状态写口零命中 / W2[1-8] 恒 0（W29 只许落 reconcile） / 命令零注册 / 计数面不动"
 R7SRC="${REPO_ROOT}/internal/reconcile/r7_support.go"
 cnt0 '检查侧写盘或提交' -rnE 'os\.WriteFile|os\.Create|os\.Remove|os\.Rename|os\.OpenFile|Commit\(' "${R7SRC}"
 cnt0 '检查侧起子进程' -rnE 'os/exec|exec\.Command' "${R7SRC}"
@@ -432,10 +432,13 @@ cnt0 '自写材料关系字面量' -nE '"(support|against|context)"' "${R7SRC}"
   die "「对端存在」必须复用 T-…-052 的 ID 索引（不另写存在性判断）"
 # W20 是 **M4 收口时**的 W 段末位。M5（S4）起 W2x 段被继续分配，因此这里改成
 # **分域 + 复算**，M4 的历史结论一个字不放宽：
-#   ① 摘掉 M5 唯一落地面 `internal/index/` 之后，W2[1-9] 在 internal 全库恒 0
-#      —— 这就是 M4 结论「W20 是末位」的原样复算；
+#   ① 摘掉 M5 ∪ M6 ∪ plan 落地面之后，W22–W28 在 internal 全库恒 0
+#      —— 这就是 M4 结论「W20 是末位」的原样复算（A-62 把 W29 单独发放给 reconcile，见下方封闭锁）；
 #   ② M5 已落地的 W22 / W23 / W24 只许出现在 `internal/index/`（越界即红）；
-#   ③ W21 / W25–W29 全库恒 0：W25+ 属后续 task，未做不许提前出现。
+#   ③ W21 = `write_note` 结构覆盖诊断，已随 ChangePlan schema v2 正式发放给 `internal/plan/`
+#      （号段占用说明逐字写在 internal/plan/diagnostics.go：W13–W20 归 reconcile、W22–W28 各有主，
+#      W21 是唯一空号并早被预留给 ChangePlan 分级表），只许落在 plan 包（下方双侧锁）；
+#      A-62 起 W29 只许落在 `internal/reconcile/`（下方双侧锁）。
 #      （2026-09-08 随 M5 · T-…-066 阶段 B 精确重钉：W22 = index_stale 已按索引合同 §9 正式启用，
 #       故它从「全库恒 0」这一格移到「只许落在 internal/index/」那一格 —— 分域口径不变，
 #       M4 结论「摘掉 M5 落地面后 W2x 全库恒 0」原样复算。）
@@ -449,17 +452,28 @@ M5_LANDED='/internal/index/|/internal/query/page\.go'
 # 沿用本脚本既有「W 段随里程碑逐步分配、按包分域」的原样口径：M4 收口时 W20 是 W 段末位；M5 把 W22–W25
 # 发放给 internal/index/ 与 internal/query/page.go（上方两格）；M6·§12/§16.3 再把 **W26/W28 发放给
 # internal/txn/、W27 发放给 internal/mdfile/**。故把 M6 落地面并入越位剔除集合（历史事实一格不放宽：
-# 摘掉 M5∪M6 落地面后 W2[1-9] 全库仍恒 0），并在下方新增封闭双侧锁把三个 M6 码逐字钉在各自专属包。
+# 摘掉 M5∪M6 落地面后 W2[1-8] 全库仍恒 0），并在下方新增封闭双侧锁把三个 M6 码逐字钉在各自专属包。
 M6_LANDED='/internal/txn/|/internal/mdfile/'
-W2X_OUTSIDE="$( { grep -rnE '"W2[1-9]"' "${REPO_ROOT}/internal/" --include='*.go' || true; } |
-  { grep -vE "${M5_LANDED}|${M6_LANDED}" || true; } | wc -l | tr -d ' ')"
+# ── C2·plan 现态重钉（ChangePlan schema v2 · commit 4b36712 把 W21 发放给 internal/plan/；
+#    沿用同一「按包分域 + 封闭双侧锁」先例，加严非放宽）── plan 是 W21 的唯一落地面。
+PLAN_LANDED='/internal/plan/'
+W2X_OUTSIDE="$( { grep -rnE '"W2[1-8]"' "${REPO_ROOT}/internal/" --include='*.go' || true; } |
+  { grep -vE "${M5_LANDED}|${M6_LANDED}|${PLAN_LANDED}" || true; } | wc -l | tr -d ' ')"
 [ "${W2X_OUTSIDE}" = "0" ] ||
-  { grep -rnE '"W2[1-9]"' "${REPO_ROOT}/internal/" --include='*.go' | grep -vE "${M5_LANDED}|${M6_LANDED}"
-    die "W 段越位（摘掉 M5∪M6 落地面后仍有 ${W2X_OUTSIDE} 处）：W20 是 M4 末位、W2x 只许落在已分配落地面"; }
-# W21 / W29 仍未分配 ⇒ 全库恒 0（历史事实原样复算，一格不放宽）。
-for code in W21 W29; do
-  cnt0 "未分配 / 未落地的 ${code}" -rnE "\"${code}\"" "${REPO_ROOT}/internal/" --include='*.go'
-done
+  { grep -rnE '"W2[1-8]"' "${REPO_ROOT}/internal/" --include='*.go' | grep -vE "${M5_LANDED}|${M6_LANDED}|${PLAN_LANDED}"
+    die "W 段越位（摘掉 M5∪M6∪plan 落地面后仍有 ${W2X_OUTSIDE} 处）：W20 是 M4 末位、W21–W28 只许落在已分配落地面"; }
+# plan 域封闭双侧锁：W21（write_note 结构覆盖）只许落 internal/plan/，且至少在场 1 处（挪窝 / 缺席都红）。
+[ "$(grep -rlE '"W21"' "${REPO_ROOT}/internal/" --include='*.go' |
+    { grep -v '/internal/plan/' || true; } | wc -l | tr -d ' ')" = "0" ] ||
+  die "W21 出现在 internal/plan/ 之外：ChangePlan 写前结构覆盖码只许落在 plan 包"
+[ "$(grep -rlE '"W21"' "${REPO_ROOT}/internal/plan/" --include='*.go' | wc -l | tr -d ' ')" -ge 1 ] ||
+  die "W21 未在 internal/plan/ 落地：ChangePlan schema v2 已分配该码给 write_note 结构覆盖诊断"
+# A-62 封闭双侧锁：W29（opinion_unsupported_validated）只许落 internal/reconcile/，且至少在场 1 处（挪窝 / 缺席都红）。
+[ "$(grep -rlE '"W29"' "${REPO_ROOT}/internal/" --include='*.go' |
+    { grep -v '/internal/reconcile/' || true; } | wc -l | tr -d ' ')" = "0" ] ||
+  die "W29 出现在 internal/reconcile/ 之外：A-62 把该码只发放给 reconcile R3"
+[ "$(grep -rlE '"W29"' "${REPO_ROOT}/internal/reconcile/" --include='*.go' | wc -l | tr -d ' ')" -ge 1 ] ||
+  die "W29 未在 internal/reconcile/ 落地：A-62 已分配该码给 R3·opinion_unsupported_validated"
 # M6 码封闭双侧锁：W26/W28 只许落 internal/txn/、W27 只许落 internal/mdfile/，且各自至少在场 1 处（少一处 / 挪窝都红）。
 for code in W26 W28; do
   [ "$(grep -rlE "\"${code}\"" "${REPO_ROOT}/internal/" --include='*.go' |
@@ -516,15 +530,19 @@ T058_REG_OUT="$( { grep -rnE 'Name:[[:space:]]*"reconcile"' "${REPO_ROOT}/intern
 [ "${T058_REG_OUT}" = "0" ] ||
   die "reconcile 命令注册形态的唯一落点必须是 internal/cli/reconcile.go，别处实得 ${T058_REG_OUT}"
 cnt0 '检查侧出现越界能力' -rnE '\.index/|FTS5|[Ss][Qq][Ll]ite|flock|P95' "${REPO_ROOT}/internal/reconcile/"
-# 计数面：checkers 恰 6（R1 / R2 / R4 / R3 / R5 / R7）、op 恒 16、content_hash 面不减。
+# 计数面：checkers 恰 6（R1 / R2 / R4 / R3 / R5 / R7）、op 恒 19、content_hash 面不减。
 # 2026-09-07 随 M4 · T-…-055 阶段 3 **按实测重钉 op 计数锚点**（本体一格不放宽，反而更严）：
 # T-…-055 阶段 1 的 `set_stale`（A-33）把 `internal/plan` 的等式行改写成加法等式
 # `m3AllOps, m4NewOps = 16, 1`，旧字面 `!= 16` 锚点漂移（grep 计数 0 → 本行 `set -e` 崩）。
 # 重钉后锚定加法等式：同时钉住「M3 期 16 逐字未改写」与「M4 期新增恰 1（不属本 task）」。
+# ── C2·Schema v2 现态重钉（commit 4b36712「schema v2 changeplan write ops」把两个 Opinion 写口并入主链路，
+#    主链路 op 由 7 变 9、可派发全集由 17 变 19；authoritative 等式行随之从 `m3AllOps, m4NewOps = 16, 1`
+#    改写为逐项加法 `mainOps, m3Ops, editOps, m4NewOps = 9, 8, 1, 1`。本 task（R7 材料支撑）本身零新增 op，
+#    此处只把漂移锚点按实测重钉到现态等式，drift 检测本体一格不放宽）──
 CHK="$(grep -c 'landedR7 = 1' "$(eg_test_path internal/reconcile/r1_git_test.go)")"
 [ "${CHK}" = "1" ] || die "checkers 数量断言必须已把 R7 计入（landedR7 = 1）"
-OPS="$(grep -c 'm3AllOps, m4NewOps = 16, 1' "$(eg_test_path internal/plan/m3_test.go)")"
-[ "${OPS}" = "1" ] || die "AllOpNames 必须仍是「M3 期 16 + M4 新增 1」（本 task 不新增 op）"
+OPS="$(grep -c 'mainOps, m3Ops, editOps, m4NewOps = 9, 8, 1, 1' "$(eg_test_path internal/plan/m3_test.go)")"
+[ "${OPS}" = "1" ] || die "AllOpNames 必须仍是「主链路 9 + M3 8 + 编辑 1 + M4 1 = 19」（本 task 不新增 op；Schema v2 已把主链路由 7 重钉为 9）"
 [ "$(grep -c 'OrderedTargetsCheckCount = 1' "${REPO_ROOT}/internal/reconcile/check.go")" = "1" ] ||
   die "有序 targets 例外必须恰 1 项（W20 的 targets 是一元，不进例外面）"
 [ "$(grep -rn 'content_hash' "${REPO_ROOT}" --include='*.go' --include='*.md' --include='*.sh' |
@@ -536,6 +554,6 @@ for lit in 'support_check' 'recommendation' '建议标记' '建议重新检查�
     die "M3 删除路径的 ${lit} 不在原处：本 task 不得改写它"
 done
 cnt0 '对账包出现删除路径字段' -rn 'support_check\|recommendation' "${REPO_ROOT}/internal/reconcile/"
-ok "三条零 / 状态写口与状态字段零命中 / W21+ 恒 0 / 命令零注册 / checkers 与 op 计数面在册"
+ok "三条零 / 状态写口与状态字段零命中 / W22–W28 摘掉 M5∪M6∪plan 落地面后恒 0 + W21 只落 plan / W29 只落 reconcile（双侧锁）/ 命令零注册 / checkers 与 op 计数面在册"
 
 printf '\n=== support_material.sh 全部通过（%d 步 / %d 条断言）===\n' "${STEP}" "${PASS}"

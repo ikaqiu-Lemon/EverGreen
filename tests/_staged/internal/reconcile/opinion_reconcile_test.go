@@ -63,6 +63,30 @@ func opWithReplacedBy(o query.OpinionEntry, target string) query.OpinionEntry {
 	return o
 }
 
+// opValidated 把观点标成 validation=validated（A-62 · W29 判定面只看 validated 观点）。
+func opValidated(o query.OpinionEntry) query.OpinionEntry {
+	o.Validation = string(model.ValidationValidated)
+	return o
+}
+
+// opWithValidation 把观点标成任意 validation 取值（W29 的 pending / rejected 边界用）。
+func opWithValidation(o query.OpinionEntry, v model.Validation) query.OpinionEntry {
+	o.Validation = string(v)
+	return o
+}
+
+// opDeleted 把观点标成逻辑删除（W29 不判已删除观点；也用作被删除的 supporter 端点）。
+func opDeleted(o query.OpinionEntry) query.OpinionEntry {
+	o.Deleted = true
+	return o
+}
+
+// opDeprecated 把观点标成失效（deprecated 仍是有效 supporter，W29 判定面须照旧计入）。
+func opDeprecated(o query.OpinionEntry) query.OpinionEntry {
+	o.Deprecated = true
+	return o
+}
+
 // opScanOf 把卡 / 笔记 / 观点折成扫描快照（计数守恒照 query 侧口径填，本包不消费它）。
 func opScanOf(cards []query.CardEntry, notes []query.NoteEntry,
 	opinions []query.OpinionEntry) *query.ScanResult {
@@ -586,21 +610,24 @@ func TestOpinionDuplicateIDReportedOnce(t *testing.T) {
 	}
 }
 
-// TestOpinionReconcileBoundariesUnchanged：本批只加判定面，不动任何封闭基数与顺序。
+// TestOpinionReconcileBoundariesUnchanged：观点判定面不新增检查器（checkers 恒 7）；
+// A-62 后 check 表基数与 R3 子检查数抬到 13 / 5（新增 R3·W29 opinion_unsupported_validated），
+// 其余封闭基数与顺序一格不动。
 func TestOpinionReconcileBoundariesUnchanged(t *testing.T) {
 	if len(checkers) != 7 {
-		t.Fatalf("checkers 注册项 = %d，R1–R7 全在册应恰 7（本批不得新增 / 重排检查项）",
+		t.Fatalf("checkers 注册项 = %d，R1–R7 全在册应恰 7（W29 并入 R3，不新增 / 重排检查项）",
 			len(checkers))
 	}
-	if CheckCount != 12 {
-		t.Fatalf("check 表基数 = %d，本批不得改（应恰 12）", CheckCount)
+	if CheckCount != 13 {
+		t.Fatalf("check 表基数 = %d，A-62 后应恰 13", CheckCount)
 	}
-	if R3SubcheckCount != 4 {
-		t.Fatalf("R3 子检查数 = %d，本批不得改（应恰 4）", R3SubcheckCount)
+	if R3SubcheckCount != 5 {
+		t.Fatalf("R3 子检查数 = %d，A-62 后应恰 5", R3SubcheckCount)
 	}
 	if got := R3Subchecks(); !reflect.DeepEqual(got, []string{
 		CheckRelationTargetMissing, CheckRelationPrefixInvalid,
 		CheckRelationOpposingAsymmetric, CheckRelationDuplicate,
+		CheckOpinionUnsupportedValidated,
 	}) {
 		t.Fatalf("R3 子检查顺序被改动：%v", got)
 	}

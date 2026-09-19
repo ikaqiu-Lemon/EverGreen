@@ -6,7 +6,7 @@ package cli
 // # 唯一职责（一句话）
 //
 // 把 `eg reconcile --dry-run` 收窄成一个**只读结构体检**入口：只判 R3 / R4 两组结构检查
-// （恰七个 check），恒 0 次提交、零写入，用退出码 `2` 表达「库里存在结构性 error」。
+// （恰八个 check；A-62 起 R3 含 opinion_unsupported_validated），恒 0 次提交、零写入，用退出码 `2` 表达「库里存在结构性 error」。
 //
 // # 与 `eg reconcile` 的关系（真子集，不是并行实现）
 //
@@ -51,21 +51,21 @@ import (
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
-// CheckScopeCount 是 `eg check` 的检查面基数：**恰 7**（R3 四个 + R4 三个）。
+// CheckScopeCount 是 `eg check` 的检查面基数：**恰 8**（R3 五个 + R4 三个；A-62 起 R3 含 W29）。
 //
 // 它是封闭计数而不是「派生出多少就多少」：派生集合的长度必须恰等于本常量，
 // 否则说明检查表的 R 归属被改动过，用例当场判红（check_test.go 逐字复算）。
-const CheckScopeCount = 7
+const CheckScopeCount = 8
 
 // CheckExcludedCount 是被排除的 check 数：**恰 5**（R1 / R2 / R5 / R6 / R7 各一个）。
-// 写成减法而不是字面量 5：`7 + 5 = 12` 这条封闭等式因此在编译期与真源绑定。
+// 写成减法而不是字面量 5：`8 + 5 = 13` 这条封闭等式因此在编译期与真源绑定。
 const CheckExcludedCount = reconcile.CheckCount - CheckScopeCount
 
 // checkScopeR 是 `eg check` 的检查面归属：恰两组 R（真源里的 R 编号常量，不写字符串字面量）。
 var checkScopeR = [2]string{reconcile.R3, reconcile.R4}
 
 // CheckScopeNotice 陈述本命令的范围口径（只读、只判结构、全库不收窄），措辞固定便于逐字断言。
-const CheckScopeNotice = "eg check 只判结构：R3 关系异常 + R4 结构完整性（恰 7 个 check）；" +
+const CheckScopeNotice = "eg check 只判结构：R3 关系异常 + R4 结构完整性（恰 8 个 check）；" +
 	"只读、零写入、恒 0 次提交，覆盖整个 vault（不按对象、不按领域收窄）"
 
 // CheckExcludedNotice 是「本次没判什么」的诚实交代（**未判 ≠ 没问题**）。
@@ -107,7 +107,7 @@ func checkCommand() *Command {
 	return &Command{
 		Name:    "check",
 		Display: "check",
-		Summary: "只读结构体检：只判 R3 关系异常 + R4 结构完整性（恰 7 个 check，零写入零 commit）",
+		Summary: "只读结构体检：只判 R3 关系异常 + R4 结构完整性（恰 8 个 check，零写入零 commit）",
 		Owner:   "T-evergreen.s1_main_flow-158614-059",
 		Usage: `eg check [--strict] [--json]
 
@@ -115,8 +115,8 @@ func checkCommand() *Command {
   --strict   否；对本命令 finding 恒等（升级面 W1/W2/W3/W4/W6 属写前校验诊断，与 R3/R4 结构码不相交）；
              接它只为与写命令的参数面一致（--json / --vault 是全局参数）
 
-检查面：**恰** R3 + R4 七个 check —— 重复 ID / 悬空引用 / 孤儿 /
-关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复。
+检查面：**恰** R3 + R4 八个 check —— 重复 ID / 悬空引用 / 孤儿 /
+关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复 / validated 观点缺支撑。
 悬空引用（dangling_ref / E12）覆盖 frontmatter **全部**引用承载字段（` + checkDanglingHelpLine() + `）；
 指向原文的两类只在 sources/ 分区已采样时判定（不把「没采样」说成「不存在」）。
 关系条目的 target 缺失**不进** E12，走 R3 的关系目标缺失（E13）/ 关系前缀非法（E14）。

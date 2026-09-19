@@ -1,6 +1,6 @@
 package reconcile
 
-// check 十二值封闭枚举 / 诊断码双向单射 / 第 13 值必失败三组用例（M-004 判据 1 与判据 2 消费），
+// check 十三值封闭枚举 / 诊断码双向单射 / 第 14 值必失败三组用例（M-004 判据 1 与判据 2 消费；A-62 新增 W29），
 // 外加三条包边界自守用例（零写盘 / 零 commit / 零子进程 + 依赖方向单向 + 越界能力零命中）：
 // 手册与合同 §1.1 的 grep 反证在包内以 Go 用例形态复跑一遍，防止「门禁在别处、包内失守」。
 
@@ -62,10 +62,10 @@ func allSources(t *testing.T) map[string]string {
 	return out
 }
 
-// TestCheckEnumExactlyTwelveValues 反证 check 是恰 12 值的封闭枚举：
+// TestCheckEnumExactlyThirteenValues 反证 check 是恰 13 值的封闭枚举：
 // 值与顺序逐字等于合同 §3 表格、互不重复、逐个 IsKnownCheck 为真，
-// 且真源表是**长度固定的数组**（第 13 行编译不过，这是编译期封闭的落点）。
-func TestCheckEnumExactlyTwelveValues(t *testing.T) {
+// 且真源表是**长度固定的数组**（第 14 行编译不过，这是编译期封闭的落点）。
+func TestCheckEnumExactlyThirteenValues(t *testing.T) {
 	want := []string{
 		"git_uncommitted",
 		"reviewed_at_missing",
@@ -79,9 +79,10 @@ func TestCheckEnumExactlyTwelveValues(t *testing.T) {
 		"domain_moved",
 		"recap_stale",
 		"support_insufficient",
+		"opinion_unsupported_validated",
 	}
 	if len(want) != CheckCount {
-		t.Fatalf("用例期望表 %d 项，CheckCount = %d（两侧必须同为 12）", len(want), CheckCount)
+		t.Fatalf("用例期望表 %d 项，CheckCount = %d（两侧必须同为 13）", len(want), CheckCount)
 	}
 	got := AllChecks()
 	if !reflect.DeepEqual(got, want) {
@@ -109,10 +110,10 @@ func TestCheckEnumExactlyTwelveValues(t *testing.T) {
 	if n := len(checkIndex); n != CheckCount {
 		t.Fatalf("check 索引 %d 项，期望恰 %d", n, CheckCount)
 	}
-	// 编译期封闭的机器反证：真源表类型是 [12]CheckSpec 数组，不是可追加的 slice。
+	// 编译期封闭的机器反证：真源表类型是 [13]CheckSpec 数组，不是可追加的 slice。
 	tt := reflect.TypeOf(checkTable)
 	if tt.Kind() != reflect.Array || tt.Len() != CheckCount {
-		t.Fatalf("checkTable 类型 = %s，必须是长度恰 %d 的数组（第 13 行编译不过）",
+		t.Fatalf("checkTable 类型 = %s，必须是长度恰 %d 的数组（第 14 行编译不过）",
 			tt, CheckCount)
 	}
 	if st := reflect.TypeOf(severityTable); st.Kind() != reflect.Array || st.Len() != SeverityCount {
@@ -133,22 +134,23 @@ func TestCheckEnumExactlyTwelveValues(t *testing.T) {
 	}
 }
 
-// TestCheckDiagnosticBijection 反证 check ↔ 诊断码**双向单射**：12 对 12、正反查互为逆、
-// 码集合恰 E11–E14 ∪ W13–W20，且 severity 与码段一致（error 段 E、warning 段 W）。
+// TestCheckDiagnosticBijection 反证 check ↔ 诊断码**双向单射**：13 对 13、正反查互为逆、
+// 码集合恰 E11–E14 ∪ W13–W20 ∪ {W29}，且 severity 与码段一致（error 段 E、warning 段 W）。
 func TestCheckDiagnosticBijection(t *testing.T) {
 	want := map[string]string{
-		"git_uncommitted":              "W13",
-		"reviewed_at_missing":          "W14",
-		"duplicate_id":                 "E11",
-		"dangling_ref":                 "E12",
-		"orphan":                       "W17",
-		"relation_target_missing":      "E13",
-		"relation_prefix_invalid":      "E14",
-		"relation_opposing_asymmetric": "W15",
-		"relation_duplicate":           "W16",
-		"domain_moved":                 "W18",
-		"recap_stale":                  "W19",
-		"support_insufficient":         "W20",
+		"git_uncommitted":               "W13",
+		"reviewed_at_missing":           "W14",
+		"duplicate_id":                  "E11",
+		"dangling_ref":                  "E12",
+		"orphan":                        "W17",
+		"relation_target_missing":       "E13",
+		"relation_prefix_invalid":       "E14",
+		"relation_opposing_asymmetric":  "W15",
+		"relation_duplicate":            "W16",
+		"domain_moved":                  "W18",
+		"recap_stale":                   "W19",
+		"support_insufficient":          "W20",
+		"opinion_unsupported_validated": "W29",
 	}
 	if len(want) != CodeCount {
 		t.Fatalf("用例期望表 %d 项，CodeCount = %d", len(want), CodeCount)
@@ -198,7 +200,7 @@ func TestCheckDiagnosticBijection(t *testing.T) {
 			t.Fatalf("AllCodes()[%d] = %q，与 AllChecks()[%d] = %q 不逐位对应", i, all[i], i, c)
 		}
 	}
-	// 码段闭合：E 段恰 4（E11–E14）、W 段恰 8（W13–W20）。
+	// 码段闭合：E 段恰 4（E11–E14）、W 段恰 9（W13–W20 ∪ W29，A-62 新增）。
 	nE, nW := 0, 0
 	for code := range codes {
 		switch code[:1] {
@@ -210,21 +212,21 @@ func TestCheckDiagnosticBijection(t *testing.T) {
 			t.Fatalf("诊断码 %q 落在 E / W 之外的段（Q 段属只读查询域，不进本表）", code)
 		}
 	}
-	if nE != 4 || nW != 8 {
-		t.Fatalf("E 段 %d / W 段 %d，期望恰 4 / 8", nE, nW)
+	if nE != 4 || nW != 9 {
+		t.Fatalf("E 段 %d / W 段 %d，期望恰 4 / 9", nE, nW)
 	}
 }
 
-// TestCheckEnumRejectsThirteenthValue 反证第 13 个取值必失败：
+// TestCheckEnumRejectsFourteenthValue 反证第 14 个取值必失败：
 // 未分配的 check、越号的诊断码、未启用的第三个分级一律被拒，且计数不因此增长。
-func TestCheckEnumRejectsThirteenthValue(t *testing.T) {
+func TestCheckEnumRejectsFourteenthValue(t *testing.T) {
 	thirteenth := []struct {
 		name  string
 		value string
 	}{
-		{"第 13 个 check（关系环）", "relation_" + "cycle"},
-		{"第 13 个 check（材料过载）", "support_" + "excessive"},
-		{"第 13 个 check（索引失效）", "cache_" + "stale"},
+		{"第 14 个 check（关系环）", "relation_" + "cycle"},
+		{"第 14 个 check（材料过载）", "support_" + "excessive"},
+		{"第 14 个 check（索引失效）", "cache_" + "stale"},
 		{"空串", ""},
 		{"大小写变形", "Duplicate_ID"},
 		{"前后空白变形", " duplicate_id "},
@@ -250,7 +252,8 @@ func TestCheckEnumRejectsThirteenthValue(t *testing.T) {
 			}
 		})
 	}
-	// 越号诊断码：E 段止于 E14、W 段止于 W20；查询域的码不进本表；信息级码不对应任何 check。
+	// 越号诊断码：E 段止于 E14、W 段止于 W20 再加 A-62 新增的 W29；W21 属 plan 域、W30 未分配，
+	// 查询域的码不进本表；信息级码不对应任何 check。
 	for _, code := range []string{"E" + "15", "E" + "10", "W" + "21", "W" + "12",
 		"W" + "30", "I" + "2", "Q" + "4", ""} {
 		if IsKnownCode(code) {

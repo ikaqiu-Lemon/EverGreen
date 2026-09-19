@@ -2,7 +2,7 @@
 # `eg check` 命令的端到端脚本（T-evergreen.s1_main_flow-158614-059 · 阶段 3）。
 #
 # 判据来源：`docs/specs/2026-11-12-m4-reconcile-contract.md` §13（`eg check [--json]`：
-# **只读**、只跑 R3 / R4 两组结构检查（恰 7 个 `check`）、**恒 0 次 commit**、
+# **只读**、只跑 R3 / R4 两组结构检查（恰 8 个 `check`，A-62 起含 opinion_unsupported_validated / W29）、**恒 0 次 commit**、
 # 三档退出码 `0`（无 error 级 finding，含只有 warning）/ `1`（参数非法）/ `2`（有 error 级
 # finding，**零写入**）、与 `eg reconcile --dry-run` 的**真子集**关系、五个 `check` **永不产出**）、
 # **§12**（父命令口径，用于真子集对照）、**§0.1 第 3 条**（对账**不作为任何写命令的前置**）；
@@ -12,12 +12,12 @@
 #
 # 断言组（task deliverable 逐字要求；脚本共 10 步 = 1 步构建 + 9 组断言，编号 02–10）：
 #   ① 干净 vault 跑 `eg check` → 退 **0**、`git log` 条数 +0、`git status --porcelain` 逐字不变；
-#      信封恒五键且键序固定、`data` 首键是 `check`、`scope[]` 恰 7 值、`excluded[]` 恰 5 值；
+#      信封恒五键且键序固定、`data` 首键是 `check`、`scope[]` 恰 8 值、`excluded[]` 恰 5 值；
 #   ② 造**重复 ID**（E11，error 级）→ 退 **2**，且 `git log` 条数 **不变**
 #      （与 `eg reconcile` 的关键差：后者会先完成 R1 纳管 commit 再退 2）、脏文件仍在工作区；
 #   ③ 造**关系异常**（外部编辑写入 `relations[]`：target 查无此对象 + 同一条边写两遍）
 #      → 退 **2**，且 findings 里逐字出现 `relation_target_missing` 与 `relation_duplicate`；
-#   ④ findings 的 `check` 集合 ⊆ R3 / R4 七值，且**五个被排除值**在 findings 里恒 0 命中；
+#   ④ findings 的 `check` 集合 ⊆ R3 / R4 八值，且**五个被排除值**在 findings 里恒 0 命中；
 #      同一份库上 `eg reconcile --dry-run` **确实**产出被排除值（非空对照，杜绝空判）；
 #   ⑤ **真子集**：`eg check` 的 finding 条数 < `eg reconcile --dry-run` 的条数，
 #      且前者的每个 `check` 值都在后者的集合里（`comm -23` 恒空）；
@@ -64,9 +64,9 @@ NOTE_REL="${NDIR_REL}/${NOTE}.md"
 DUP_REL="${KDIR_REL}/${CARD}-dup.md"
 MISSING='k-20991231-missing'
 
-# 检查面（R3 / R4 恰 7 值）与被排除面（恰 5 值）：**独立**写死一份，
-# 与产品代码从 `reconcile.Specs()` 派生的那一份互为对照（任一侧漂移即红）。
-SCOPE_KEYS='duplicate_id,dangling_ref,orphan,relation_target_missing,relation_prefix_invalid,relation_opposing_asymmetric,relation_duplicate'
+# 检查面（R3 / R4 恰 8 值，A-62 起含 opinion_unsupported_validated / W29）与被排除面（恰 5 值）：
+# **独立**写死一份，与产品代码从 `reconcile.Specs()` 派生的那一份互为对照（任一侧漂移即红）。
+SCOPE_KEYS='duplicate_id,dangling_ref,orphan,relation_target_missing,relation_prefix_invalid,relation_opposing_asymmetric,relation_duplicate,opinion_unsupported_validated'
 EXCLUDED_KEYS='git_uncommitted,reviewed_at_missing,domain_moved,recap_stale,support_insufficient'
 PLACEHOLDER='{"ran":false,"commit":null,"findings":[]}'
 ENVELOPE_KEYS='ok,data,warnings,exit_code,status'
@@ -366,7 +366,7 @@ grep -Fq '"check":"relation_duplicate","severity":"warning"' "${WORK}/rel.findin
 ok "退 2 / commit +0 / 外部编辑仍在工作区 / E13 + W16 两条逐字在册"
 
 # --------------------------------------- 5. 检查面闭合 + 五个被排除值恒 0（含非空对照）
-step "findings 的 check 集合 ⊆ R3 / R4 七值，五个被排除值恒 0；同库 eg reconcile --dry-run 确有产出"
+step "findings 的 check 集合 ⊆ R3 / R4 八值，五个被排除值恒 0；同库 eg reconcile --dry-run 确有产出"
 names_of "${WORK}/rel.findings" >"${WORK}/names.check"
 printf '%s\n' "${SCOPE_KEYS}" | tr ',' '\n' | sort -u >"${WORK}/names.scope"
 OUTSIDE="$(comm -23 "${WORK}/names.check" "${WORK}/names.scope" | tr -d ' ')"

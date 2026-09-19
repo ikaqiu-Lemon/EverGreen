@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// strict.go 的反证：升级面恰五条、只改 severity 不改 code、默认路径零漂移、check 枚举仍十二值。
+// strict.go 的反证：升级面恰五条、只改 severity 不改 code、默认路径零漂移、check 枚举仍十三值（A-62 后）。
 // 判据 11（合同 §9 A-56）：四个单测全绿且 ^=== RUN ≥ 4。
 
 // TestStrictModeW1W2W3W4W6BecomeError：`--strict` 下 W1/W2/W3/W4/W6 的有效 severity 升为 error。
@@ -58,16 +58,17 @@ func TestStrictModeCodesUnchanged(t *testing.T) {
 	}
 }
 
-// TestCheckEnumStillTwelve：strict 引入后 check 十二值枚举一字不动（合同 §9「check 枚举一字不动」）。
-func TestCheckEnumStillTwelve(t *testing.T) {
-	if CheckCount != 12 {
-		t.Fatalf("CheckCount = %d，check 是恰 12 值的封闭枚举", CheckCount)
+// TestCheckEnumStillThirteen：strict 引入后 check 枚举一字不动（合同 §9「check 枚举一字不动」）——
+// A-62 把封闭枚举从 12 抬到 13（新增 R3·W29），strict 特性对它零触碰、仍恰 13 值。
+func TestCheckEnumStillThirteen(t *testing.T) {
+	if CheckCount != 13 {
+		t.Fatalf("CheckCount = %d，check 是恰 13 值的封闭枚举（A-62 后）", CheckCount)
 	}
-	if n := len(AllChecks()); n != 12 {
-		t.Fatalf("AllChecks() 返回 %d 个，应恰 12", n)
+	if n := len(AllChecks()); n != 13 {
+		t.Fatalf("AllChecks() 返回 %d 个，应恰 13", n)
 	}
-	// 升级面（W1/W2/W3/W4/W6）与 check 诊断码段（E11–E14 / W13–W20）**不相交**：
-	// strict 不往 check 枚举里塞任何新值，也不动既有十二个 check 的分级。
+	// 升级面（W1/W2/W3/W4/W6）与 check 诊断码段（E11–E14 / W13–W20 / W29）**不相交**：
+	// strict 不往 check 枚举里塞任何新值，也不动既有十三个 check 的分级。
 	for _, code := range StrictUpgradeCodes() {
 		if IsKnownCode(code) {
 			t.Fatalf("升级面码 %s 竟落在 check 诊断码段内：strict 不得触碰 check 枚举", code)

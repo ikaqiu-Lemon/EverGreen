@@ -7,8 +7,8 @@
 // 三条纪律（写在最前面，便于复核）：
 //   - **零 mock**：`eg check` 只读、零写入、恒 0 次提交，没有任何「不可稳定复现的失败分支」
 //     需要注入，因此全文件**没有一处 mock**（对照 reconcile_test.go 那处 Git Runner 注入）。
-//   - **构造的测试输入不是 mock**：`chkAllTwelveFindings` 用产品代码的 `reconcile.NewFinding`
-//     真实构造十二值各一条合法 finding，只作为**过滤函数的输入**，不替换任何被测行为。
+//   - **构造的测试输入不是 mock**：`chkAllThirteenFindings` 用产品代码的 `reconcile.NewFinding`
+//     真实构造十三值各一条合法 finding，只作为**过滤函数的输入**，不替换任何被测行为。
 //     标注见该函数注释（构造测试内容 · owner 2026-09-07 授权）。
 //   - **语料都是磁盘真事实**：重复 ID 是逐字节复制出来的真文件；关系异常是把 `relations[]`
 //     真实写进 frontmatter（模拟用户绕过 CLI 的外部编辑，这正是 M4 要纳管的那件事）。
@@ -31,11 +31,13 @@ import (
 // 因此这里把两份名单**独立写死**：产品代码那边是从 `reconcile.Specs()` 的 R 列派生的，
 // 两侧任一处漂移，下面的等号断言就会红（互为对照，不是互相引用）。
 var (
-	// chkWantScope 是 `eg check` 应当产出的 7 个 check（R4 三个 + R3 四个，行序 = 合同 §3 表格序）。
+	// chkWantScope 是 `eg check` 应当产出的 8 个 check（R4 三个 + R3 五个，行序 = 合同 §3 表格序；
+	// 末位 opinion_unsupported_validated 为 A-62 新增的 R3·W29，追加在真源表尾部）。
 	chkWantScope = []string{
 		"duplicate_id", "dangling_ref", "orphan",
 		"relation_target_missing", "relation_prefix_invalid",
 		"relation_opposing_asymmetric", "relation_duplicate",
+		"opinion_unsupported_validated",
 	}
 	// chkWantExcluded 是 `eg check` **永不产出**的 5 个 check（R1 / R2 / R5 / R6 / R7 各一个）。
 	chkWantExcluded = []string{
@@ -132,13 +134,13 @@ func chkRelVault(t *testing.T) (dir, cardRel string) {
 	return dir, cardRel
 }
 
-// chkAllTwelveFindings 用产品代码的 `reconcile.NewFinding` 为**十二个 check 各造一条**合法 finding。
+// chkAllThirteenFindings 用产品代码的 `reconcile.NewFinding` 为**十三个 check 各造一条**合法 finding。
 //
 // **构造测试内容（owner 2026-09-07 授权）**：这不是 mock —— 它不替换任何被测行为，
-// 只是给白名单过滤函数喂一份「十二值全都出现」的输入，从而把「恰留 7 条、五个一条不留」
+// 只是给白名单过滤函数喂一份「十三值全都出现」的输入，从而把「恰留 8 条、五个一条不留」
 // 这一格证成封闭等式（否则五个被排除项里只有 R1 / R2 那两个能在命令级语料里稳定出现，
 // R5 / R6 / R7 三个要靠各自的 e2e 语料，命令级用例会留下缺口）。
-func chkAllTwelveFindings(t *testing.T) []reconcile.Finding {
+func chkAllThirteenFindings(t *testing.T) []reconcile.Finding {
 	t.Helper()
 	var out []reconcile.Finding
 	for _, spec := range reconcile.Specs() {
@@ -153,12 +155,12 @@ func chkAllTwelveFindings(t *testing.T) []reconcile.Finding {
 		out = append(out, f)
 	}
 	if len(out) != reconcile.CheckCount {
-		t.Fatalf("构造了 %d 条 finding，期望 %d（十二值各一条）", len(out), reconcile.CheckCount)
+		t.Fatalf("构造了 %d 条 finding，期望 %d（十三值各一条）", len(out), reconcile.CheckCount)
 	}
 	return out
 }
 
-// —— ① 检查面恰 R3 / R4 七值（派生集合、封闭等式、真实语料三处同时对撞）——
+// —— ① 检查面恰 R3 / R4 八值（派生集合、封闭等式、真实语料三处同时对撞）——
 
 func TestCheckRunsOnlyR3AndR4(t *testing.T) {
 	// ① 派生集合与独立名单逐字相等（顺序也锁：真源表行序 = 合同 §3 表格序）。
@@ -168,7 +170,7 @@ func TestCheckRunsOnlyR3AndR4(t *testing.T) {
 	if got := CheckExcludedChecks(); strings.Join(got, ",") != strings.Join(chkWantExcluded, ",") {
 		t.Fatalf("CheckExcludedChecks() = %v，期望逐字有序 %v", got, chkWantExcluded)
 	}
-	// ② 封闭等式 7 + 5 = 12：任何一侧漂移都会红。
+	// ② 封闭等式 8 + 5 = 13：任何一侧漂移都会红。
 	if CheckScopeCount != len(chkWantScope) || CheckExcludedCount != len(chkWantExcluded) {
 		t.Fatalf("封闭计数漂移：CheckScopeCount=%d（期望 %d）、CheckExcludedCount=%d（期望 %d）",
 			CheckScopeCount, len(chkWantScope), CheckExcludedCount, len(chkWantExcluded))
@@ -177,7 +179,7 @@ func TestCheckRunsOnlyR3AndR4(t *testing.T) {
 		t.Fatalf("%d + %d ≠ %d（check 枚举的封闭基数）",
 			CheckScopeCount, CheckExcludedCount, reconcile.CheckCount)
 	}
-	// ③ 每一个入选 check 的 R 归属必须真的是 R3 或 R4（不是「凑够 7 个」）。
+	// ③ 每一个入选 check 的 R 归属必须真的是 R3 或 R4（不是「凑够 8 个」）。
 	for _, name := range chkWantScope {
 		spec, ok := reconcile.SpecOf(name)
 		if !ok {
@@ -187,8 +189,8 @@ func TestCheckRunsOnlyR3AndR4(t *testing.T) {
 			t.Fatalf("check %q 的 R 归属 = %q，不属 R3 / R4", name, spec.R)
 		}
 	}
-	// ④ 白名单过滤：十二值全进 → 恰留 7 条，且顺序与真源行序一致。
-	kept := checkScopeFindings(chkAllTwelveFindings(t))
+	// ④ 白名单过滤：十三值全进 → 恰留 8 条，且顺序与真源行序一致。
+	kept := checkScopeFindings(chkAllThirteenFindings(t))
 	if len(kept) != CheckScopeCount {
 		t.Fatalf("过滤后留下 %d 条，期望恰 %d 条", len(kept), CheckScopeCount)
 	}
@@ -265,10 +267,10 @@ func TestCheckNeverEmitsFiveChecks(t *testing.T) {
 			"「eg check 不产」是空判（%s / %s）", rcOut, rcErr)
 	}
 
-	// ② 封闭等式：十二值全都出现时，五个被排除项**逐值**被滤掉（R5 / R6 / R7 三个
+	// ② 封闭等式：十三值全都出现时，五个被排除项**逐值**被滤掉（R5 / R6 / R7 三个
 	//    在命令级语料里不易稳定构造，这一格把它们一并锁死）。
 	kept := map[string]bool{}
-	for _, f := range checkScopeFindings(chkAllTwelveFindings(t)) {
+	for _, f := range checkScopeFindings(chkAllThirteenFindings(t)) {
 		kept[f.Check] = true
 	}
 	for _, name := range chkWantExcluded {

@@ -522,9 +522,21 @@ step "④ grep 组 1：全库诊断码集合恰 23 值且闭合在 E1..E10 ∪ W
 # 只引用常量名）。因此从 base 域剔除的粒度是**该单个文件**而非整个 internal/cli 目录 ——
 # base 域历史事实（恰 23 值：E1–E10 / W1–W12 / I1）逐字保留、一格不放宽；并对该文件新增一条
 # 封闭双侧等号，把命令层码集合逐字锁成 {E17…E25}（多一码 / 少一码都当场红）。
+# ── C2 · plan 现态重钉（ChangePlan schema v2 · commit 4b36712 把 W21 发放给 `internal/plan`；沿用同一
+#    「按域封闭」先例，**加严不放宽**）── `internal/plan/diagnostics.go` 同时是 base 码 E7–E10 / W9–W12
+#    的定义处（与同包 diagnostic.go 合成 base 全集），无法按目录/文件从 base 域剔除；故改为**按号段**分域：
+#    先对 plan 域新增一条封闭双侧等号，把该包铸造的**越 base（E11+ / W13+ / I2+）码集合**逐字锁成恰 {W21}
+#    （write_note 结构覆盖诊断，认领全局唯一空号；多一码 / 少一码都当场红），再在 base 组把这唯一越界码按 comm
+#    从全库集合里精确剔除 —— base 历史事实（恰 23 值：E1–E10 / W1–W12 / I1）逐字保留、一格不放宽。
+grep -rhoE '"(E|W|I)[0-9]+"' "${REPO_ROOT}/internal/plan/" | tr -d '"' | sort -u |
+  { grep -E '^(E1[1-9]|E[2-9][0-9]|W1[3-9]|W[2-9][0-9]|I[2-9])$' || true; } >"${WORK}/codes_plan_extra.txt"
+printf 'W21\n' >"${WORK}/want_codes_plan_extra.txt"
+diff -u "${WORK}/want_codes_plan_extra.txt" "${WORK}/codes_plan_extra.txt" ||
+  die "internal/plan 越 base 号段码集合应恰 {W21}（ChangePlan write_note 结构覆盖，认领全局唯一空号）"
 grep -rhoE '"(E|W|I)[0-9]+"' --exclude-dir=reconcile --exclude-dir=index --exclude-dir=query \
   --exclude-dir=txn --exclude-dir=mdfile --exclude=codes.go \
-  "${REPO_ROOT}/internal/" | tr -d '"' | sort -u >"${WORK}/codes.txt"
+  "${REPO_ROOT}/internal/" | tr -d '"' | sort -u |
+  comm -23 - "${WORK}/codes_plan_extra.txt" >"${WORK}/codes.txt"
 { for i in $(seq 1 10); do printf 'E%d\n' "${i}"; done
   for i in $(seq 1 12); do printf 'W%d\n' "${i}"; done
   printf 'I1\n'; } | sort -u >"${WORK}/want_codes.txt"
@@ -539,14 +551,16 @@ diff -u "${WORK}/want_codes_cmd.txt" "${WORK}/codes_cmd.txt" ||
 # 全用常量）＋ `strict_test.go`（反证 strict 升级面）。strict_test.go 里逐字出现 base 警告码 W1–W6，
 # 那是「strict 下升为 error 的 base 码」的**引用**（W1/W2/W3/W4/W6 升级、W5 明确不升的负向反证），
 # **不是** reconcile 自己铸造的新码。故按先例把 strict 特性文件从「reconcile 铸造码」域剔除——
-# reconcile 铸造码历史事实（恰 E11–E14 + W13–W20 十二值）逐字保留、一格不放宽。
+# reconcile 铸造码历史事实随 A-62 从十二值扩为**十三值**：对账合同 §3 冻结面（E11–E14 + W13–W20）
+# 逐字保留，A-62 正式修订该冻结、追加 R3·W29（opinion_unsupported_validated），是加严不是放宽。
 grep -rhoE '"(E|W|I)[0-9]+"' --exclude='strict*.go' "${REPO_ROOT}/internal/reconcile/" |
   tr -d '"' | sort -u >"${WORK}/codes_m4.txt"
 { for i in $(seq 11 14); do printf 'E%d\n' "${i}"; done
-  for i in $(seq 13 20); do printf 'W%d\n' "${i}"; done } | sort -u >"${WORK}/want_codes_m4.txt"
+  for i in $(seq 13 20); do printf 'W%d\n' "${i}"; done
+  printf 'W29\n'; } | sort -u >"${WORK}/want_codes_m4.txt"
 diff -u "${WORK}/want_codes_m4.txt" "${WORK}/codes_m4.txt" ||
-  die "internal/reconcile 的 M4 码集合与对账合同 §3 不逐字相等"
-[ "$(wc -l <"${WORK}/codes_m4.txt" | tr -d ' ')" = "12" ] || die "M4 诊断码不是恰 12 值"
+  die "internal/reconcile 的 M4 码集合与对账合同 §3（含 A-62 修订 W29）不逐字相等"
+[ "$(wc -l <"${WORK}/codes_m4.txt" | tr -d ' ')" = "13" ] || die "M4 诊断码不是恰 13 值（含 A-62 W29）"
 # M6 现态新增等号（加严）：strict 特性文件引用的 base 升级码集合恰 {W1,W2,W3,W4,W5,W6} 六值逐字相等
 # （既锁住 strict 升级面 W1/W2/W3/W4/W6 五条 + W5 负向反证，也挡住 strict 面私造 E/新 W 码或号段扩张）。
 # 测试树外置（ADR-T1）：strict_test.go 的权威位在 tests/_staged/internal/reconcile/，
@@ -567,14 +581,19 @@ grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/index/" |
 printf 'W22\nW23\nW24\n' >"${WORK}/want_codes_m5.txt"
 diff -u "${WORK}/want_codes_m5.txt" "${WORK}/codes_m5.txt" ||
   die "internal/index 的 M5 码集合与索引合同 §9 不逐字相等（Q5 属 T-…-067，未落地即不许出现）"
-# M5 第四域：`internal/query` 恰 6 值 —— Q1–Q5（检索诊断，Q5 = 降级读，T-…-067）
-# 与 W25（结果被 --limit 截断，T-…-068 分页合同）。双侧精确：多一个码、少一个码都当场红。
+# M5 第四域：`internal/query` 恰 7 值 —— Q1–Q5（检索诊断，Q5 = 降级读，T-…-067）
+# 与 W25（结果被 --limit 截断，T-…-068 分页合同），外加 base 码 I1（候选去重弃用提示）。
+# ── C2·Phase6E 现态重钉（commit 543dbfc「sink candidates-deprecation I1 into query diagnostics」把
+#    候选弃用信息级码 I1 下沉到 `internal/query/diagnostic.go`；I1 属 base 23 值全集、其 base 侧定义仍在
+#    `internal/plan`（base 组已从 plan 取得，query 被 --exclude-dir 排除故不影响 base 恰 23 值），此处只是
+#    query 域**复用**该 base 码。故按实测把 query 域等号从 6 值扩为 7 值，显式登记 I1；双侧仍精确 ——
+#    多一个码、少一个码都当场红，加严不放宽）──
 grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/query/" |
   tr -d '"' | sort -u >"${WORK}/codes_m5_query.txt"
-printf 'Q1\nQ2\nQ3\nQ4\nQ5\nW25\n' | sort -u >"${WORK}/want_codes_m5_query.txt"
+printf 'I1\nQ1\nQ2\nQ3\nQ4\nQ5\nW25\n' | sort -u >"${WORK}/want_codes_m5_query.txt"
 diff -u "${WORK}/want_codes_m5_query.txt" "${WORK}/codes_m5_query.txt" ||
-  die "internal/query 的 M5 码集合与检索/分页合同不逐字相等（应恰 Q1–Q5 + W25）"
-[ "$(wc -l <"${WORK}/codes_m5_query.txt" | tr -d ' ')" = "6" ] || die "internal/query 码不是恰 6 值"
+  die "internal/query 的 M5 码集合与检索/分页合同不逐字相等（应恰 Q1–Q5 + W25 + base 复用码 I1）"
+[ "$(wc -l <"${WORK}/codes_m5_query.txt" | tr -d ' ')" = "7" ] || die "internal/query 码不是恰 7 值"
 # 反向封闭：W25 只许落在 query 域（reconcile / index / 其余包内恒 0），
 # 且 index 域不得出现任何 Q 码之外的越界（W22–W24 的等号已在上一格锁死）。
 N="$( { grep -rn '"W25"' --exclude-dir=query "${REPO_ROOT}/internal/" || true; } | wc -l | tr -d ' ')"
@@ -595,9 +614,9 @@ printf 'W27\n' >"${WORK}/want_codes_m6_mdfile.txt"
 diff -u "${WORK}/want_codes_m6_mdfile.txt" "${WORK}/codes_m6_mdfile.txt" ||
   die "internal/mdfile 的 M6 码集合与块级合并合同 §7 不逐字相等（应恰 W27）"
 [ "$(wc -l <"${WORK}/codes_m6_mdfile.txt" | tr -d ' ')" = "1" ] || die "internal/mdfile 码不是恰 1 值"
-ok "④-1 码集合七域等号：非 reconcile/index/query/txn/mdfile 恰 23 值（E1–E10 + W1–W12 + I1）/ reconcile 恰 12 值（E11–E14 + W13–W20）/ index 恰 3 值（W22–W24）/ query 恰 6 值（Q1–Q5 + W25，且 W25 域外恒 0）/ txn 恰 4 值（E15/E16/W26/W28）/ mdfile 恰 1 值（W27）/ cli/codes.go 恰 9 值（E17–E25）"
+ok "④-1 码集合八域等号：非 reconcile/index/query/txn/mdfile 且剔除 plan 越界码后恰 23 值（E1–E10 + W1–W12 + I1）/ reconcile 恰 13 值（E11–E14 + W13–W20 + A-62 W29）/ index 恰 3 值（W22–W24）/ query 恰 7 值（Q1–Q5 + W25 + base 复用码 I1，且 W25 域外恒 0）/ txn 恰 4 值（E15/E16/W26/W28）/ mdfile 恰 1 值（W27）/ cli/codes.go 恰 9 值（E17–E25）/ plan 越 base 恰 1 值（W21）"
 
-step "④ grep 组 2：越界编号（reconcile 外 E11+ / W13+ / I2+；reconcile 内 E15+ / W21+ / I2+）零命中"
+step "④ grep 组 2：越界编号（reconcile 外 E11+ / W13+ / I2+；reconcile 内 E15+ / W21–W28 / W30+ / I2+）零命中"
 # ── C2a·M6 现态重钉：M6 把 E15/E16 发放给 `internal/txn`（已在上一格由封闭等号逐字锁死为恰 {E15,E16,W26,W28}）。
 #    沿用本格既有对 reconcile 的剔除先例，把 M6 两域（txn/mdfile）一并剔除——它们各自的封闭双侧等号已在 ④-1 锁住，
 #    此处再计入即与那两条等号重复且互斥。base 越界判据（其余包 E11+/W13+/I2+ 恒 0）一格不放宽。
@@ -607,9 +626,9 @@ step "④ grep 组 2：越界编号（reconcile 外 E11+ / W13+ / I2+；reconcil
 N="$( { grep -rnE '"(E1[1-9]|W1[3-9]|I[2-9])"' --exclude-dir=reconcile --exclude-dir=txn \
   --exclude-dir=mdfile --exclude=codes.go "${REPO_ROOT}/internal/" || true; } | wc -l | tr -d ' ')"
 [ "${N}" = "0" ] || die "出现越界编号（${N} 处）"
-N="$( { grep -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-9]|W[3-9][0-9]|I[2-9])"' \
+N="$( { grep -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-8]|W[3-9][0-9]|I[2-9])"' \
   "${REPO_ROOT}/internal/reconcile/" || true; } | wc -l | tr -d ' ')"
-[ "${N}" = "0" ] || die "internal/reconcile 出现 M5–M6 号段编号（${N} 处）"
+[ "${N}" = "0" ] || die "internal/reconcile 出现 M5–M6 号段编号（W21–W28 / W30+，${N} 处；A-62 只解冻 W29）"
 # 2026-09-07 随 M4 · T-…-055 阶段 4a 按实测重钉（只改判据**形态**，本体一格不放宽）：
 # 阶段 1 在 `internal/plan/validate_m4.go` 留了**一行边界说明注释**（逐字写「顺序判定属 R6
 # 检查器（`internal/reconcile`，阶段 2），本文件只做取值封闭校验，不自造第二套顺序」）——
@@ -623,22 +642,47 @@ N="$( { grep -rnE '"(E1[5-9]|E[2-9][0-9]|W2[1-9]|W[3-9][0-9]|I[2-9])"' \
 #   ④ `flock` / `txn/` / `run.lock` / `FTS5` / `.index/` 五个词仍恒 0（逐字未动）。
 N="$( { grep -rn 'internal/reconcile"' "${REPO_ROOT}/internal/plan/" || true; } | wc -l | tr -d ' ')"
 [ "${N}" = "0" ] || die "internal/plan 出现对 internal/reconcile 的 import（${N} 处）"
+# ── C2·Schema v2 现态重钉（write_note_v2.go 的 opinionItem 在 I1 提示文案里写了一句用户可读引导
+#    「悬空引用由 eg reconcile 的关系 / 结构检查负责检出」——那是**字符串字面量里的 UX 提示**，不是 import
+#    更不是能力调用（① import==0 已锁死 plan 不依赖 reconcile）。故 ② 从「非注释行恒 0」重钉为
+#    「write_note_v2.go 之外的非注释行 reconcile 恒 0；write_note_v2.go 内恰 1 处且必在双引号字符串里」，
+#    本体（plan 不承担 reconcile 能力）一格不放宽）──
+RECON_HINT="internal/plan/write_note_v2.go"
 N="$( { { grep -rn 'reconcile' "${REPO_ROOT}/internal/plan/" || true; } |
-  { grep -vE ':[0-9]+:[[:space:]]*//' || true; }; } | wc -l | tr -d ' ')"
-[ "${N}" = "0" ] || die "internal/plan 非注释行出现 reconcile 字样（${N} 处）"
+  { grep -vE ':[0-9]+:[[:space:]]*//' || true; } |
+  { grep -vF "${REPO_ROOT}/${RECON_HINT}:" || true; }; } | wc -l | tr -d ' ')"
+[ "${N}" = "0" ] || die "internal/plan（除 write_note_v2.go 的 UX 提示字符串外）非注释行出现 reconcile 字样（${N} 处）"
+HINT_N="$( { grep -n 'reconcile' "${REPO_ROOT}/${RECON_HINT}" || true; } |
+  { grep -vE ':[0-9]+:[[:space:]]*//' || true; } | wc -l | tr -d ' ')"
+[ "${HINT_N}" = "1" ] || die "write_note_v2.go 非注释 reconcile 提及应恰 1 处（I1 提示文案），实得 ${HINT_N}"
+{ grep -n 'reconcile' "${REPO_ROOT}/${RECON_HINT}" || true; } |
+  { grep -vE ':[0-9]+:[[:space:]]*//' || true; } | grep -q '"' ||
+  die "write_note_v2.go 的 reconcile 提及必须在双引号字符串里（UX 提示，非 import / 非能力调用）"
 # ── C2a·M6 现态重钉（合同 §13 plan/reconcile 互不 import；§9/§17.1 写前 strict precheck 落 internal/plan/precheck.go）──
 # M6 · T-074 新增 `internal/plan/precheck.go`（写前强校验入口）。它对 `reconcile` 的两处提及**全在注释**里
 # （解释 severity 策略为何落零依赖的 model 而非 reconcile，反证 plan 与 reconcile 按 §13 互不 import）——
 # 与 validate_m4.go 的边界说明注释同性质，不是能力搬迁、更不是 import 越界（①②两格已分别锁死）。
 # 保留历史事实（validate_m4.go 恰 1 处）＋ 新增现态双侧锁（precheck.go 恰 2 处、落点集合恰两文件）。
+# ── C2·Schema v2 现态重钉（commit 4b36712 / 97df9cd 的 opinion-lifecycle 收口在三个文件里新增了对
+#    reconcile 的**注释 / UX 提示字符串**引用，全非 import、全非能力调用（①格 import==0 已锁死）：
+#      · diagnostics.go 恰 1 处（W21 号段占用说明注释，点名 reconcile/r7_support.go 的预留出处）；
+#      · strict_exempt.go 恰 2 处（strict 豁免表边界注释，反证 W1–W6 由本包发放、reconcile 侧看不到）；
+#      · write_note_v2.go 恰 1 处（I1 提示文案里的 UX 引导字符串，②格已锁在双引号内）。
+#    故落点集合从两文件扩为五文件，并对三个新文件各补一条「恰 N 处」双侧锁（多一处 / 挪窝都红）。
 PLAN_RECON_SET="$( { grep -rl 'reconcile' "${REPO_ROOT}/internal/plan/" || true; } |
   sed "s#${REPO_ROOT}/##" | sort | tr '\n' ' ')"
-[ "${PLAN_RECON_SET}" = "internal/plan/precheck.go internal/plan/validate_m4.go " ] ||
-  die "internal/plan 的 reconcile 裸词落点集合 = 「${PLAN_RECON_SET}」，应恰 {internal/plan/precheck.go, internal/plan/validate_m4.go}"
+[ "${PLAN_RECON_SET}" = "internal/plan/diagnostics.go internal/plan/precheck.go internal/plan/strict_exempt.go internal/plan/validate_m4.go internal/plan/write_note_v2.go " ] ||
+  die "internal/plan 的 reconcile 裸词落点集合 = 「${PLAN_RECON_SET}」，应恰 {diagnostics.go, precheck.go, strict_exempt.go, validate_m4.go, write_note_v2.go}"
 N="$( { grep -c 'reconcile' "${REPO_ROOT}/internal/plan/validate_m4.go" || true; } | tr -d ' ')"
 [ "${N}" = "1" ] || die "validate_m4.go 内 reconcile 字样 ${N} 处，应恰 1（边界说明注释）"
 N="$( { grep -c 'reconcile' "${REPO_ROOT}/internal/plan/precheck.go" || true; } | tr -d ' ')"
 [ "${N}" = "2" ] || die "precheck.go 内 reconcile 字样 ${N} 处，应恰 2（§13 边界说明注释，全在注释、零 import）"
+N="$( { grep -c 'reconcile' "${REPO_ROOT}/internal/plan/diagnostics.go" || true; } | tr -d ' ')"
+[ "${N}" = "1" ] || die "diagnostics.go 内 reconcile 字样 ${N} 处，应恰 1（W21 号段占用说明注释）"
+N="$( { grep -c 'reconcile' "${REPO_ROOT}/internal/plan/strict_exempt.go" || true; } | tr -d ' ')"
+[ "${N}" = "2" ] || die "strict_exempt.go 内 reconcile 字样 ${N} 处，应恰 2（strict 豁免表边界注释，全在注释、零 import）"
+N="$( { grep -c 'reconcile' "${REPO_ROOT}/internal/plan/write_note_v2.go" || true; } | tr -d ' ')"
+[ "${N}" = "1" ] || die "write_note_v2.go 内 reconcile 字样 ${N} 处，应恰 1（I1 提示文案里的 UX 引导字符串）"
 # ── C2a·M6 现态重钉（合同 §8 锁/§7 块级合并；沿用本格既有「注释 vs 非注释」判据形态，非放宽）──
 # 历史本体一格不放宽：internal/plan **非注释行**出现 flock/txn//run.lock/FTS5/.index/ 恒 0
 # （plan 层绝不**实现** M5–M6 能力）。M6 · T-073/M6 收口在两个 M3 期文件里各加了 1 行**边界说明注释**
@@ -661,7 +705,7 @@ for f in internal/plan/replace_block.go tests/_staged/internal/plan/m3_test.go; 
   N="$( { grep -cE 'flock|txn/|run\.lock|FTS5|\.index/' "${REPO_ROOT}/${f}" || true; } | tr -d ' ')"
   [ "${N}" = "1" ] || die "${f} 内 M5–M6 能力字样 ${N} 处，应恰 1（边界说明注释）"
 done
-ok "④-2 越界编号 0 命中；internal/plan 零 reconcile import + 非注释行 0 + 裸词落点恰 {validate_m4.go} 1 处 + 五个 M5–M6 词 0"
+ok "④-2 越界编号 0 命中；internal/plan 零 reconcile import + 非注释行仅 write_note_v2.go 的 1 处 UX 提示字符串（双引号内）+ 裸词落点恰 {validate_m4.go, precheck.go, write_note_v2.go} + 五个 M5–M6 词 0"
 
 step "④ grep 组 3：skipped[].kind 恰两值（SkipReason 恰 3 常量 / 非空取值恰两个），block_conflict 零命中"
 grep -rhoE '(SkipNone|SkipFileChanged|SkipUserBlockUnsafe) SkipReason = "[a-z_]*"' \
