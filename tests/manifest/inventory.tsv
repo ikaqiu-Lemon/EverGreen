@@ -38,6 +38,7 @@ tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
+tests/_staged/internal/cli/opinion_auth_prelock_test.go	unit	go	cli-core	unit.internal.cli	1	5104
 tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	9	16355
 tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	unit	go	cli-core	unit.internal.cli	7	19276
 tests/_staged/internal/cli/opinion_lifecycle_transaction_test.go	unit	go	cli-core	unit.internal.cli	10	34262
@@ -113,6 +114,7 @@ tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	59
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2765
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	11184
+tests/_staged/internal/plan/opinion_validation_authorization_test.go	unit	go	proposal	unit.internal.plan	4	13514
 tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	32174
 tests/_staged/internal/plan/precheck_test.go	unit	go	proposal	unit.internal.plan	3	3614
 tests/_staged/internal/plan/relation_ko_chain_test.go	unit	go	proposal	unit.internal.plan	4	14420
@@ -398,7 +400,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24551
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24570
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

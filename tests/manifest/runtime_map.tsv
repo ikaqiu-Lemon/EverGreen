@@ -38,6 +38,7 @@ tests/_staged/internal/cli/index_v2_rebuild_status_test.go	internal/cli/index_v2
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/markers_test.go	internal/cli/markers_test.go	evergreen	unit	go
+tests/_staged/internal/cli/opinion_auth_prelock_test.go	internal/cli/opinion_auth_prelock_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_cmd_test.go	internal/cli/opinion_cmd_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	internal/cli/opinion_lifecycle_skeleton_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_lifecycle_transaction_test.go	internal/cli/opinion_lifecycle_transaction_test.go	evergreen	unit	go
@@ -113,6 +114,7 @@ tests/_staged/internal/plan/m3_test.go	internal/plan/m3_test.go	evergreen	unit	g
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	internal/plan/mark_reviewed_w7_test.go	evergreen	unit	go
 tests/_staged/internal/plan/matrix_contract_test.go	internal/plan/matrix_contract_test.go	evergreen	unit	go
 tests/_staged/internal/plan/matrix_test.go	internal/plan/matrix_test.go	evergreen	unit	go
+tests/_staged/internal/plan/opinion_validation_authorization_test.go	internal/plan/opinion_validation_authorization_test.go	evergreen	unit	go
 tests/_staged/internal/plan/plan_test.go	internal/plan/plan_test.go	evergreen	unit	go
 tests/_staged/internal/plan/precheck_test.go	internal/plan/precheck_test.go	evergreen	unit	go
 tests/_staged/internal/plan/relation_ko_chain_test.go	internal/plan/relation_ko_chain_test.go	evergreen	unit	go
