@@ -392,3 +392,29 @@ eg check [--json]
    - `internal/query/card.go:215` `VisibleEndpoints`（当前**只**过滤已删除端点）；
    - `internal/git/`（只读 API 面）；
    - `internal/store/` 的 B3 `content_hash` 前置比对（**M4 不得削弱**）。
+
+## 18. 附录 · M7（`knowledge_opinion_split`）additive addendum（2026-09-19 · 裁决 A-62）
+
+**本节为 additive 追加，M4 的历史结论一字不改，只登记 Schema v2 / M7 阶段对本合同的向后兼容增量。**
+增量来源：Epic `knowledge_opinion_split` 的前置裁决
+`../../../knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md`（A-62），
+为 schema-v2 §6.4「validated 观点零支持证据」落地一条**新增 R3 子检查** `opinion_unsupported_validated`。
+
+- **对 §3（`check` 十二值封闭枚举与诊断码单射）**：M4 收口时 `check` 恰 **12** 值封闭、`W` 段恰止于 `W20`、
+  `W21` 不再分配（回到对账域）——**该历史结论不变**。M7 起对账 check 表 **additive 扩至 13**：新增第 13 行
+  `opinion_unsupported_validated`（R3 · `warning`），诊断码取**当前全局下一空号 `W29`**（M7 中 `W21` 已由
+  `internal/plan/` 占用、`W22`–`W28` 各有域主，故 `W29` 是下一空号；**不复活 `W21`**，与 §3「`W21` 不再
+  分配（回到对账域）」一致）。`SeverityCount` 恒 2、`check ↔ 码`仍双向单射（13 对）。
+- **对 §7（R3 关系校验）**：R3 子检查由 **4 → 5**；新子检查仍**只报告、零 RepairSpec、不自动修**，且
+  **不改 F4**（关系类型集合恒 8 值封闭，不新增关系类型 / 字段）。「有效支持」= 指向本观点的 incoming
+  `supports` 边、持有方存在且未逻辑删除、重复边去重计一次、nil scan 不判、正向 supports 不计入
+  （方向 / 有效性细则见 A-62 §2）。
+- **对 §13（`eg check` 命令合同）**：`eg check` 仍是「只跑 R3 / R4」的只读子集、**永不**产
+  `support_insufficient`/W20（R7 语义不变）——**该历史结论不变**。因新码归 **R3**，`eg check` 按 R∈{R3,R4}
+  过滤**自动**纳入 `opinion_unsupported_validated`（W29），满足 A-62 Acceptance「`eg check` 与
+  `eg reconcile` 都检出」。`cli.CheckScopeCount` 因此 **7 → 8**（R3 五 + R4 三），`CheckExcludedCount` 仍
+  **5**（R1/R2/R5/R6/R7）。
+- **对 §14（计数变更面）**：M7 additive 增量——`reconcile.CheckCount` 12→**13**、`R3SubcheckCount` 4→**5**、
+  `cli.CheckScopeCount` 7→**8**、新增诊断码 **W29** 一个；`SeverityCount`(2) / `OrderedTargetsCheckCount`(1) /
+  `F4RelationValueCount`(8) / 已落地 R 规则数(7) / `skipped[].kind`(2 值) / 退出码全集 **均不变**。
+  代码 / 测试 / 夹具落地归 T-…-007 的 7C 代码批，本附录不改任何代码。
