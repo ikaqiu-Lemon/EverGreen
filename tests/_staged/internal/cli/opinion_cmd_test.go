@@ -7,16 +7,16 @@ package cli
 // <o-id> 形态非法）一律 UsageError（退 1、零写入）。
 //
 // B1b-cli 起：`search` 子命令**已接通**只读检索；B2b 起：`show` 子命令**已接通**只读单条观点视图
-// （行为判据见 opinion_search_test.go / opinion_show_test.go）。其余两条 validate/reject **仍是
-// 未挂载骨架**：D 批补齐用法 / 退出码 / 授权合同后，授权齐备（非空 --reason + --user-request）才走到
-// NotWiredError（退 1、零写入零 commit）；缺 / 空 reason 或读 flag 先判用法错退 1，缺 --user-request
-// 判授权失败退 2（E19）—— 逐字段与顺序判据见 opinion_lifecycle_skeleton_test.go。
+// （行为判据见 opinion_search_test.go / opinion_show_test.go）。T-007 起：`validate` / `reject`（含
+// validate --reopen）**已接通**观点验证生命周期直写事务（行为判据见 opinion_lifecycle_transaction_test.go）。
+// D 批定型的用法 / 退出码 / 授权合同仍逐格恒成立：缺 / 空 reason 或读 flag 先判用法错退 1、缺
+// --user-request 判授权失败退 2（E19）—— 逐字段与顺序判据见 opinion_lifecycle_skeleton_test.go。
 //
 // 覆盖：① 子命令封闭集与顺序；② --help 恰列 23 条且 opinion 恰一行；③ 命令数 22+1=23
 // 加法等式；④ 缺/未知子命令退 1；⑤ search/show/validate/reject 位置参数个数校验；
-// ⑥ <o-id> 形态校验（必须经 model.OpinionID.Valid）；⑦ search/show 已接通（search 空库退 0、
-// show 穿过 Validate 与 guard 落到已挂载 Handler，观点不存在退 1 且**非** NotWired）、
-// validate/reject 仍确定性 NotWired、退 1、零写入零 commit。
+// ⑥ <o-id> 形态校验（必须经 model.OpinionID.Valid）；⑦ search/show/validate/reject 均已接通
+// （search 空库退 0；show 穿过 Validate 与 guard 落到已挂载 Handler，观点不存在退 1 且**非** NotWired；
+// validate/reject 授权齐备后进入已接线生命周期事务，空库解析不到目标退 2、零写入零 commit）。
 
 import (
 	"flag"
@@ -61,10 +61,10 @@ func TestOpinionSubcommandsExactlyFour(t *testing.T) {
 		t.Fatal("eg opinion 必须 SubRequired：无子命令即用法错")
 	}
 	if cmd.Placeholder {
-		t.Fatal("eg opinion 不得是占位命令（占位命令走 placeholderError，本批要的是 NotWiredError）")
+		t.Fatal("eg opinion 不得是占位命令（占位命令走 placeholderError，本命令要的是已挂载 Handler）")
 	}
-	// 本批挂上壳处理器 runOpinion（使「注册面 == 挂载面」成立），但该壳对任一子命令只
-	// 返回 NotWiredError：命令**已挂载**（Handler != nil），业务实现仍未落地。
+	// 挂上壳处理器 runOpinion（使「注册面 == 挂载面」成立）：四个子命令均已接通业务实现，
+	// 仅对**未知**子命令兜底返回 NotWiredError。这里只钉「命令已挂载」（Handler != nil）。
 	if cmd.Handler == nil {
 		t.Fatal("eg opinion 必须挂上壳处理器 runOpinion（注册面须等于挂载面）")
 	}
@@ -137,7 +137,7 @@ func TestCommandCountTwentyThree(t *testing.T) {
 	if got[len(got)-1].Name != "opinion" {
 		t.Fatalf("注册表尾条 = %q，期望 %q（新命令一律追加在尾部）", got[len(got)-1].Name, "opinion")
 	}
-	// opinion 已注册且挂上壳处理器（注册面须等于挂载面）；壳对任一子命令只返回 NotWiredError。
+	// opinion 已注册且挂上壳处理器（注册面须等于挂载面）；四个子命令均已接通，仅未知子命令兜底 NotWired。
 	cmd := New().Lookup("opinion")
 	if cmd == nil {
 		t.Fatal("命令 opinion 未注册")
@@ -233,9 +233,10 @@ func TestOpinionIDShapeRejected(t *testing.T) {
 	}
 }
 
-// —— ⑦ search/show 已接通、validate/reject 仍确定性 NotWired（退 1、零写入零 commit）——
+// —— ⑦ search/show/validate/reject 均已接通：授权齐备的 validate/reject 越过授权进入生命周期事务，
+//    空库解析不到目标 → 退 2（E18、零写入零 commit），不再是 NotWired ——
 
-func TestOpinionSearchShowWiredValidateRejectNotWired(t *testing.T) {
+func TestOpinionSearchShowValidateRejectAllWired(t *testing.T) {
 	dir := captureVault(t)
 	statusBefore, logBefore := opinionVaultSnapshot(t, dir)
 
@@ -266,10 +267,11 @@ func TestOpinionSearchShowWiredValidateRejectNotWired(t *testing.T) {
 		t.Fatal("eg opinion show 是只读视图：不得改动工作区或产生 commit")
 	}
 
-	// validate / reject 仍是未挂载骨架：**授权齐备**（非空 --reason + --user-request）时越过 Validate
-	// 与授权判定，止步于未挂载的状态机实现 → NotWired（退 1、零写入零 commit）。D 批补齐的骨架合同
-	// 下，validate/reject 必带非空 --reason 且必带命令行 --user-request 才走到这一步（缺任一分别退
-	// 1 / 2，见 opinion_lifecycle_skeleton_test.go）；这里只钉「授权齐备仍 NotWired」这一末端语义。
+	// validate / reject 已接通生命周期事务：**授权齐备**（非空 --reason + --user-request）越过 Validate
+	// 与授权判定，进入锁内 S3 resolve。本用例目标 <o-id> 不在空库中，故退 2（E18、NotFound），据此
+	// 证明合法授权齐备形态确实穿过骨架接上了真实事务（而非止步于 NotWired）。D 批补齐的骨架合同下，
+	// validate/reject 必带非空 --reason 且必带命令行 --user-request 才走到这一步（缺任一分别退
+	// 1 / 2，见 opinion_lifecycle_skeleton_test.go）。
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -278,21 +280,24 @@ func TestOpinionSearchShowWiredValidateRejectNotWired(t *testing.T) {
 		{"reject <o-id> 授权齐备", []string{"reject", validID, "--reason", "论证不成立", "--user-request"}},
 	} {
 		code, _, errOut := runOpinionCLI(t, dir, tc.args...)
-		if code != ExitUsage {
-			t.Fatalf("[%s] 退出码 = %d，期望 1（骨架未挂载实现）：%s", tc.name, code, errOut)
+		if code != ExitValidation {
+			t.Fatalf("[%s] 退出码 = %d，期望 2（已接线：越过授权后锁内解析不到目标观点）：%s", tc.name, code, errOut)
 		}
-		// 必须是 NotWiredError（「业务实现尚未挂载」），而不是别的用法错——
-		// 用它证明「合法形态确实穿过了 Validate 与 guard，止步于未挂载的 Handler」。
-		if !strings.Contains(errOut, "尚未挂载") {
-			t.Fatalf("[%s] stderr 未含 NotWired 措辞（应止步于未挂载 Handler）：%s", tc.name, errOut)
+		// 必须**不再**是 NotWiredError：用它证明「合法授权齐备形态确实穿过了 Validate、guard 与授权
+		// 判定，进入已挂载的生命周期事务」，只是止步于目标不存在（E18）。
+		if strings.Contains(errOut, "尚未挂载") {
+			t.Fatalf("[%s] 授权齐备不得再是 NotWired 骨架（生命周期已接线）：%s", tc.name, errOut)
+		}
+		if !strings.Contains(errOut, "解析不到") {
+			t.Fatalf("[%s] 授权齐备应进入锁内 resolve 并因目标不存在退 2（E18）：%s", tc.name, errOut)
 		}
 		statusAfter, logAfter := opinionVaultSnapshot(t, dir)
 		if statusAfter != statusBefore {
-			t.Fatalf("[%s] 改变了工作区（骨架必须零文件变化）：%q → %q",
+			t.Fatalf("[%s] 改变了工作区（解析不到目标必须零文件变化）：%q → %q",
 				tc.name, statusBefore, statusAfter)
 		}
 		if logAfter != logBefore {
-			t.Fatalf("[%s] 产生了 commit（骨架必须零 commit）", tc.name)
+			t.Fatalf("[%s] 产生了 commit（解析不到目标必须零 commit）", tc.name)
 		}
 	}
 }

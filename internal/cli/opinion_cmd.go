@@ -52,8 +52,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ikaqiu-Lemon/EverGreen/internal/git"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/report"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // 四个子命令名（**恰四个**，顺序即 --help 顺序：设计 §5.4 逐字 search|show|validate|reject）。
@@ -297,24 +300,281 @@ func (r *Root) runOpinion(inv *Invocation) (*Result, error) {
 	case SubOpinionShow:
 		return r.runOpinionShow(inv)
 	case SubOpinionValidate, SubOpinionReject:
-		return r.runOpinionLifecycleSkeleton(inv)
+		return r.runOpinionLifecycle(inv)
 	}
 	return nil, &NotWiredError{Command: inv.Cmd.Display, Owner: inv.Cmd.Owner}
 }
 
-// runOpinionLifecycleSkeleton 是 validate / reject 的**骨架合同**：先判授权，再止步于未挂载状态机。
+// runOpinionLifecycle 是 validate / reject（含 validate --reopen）接通的**观点验证生命周期**
+// 直写事务：与 mark-reviewed / undelete 同一把 run.lock、同一套 S1~S9 时序，把命令名映射成
+// 目标验证态，交由状态机复算 action，再经**唯一**写口 store.ApplyStateWrite(StateWriteValidation)
+// 覆盖 validation、刷新 updated_at、追加审计块。
 //
 // 到这里时形态校验（位置参数 / <o-id> 形态 / flag 分域 / 非空 reason）已在 validateOpinionArgs
-// 全部通过。授权面：观点验证 / 驳回属写路径，须由命令行 --user-request 显式佐证本次调用由用户
-// 发起（观点文件内容不能自证，N-1）。缺它 → 退 2、E19、零写入零 commit（**晚于** Validate 的
-// 缺 / 空 reason 用法错退 1，两码绝不冒名）。授权齐备（非空 reason + --user-request）→ 越过授权，
-// 止步于**未挂载的验证生命周期状态机** → NotWired 退 1；真正的写行为（状态机、store/plan/txn）
-// 归 T-007，本骨架一格不碰。
-func (r *Root) runOpinionLifecycleSkeleton(inv *Invocation) (*Result, error) {
+// 全部通过。授权面：缺 --user-request → 退 2、E19、零写入零 commit（**先于**取锁）。命令名 → 目标态：
+// validate → validated；reject → rejected；validate --reopen → pending。action 一律由
+// model.ValidationTransition(from,to) 复算（CLI 不自报），非法边退 2（零写入、不取号、无 commit）。
+func (r *Root) runOpinionLifecycle(inv *Invocation) (*Result, error) {
 	if !inv.UserRequest {
 		return nil, opinionAuthDenied(inv.Args[0])
 	}
-	return nil, &NotWiredError{Command: inv.Cmd.Display, Owner: inv.Cmd.Owner}
+	target := inv.Args[0]
+	to := opinionTargetValidation(inv)
+
+	rep := report.New()
+	oc, cerr := r.opinionLifecycleCritical(inv, &rep, target, to)
+	if oc == nil {
+		// 连目标都没定盘（锁失败 / 恢复阻断 / 解析不到 / 读失败 / 非法边 / 预演写失败）：
+		// 本次零权威写、无 commit，报告无从谈起。
+		return nil, cerr
+	}
+	return r.opinionLifecycleFinish(inv, &rep, oc, target, to)
+}
+
+// opinionTargetValidation 把子命令 + --reopen 映射成本次要落地的目标验证态（无分支自报 action）。
+// validate（默认）→ validated；validate --reopen → pending（复议降级）；reject → rejected。
+func opinionTargetValidation(inv *Invocation) model.Validation {
+	if inv.Sub == SubOpinionReject {
+		return model.ValidationRejected
+	}
+	if inv.String(OpinionReopenFlag) == "true" {
+		return model.ValidationPending
+	}
+	return model.ValidationValidated
+}
+
+// opinionLifecycleOutcome 是临界区内产出的全部事实，供锁外渲染报告与裁决退出码
+// （口径与 markReviewedOutcome 同源：字段语义逐格对齐）。
+type opinionLifecycleOutcome struct {
+	Rel         string
+	From        model.Validation
+	To          model.Validation
+	Action      model.ValidationAction
+	At          model.Stamp
+	TxnID       string
+	Commit      git.CommitInfo
+	RolledBack  bool
+	RollbackErr error
+	Unwritten   []string
+	Blocked     error
+	GitErr      error
+}
+
+// opinionLifecycleCritical 是 validate / reject 的整个临界区：进函数即取锁，出函数即释放锁
+// （S1 取锁 → S2 恢复屏障 → S3 锁内重读 → S4 预演 → S5 intent → S6 提交 → S7 Git → S8 写后索引同步）。
+//
+// 返回 (nil, err) 表示阻断（连报告都产不出来：锁失败 / 恢复阻断 / 解析读失败 / 非法边 / 预演写失败）；
+// 返回 (oc, nil) 时失败事实挂在 oc 上，由调用方在锁外连同报告一起交付。
+func (r *Root) opinionLifecycleCritical(inv *Invocation, rep *report.Report,
+	target string, to model.Validation) (*opinionLifecycleOutcome, error) {
+	root := inv.VaultRoot
+
+	// —— S1 + S2：取锁、崩溃恢复屏障（与 plan 写链 / capture / mark-reviewed / undelete 共用同一把锁）。——
+	sess, serr := r.enterTxnCritical(inv, reportWarnSink{rep}, txnCriticalOpts{
+		ZeroWrite: "本次零写入", ReleaseNotice: "本次写入与提交不受影响",
+	})
+	if serr != nil {
+		return nil, serr
+	}
+	defer sess.release()
+
+	// —— S3：锁内重建 Store，重新全库发现、重新读 —— 严禁挪到锁外（S2 刚可能把目标回滚到前像）。
+	st := store.New(root)
+	idx, err := st.ScanIDs()
+	if err != nil {
+		return nil, &ValidationError{Msg: "扫描 vault 失败（零写入）：" + err.Error()}
+	}
+	rel, rerr := idx.Resolve(target)
+	if rerr != nil {
+		return nil, &ValidationError{
+			Msg: fmt.Sprintf("eg opinion %s 的 <o-id> %s 在库里解析不到文件（零写入）：%v",
+				inv.Sub, target, rerr),
+			Diags: []Diagnostic{{
+				Code: E18, Level: LevelError, Path: inv.Sub, OpIndex: NonOpDiagnostic,
+				Message: rerr.Error(), Target: target,
+			}},
+		}
+	}
+	f, ferr := st.Read(rel)
+	if ferr != nil {
+		return nil, &ValidationError{Msg: fmt.Sprintf("读取 %s 失败（零写入）：%v", rel, ferr)}
+	}
+	// 读权威 frontmatter 定 from：借 OpinionOf 确认目标确是合法观点（wrong-kind / 坏 FM 在此零写入拒绝）。
+	op, operr := store.OpinionOf(f.Bytes)
+	if operr != nil {
+		return nil, &ValidationError{
+			Msg: fmt.Sprintf("解析观点 %s 失败（零写入）：%v", rel, operr),
+			Diags: []Diagnostic{{
+				Code: E20, Level: LevelError, Path: rel, OpIndex: NonOpDiagnostic,
+				Message: operr.Error(), Target: target,
+			}},
+		}
+	}
+	fireTxnStep(TxnStepReread, "")
+
+	from := op.Validation
+	// action 只能由状态机从 (from,to) 复算：自环 / rejected->validated 逆跳 / 非法端点在此
+	// 退 2、零写入、**不取号、无 commit**（先于 S4 预演，绝不落半截产物、也绝不冒名 NotWired）。
+	action, terr := model.ValidationTransition(from, to)
+	if terr != nil {
+		return nil, &ValidationError{Msg: fmt.Sprintf(
+			"eg opinion %s 拒绝该验证流转（零写入）：%v", inv.Sub, terr)}
+	}
+	// 时刻在**锁内**取：它要进权威字节（validation 审计块 at / updated_at）与 intent。
+	oc := &opinionLifecycleOutcome{
+		Rel: rel, From: from, To: to, Action: action, At: model.NewStamp(r.now()),
+	}
+
+	// —— S4：原子预演。复用**唯一**写口，实盘与 Git 全程零变化，只攒 accepted write-set。——
+	if err := st.BeginAtomic(); err != nil {
+		return nil, blockedError("原子预演无法开始，本次零写入", err)
+	}
+	defer st.EndAtomic()
+
+	reason := inv.String(OpinionReasonFlag)
+	if _, werr := r.applyStateWrite(st, store.StateWriteSpec{
+		Op: store.StateWriteValidation, Rel: rel, ExpectedHash: f.Hash,
+		Reason: reason, Validation: to, Stamp: oc.At,
+	}); werr != nil {
+		// 预演期写失败 ⇒ overlay 丢弃即零写入：不开事务、不发 intent、不跑 Git。
+		return nil, &PartialWriteError{
+			Msg: fmt.Sprintf("写入 %s 的 %s 失败（磁盘保留现状，未做任何还原）：%v",
+				rel, model.FMKeyValidation, werr),
+			Diags: []Diagnostic{{
+				Code: E21, Level: LevelError, Path: rel, OpIndex: NonOpDiagnostic,
+				Message: oneLineReason(werr.Error()), Target: target,
+			}},
+		}
+	}
+
+	ws := st.AtomicWriteSet()
+	fireTxnStep(TxnStepExecuted, "")
+	// 单文件原子域**硬约束**（合同：一次合法 validation 流转恰改写目标观点一个文件）：
+	// accepted write-set 必须**恰含一条**、且**恰是目标 rel**。任何偏离（零条 / 多条 /
+	// 路径不符）都意味着写口越出了本命令声明的原子域 —— 此时 overlay 立即丢弃（defer
+	// EndAtomic），**不取号、不发 intent、不提交、不跑 Git**，直接返回阻断错误交人工处置，
+	// 绝不把一个写面已经外溢 / 落空的预演继续推进成事务。这一格由源码显式守住，不靠
+	// 「成功后 intent 恰含一个文件」间接证明。
+	if len(ws) != 1 || ws[0].Path != rel {
+		return nil, blockedError(fmt.Sprintf(
+			"opinion %s 的原子预演写集违反单文件原子域（本次零写入、零事务、零 commit）：期望恰 1 个"+
+				"目标文件 %s，实得 %d 个 %v", inv.Sub, rel, len(ws), writeSetPaths(ws)), nil)
+	}
+
+	// —— S5：分配 txn_id → 记进锁正文 → 发布 intent（发布屏障）。审计边界是「分配成功」（A-59）。——
+	txnID, oerr := sess.openTxn(inv, intentFilesOf(ws), nil, r.Now, func(id string) {
+		oc.TxnID = id
+		rep.SetTxnID(id)
+	})
+	if oerr != nil {
+		if txnID == "" {
+			return nil, oerr
+		}
+		oc.Blocked = oerr
+		return oc, nil
+	}
+
+	// —— S6：原子提交。commit marker 在盘之前，validation 一律不算生效。——
+	cres, cerr := sess.commitWriteSet(txnID, ws)
+	switch {
+	case cerr != nil && cres != nil && cres.RolledBack:
+		oc.RolledBack, oc.RollbackErr = true, cerr
+		oc.Unwritten = writeSetPaths(ws)
+		rep.AddWarning(unnumberedWarning("ops",
+			"原子提交失败，事务 %s 已按合同 §5.2 主动放弃：%v", txnID, cerr))
+		for _, p := range oc.Unwritten {
+			rep.AddWarning(unnumberedWarning(p,
+				"目标未写入：本次事务已整体回滚，该文件保持事务开始前的字节（前像）"))
+		}
+		rep.AddInfo("ops", report.NonOp,
+			"事务 %s 的 %d 个目标文件**一个都没有写入**：txn 层已逐个还原前像、"+
+				"全部还原完成后才写下 abort 标记，随后未执行 Git", txnID, len(ws))
+		return oc, nil
+	case cerr != nil:
+		oc.Blocked = blockedError(fmt.Sprintf(
+			"事务 %s 的原子提交失败且未能收敛为已回滚状态，需人工处置", txnID), cerr)
+		return oc, nil
+	}
+	fireTxnStep(TxnStepCommitted, txnID)
+
+	// —— S7：Git。严格晚于 commit marker，仍持同一把锁。verb 取 process（状态类命令同口径）。——
+	repo := r.repo(root)
+	noteExistingChangesInReport(rep, repo, writeSetPaths(ws))
+	info, gerr := repo.Commit(git.Message{
+		Verb:           string(model.VerbProcess),
+		Domain:         commitDomain(domainOfPath(rel)),
+		Subject:        fmt.Sprintf("观点 %s 验证流转：%s -> %s（%s）", target, from, to, action),
+		Reason:         "用户显式发起的观点验证生命周期流转：唯一写入触发",
+		RequirementIDs: []string{},
+	})
+	for _, w := range info.Warnings {
+		rep.AddWarning(report.Diagnostic{
+			Code: "", Level: report.LevelWarning, Path: "git.commit", OpIndex: report.NonOp,
+			Message: w,
+		})
+	}
+	fireTxnStep(TxnStepGit, txnID)
+	if gerr != nil {
+		// 不回滚、不做第二次权威写：validation 已由 commit marker 定盘并保持目标态。
+		oc.GitErr = gerr
+	} else {
+		oc.Commit = info
+	}
+
+	// —— S8：写后索引同步。仍在**同一把锁内**、Git 之后、Release 之前。Git 成败都走。——
+	r.syncIndexAfterWrite(rep, root, indexWriteLabel(inv), writeSetPaths(ws))
+	fireTxnStep(TxnStepIndexSync, txnID)
+	return oc, nil
+}
+
+// opinionLifecycleFinish 在**锁外**把临界区的事实渲染成产物并裁决退出码
+// （四条出口与 mark-reviewed 同源：主动回滚退 3、提交前阻断兜底、Git 失败退 4、其余退 0）。
+func (r *Root) opinionLifecycleFinish(inv *Invocation, rep *report.Report,
+	oc *opinionLifecycleOutcome, target string, to model.Validation) (*Result, error) {
+	rel := oc.Rel
+	switch {
+	case oc.RolledBack:
+		rep.SetCommit("")
+		res := proposalResult(*rep, []string{fmt.Sprintf(
+			"opinion %s 未生效：事务 %s 已整体回滚，%s 的 %s 保持事务开始前的字节（目标 %s）",
+			inv.Sub, oc.TxnID, rel, model.FMKeyValidation, target)})
+		r.saveReport(inv.VaultRoot, res, ExitPartialWrite)
+		return res, &PartialWriteError{
+			Msg: fmt.Sprintf("原子提交失败，事务 %s 已整体回滚：%d 个目标文件一个都没有写入、"+
+				"磁盘保持事务开始前的字节、未产生 commit（原因：%v）",
+				oc.TxnID, len(oc.Unwritten), oc.RollbackErr),
+		}
+	case oc.Blocked != nil:
+		rep.SetCommit("")
+		res := proposalResult(*rep, []string{fmt.Sprintf(
+			"opinion %s 未提交：事务 %s 已分配号码但未闭合，本次零权威写入（目标 %s，%s）",
+			inv.Sub, oc.TxnID, target, rel)})
+		r.saveReport(inv.VaultRoot, res, ExitCodeFor(classifyExit5(oc.Blocked)))
+		return res, oc.Blocked
+	}
+
+	summary := []string{fmt.Sprintf(
+		"opinion %s 已执行：%s 的 %s = %s（%s -> %s，action=%s，目标 %s）",
+		inv.Sub, rel, model.FMKeyValidation, oc.To, oc.From, oc.To, oc.Action, target)}
+	if oc.GitErr != nil {
+		// B4：提交失败退 4，已写的字节留在工作区并保持现状，不做任何还原。
+		rep.SetCommit("")
+		res := proposalResult(*rep, summary)
+		r.saveReport(inv.VaultRoot, res, ExitCommitFailed)
+		return res, &CommitFailedError{
+			Msg: "Git 提交失败：已写入的 validation 保留在磁盘并保持现状，未做任何还原（B4）",
+			Err: oc.GitErr,
+			Diags: []Diagnostic{{
+				Code: E22, Level: LevelError, Path: "git.commit", OpIndex: NonOpDiagnostic,
+				Message: commitFailureMessage(oc.GitErr),
+			}},
+		}
+	}
+	rep.SetCommit(oc.Commit.SHA)
+	rep.Links = append(rep.Links, rel)
+	res := proposalResult(*rep, summary)
+	r.saveReport(inv.VaultRoot, res, ExitOK)
+	return res, nil
 }
 
 // opinionAuthDenied 是 validate / reject 缺 --user-request 时的带类型错误（退 2、零写入零 commit）。

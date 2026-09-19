@@ -1203,15 +1203,18 @@ func TestIndexAfterWriteFiltersNonCardPaths(t *testing.T) {
 	if strings.Join(d.Removed, ",") != store.CardRel("ai-infra", "k-20260901-missing") {
 		t.Fatalf("Removed = %v，期望恰那张已消失的卡（非卡路径一律不进 Removed）", d.Removed)
 	}
-	if !isCardRel(store.CardRel("ai-infra", applyCardID)) {
-		t.Fatal("isCardRel 认不出标准卡路径")
+	if !isIndexedRel(store.CardRel("ai-infra", applyCardID)) {
+		t.Fatal("isIndexedRel 认不出标准卡路径")
+	}
+	if !isIndexedRel(store.OpinionRel("ai-infra", applyOpinionID)) {
+		t.Fatal("isIndexedRel 认不出标准观点路径（观点与知识卡同批入索引对象面）")
 	}
 	for _, notCard := range []string{
 		store.NoteRel("ai-infra", applyNoteID), store.SourceRel(applySourceID),
 		"unprocessed.md", "domains/ai-infra/knowledge/sub/deep.md", "domains/ai-infra/knowledge",
 	} {
-		if isCardRel(notCard) {
-			t.Fatalf("isCardRel 把 %q 也判成了知识卡", notCard)
+		if isIndexedRel(notCard) {
+			t.Fatalf("isIndexedRel 把 %q 也判成了索引对象面", notCard)
 		}
 	}
 }

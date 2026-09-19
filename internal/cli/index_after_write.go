@@ -127,8 +127,9 @@ func (r *Root) noteIndexNotSynced(rep *report.Report, cmd, why string) {
 //
 // 三件事：
 //
-//	① 只留知识卡路径：索引的对象面是卡（`domains/<d>/knowledge/*.md`），
-//	   写命令顺带写的提案 / 评审 / 原文 / 笔记不在索引里，不该被算成「受影响行」；
+//	① 只留索引对象面路径：索引的对象面是卡与观点（`domains/<d>/(knowledge|opinions)/*.md`
+//	   同批同口径进 cards / cards_fts / relations 三表），写命令顺带写的提案 / 评审 / 原文 /
+//	   笔记不在索引里，不该被算成「受影响行」；
 //	② 现态里还在的路径 → 取它的现态行（新增 / 修改同一条口径）；
 //	   现态里已经没有的路径 → 进 Removed（逻辑删除不删文件，因此这一支通常为空，
 //	   但重命名 / 外部删除必须能收敛，不能靠「大概不会发生」兜着）；
@@ -137,7 +138,7 @@ func (r *Root) noteIndexNotSynced(rep *report.Report, cmd, why string) {
 func indexDeltaFor(snap index.Snapshot, written []string) index.Delta {
 	affected := map[string]bool{}
 	for _, p := range written {
-		if rel := strings.TrimSpace(p); rel != "" && isCardRel(rel) {
+		if rel := strings.TrimSpace(p); rel != "" && isIndexedRel(rel) {
 			affected[rel] = true
 		}
 	}
@@ -167,14 +168,18 @@ func indexDeltaFor(snap index.Snapshot, written []string) index.Delta {
 	return d
 }
 
-// isCardRel 判定一个 vault 内相对路径是否为知识卡（索引的对象面）。
+// isIndexedRel 判定一个 vault 内相对路径是否落在索引对象面上：知识卡与观点两类同批入库
+// （`domains/<domain>/knowledge/<id>.md` 与 `domains/<domain>/opinions/<id>.md`）。
 //
-// 口径与 `store.CardRel` 的落位规则同源：`domains/<domain>/knowledge/<id>.md`。
+// 口径与 indexSnapshotWith 的扫描面同源：cards / cards_fts / relations 三表以卡与观点为单位。
+// Note / Source / Proposal 仍排除（它们不进索引，写命令顺带写到它们不算「受影响行」）。
 // 刻意不做「文件是否真的存在」的判断 —— 那是调用方给的事实，本函数只管形态。
-func isCardRel(rel string) bool {
+func isIndexedRel(rel string) bool {
 	parts := strings.Split(strings.TrimPrefix(rel, "./"), "/")
-	return len(parts) == 4 && parts[0] == store.DirDomains && parts[2] == store.DirKnowledge &&
-		strings.HasSuffix(parts[3], ".md")
+	if len(parts) != 4 || parts[0] != store.DirDomains || !strings.HasSuffix(parts[3], ".md") {
+		return false
+	}
+	return parts[2] == store.DirKnowledge || parts[2] == store.DirOpinions
 }
 
 // indexWriteLabel 是诊断文案里的命令名（`eg edit`、`eg rel add`…）。

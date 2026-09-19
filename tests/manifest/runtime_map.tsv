@@ -25,6 +25,7 @@ tests/_staged/internal/cli/exitcode_test.go	internal/cli/exitcode_test.go	evergr
 tests/_staged/internal/cli/index_after_write_capture_test.go	internal/cli/index_after_write_capture_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_delete_test.go	internal/cli/index_after_write_delete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	internal/cli/index_after_write_mark_reviewed_test.go	evergreen	unit	go
+tests/_staged/internal/cli/index_after_write_opinion_lifecycle_test.go	internal/cli/index_after_write_opinion_lifecycle_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_proposal_test.go	internal/cli/index_after_write_proposal_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_undelete_test.go	internal/cli/index_after_write_undelete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_lock_test.go	internal/cli/index_lock_test.go	evergreen	unit	go
@@ -39,6 +40,7 @@ tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_r
 tests/_staged/internal/cli/markers_test.go	internal/cli/markers_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_cmd_test.go	internal/cli/opinion_cmd_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	internal/cli/opinion_lifecycle_skeleton_test.go	evergreen	unit	go
+tests/_staged/internal/cli/opinion_lifecycle_transaction_test.go	internal/cli/opinion_lifecycle_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_search_test.go	internal/cli/opinion_search_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_show_test.go	internal/cli/opinion_show_test.go	evergreen	unit	go
 tests/_staged/internal/cli/page_test.go	internal/cli/page_test.go	evergreen	unit	go

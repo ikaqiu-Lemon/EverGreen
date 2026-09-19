@@ -3,7 +3,7 @@ arch-boundary	0	2	2	16	0	20
 authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
 card-query	26	0	4	0	0	30
-cli-core	77	0	6	0	0	83
+cli-core	79	0	6	0	0	85
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2

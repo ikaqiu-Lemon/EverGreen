@@ -1,9 +1,12 @@
 package cli
 
-// `eg opinion validate|reject` **骨架合同**的机器判据（读路径 CLI 拆分设计 §5.4；T-…-006 批次 D）。
+// `eg opinion validate|reject` 的**用法面 / 退出码面 / 授权面**机器判据（读路径 CLI 拆分设计 §5.4；
+// 原 T-…-006 批次 D 定型的形态合同）。
 //
-// 本批**只补合同、不接状态机**：validate/reject 的用法面、退出码面、授权面全部落定，但业务实现
-// （观点验证生命周期状态机、任何写入）归 T-007，本骨架一格不碰 store / plan / txn。
+// 形态合同（位置参数 / <o-id> 形态 / flag 分域 / 非空 reason / 缺 --user-request → E19）在此逐格锁死；
+// 生命周期状态机与写入事务已由 T-007 接线（见 opinion_lifecycle_transaction_test.go）。本文件所有用例
+// 都以空库不存在的 <o-id> 驱动：要么在形态 / 授权面提前退出（退 1 / 退 2），要么越过授权后止步于锁内
+// S3 resolve（目标不存在 → 退 2、E18），因此**每一格都零写入零 commit**，可专注钉住决策顺序与授权边界。
 //
 // 锁死的判据（每条都在真实临时 vault 上驱动真实命令；事实只回读 git 自己与 eg 自己的 --json 信封）：
 //
@@ -12,12 +15,14 @@ package cli
 //	② validate/reject **必带非空 --reason**：缺 / 空串 / 纯空白 → 用法错退 1（逐字点名 --reason），
 //	   且**先于**授权判定（即便已带 --user-request 也仍退 1）。
 //	③ 判定顺序（逐字锁）：位置参数 → <o-id> 形态 → flag 分域 → 缺/空 reason（以上均退 1）→
-//	   缺 --user-request（退 2）→ 授权齐备仍 NotWired（退 1）。
+//	   缺 --user-request（退 2）→ 授权齐备进入**已接线**的生命周期事务（本文件以空库不存在的
+//	   <o-id> 驱动，止步于锁内 S3 resolve → 退 2、E18、零写入）。
 //	④ 授权面：参数合法但缺 --user-request → 退 2，JSON data.errors[] **恰 1 条** E19 error，
 //	   逐字段 code=E19 / level=error / path=--user-request / target=<o-id> / op_index=-1，零写入零 commit。
-//	⑤ 授权齐备（非空 reason + --user-request）→ 越过 Validate 与授权判定，止步于未挂载状态机 →
-//	   NotWired（退 1、零写入零 commit）。
-//	⑥ 全程零副作用：信封之外，权威 Markdown / Git 工作区 / commit 数逐字不变（骨架不接任何写口）。
+//	⑤ 授权齐备（非空 reason + --user-request）→ 越过 Validate 与授权判定，进入**已接线**的生命周期
+//	   事务（锁内 S3 resolve）；本文件以空库不存在的 <o-id> 驱动，故止步于目标不存在 → 退 2、E18、
+//	   零写入零 commit（据此证明命令已穿透骨架边界，而非再停在 NotWired）。
+//	⑥ 全程零副作用：信封之外，权威 Markdown / Git 工作区 / commit 数逐字不变（本文件用例均在写入前退出）。
 
 import (
 	"encoding/json"
@@ -128,7 +133,7 @@ func TestOpinionValidateRejectRequireNonEmptyReason(t *testing.T) {
 	}
 }
 
-// —— ③ 判定顺序逐字锁：flag 分域 → 缺/空 reason → 缺 --user-request → 授权齐备仍 NotWired ——
+// —— ③ 判定顺序逐字锁：flag 分域 → 缺/空 reason → 缺 --user-request → 授权齐备进入已接线事务 ——
 
 func TestOpinionValidateRejectDecisionOrder(t *testing.T) {
 	dir := captureVault(t)
@@ -166,13 +171,17 @@ func TestOpinionValidateRejectDecisionOrder(t *testing.T) {
 			code, errOut)
 	}
 
-	// ④ reason + --user-request 齐备 → 越过授权，止步于未挂载状态机 → NotWired 退 1。
+	// ④ reason + --user-request 齐备 → 越过授权判定进入**已接线**的生命周期事务；本用例 <o-id> 在
+	//    空库里解析不到，故止步于锁内 S3 resolve → 退 2（E18、零写入），而**不再**是骨架期的 NotWired。
 	code, _, errOut = runOpinionCLI(t, dir, "reject", validID, "--reason", "论证不成立", "--user-request")
-	if code != ExitUsage {
-		t.Fatalf("reject 授权齐备退出码 = %d，期望 1（NotWired 骨架）：%s", code, errOut)
+	if code != ExitValidation {
+		t.Fatalf("reject 授权齐备退出码 = %d，期望 2（已接线：越过授权后锁内解析不到目标观点）：%s", code, errOut)
 	}
-	if !strings.Contains(errOut, "尚未挂载") {
-		t.Fatalf("reject 授权齐备应止步于 NotWired（业务实现未挂载）：%s", errOut)
+	if strings.Contains(errOut, "尚未挂载") {
+		t.Fatalf("reject 授权齐备不得再是 NotWired 骨架（生命周期已接线）：%s", errOut)
+	}
+	if !strings.Contains(errOut, "解析不到") {
+		t.Fatalf("reject 授权齐备应越过授权判定、进入锁内 resolve 并因目标不存在退 2（E18）：%s", errOut)
 	}
 }
 
@@ -225,9 +234,11 @@ func TestOpinionValidateRejectMissingUserRequestE19(t *testing.T) {
 	}
 }
 
-// —— ⑤ 授权齐备仍 NotWired：非空 reason + --user-request → 退 1、零写入零 commit（不接 store/plan/txn）——
+// —— ⑤ 授权齐备 → 生命周期**已接线**：非空 reason + --user-request 越过 Validate / guard / 授权判定，
+// 进入锁内 S3 resolve。本用例目标 <o-id> 不在空库中，故退 2（E18、零写入零 commit），据此证明命令
+// 已**穿透骨架边界**接上真实事务，而非再停在 NotWired。 ——
 
-func TestOpinionValidateRejectAuthorizedStillNotWired(t *testing.T) {
+func TestOpinionValidateRejectAuthorizedReachesWiredLifecycle(t *testing.T) {
 	dir := captureVault(t)
 	statusBefore, logBefore := opinionVaultSnapshot(t, dir)
 
@@ -240,20 +251,25 @@ func TestOpinionValidateRejectAuthorizedStillNotWired(t *testing.T) {
 		{"reject 授权齐备", []string{"reject", validID, "--reason", "论证不成立", "--user-request"}},
 	} {
 		code, _, errOut := runOpinionCLI(t, dir, tc.args...)
-		if code != ExitUsage {
-			t.Fatalf("[%s] 退出码 = %d，期望 1（NotWired 骨架）：%s", tc.name, code, errOut)
+		if code != ExitValidation {
+			t.Fatalf("[%s] 退出码 = %d，期望 2（已接线：越过授权后锁内解析不到目标观点）：%s",
+				tc.name, code, errOut)
 		}
-		// 必须是 NotWiredError（「业务实现尚未挂载」）——证明合法且授权齐备的形态确实穿过了
-		// Validate、guard 与授权判定，止步于**未挂载的状态机**，而非别的用法/授权失败。
-		if !strings.Contains(errOut, "尚未挂载") {
-			t.Fatalf("[%s] stderr 未含 NotWired 措辞（应止步于未挂载状态机）：%s", tc.name, errOut)
+		// 必须**不再**是 NotWiredError：证明合法且授权齐备的形态确实穿过了 Validate、guard 与授权
+		// 判定，进入了已挂载的生命周期事务（锁内 S3 resolve），只是止步于目标不存在（E18），
+		// 而非止步于未挂载的状态机。
+		if strings.Contains(errOut, "尚未挂载") {
+			t.Fatalf("[%s] 授权齐备不得再是 NotWired 骨架（生命周期已接线）：%s", tc.name, errOut)
+		}
+		if !strings.Contains(errOut, "解析不到") {
+			t.Fatalf("[%s] 授权齐备应进入锁内 resolve 并因目标不存在退 2（E18）：%s", tc.name, errOut)
 		}
 		statusAfter, logAfter := opinionVaultSnapshot(t, dir)
 		if statusAfter != statusBefore {
-			t.Fatalf("[%s] 改变了工作区（骨架必须零文件变化）：%q → %q", tc.name, statusBefore, statusAfter)
+			t.Fatalf("[%s] 改变了工作区（解析不到目标必须零文件变化）：%q → %q", tc.name, statusBefore, statusAfter)
 		}
 		if logAfter != logBefore {
-			t.Fatalf("[%s] 产生了 commit（骨架必须零 commit）", tc.name)
+			t.Fatalf("[%s] 产生了 commit（解析不到目标必须零 commit）", tc.name)
 		}
 	}
 }
@@ -261,13 +277,14 @@ func TestOpinionValidateRejectAuthorizedStillNotWired(t *testing.T) {
 // —— A2 · --reopen 分域合同：只 validate 接受；reject / search / show 显式带即退 1、逐字点名、零副作用 ——
 //
 // 设计出处：观点 schema v2 设计 §6.1 状态机 + §6.2「回到 pending（复议）复用 eg opinion validate --reopen，
-// 避免再加命令」。本批**只补 --reopen 的参数面与分域合同、不接状态机**：validate 接受它但授权齐备仍
-// NotWired（零写入零 commit），reject / search / show 一律显式拒绝（逐字点名 --reopen）。
+// 避免再加命令」。本组钉住 --reopen 的**参数面与分域合同**：validate 接受它（授权齐备后进入已接线的
+// 生命周期事务），reject / search / show 一律显式拒绝（逐字点名 --reopen）。
 //
 // 关键判定顺序（逐字锁）：--reopen 分域**先于** reason / 授权判定。因此
 //   - reject --reopen（哪怕同时缺 reason）→ 退 1 且点名 --reopen，绝不冒名成缺 reason 用法错；
 //   - validate --reopen 路径仍是「reason 先于授权」：缺 reason 退 1（点名 --reason）、reason 齐备缺
-//     --user-request 退 2（E19）、reason + --user-request 齐备仍 NotWired 退 1。
+//     --user-request 退 2（E19）、reason + --user-request 齐备越过授权进入已接线事务（本文件空库
+//     解析不到目标 → 退 2、E18）。
 
 func TestOpinionReopenRejectedOutsideValidate(t *testing.T) {
 	dir := captureVault(t)
@@ -305,7 +322,7 @@ func TestOpinionReopenRejectedOutsideValidate(t *testing.T) {
 	}
 }
 
-// —— A2 · validate 接受 --reopen：判定顺序 reason 先于授权；授权齐备仍 NotWired、零副作用 ——
+// —— A2 · validate 接受 --reopen：判定顺序 reason 先于授权；授权齐备后进入已接线事务、零副作用 ——
 
 func TestOpinionValidateReopenDecisionOrder(t *testing.T) {
 	dir := captureVault(t)
@@ -335,14 +352,18 @@ func TestOpinionValidateReopenDecisionOrder(t *testing.T) {
 		t.Fatalf("validate --reopen 缺授权 data.errors[] 应恰 1 条 E19，实得 %+v", diags)
 	}
 
-	// ③ validate --reopen 授权齐备（非空 reason + --user-request）→ 越过授权，止步于未挂载状态机 →
-	//    NotWired 退 1（本批只做参数面，绝不接状态机 / store / plan / txn）。
+	// ③ validate --reopen 授权齐备（非空 reason + --user-request）→ 越过授权判定进入**已接线**的
+	//    生命周期事务；本用例目标 <o-id> 不在空库中，故止步于锁内 S3 resolve → 退 2（E18、零写入），
+	//    据此证明 --reopen 授权齐备形态已穿透骨架接上真实状态机，而非再停在 NotWired。
 	code3, _, errOut3 := runOpinionCLI(t, dir, "validate", validID, "--reopen", "--reason", "出现新反例", "--user-request")
-	if code3 != ExitUsage {
-		t.Fatalf("validate --reopen 授权齐备退出码 = %d，期望 1（NotWired 骨架）：%s", code3, errOut3)
+	if code3 != ExitValidation {
+		t.Fatalf("validate --reopen 授权齐备退出码 = %d，期望 2（已接线：解析不到目标观点）：%s", code3, errOut3)
 	}
-	if !strings.Contains(errOut3, "尚未挂载") {
-		t.Fatalf("validate --reopen 授权齐备应止步于未挂载状态机（NotWired）：%s", errOut3)
+	if strings.Contains(errOut3, "尚未挂载") {
+		t.Fatalf("validate --reopen 授权齐备不得再是 NotWired 骨架（生命周期已接线）：%s", errOut3)
+	}
+	if !strings.Contains(errOut3, "解析不到") {
+		t.Fatalf("validate --reopen 授权齐备应进入锁内 resolve 并因目标不存在退 2（E18）：%s", errOut3)
 	}
 
 	if statusAfter, logAfter := opinionVaultSnapshot(t, dir); statusAfter != statusBefore || logAfter != logBefore {
