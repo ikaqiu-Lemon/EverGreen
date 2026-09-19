@@ -1171,11 +1171,12 @@ func TestWriteCommandNeverBuildsOrRepairsIndex(t *testing.T) {
 	}
 }
 
-// TestIndexAfterWriteFiltersNonCardPaths：写后同步只把**知识卡**路径算成受影响行。
+// TestIndexAfterWriteFiltersNonIndexedPaths：写后同步只把**索引对象面**路径（知识卡与观点，
+// 即 isIndexedRel 认可者）算成受影响行；笔记 / 原文 / 提案等非索引对象面一律不进受影响集或 Removed。
 //
 // 提案 / 评审 / 原文 / 笔记不在索引的对象面上，若把它们当成「受影响路径」，
 // 就会因为「现态里查不到这些行」而被误判成删除。这条用例把过滤器钉在形态层面。
-func TestIndexAfterWriteFiltersNonCardPaths(t *testing.T) {
+func TestIndexAfterWriteFiltersNonIndexedPaths(t *testing.T) {
 	snap := index.Snapshot{
 		Head: "cafebabe",
 		Cards: []index.Card{{

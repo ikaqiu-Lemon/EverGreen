@@ -33,14 +33,14 @@ tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	uni
 tests/_staged/internal/cli/index_opinion_sync_test.go	unit	go	cli-core	unit.internal.cli	1	33789
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	2	12817
-tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54576
+tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54728
 tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit.internal.cli	4	30095
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
 tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	9	16355
 tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	unit	go	cli-core	unit.internal.cli	7	19276
-tests/_staged/internal/cli/opinion_lifecycle_transaction_test.go	unit	go	cli-core	unit.internal.cli	8	28033
+tests/_staged/internal/cli/opinion_lifecycle_transaction_test.go	unit	go	cli-core	unit.internal.cli	10	34262
 tests/_staged/internal/cli/opinion_search_test.go	unit	go	cli-core	unit.internal.cli	17	25149
 tests/_staged/internal/cli/opinion_show_test.go	unit	go	cli-core	unit.internal.cli	10	25264
 tests/_staged/internal/cli/page_test.go	unit	go	cli-core	unit.internal.cli	3	6989

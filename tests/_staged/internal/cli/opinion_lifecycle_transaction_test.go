@@ -81,6 +81,13 @@ func commitNameOnly(t *testing.T, dir string) []string {
 	return strings.Fields(strings.TrimSpace(raw))
 }
 
+// commitSubject 取 HEAD 这一笔 commit 的**主题行**逐字原值（%s），即 `<verb>(<domain>): <subject>`
+// 的整行。直接问 Git 权威，不看 report / intent 里的转述——用于钉死成功路径 S7 的 verb 位。
+func commitSubject(t *testing.T, dir string) string {
+	t.Helper()
+	return strings.TrimSpace(gitOut(t, dir, "log", "-1", "--pretty=format:%s"))
+}
+
 // opinionValidationOf 回读目标观点文件的权威 validation（经 store.OpinionOf 解析，不看索引）。
 func opinionValidationOf(t *testing.T, dir, rel string) model.Validation {
 	t.Helper()
@@ -625,5 +632,112 @@ func TestOpinionLifecycleRejectsMultiFileWriteSet(t *testing.T) {
 	// 的阻断诊断交付。
 	if _, hasReport := env.Data["report"]; hasReport {
 		t.Fatalf("写集越界在取号前即阻断，data.report 应整个缺席：%v", env.Data)
+	}
+}
+
+// —— ⑨ 命令层 B3：S3 锁内重读之后、S4 落盘之前目标被并发改写 ——
+//
+// 合同要求：opinion 生命周期的写口带 B3 hash 守卫（ExpectedHash 取自 S3 锁内重读的前像）。
+// 若目标文件在 S3 读取之后、真实 ApplyStateWrite 之前被**另一写者**改了字节，写口必须以
+// *SkipError{file_changed} 拒写；命令层据此走「预演期写失败 ⇒ overlay 丢弃」出口：退 3
+// （ExitPartialWrite）、携 E21（既有 B3 对应诊断），且**保留并发写的新字节**（命令层零覆盖、
+// 零还原他人写），零权威流转、零事务、零 Git。
+//
+// 注入手法：把并发写夹进 r.StateWrite 里——真实写口触达目标 rel 的**首个** overlay 访问之前，
+// 先往盘上追加并发新字节，再委托真实 st.ApplyStateWrite。由于 overlay 首次 preimage 读的是实盘
+// 当前字节（并发后的），其 hash 必然对不上 S3 抓的 ExpectedHash，B3 当场触发。这比事后断言
+// 「没写成」更强：它证明守卫基准确实钉在 S3 前像、且并发字节被原样保留。
+func TestOpinionLifecycleConcurrentTargetChangeIsPartialWriteKeepingBytesWithoutTxnOrGit(t *testing.T) {
+	const at = "2026-10-20T09:00:00+08:00"
+	dir, _, opinionRel := opinionVault(t)
+	oid := applyOpinionID
+
+	logBefore := gitLogCount(t, dir)
+	base := txnIDsOn(t, dir)
+	opinionAbs := absIn(dir, opinionRel)
+
+	// 并发新字节：模拟 S3 与 S4 之间另一写者对目标观点的追加写。
+	concurrentTail := "\n<!-- concurrent writer appended between S3 read and S4 write -->\n"
+	var wantConcurrent string
+
+	r := newTestRoot(t, dir)
+	var injected bool
+	r.StateWrite = func(st *store.Store, spec store.StateWriteSpec) (store.Result, error) {
+		if !injected && spec.Rel == opinionRel {
+			// 真实写口的首个 overlay 访问之前抢先改盘：这一刻正是 S3 读完、S4 尚未落盘。
+			cur := mustRead(t, opinionAbs)
+			wantConcurrent = string(cur) + concurrentTail
+			if err := os.WriteFile(opinionAbs, []byte(wantConcurrent), 0o644); err != nil {
+				t.Fatalf("注入并发写失败：%v", err)
+			}
+			injected = true
+		}
+		return st.ApplyStateWrite(spec)
+	}
+
+	code, env, out := runOpinionLifecycleWith(t, r, dir, at,
+		SubOpinionValidate, oid, "--reason", "S3 与 S4 之间目标被并发改写", "--user-request")
+
+	if !injected {
+		t.Fatal("注入未生效：没有触达 r.StateWrite（本用例什么都没证明）")
+	}
+	// ① 退 3（ExitPartialWrite）：并发改写触发 B3，命令层走预演期写失败出口、零生效。
+	if code != ExitPartialWrite {
+		t.Fatalf("S3→S4 间目标被并发改写必须退 %d，实得 %d：%s", ExitPartialWrite, code, out)
+	}
+	// 携 E21（既有 B3 对应写失败诊断）。
+	diags := errorDiagsOf(t, env)
+	if !diagsHaveCode(diags, E21) {
+		t.Fatalf("并发写反证必须携 %s（写失败类诊断），实得 %+v", E21, diags)
+	}
+	// ② 并发新字节必须原样保留：命令层不得覆盖 / 还原他人的并发写（B3 的语义就是「不动盘、交人工」）。
+	if got := string(mustRead(t, opinionAbs)); got != wantConcurrent {
+		t.Fatalf("并发新字节必须原样保留（命令层零覆盖 / 零还原）\n期望：%q\n实得：%q", wantConcurrent, got)
+	}
+	// 目标 validation 一个权威字节都没生效：并发内容里绝不能出现本次要写的 validated 键值。
+	if strings.Contains(string(mustRead(t, opinionAbs)), model.FMKeyValidation+": validated") {
+		t.Fatalf("并发冲突后不得落地 validated：%s", opinionRel)
+	}
+	// ③ 零事务、零 Git：预演期即失败，取号（S5）之前就出局。
+	assertNoNewTxn(t, dir, base, "opinion S3→S4 并发写冲突")
+	if n := gitLogCount(t, dir); n != logBefore {
+		t.Fatalf("并发写冲突不得产生 commit：%d → %d", logBefore, n)
+	}
+	// data.report 整个缺席（比「report.txn_id 为空」更强）：事实经 data.errors[] 的 E21 交付。
+	if _, hasReport := env.Data["report"]; hasReport {
+		t.Fatalf("并发写冲突在取号前即阻断，data.report 应整个缺席：%v", env.Data)
+	}
+}
+
+// —— ⑩ 成功路径：HEAD 主题必须由 S7 的 verb=process 落成 `process(` 前缀 ——
+//
+// A3 的 S7 以 model.VerbProcess 提交，主题行格式恒为 `<verb>(<domain>): <subject>`。这里直接问
+// Git 权威（git log -1 %s）而非 report/intent 里的转述，明确断言 HEAD 主题以 `process(` 开头——
+// 把「状态类命令同口径用 process 动词」这条契约钉在真实 commit 主题上，杜绝日后改回其它动词而
+// report 仍自报成功的漂移。
+func TestOpinionLifecycleSuccessHeadSubjectStartsWithProcessVerb(t *testing.T) {
+	const at = "2026-10-20T09:00:00+08:00"
+	dir, _, opinionRel := opinionVault(t)
+	oid := applyOpinionID
+
+	logBefore := gitLogCount(t, dir)
+	r := newTestRoot(t, dir)
+	code, _, out := runOpinionLifecycleWith(t, r, dir, at,
+		SubOpinionValidate, oid, "--reason", "成功路径应由 process 动词落 commit", "--user-request")
+	if code != ExitOK {
+		t.Fatalf("合法边应成功，退出码 = %d：%s", code, out)
+	}
+	// 恰 +1 commit：确保读到的 HEAD 就是本次流转这一笔。
+	if n := gitLogCount(t, dir); n != logBefore+1 {
+		t.Fatalf("成功路径应恰 +1 commit：%d → %d", logBefore, n)
+	}
+	// 核心断言：HEAD 主题逐字以 `process(` 开头（S7 verb=process）。
+	subj := commitSubject(t, dir)
+	if !strings.HasPrefix(subj, "process(") {
+		t.Fatalf("成功路径 HEAD 主题必须以 `process(` 开头（S7 verb=process），实得：%q", subj)
+	}
+	// 与 name-only 同口径钉住写面：这笔 process commit 恰改目标观点一个文件。
+	if got := commitNameOnly(t, dir); strings.Join(got, ",") != opinionRel {
+		t.Fatalf("成功路径 commit name-only 应恰含目标 %s，实得 %v", opinionRel, got)
 	}
 }
