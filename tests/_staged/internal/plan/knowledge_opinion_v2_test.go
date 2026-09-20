@@ -183,8 +183,11 @@ func srcBlock(ref, heading, body string) string {
 	return fmt.Sprintf(`{"role":"source","source_ref":%q,"heading":%q,"body":%q}`, ref, heading, body)
 }
 
+// agentBlock 造一个 agent 块。T12-3 起 agent 块必须声明非空 annotation（契约 §4.2.2）；
+// 这里取内置 `supplement`，其固定渲染标签「补充」恰与旧 store.AgentBlockMarker 一致，
+// 因此本文件既有的「按标记 + 顺序断言落盘字节」判据一字不改仍成立。
 func agentBlock(heading, body string) string {
-	return fmt.Sprintf(`{"role":"agent","heading":%q,"body":%q}`, heading, body)
+	return fmt.Sprintf(`{"role":"agent","annotation":"supplement","heading":%q,"body":%q}`, heading, body)
 }
 
 // TestWriteNoteBlocksOrderIsPreservedVerbatim —— 验收②：落盘顺序 == 数组顺序。
@@ -474,6 +477,55 @@ func TestPlanV1WriteNoteStillExecutes(t *testing.T) {
 		if strings.Contains(raw, "## "+legacy) {
 			t.Fatalf("v1 分区名 %q 不得作为 H2 落进 v2 笔记：\n%s", legacy, raw)
 		}
+	}
+}
+
+// TestPlanV1BlocksRouteToLegacyNoteBlockBytes —— 兼容回归：`plan_version:1 + blocks[]`
+// 仍走旧的 store.NoteBlockBytes 落盘形态，直接锁住 noteBlockWrites 在 plan 版本非 v2 时的
+// v1 分支不被 v2 审阅式 writer 顺走。
+//
+// 关键差异：agent 块**不带 annotation**。v2 路径会因契约 §4.2.2 缺 annotation 判 E2、零写入；
+// v1 兼容路径根本不读 annotation，照旧把 agent 块渲染成 `> **[Agent 补充]** ` 且**不写**任何
+// `<!-- eg:nr:1 ... -->` 机器锚点。这条用例把两件事同时钉死：
+//
+//	① agent 块逐字使用旧 marker store.AgentBlockMarker（不是 v2 的多类型标签）；
+//	② 落盘正文里一个 review 机器锚点都没有（NoteReviewBytes 才会写 eg:nr:）。
+//
+// 若哪天让 v1 blocks 也走 NoteReviewBytes，会在「缺 annotation 报错」与「多出机器锚点」
+// 两处当场判红——正好守住 note_review_writer.go 注释里那条「只有 v1 blocks 走 NoteBlockBytes」。
+func TestPlanV1BlocksRouteToLegacyNoteBlockBytes(t *testing.T) {
+	files := v2Files()
+	// agent 块刻意不给 annotation：v2 会拒，v1 兼容路径不读它，正是本回归要区分的分岔点。
+	v1 := fmt.Sprintf(`{"plan_version":%d,"verb":"process","domain":"ai-infra",
+ "reason":"v1 blocks 兼容用例","requirement_ids":["EG-KNW-04"],"base":{},
+ "ops":[{"op":"write_note","source":"s-20260901-attention","note_id":"n-20261017-v1blocks",
+ "blocks":[%s,%s]}]}`, PlanVersionV1,
+		srcBlock("L1-L1", "甲 第一节", "来源正文逐字。"),
+		`{"role":"agent","heading":"","body":"这一段是我补的，且没有 annotation。"}`)
+
+	res := run(t, vault(t, files), v1)
+	if res.Failed() {
+		t.Fatalf("v1 + blocks[] 且 agent 块无 annotation 必须仍可执行（兼容期不读 annotation），"+
+			"实得 errors=%v", codes(res.Errors))
+	}
+
+	dir, out := execOn(t, files, res)
+	if len(out.Written) == 0 {
+		t.Fatal("v1 + blocks[] 必须真实落盘")
+	}
+	raw := readVaultFile(t, dir, "domains/ai-infra/notes/n-20261017-v1blocks.md")
+
+	// ① agent 块按旧 marker 逐字落盘（v2 审阅式标签绝不出现）。
+	if !strings.Contains(raw, store.AgentBlockMarker+"这一段是我补的，且没有 annotation。") {
+		t.Fatalf("v1 blocks 的 agent 块应逐字使用旧 marker %q：\n%s", store.AgentBlockMarker, raw)
+	}
+	// ② 零机器锚点：只有 NoteReviewBytes 才会写 `<!-- eg:nr:1 ... -->`，v1 兼容路径一个都不能有。
+	if strings.Contains(raw, "eg:nr:") {
+		t.Fatalf("v1 blocks 兼容路径不得写任何 review 机器锚点（eg:nr:）：\n%s", raw)
+	}
+	// ③ source 块正文逐字保留（兼容路径同样一个字节不改写）。
+	if !strings.Contains(raw, "来源正文逐字。") {
+		t.Fatalf("v1 blocks 的 source 块正文应逐字落盘：\n%s", raw)
 	}
 }
 

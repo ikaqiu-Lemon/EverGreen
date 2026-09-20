@@ -17,9 +17,10 @@ import (
 
 // NoteBlock 是 `write_note.blocks[]` 的一项。
 //
-// **类型别名**而不是新结构体：落盘渲染的唯一实现在 store.NoteBlockBytes
-// （写路径硬约束 §16.3 把「按模板拼字节」收在 store），plan 只是把用户给的块
-// 原样传过去。若在此再定义一份同形结构体，就必须写一个逐字段拷贝的转换函数，
+// **类型别名**而不是新结构体：落盘渲染的实现都在 store（写路径硬约束 §16.3 把「按模板拼字节」
+// 收在 store）——v1 兼容入口是 store.NoteBlockBytes，v2「plan_version:2 且 blocks[]」的审阅式
+// 渲染是 store.NoteReviewBytes；plan 只做解析/校验，把用户给的块按 plan 版本原样传给对应入口。
+// 若在此再定义一份同形结构体，就必须写一个逐字段拷贝的转换函数，
 // 而那个函数是「两处结构漂移」的第一个落点：加字段的人只会改一处。
 type NoteBlock = store.NoteBlock
 

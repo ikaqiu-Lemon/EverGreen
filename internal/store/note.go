@@ -8,8 +8,10 @@ package store
 //   - 笔记 frontmatter 恰 `id` / `source`（单值）/ `created_at` / `updated_at`（+ 可选
 //     `title` / `tags`）：**没有 status**，正文**没有「理解自检」**（EG-NOTE-01）。
 //   - Schema v2 起正文是固定**四**分区（`整理正文` / `提取结果` / `存疑与待验证` /
-//     `用户补充`）：`整理正文` 由 plan 侧的有序 `blocks[]` 渲染而来（NoteBlockBytes），
-//     `提取结果` 按 Knowledge / Opinion 两组列出本次产出（NoteExtraction.Render）。
+//     `用户补充`）：`整理正文` 由 plan 侧的有序 `blocks[]` 渲染而来——v2「plan_version:2 且
+//     blocks[]」走 NoteReviewBytes（机器锚点 + 多类型标签 + omissions 元数据），v1 兼容路径走
+//     NoteBlockBytes（旧字节形态，agent 块统一「补充」）；`提取结果` 按 Knowledge / Opinion
+//     两组列出本次产出（NoteExtraction.Bytes）。
 //   - 「提取结果」是本次加工快照（`- k-…（新建｜复用｜补充）`），此后不随卡片演进回写（EG-SRC-03）。
 //   - 笔记写成功后在同一次调用里把收件区条目移出（EG-SRC-02，键为 `source_id`）；
 //     S1 不保证两次写入强原子：条目未成功移出时**如实返回** InboxSkip（*SkipError），

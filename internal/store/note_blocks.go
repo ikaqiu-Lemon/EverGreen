@@ -7,7 +7,9 @@ package store
 // §16.3 的写路径硬约束把「按模板拼字节」这件事收在本包：plan 只做校验与展开，
 // 把用户内容以 []byte 原样交给写入侧，自己不做规范化。有序块要变成「整理正文」
 // 分区的字节，本质就是一次按模板拼装（H3 标题 + 正文 + Agent 补充标记），
-// 因此它的唯一实现必须在这里，plan 只调用 NoteBlockBytes 拿结果。
+// 因此这类渲染实现都收在本包：v1 兼容入口是 NoteBlockBytes（本文件），v2「plan_version:2
+// 且 blocks[]」的审阅式渲染是 NoteReviewBytes（note_review_writer.go → mdfile）；plan 只按
+// plan 版本择一调用、拿结果。
 //
 // 反过来说：如果 plan 自己拼这段字节，`write_note` 的落盘形态就会有两处口径
 // （新建走 plan 拼、重新加工走 store 追加），两处必然漂移。
@@ -79,8 +81,11 @@ var ErrNoteBlockEmpty = errors.New("有序块的 body 为空")
 // SourceRef / Annotation / Label 是 Schema v2 §4.2 的**审阅式 Note 元数据**，由解析层
 // （internal/plan）原样携带过来：source 块用 SourceRef 标出对应 Source 正文行段
 // （形如 `L<start>-L<end>`，是行段引用而非批注），agent 块用 Annotation 标出内置批注类型、
-// Label 承载扩展批注的人读标签。三者都是**尚未参与落盘渲染**的元数据——NoteBlockBytes 当前一个字节
-// 都不读它们（T12-1 边界：只承载、不改 writer 输出）。渲染消费留待后续批次接入。
+// Label 承载扩展批注的人读标签。这三者的落盘消费方是 **v2 审阅式 writer**：NoteReviewBytes
+// 把它们编进每块的机器锚点并渲染多类型标签（详见 note_review_writer.go）。NoteBlockBytes 是
+// **v1 兼容入口**，按契约保持旧字节形态，**刻意不读**这三个字段（agent 块一律渲染
+// `> **[Agent 补充]** `）——保留它们在同一结构体上，是为了让 v1/v2 两条落盘路径共用同一份
+// 解析结果、免去逐字段拷贝的漂移点，而不是「尚未接入渲染」。
 type NoteBlock struct {
 	Role       NoteBlockRole
 	Heading    string

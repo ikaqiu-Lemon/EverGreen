@@ -192,16 +192,16 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 			NoteBlockAgent))
 		return nil, false
 	}
-	body, err := store.NoteBlockBytes(op.Blocks)
-	if err != nil {
-		v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
-		return nil, false
-	}
-	// v2 加严（契约 §4.2 第 4/5 条 / §4.2.1）：source_ref + omissions + Source 快照覆盖校验，
-	// 覆盖过关后再做结构资产保真（T12-2B）。二者都只作用于当前版本的 plan；兼容期 v1 plan 即便
-	// 用了 blocks[] 也走旧的 W21-only 口径，不被新校验波及（v1 sections / v2 sections 的兼容
-	// 路径同样一字节不变）。任一阶段失败即整条 op 零写入。
+	// v2 加严（契约 §4.2 第 4/5 条 / §4.2.1 / §4.2.2）：先判字段互斥与批注词表（source 只用
+	// source_ref、agent 只用非空且合法的 annotation/label，字段级 E2、零写入），再判 source_ref +
+	// omissions + Source 快照覆盖，覆盖过关后做结构资产保真（T12-2B），最后用 v2 审阅式 writer
+	// 落盘（机器锚点 + 多类型标签 + omissions 元数据）。这些都只作用于当前版本的 plan；兼容期
+	// v1 plan 即便用了 blocks[] 也走旧的 NoteBlockBytes 与 W21-only 口径，一字节不变（v1
+	// sections / v2 sections 的兼容路径同样不变）。任一阶段失败即整条 op 零写入。
 	if v.p.Version == PlanVersion {
+		if !v.noteAnnotationValidate(op) {
+			return nil, false
+		}
 		cov, ok := v.noteSourceValidate(op)
 		if !ok {
 			return nil, false
@@ -209,8 +209,19 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		if !v.noteFidelity(op, cov) {
 			return nil, false
 		}
+		body, err := store.NoteReviewBytes(op.Blocks, op.Omissions)
+		if err != nil {
+			v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
+			return nil, false
+		}
 		v.coverageDiagnosisRaw(op, sourceBlocks, cov.snap.raw)
 		return []SectionWrite{{Section: store.SecNoteBody, Payload: body}}, true
+	}
+	// 兼容期（v1 plan 用 blocks[]）：旧落盘形态逐字保留（不写机器锚点、agent 块统一「补充」）。
+	body, err := store.NoteBlockBytes(op.Blocks)
+	if err != nil {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
+		return nil, false
 	}
 	v.coverageDiagnosis(op, sourceBlocks)
 	return []SectionWrite{{Section: store.SecNoteBody, Payload: body}}, true
