@@ -26,8 +26,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // noteCoverageValidate 是 v2 blocks 的 extraction_coverage 语义闸门（§4.2.3）。
@@ -125,7 +125,7 @@ func (v *validator) noteCoverageValidate(op *Op) bool {
 
 		// disposition + outputs/reason 形态 + output_cards 一致。
 		switch c.Disposition {
-		case mdfile.CoverageDispOutputs:
+		case store.CoverageDispOutputs:
 			if len(c.Outputs) == 0 {
 				v.add(errorAt(E2, op.Index, coveragePath(op.Index, i, "outputs"),
 					"extraction_coverage[%d] 处置为 outputs 却无 outputs：产出去向必须至少给一张卡", i))
@@ -153,7 +153,7 @@ func (v *validator) noteCoverageValidate(op *Op) bool {
 				}
 				cardReferenced[out] = true
 			}
-		case mdfile.CoverageDispNoteOnly, mdfile.CoverageDispMissing:
+		case store.CoverageDispNoteOnly, store.CoverageDispMissing:
 			if len(c.Outputs) != 0 {
 				v.add(errorAt(E2, op.Index, coveragePath(op.Index, i, "outputs"),
 					"extraction_coverage[%d] 处置为 %s 不得带 outputs：不产出卡的模块不应引用产出卡", i, c.Disposition))
@@ -164,7 +164,7 @@ func (v *validator) noteCoverageValidate(op *Op) bool {
 					"extraction_coverage[%d] 处置为 %s 必须给 TrimSpace 后非空的 reason：如实交代为何不产出卡", i, c.Disposition))
 				ok = false
 			}
-			if c.Disposition == mdfile.CoverageDispMissing {
+			if c.Disposition == store.CoverageDispMissing {
 				v.add(errorAt(E2, op.Index, coveragePath(op.Index, i, "disposition"),
 					"extraction_coverage[%d] 处置为 missing（表缺漏）：缺漏必须清零后本 write_note 才能落盘"+
 						"——missing 无条件阻止 apply（契约 §4.2.3）", i))
@@ -173,7 +173,7 @@ func (v *validator) noteCoverageValidate(op *Op) bool {
 		default:
 			v.add(errorAt(E2, op.Index, coveragePath(op.Index, i, "disposition"),
 				"extraction_coverage[%d].disposition=%q 越界（封闭三值 %s / %s / %s）",
-				i, c.Disposition, mdfile.CoverageDispOutputs, mdfile.CoverageDispNoteOnly, mdfile.CoverageDispMissing))
+				i, c.Disposition, store.CoverageDispOutputs, store.CoverageDispNoteOnly, store.CoverageDispMissing))
 			ok = false
 		}
 	}

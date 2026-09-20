@@ -999,6 +999,23 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: e2e.note-review.note_review_contract
+  layer: e2e
+  capability: note-review
+  kind: shell
+  target: tests/e2e/note-review/note_review_contract.sh
+  source: tests/e2e/note-review/note_review_contract.sh
+  origin: inventory
+  owner_task: T-evergreen.knowledge_opinion_split-158614-012
+  profiles:
+  - e2e
+  - full
+  timeout_s: 900
+  min_cases: 18
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: e2e.ops-diagnostics.cmd_check
   layer: e2e
   capability: ops-diagnostics

@@ -18,7 +18,7 @@ package plan
 import (
 	"strings"
 
-	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // noteAnnotationValidate 逐块校验 role 与字段的对应关系及批注词表（§4.2 第 4 条 / §4.2.2）。
@@ -73,10 +73,10 @@ func (v *validator) agentAnnotationValid(op *Op, i int, b NoteBlock) bool {
 		v.add(errorAt(E2, op.Index, blockPath(op.Index, i, "annotation"),
 			"role: %s 的块必须给出非空 annotation：每条 Agent 批注都要声明教学意图"+
 				"（内置七类 %v 之一，或匹配 ^[a-z][a-z0-9_-]{0,31}$ 的扩展 key）（契约 §4.2.2）",
-			NoteBlockAgent, mdfile.BuiltinAnnotationKeys()))
+			NoteBlockAgent, store.BuiltinAnnotationKeys()))
 		return false
 	}
-	if _, builtin := mdfile.BuiltinAnnotationLabel(b.Annotation); builtin {
+	if _, builtin := store.BuiltinAnnotationLabel(b.Annotation); builtin {
 		if strings.TrimSpace(b.Label) != "" {
 			v.add(errorAt(E2, op.Index, blockPath(op.Index, i, "label"),
 				"内置批注 %q 的显示标签是固定的，不得用 label 覆盖：label 只用于扩展批注"+
@@ -85,11 +85,11 @@ func (v *validator) agentAnnotationValid(op *Op, i int, b NoteBlock) bool {
 		}
 		return true
 	}
-	if !mdfile.ValidExtensionAnnotationKey(b.Annotation) {
+	if !store.ValidExtensionAnnotationKey(b.Annotation) {
 		v.add(errorAt(E2, op.Index, blockPath(op.Index, i, "annotation"),
 			"annotation %q 既非内置七类 %v、也不匹配扩展 key 形态 ^[a-z][a-z0-9_-]{0,31}$"+
 				"（首字符小写字母，其后 0..31 个小写字母 / 数字 / 下划线 / 连字符；契约 §4.2.2）",
-			b.Annotation, mdfile.BuiltinAnnotationKeys()))
+			b.Annotation, store.BuiltinAnnotationKeys()))
 		return false
 	}
 	if strings.TrimSpace(b.Label) == "" {

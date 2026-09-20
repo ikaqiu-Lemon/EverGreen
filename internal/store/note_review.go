@@ -1,5 +1,7 @@
 package store
 
+import "github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+
 // 审阅式提炼的两个**解析承载数据结构**（Schema v2 契约 §4.2.1 遗漏项 / §4.2.3 提炼覆盖）。
 //
 // # 用途：承载解析结果；落盘形态按设计真源逐项接入
@@ -54,3 +56,29 @@ type ExtractionCoverage struct {
 	Outputs     []string
 	Reason      string
 }
+
+// —— 审阅式批注词表 / 覆盖处置枚举的**转发层**（契约 §4.2.2 / §4.2.3 / §5.1 / D-10）——
+//
+// 内置批注 key→标签、扩展 key 合法性、覆盖 disposition 三值的**单一字面量真源**都在 mdfile
+// （词表与渲染标记同源，见 mdfile/note_review.go 与 mdfile/coverage.go）。plan 侧的字段级校验
+// （note_annotation.go / note_coverage.go）只消费本转发层，**不**直接 import mdfile——依赖方向
+// 恒为 plan → store → mdfile（施工索引 §13；由 cmd/eg/arch_test.go 的「plan 直连 mdfile」判据钉死）。
+// 与 assets.go 的资产口径转发同一手法：薄函数 / 常量，加一类批注只改 mdfile 一处。
+
+// BuiltinAnnotationKeys 按声明序返回七类内置批注 key（转发 mdfile.BuiltinAnnotationKeys）。
+func BuiltinAnnotationKeys() []string { return mdfile.BuiltinAnnotationKeys() }
+
+// BuiltinAnnotationLabel 返回内置批注 key 的固定中文标签；非内置返回 ("", false)
+// （转发 mdfile.BuiltinAnnotationLabel）。
+func BuiltinAnnotationLabel(key string) (string, bool) { return mdfile.BuiltinAnnotationLabel(key) }
+
+// ValidExtensionAnnotationKey 报告 key 是否为合法扩展批注 key（转发 mdfile.ValidExtensionAnnotationKey）。
+func ValidExtensionAnnotationKey(key string) bool { return mdfile.ValidExtensionAnnotationKey(key) }
+
+// 覆盖矩阵 disposition 的封闭三值（契约 §4.2.3）：单一字面量真源在 mdfile，转发以便 plan 侧
+// note_coverage.go 语义校验复用同一份，不在 plan 再写一遍 "outputs"/"note_only"/"missing"。
+const (
+	CoverageDispOutputs  = mdfile.CoverageDispOutputs
+	CoverageDispNoteOnly = mdfile.CoverageDispNoteOnly
+	CoverageDispMissing  = mdfile.CoverageDispMissing
+)

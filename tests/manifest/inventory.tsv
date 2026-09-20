@@ -296,6 +296,7 @@ tests/e2e/lifecycle/recap_stale.sh	e2e	shell	lifecycle	e2e.lifecycle.recap_stale
 tests/e2e/lifecycle/reviewed.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed	89	20566
 tests/e2e/lifecycle/reviewed_backfill.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed_backfill	115	37192
 tests/e2e/lifecycle/superseded.sh	e2e	shell	lifecycle	e2e.lifecycle.superseded	48	19888
+tests/e2e/note-review/note_review_contract.sh	e2e	shell	note-review	e2e.note-review.note_review_contract	51	22495
 tests/e2e/ops-diagnostics/cmd_check.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.cmd_check	69	31742
 tests/e2e/ops-diagnostics/execution_failed.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.execution_failed	52	23114
 tests/e2e/ops-diagnostics/ops_diagnostics.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.ops_diagnostics	105	53578
@@ -360,6 +361,8 @@ tests/fixtures/contracts/projects/evergreen/s1_main_flow/docs/specs/2027-01-24-m
 tests/fixtures/contracts/projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-acceptance-report.md	fixtures	data	-	-	0	75218
 tests/fixtures/contracts/projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-release-and-version.md	fixtures	data	-	-	0	17924
 tests/fixtures/e2e/bitter-lesson.txt	fixtures	data	capture-ingest	-	0	6856
+tests/fixtures/e2e/note-review/v1_body.golden.md	fixtures	data	-	-	0	189
+tests/fixtures/e2e/note-review/v2_body.golden.md	fixtures	data	-	-	0	2574
 tests/fixtures/e2e/ppe/commands.log	fixtures	data	capture-ingest	-	0	839
 tests/fixtures/e2e/ppe/git-log.txt	fixtures	data	capture-ingest	-	0	281
 tests/fixtures/e2e/ppe/m3-raw-session/apply-m3-ops-output.json	fixtures	data	capture-ingest	-	0	2647
@@ -410,7 +413,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24606
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24828
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568
