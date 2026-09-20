@@ -197,6 +197,17 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
 		return nil, false
 	}
+	// v2 加严（契约 §4.2 第 4/5 条）：source_ref + omissions + Source 快照覆盖校验。
+	// 只作用于当前版本的 plan；兼容期 v1 plan 即便用了 blocks[] 也走旧的 W21-only 口径，
+	// 不被新校验波及（v1 sections / v2 sections 的兼容路径同样一字节不变）。
+	if v.p.Version == PlanVersion {
+		snap, ok := v.noteSourceValidate(op)
+		if !ok {
+			return nil, false
+		}
+		v.coverageDiagnosisRaw(op, sourceBlocks, snap.raw)
+		return []SectionWrite{{Section: store.SecNoteBody, Payload: body}}, true
+	}
 	v.coverageDiagnosis(op, sourceBlocks)
 	return []SectionWrite{{Section: store.SecNoteBody, Payload: body}}, true
 }
@@ -218,6 +229,12 @@ func (v *validator) coverageDiagnosis(op *Op, sourceBlocks int) {
 	if !ok {
 		return
 	}
+	v.coverageDiagnosisRaw(op, sourceBlocks, raw)
+}
+
+// coverageDiagnosisRaw 在**已取到**的 Source 字节上登记 W21（v2 路径复用 source_ref
+// 覆盖校验读过的同一份快照，避免同一校验对同一原文两次读取、在并发落盘下取到漂移的字节）。
+func (v *validator) coverageDiagnosisRaw(op *Op, sourceBlocks int, raw []byte) {
 	anchors := store.CountBodyAnchors(raw)
 	if anchors < CoverageAnchorFloor {
 		return

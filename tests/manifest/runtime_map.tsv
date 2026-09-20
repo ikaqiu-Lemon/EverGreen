@@ -122,6 +122,7 @@ tests/_staged/internal/plan/relation_ko_chain_test.go	internal/plan/relation_ko_
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	internal/plan/remove_relation_idempotent_test.go	evergreen	unit	go
 tests/_staged/internal/plan/replaced_by_ko_test.go	internal/plan/replaced_by_ko_test.go	evergreen	unit	go
 tests/_staged/internal/plan/set_stale_test.go	internal/plan/set_stale_test.go	evergreen	unit	go
+tests/_staged/internal/plan/source_coverage_test.go	internal/plan/source_coverage_test.go	evergreen	unit	go
 tests/_staged/internal/plan/state_write_m3_test.go	internal/plan/state_write_m3_test.go	evergreen	unit	go
 tests/_staged/internal/proposal/execution_test.go	internal/proposal/execution_test.go	evergreen	unit	go
 tests/_staged/internal/proposal/id_test.go	internal/proposal/id_test.go	evergreen	unit	go

@@ -18,7 +18,6 @@ package plan
 // 「校验期零展开」只是零写入的必要条件，落盘比对才是充分条件。
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -165,14 +164,23 @@ func findMentioning(diags []Diagnostic, needle string) (Diagnostic, bool) {
 	return Diagnostic{}, false
 }
 
-// noteBlocksOp 造一条 v2 write_note op：blocks 数组按给定顺序原样传入。
+// noteBlocksOp 造一条 v2 write_note op：blocks 数组按给定顺序原样传入，omissions 传空数组
+// （本 op 声明「无删除」）。source_ref 覆盖校验属 T12-2A，需要覆盖 Source 全部非空行的用例
+// 改用 noteBlocksOpOm 显式给 omissions。
 func noteBlocksOp(noteID string, blocks ...string) string {
-	return `{"op":"write_note","source":"s-20260901-attention","note_id":"` + noteID + `",
- "blocks":[` + strings.Join(blocks, ",") + `]}`
+	return noteBlocksOpOm(noteID, nil, blocks...)
 }
 
-func srcBlock(heading, body string) string {
-	return fmt.Sprintf(`{"role":"source","heading":%q,"body":%q}`, heading, body)
+// noteBlocksOpOm 造一条 v2 write_note op，omissions 显式给出（数组按输入顺序原样保留，
+// 不排序 / 不去重 / 不重排；本批不预设 omissions 的任何「报告序」语义）。
+func noteBlocksOpOm(noteID string, omissions []string, blocks ...string) string {
+	return `{"op":"write_note","source":"s-20260901-attention","note_id":"` + noteID + `",
+ "blocks":[` + strings.Join(blocks, ",") + `],"omissions":[` + strings.Join(omissions, ",") + `]}`
+}
+
+// srcBlock 造一个带 source_ref 的 source 块（契约 §4.2 第 2 条：source 块必给非空 ref）。
+func srcBlock(ref, heading, body string) string {
+	return fmt.Sprintf(`{"role":"source","source_ref":%q,"heading":%q,"body":%q}`, ref, heading, body)
 }
 
 func agentBlock(heading, body string) string {
@@ -186,12 +194,16 @@ func agentBlock(heading, body string) string {
 // 顺序（不是「先排 source 再排 agent」）。
 func TestWriteNoteBlocksOrderIsPreservedVerbatim(t *testing.T) {
 	files := v2Files()
+	// 正文恰四个非空物理行（L1..L4），供四个 source 块各覆盖一行；块的落盘顺序与
+	// source_ref 无关，倒置的 heading 仍钉住「不排序」，而 refs 按 blocks 顺序递增合法。
+	files["sources/s-20260901-attention.md"] =
+		covSource("s-20260901-attention", "第四节正文。\n第三节正文。\n第二节正文。\n第一节正文。\n")
 	res := v2Run(t, files, noteBlocksOp("n-20261017-order",
-		srcBlock("丁 第四节", "第四节正文。"),
-		srcBlock("丙 第三节", "第三节正文。"),
+		srcBlock("L1-L1", "丁 第四节", "第四节正文。"),
+		srcBlock("L2-L2", "丙 第三节", "第三节正文。"),
 		agentBlock("", "这一段是我补的。"),
-		srcBlock("乙 第二节", "第二节正文。"),
-		srcBlock("甲 第一节", "第一节正文。")))
+		srcBlock("L3-L3", "乙 第二节", "第二节正文。"),
+		srcBlock("L4-L4", "甲 第一节", "第一节正文。")))
 
 	dir, out := execOn(t, files, res)
 	if len(out.Written) == 0 {
@@ -219,7 +231,7 @@ func TestWriteNoteBlocksOrderIsPreservedVerbatim(t *testing.T) {
 func TestWriteNoteBlocksAndSectionsAreMutuallyExclusive(t *testing.T) {
 	files := v2Files()
 	res := v2Run(t, files, `{"op":"write_note","source":"s-20260901-attention",
- "note_id":"n-20261017-both","blocks":[`+srcBlock("甲", "正文。")+`],
+ "note_id":"n-20261017-both","blocks":[`+srcBlock("L1-L1", "甲", "正文。")+`],
  "sections":{"整理正文":"另一份正文。\n"}}`)
 
 	d := requireError(t, res, E2)
@@ -285,8 +297,15 @@ func assertZeroWrite(t *testing.T, files map[string]string, res *Result, rel str
 }
 
 // sixHeadingSource 造一份**恰 6 个 H2** 的原文（W21 判定的分母）。
+//
+// 保留一篇像样文章的形态：一个 H1 文档标题、六个 H2 章节、每节一段正文，节与节之间留空行。
+// CountBodyAnchors 只数 H2 + H3，故锚点恰为 6（H1 不计）。正文的物理行布局固定为 27 行
+// （L1 空行 / L2 H1 / L3 空 / L4 H2 / L5 空 / L6 正文 / …每节 4 行 / 末尾 L27 空行），非空行是
+// L2 及此后每隔一行的 H2 与正文行。这样 W21（看来源块数 vs 锚点数）可以用「若干 source_ref
+// 区间不重不漏地分割覆盖全部非空行、omissions=[]」来满足 T12-2A 的覆盖校验，两条判据互不
+// 干扰——而不必拿 omission 把真实章节谎称为「本次未整理」（那违反 omissions 只删页面噪声）。
 func sixHeadingSource(id string) string {
-	var b bytes.Buffer
+	var b strings.Builder
 	fmt.Fprintf(&b, `---
 id: %s
 url: https://example.com/long
@@ -303,13 +322,17 @@ saved_at: '2026-09-01T10:00:00+08:00'
 	return b.String()
 }
 
-// TestW21StructureCoverage —— 验收⑤：6 个 H2 配 2 个来源块 → W21；配 4 个 → 不产出。
+// TestW21StructureCoverage —— 验收⑤：6 个 H2 配 2 个来源块 → W21；配 3 / 4 个 → 不产出。
 //
-// 阈值取 ceil(6/2) = 3，所以 2 个块判、4 个块不判；等号侧（恰 3 个块）单独取一例，
+// 阈值取 ceil(6/2) = 3，所以 2 个块判、3 / 4 个块不判；等号侧（恰 3 个块）单独取一例，
 // 这是「差一」回归唯一能被抓住的地方。阈值本身用 CoverageThreshold 复算而不是写死，
 // 但这里仍显式钉住它当前等于 3 —— 只有把「口径」与「取值」两件事都钉住，
 // 日后有人偷偷把 ceil 改成 floor 或把除数改掉才会当场变红，而不是让 2 / 4 这组样例
 // 恰好在新口径下也成立而蒙混过关。
+//
+// 每个 case 的来源块都用 source_ref 把 27 行正文的全部非空行不重不漏地**分割**覆盖，
+// omissions=[]（本次无删除）：覆盖并集的闭合与 W21 的「来源块数 vs 锚点数」判定彼此独立，
+// 用真实的范围分割证明二者互不干扰，而不是拿 omission 把真实章节标成「未整理」来凑合法。
 func TestW21StructureCoverage(t *testing.T) {
 	if want := CoverageThreshold(6); want != 3 {
 		t.Fatalf("阈值复算口径变了：ceil(6/2) 应为 3，实得 %d", want)
@@ -317,8 +340,9 @@ func TestW21StructureCoverage(t *testing.T) {
 	files := v2Files()
 	files["sources/s-20260901-attention.md"] = sixHeadingSource("s-20260901-attention")
 
-	// ① 2 个来源块 < 4 → W21，且照常写入（warning 不拦截）。
-	blocks := []string{srcBlock("第 1 节", "抄第一节。"), srcBlock("第 2 节", "抄第二节。")}
+	// ① 2 个来源块 < 3 → W21，且照常写入（warning 不拦截）。
+	// 两个区间对半分割 L1-L13 / L14-L27，把 27 行的全部非空行不重不漏地覆盖，omissions=[]。
+	blocks := []string{srcBlock("L1-L13", "上半", "抄前三节。"), srcBlock("L14-L27", "下半", "抄后三节。")}
 	res := v2Run(t, files, noteBlocksOp("n-20261017-thin", blocks...))
 	d := requireWarning(t, res, W21)
 	if d.Target != "s-20260901-attention" {
@@ -331,27 +355,39 @@ func TestW21StructureCoverage(t *testing.T) {
 	if len(out.Written) == 0 {
 		t.Fatal("W21 是 warning，必须照常写入")
 	}
-	if raw := readVaultFile(t, dir, "domains/ai-infra/notes/n-20261017-thin.md"); !strings.Contains(raw, "抄第一节。") {
+	if raw := readVaultFile(t, dir, "domains/ai-infra/notes/n-20261017-thin.md"); !strings.Contains(raw, "抄前三节。") {
 		t.Fatal("W21 情形下正文仍应逐字落盘")
 	}
 
 	// ② 恰好达到阈值（3 个块 == ceil(6/2)）→ 不判：判据是「严格小于」，等号侧必须放过。
-	equal := append(append([]string(nil), blocks...), srcBlock("第 3 节", "抄第三节。"))
+	// 三个区间三等分 L1-L9 / L10-L18 / L19-L27，同样覆盖全部非空行、omissions=[]。
+	equal := []string{
+		srcBlock("L1-L9", "首", "抄第一段区间。"),
+		srcBlock("L10-L18", "中", "抄第二段区间。"),
+		srcBlock("L19-L27", "末", "抄第三段区间。"),
+	}
 	res = v2Run(t, files, noteBlocksOp("n-20261017-equal", equal...))
 	if _, ok := find(res.Warnings, W21); ok {
 		t.Fatalf("来源块数恰好达到阈值时不得产出 W21：warnings=%v", codes(res.Warnings))
 	}
 
 	// ③ 超过阈值（4 个块）同样不判 —— 验收条目里的「配 4 个 → 不产出」逐字落地。
-	blocks = append(equal, srcBlock("第 4 节", "抄第四节。"))
-	res = v2Run(t, files, noteBlocksOp("n-20261017-fat", blocks...))
+	// 四个区间 L1-L7 / L8-L13 / L14-L20 / L21-L27 覆盖全部非空行、omissions=[]。
+	fat := []string{
+		srcBlock("L1-L7", "一", "抄第一区间。"),
+		srcBlock("L8-L13", "二", "抄第二区间。"),
+		srcBlock("L14-L20", "三", "抄第三区间。"),
+		srcBlock("L21-L27", "四", "抄第四区间。"),
+	}
+	res = v2Run(t, files, noteBlocksOp("n-20261017-fat", fat...))
 	if _, ok := find(res.Warnings, W21); ok {
 		t.Fatalf("来源块数超过阈值时不得产出 W21：warnings=%v", codes(res.Warnings))
 	}
 
 	// ④ 原文标题数不足门槛（CoverageAnchorFloor）时不判：短文没有可比结构。
+	// source() 夹具正文为「(空行)\n原文正文。」：L1 空白可不覆盖，L2 由单个 source 块覆盖。
 	files["sources/s-20260901-attention.md"] = source("s-20260901-attention")
-	res = v2Run(t, files, noteBlocksOp("n-20261017-short", srcBlock("甲", "抄一段。")))
+	res = v2Run(t, files, noteBlocksOp("n-20261017-short", srcBlock("L2-L2", "甲", "抄一段。")))
 	if _, ok := find(res.Warnings, W21); ok {
 		t.Fatalf("原文标题数 < %d 时不得判 W21：warnings=%v", CoverageAnchorFloor, codes(res.Warnings))
 	}
@@ -376,8 +412,9 @@ func TestW21IsNotUpgradedUnderStrict(t *testing.T) {
 
 	files := v2Files()
 	files["sources/s-20260901-attention.md"] = sixHeadingSource("s-20260901-attention")
+	// 2 个来源块对半分割 L1-L13 / L14-L27 覆盖全部非空行、omissions=[]：触发 W21（2 < 3）。
 	res := v2Run(t, files, noteBlocksOp("n-20261017-strict",
-		srcBlock("第 1 节", "抄第一节。"), srcBlock("第 2 节", "抄第二节。")))
+		srcBlock("L1-L13", "上半", "抄前三节。"), srcBlock("L14-L27", "下半", "抄后三节。")))
 	requireWarning(t, res, W21)
 
 	pc := Precheck(res, true)

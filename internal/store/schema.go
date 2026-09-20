@@ -84,6 +84,42 @@ func RequiredSection(kind Kind) string { return mdfile.RequiredSection(kind) }
 // 解析失败时返回 0，调用方据此**不判**诊断。
 func CountBodyAnchors(raw []byte) int { return mdfile.CountBodyAnchors(raw) }
 
+// SourceBody 返回一份文档 frontmatter 之后的正文字节切片（不复制、只读）。
+//
+// 转发而非在 plan 层直连 mdfile（§13 依赖方向）：v2 `write_note` 的 source_ref
+// 覆盖校验要按「frontmatter 之后的正文物理行」计数，而 frontmatter 边界的判定
+// （含 CRLF 分隔行、未闭合 frontmatter 等）依赖 mdfile 的索引口径。在 plan 层
+// 重写一遍必然与 W21 的锚点口径漂移。frontmatter 未闭合等结构错误时返回 error，
+// 上层据此判 E2（无法取得/解析 Source 正文即阻止 v2 blocks 落盘）。
+func SourceBody(raw []byte) ([]byte, error) {
+	doc, err := mdfile.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	return doc.Raw[doc.BodyFrom:], nil
+}
+
+// PersistedSourceBody 返回一段原文正文 body 落盘为**新建 Source** 后、再经 SourceBody 取回
+// 的正文字节 —— 即「这份 body 将来在盘上呈现成什么物理行布局」。
+//
+// 新建原文的完整字节由 sourceContent 拼装：frontmatter 外壳（document 恒以 "---\n\n" 收尾）
+// 之后紧接 body，正文段的尾换行规则由同包 appendSourceBody 统一施加。mdfile.Parse 的 BodyFrom
+// 落在闭合分隔行 "---\n" 之后，因此取回的正文以外壳残留的那个 \n 开头 —— 一个前导空白物理行
+// （L1 空白 / L2 起为 body 正文），与既有 Source 的行号口径一致。
+//
+// 因此本函数只额外表达「外壳在 BodyFrom 之后残留的前导 \n」，正文尾换行完全委托 appendSourceBody，
+// 与 sourceContent 共用同一实现，不再各自复制规则。
+//
+// 用途（§4.2.1）：同一 plan 内「先 add_source、后 write_note」时被引原文尚未落盘，其 source_ref
+// 覆盖校验必须按这份**落盘后**布局计算行号；否则「当次按 op.Body 算 L1、落盘后重处理算 L2」
+// 会整体漂移一行。它与 SourceBody(真实落盘文件) 的字节等价由持久化一致性测试锁死（外壳或尾换行
+// 规则一旦改动，等价断言当场变红）。
+func PersistedSourceBody(body []byte) []byte {
+	out := make([]byte, 0, len(body)+2)
+	out = append(out, '\n') // 外壳 "---\n\n" 在 BodyFrom 之后残留的前导空白物理行
+	return appendSourceBody(out, body)
+}
+
 // FrontmatterInto 只读解析 raw 的 frontmatter 到 out：文档结构不合法或
 // frontmatter YAML 不可解析时返回错误（上层据此判 E4）。
 func FrontmatterInto(raw []byte, out interface{}) error {

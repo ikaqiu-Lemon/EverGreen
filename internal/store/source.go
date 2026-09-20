@@ -349,11 +349,20 @@ func sourceContent(spec SourceSpec) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, spec.Body...)
-	if len(spec.Body) > 0 && spec.Body[len(spec.Body)-1] != '\n' {
-		out = append(out, '\n')
+	return appendSourceBody(out, spec.Body), nil
+}
+
+// appendSourceBody 把原文正文 body 追加到 dst，并施加 writer 的正文尾换行规则：
+// body 非空且不以 \n 收尾时补一个行尾 \n（保证文件以完整物理行收尾）；body 为空则原样不动。
+//
+// 这是新建 Source 落盘时「正文段」尾换行的唯一实现，sourceContent（拼装完整落盘字节）与
+// PersistedSourceBody（预测落盘后正文布局）共用它，避免两处各自复制同一条规则而漂移。
+func appendSourceBody(dst, body []byte) []byte {
+	dst = append(dst, body...)
+	if len(body) > 0 && body[len(body)-1] != '\n' {
+		dst = append(dst, '\n')
 	}
-	return out, nil
+	return dst
 }
 
 // ApplySourceReason 向已有原文的 `reasons` 列表追加一条收录理由（判重命中路径）。

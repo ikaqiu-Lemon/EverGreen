@@ -81,9 +81,13 @@ func outputCard(card, mode string) string {
 }
 
 // noteWithOutputCards 造一条带 `output_cards[]` 的 v2 write_note op（正文给一个来源块）。
+//
+// 来源 s-20260901-attention 用 v2Files 的 source() 夹具：正文为「(空行)\n原文正文。」，
+// L1 空白可不覆盖、L2 由这个 source 块（L2-L2）覆盖，omissions 传空数组声明无删除 ——
+// 这样 T12-2A 的来源覆盖校验通过，本判据得以专注于「提取结果」两组清单的落盘字节。
 func noteWithOutputCards(noteID string, cards ...string) string {
 	return `{"op":"write_note","source":"s-20260901-attention","note_id":"` + noteID + `",
- "blocks":[` + srcBlock("第一节", "原文第一节的整理。") + `],
+ "blocks":[` + srcBlock("L2-L2", "第一节", "原文第一节的整理。") + `],"omissions":[],
  "output_cards":[` + strings.Join(cards, ",") + `]}`
 }
 

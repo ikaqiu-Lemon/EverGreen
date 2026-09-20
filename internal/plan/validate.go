@@ -168,12 +168,28 @@ type validator struct {
 	// `create_opinion` 之前（v1 存量 plan 的惯用顺序就是先笔记后卡片），
 	// 边遍历边登记会让顺序决定标记有无。
 	planOpinions map[string]model.Validation
+	// pendingSourceBody 是本 plan 内由 add_source 新建的原文 id → 该 op 的 body 精确字节
+	// （契约 §4.2.1 快照口径）。同一 plan 内「先 add_source、后 write_note」时，被引原文
+	// 此刻还没落盘，Env.Read 读到的会是空或旧值；v2 source_ref 覆盖校验必须拿 add_source
+	// 声明的这份 op.Body，而不是去读一个尚未存在的路径。存的是 op.Body 原样字节（正文本体、
+	// 不含 frontmatter）；快照层（loadSourceSnapshot）再用 store.PersistedSourceBody 把它映射成
+	// **落盘后**取回的正文物理行布局（前导空白行 + writer 补尾换行），使行号口径与既有 Source 一致。
+	pendingSourceBody map[string][]byte
+	// sourceSnap 是本次 Validate 内**按 source ID 缓存**的正文快照（契约 §4.2.1
+	// 「一次读取、缓存复用」）。既有 Source 走 resolve + Env.Read + store.SourceBody，
+	// 只在**首次**被引用时读一次；同一份 Source 被多条 write_note 引用时，后续引用命中
+	// 本缓存 —— 保证「同一既有 Source 在一次 Validate 内 Env.Read 总计恰一次」。同 plan 内
+	// 由 add_source 新建的原文走 pendingSourceBody（经 PersistedSourceBody 映射为落盘后布局）
+	// 并同样入缓存，避免对同一份正文重复解析、也避免 W21 与覆盖校验在并发落盘下各读一次而取到漂移的字节。
+	sourceSnap map[string]sourceSnapResult
 }
 
 // Validate 校验并展开一份 plan。error 非空时**不得执行任何 action**（零写入）。
 func Validate(p *ChangePlan, env Env) *Result {
 	v := &validator{p: p, env: env, res: &Result{Convergence: p.Convergence},
-		pending: map[string]string{}, declared: map[string]int{}}
+		pending: map[string]string{}, declared: map[string]int{},
+		pendingSourceBody: map[string][]byte{},
+		sourceSnap:        map[string]sourceSnapResult{}}
 	for _, d := range p.Diags {
 		v.add(d)
 	}
@@ -593,6 +609,10 @@ func (v *validator) addSource(op *Op) {
 	if !v.declare(op, "source_id", id, act.Path) {
 		return
 	}
+	// 记下本 plan 内新建原文的正文快照：同一 plan 内后续 write_note 的 v2 source_ref
+	// 覆盖校验必须用这份 op.Body（此刻文件还没落盘，Env.Read 读不到）。这里存 op.Body 原样字节，
+	// 由快照层用 store.PersistedSourceBody 映射成落盘后的行号布局（§4.2.1）。
+	v.pendingSourceBody[id] = op.Body
 	v.res.Actions = append(v.res.Actions, act)
 }
 

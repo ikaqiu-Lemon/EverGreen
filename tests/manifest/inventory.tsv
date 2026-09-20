@@ -108,8 +108,8 @@ tests/_staged/internal/model/validation_transition_test.go	unit	go	storage-markd
 tests/_staged/internal/plan/atomic_finalizer_test.go	unit	go	proposal	unit.internal.plan	3	7712
 tests/_staged/internal/plan/atomic_test.go	unit	go	proposal	unit.internal.plan	5	11094
 tests/_staged/internal/plan/authorize_test.go	unit	go	proposal	unit.internal.plan	7	16222
-tests/_staged/internal/plan/executor_note_v2_test.go	unit	go	proposal	unit.internal.plan	3	12990
-tests/_staged/internal/plan/knowledge_opinion_v2_test.go	unit	go	proposal	unit.internal.plan	9	23192
+tests/_staged/internal/plan/executor_note_v2_test.go	unit	go	proposal	unit.internal.plan	3	13361
+tests/_staged/internal/plan/knowledge_opinion_v2_test.go	unit	go	proposal	unit.internal.plan	9	26284
 tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	60072
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2765
@@ -122,6 +122,7 @@ tests/_staged/internal/plan/relation_ko_chain_test.go	unit	go	proposal	unit.inte
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	unit	go	proposal	unit.internal.plan	1	4129
 tests/_staged/internal/plan/replaced_by_ko_test.go	unit	go	proposal	unit.internal.plan	5	10217
 tests/_staged/internal/plan/set_stale_test.go	unit	go	proposal	unit.internal.plan	8	11798
+tests/_staged/internal/plan/source_coverage_test.go	unit	go	proposal	unit.internal.plan	20	26706
 tests/_staged/internal/plan/state_write_m3_test.go	unit	go	proposal	unit.internal.plan	5	8274
 tests/_staged/internal/proposal/execution_test.go	unit	go	proposal	unit.internal.proposal	7	23034
 tests/_staged/internal/proposal/id_test.go	unit	go	proposal	unit.internal.proposal	3	4732
