@@ -14,4 +14,6 @@
 //   - frontmatter.go  只读解析（DecodeFM / FMKeys）与 ParseCard / ParseNote / ParseSource
 //   - append.go       **唯一写路径**：区间拼接 + 插入字节（分区追加 / FM 追加键 / FM 序列追加）
 //   - unprocessed.go  收件区「一个顶层列表项 = 一个条目」（键为 source_id）
+//   - assets.go       结构资产只读扫描（§4.2.1 第 5 条八类）：goldmark 只读 AST + 保守预检，
+//     产出有序 AssetEvent（含物理行区间），看似资产却无法可靠解析的形态 fail closed
 package mdfile

@@ -34,10 +34,22 @@ import (
 var reSourceRef = regexp.MustCompile(`^L[1-9][0-9]*-L[1-9][0-9]*$`)
 
 // lineSpan 是一段闭区间行段（1 基），path 记录它在诊断里的字段路径。
+// blockIndex 是该行段对应的 op.Blocks 下标（仅 source 区间有意义；omission 区间为 -1）——
+// T12-2B 的资产保真按来源范围逐块比对时，要靠它把「第 k 段来源范围」钉回它所属的 source 块。
 type lineSpan struct {
-	start int
-	end   int
-	path  string
+	start      int
+	end        int
+	path       string
+	blockIndex int
+}
+
+// noteCoverage 是一次 v2 blocks 来源覆盖校验的结果：snap 供 W21 与资产保真复用同一份 Source
+// 快照；srcSpans / omSpans 是已判过形态 / 顺序 / 交叉 / 空洞的两组区间（按各自数组顺序），
+// 供 T12-2B 资产保真阶段直接复用，不再二次解析 source_ref。
+type noteCoverage struct {
+	snap     sourceSnapshot
+	srcSpans []lineSpan
+	omSpans  []lineSpan
 }
 
 // sourceSnapshot 是一份 Source 正文的一次性快照（§4.2.1）：raw 供 W21 数锚点，
@@ -100,17 +112,18 @@ func (v *validator) loadSourceSnapshot(op *Op) (sourceSnapshot, bool) {
 
 // noteSourceValidate 是 v2 blocks 的来源覆盖闸门（§4.2 第 4/5 条）。
 //
-// 返回的 snap 供调用方复用给 W21；ok=false 表示已登记至少一条 E2、整条 op 零写入。
-// 逐段短路：形态错误（缺 ref / 格式 / 越界 / 缺 reason）先各自钉到字段级路径；只有形态全过
-// 才谈区间顺序，顺序全过才谈两组交叉，最后才谈非空行是否留下空洞——把「写错了字」与「区间
-// 没排好」与「漏覆盖」分层报，读的人一眼就知道该改哪一层，而不是一次收到一堆互相掩盖的错误。
-func (v *validator) noteSourceValidate(op *Op) (sourceSnapshot, bool) {
+// 返回的 noteCoverage.snap 供调用方复用给 W21 与资产保真；ok=false 表示已登记至少一条 E2、
+// 整条 op 零写入。返回的 srcSpans / omSpans 是已判过形态与顺序的两组区间，供 T12-2B 资产保真
+// 直接复用。逐段短路：形态错误（缺 ref / 格式 / 越界 / 缺 reason）先各自钉到字段级路径；只有
+// 形态全过才谈区间顺序，顺序全过才谈两组交叉，最后才谈非空行是否留下空洞——把「写错了字」与
+// 「区间没排好」与「漏覆盖」分层报，读的人一眼就知道该改哪一层，而不是一次收到一堆互相掩盖的错误。
+func (v *validator) noteSourceValidate(op *Op) (noteCoverage, bool) {
 	snap, ok := v.sourceSnapshotFor(op)
 	if !ok {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "source"),
 			"无法取得 / 解析 source %s 的正文：v2 blocks 的 source_ref 覆盖校验无从进行，"+
 				"整条 write_note 零写入（契约 §4.2.1）", op.Source))
-		return snap, false
+		return noteCoverage{snap: snap}, false
 	}
 	lineCount, blank := bodyPhysicalLines(snap.body)
 
@@ -126,19 +139,20 @@ func (v *validator) noteSourceValidate(op *Op) (sourceSnapshot, bool) {
 
 	srcSpans, srcFail, srcOrder := v.parseSourceSpans(op, lineCount)
 	omSpans, omFail, omOrder := v.parseOmissionSpans(op, lineCount)
+	cov := noteCoverage{snap: snap, srcSpans: srcSpans, omSpans: omSpans}
 	if failed || srcFail || omFail {
-		return snap, false
+		return cov, false
 	}
 	if srcOrder || omOrder {
-		return snap, false
+		return cov, false
 	}
 	if v.crossGroupOverlap(op, srcSpans, omSpans) {
-		return snap, false
+		return cov, false
 	}
 	if v.coverageHole(op, srcSpans, omSpans, lineCount, blank) {
-		return snap, false
+		return cov, false
 	}
-	return snap, true
+	return cov, true
 }
 
 // parseSourceSpans 解析 source 块的 source_ref，判形态并校验组内严格递增不重叠。
@@ -167,6 +181,7 @@ func (v *validator) parseSourceSpans(op *Op, lineCount int) (spans []lineSpan, f
 			continue
 		}
 		sp.path = path
+		sp.blockIndex = i
 		if sp.start <= prevEnd {
 			v.add(errorAt(E2, op.Index, path,
 				"source 块的 source_ref 必须按 blocks 顺序严格递增且不重叠：本段起点 L%d 未越过"+
@@ -209,6 +224,7 @@ func (v *validator) parseOmissionSpans(op *Op, lineCount int) (spans []lineSpan,
 			continue
 		}
 		sp.path = refPath
+		sp.blockIndex = -1
 		if sp.start <= prevEnd {
 			v.add(errorAt(E2, op.Index, refPath,
 				"omissions 的 source_ref 必须按数组顺序严格递增且不重叠：本项起点 L%d 未越过"+

@@ -94,6 +94,7 @@ tests/_staged/internal/index/schema_test.go	unit	go	index-search	unit.internal.i
 tests/_staged/internal/index/schema_v2_kind_test.go	unit	go	index-search	unit.internal.index	13	28168
 tests/_staged/internal/index/scratch_test.go	unit	go	index-search	unit.internal.index	6	13897
 tests/_staged/internal/index/watermark_test.go	unit	go	index-search	unit.internal.index	6	6875
+tests/_staged/internal/mdfile/assets_test.go	unit	go	storage-markdown	unit.internal.mdfile	42	22388
 tests/_staged/internal/mdfile/block_merge_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	5329
 tests/_staged/internal/mdfile/fuzz_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	3911
 tests/_staged/internal/mdfile/mdfile_test.go	unit	go	storage-markdown	unit.internal.mdfile	12	18113
@@ -114,6 +115,7 @@ tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	60
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2765
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	11184
+tests/_staged/internal/plan/note_fidelity_test.go	unit	go	proposal	unit.internal.plan	21	27822
 tests/_staged/internal/plan/note_review_parse_test.go	unit	go	proposal	unit.internal.plan	6	14826
 tests/_staged/internal/plan/opinion_validation_authorization_test.go	unit	go	proposal	unit.internal.plan	4	13514
 tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	32174

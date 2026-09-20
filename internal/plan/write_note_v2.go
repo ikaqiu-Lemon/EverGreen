@@ -197,15 +197,19 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
 		return nil, false
 	}
-	// v2 加严（契约 §4.2 第 4/5 条）：source_ref + omissions + Source 快照覆盖校验。
-	// 只作用于当前版本的 plan；兼容期 v1 plan 即便用了 blocks[] 也走旧的 W21-only 口径，
-	// 不被新校验波及（v1 sections / v2 sections 的兼容路径同样一字节不变）。
+	// v2 加严（契约 §4.2 第 4/5 条 / §4.2.1）：source_ref + omissions + Source 快照覆盖校验，
+	// 覆盖过关后再做结构资产保真（T12-2B）。二者都只作用于当前版本的 plan；兼容期 v1 plan 即便
+	// 用了 blocks[] 也走旧的 W21-only 口径，不被新校验波及（v1 sections / v2 sections 的兼容
+	// 路径同样一字节不变）。任一阶段失败即整条 op 零写入。
 	if v.p.Version == PlanVersion {
-		snap, ok := v.noteSourceValidate(op)
+		cov, ok := v.noteSourceValidate(op)
 		if !ok {
 			return nil, false
 		}
-		v.coverageDiagnosisRaw(op, sourceBlocks, snap.raw)
+		if !v.noteFidelity(op, cov) {
+			return nil, false
+		}
+		v.coverageDiagnosisRaw(op, sourceBlocks, cov.snap.raw)
 		return []SectionWrite{{Section: store.SecNoteBody, Payload: body}}, true
 	}
 	v.coverageDiagnosis(op, sourceBlocks)
