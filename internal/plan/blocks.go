@@ -32,8 +32,14 @@ const (
 // NoteBlockRoles 转发封闭枚举的全部取值（诊断文案与用例共用同一份）。
 func NoteBlockRoles() []store.NoteBlockRole { return store.NoteBlockRoles() }
 
-// noteBlockKnownKeys 是单个 block 的字段表（恰三键，契约 §4.2 的 v2 形态）。
-func noteBlockKnownKeys() []string { return []string{"role", "heading", "body"} }
+// noteBlockKnownKeys 是单个 block 的字段表（契约 §4.2 的 v2 形态）。
+//
+// source/agent 两类块共用同一张字段表：source 块用 source_ref 标行段、agent 块用
+// annotation/label 标批注类型，解析层不按 role 分表（是否「source 块才允许 source_ref」
+// 这类语义判定属后续批次的 validate，解析只负责把键读进结构体）。
+func noteBlockKnownKeys() []string {
+	return []string{"role", "heading", "body", "source_ref", "annotation", "label"}
+}
 
 // parseNoteBlocks 解析 `blocks[]`。
 //
@@ -53,13 +59,16 @@ func parseNoteBlocks(opIndex int, v interface{}) ([]NoteBlock, []Diagnostic) {
 		m, ok := asMap(item)
 		if !ok {
 			diags = append(diags, errorAt(E5, opIndex, blockPath(opIndex, i, ""),
-				"blocks 的每一项必须是对象（恰 %v 三键）", noteBlockKnownKeys()))
+				"blocks 的每一项必须是对象（恰 %v）", noteBlockKnownKeys()))
 			continue
 		}
 		b := NoteBlock{}
 		role, _ := asString(m["role"])
 		b.Role = store.NoteBlockRole(role)
 		b.Heading, _ = asString(m["heading"])
+		b.SourceRef, _ = asString(m["source_ref"])
+		b.Annotation, _ = asString(m["annotation"])
+		b.Label, _ = asString(m["label"])
 		if bv, ok := m["body"]; ok {
 			body, _ := asString(bv)
 			b.Body = []byte(body)

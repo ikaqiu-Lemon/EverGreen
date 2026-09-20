@@ -170,6 +170,15 @@ type Op struct {
 	// 后者是「声称按块整理却一个块都没有」，两种成因的诊断不同，不得折叠成一个判断。
 	Blocks      []NoteBlock
 	BlocksGiven bool
+	// Omissions / ExtractionCoverage 是 v2 `write_note` 的审阅式提炼两组清单
+	// （契约 §4.2.1 遗漏项 / §4.2.3 提炼覆盖），数组顺序原样保留（不排序/不去重/不重排）。
+	// OmissionsGiven / ExtractionCoverageGiven 区分「缺该字段」与「给了空数组」——
+	// 空数组是「声称审阅过但一项都没记」，与「压根没提供该字段」的成因不同，
+	// 后续批次对二者的诊断不同，故不得折叠成「切片长度是否为 0」一个判断。
+	Omissions               []Omission
+	OmissionsGiven          bool
+	ExtractionCoverage      []ExtractionCoverage
+	ExtractionCoverageGiven bool
 
 	// create_opinion / append_opinion
 	//
@@ -371,8 +380,11 @@ func opKnownKeys(name string) []string {
 	case OpWriteNote:
 		// `blocks` 必须是**已知字段**：否则 classifyExtra 会把它当未知附加字段
 		// 原样忽略并只记一条 I1，v2 的 write_note 会静默退化成「没有任何正文」。
+		// `omissions` / `extraction_coverage` 同理：不列进字段表就会被当未知字段吞掉，
+		// 审阅式提炼的两组清单会静默丢失。
 		return []string{"op", "source", "note_id", "title", "domain", "tags",
-			"sections", "blocks", "output_cards", "coverage_gaps", "reprocess"}
+			"sections", "blocks", "output_cards", "coverage_gaps", "reprocess",
+			"omissions", "extraction_coverage"}
 	case OpCreateKnowledge, OpCreateCard:
 		return []string{"op", "title", "card_id", "domain", "tags", "sources", "sections"}
 	case OpAppendKnowledge, OpAppendCard:
@@ -477,6 +489,18 @@ func parseOp(index int, item interface{}) (*Op, []Diagnostic) {
 		blocks, bd := parseNoteBlocks(index, v)
 		op.Blocks = blocks
 		diags = append(diags, bd...)
+	}
+	if v, ok := m["omissions"]; ok {
+		op.OmissionsGiven = true
+		oms, od := parseOmissions(index, v)
+		op.Omissions = oms
+		diags = append(diags, od...)
+	}
+	if v, ok := m["extraction_coverage"]; ok {
+		op.ExtractionCoverageGiven = true
+		cov, cd := parseExtractionCoverage(index, v)
+		op.ExtractionCoverage = cov
+		diags = append(diags, cd...)
 	}
 	if v, ok := m["output_cards"]; ok {
 		for _, oc := range listOf(v) {

@@ -114,6 +114,7 @@ tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	60
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2765
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	11184
+tests/_staged/internal/plan/note_review_parse_test.go	unit	go	proposal	unit.internal.plan	6	14826
 tests/_staged/internal/plan/opinion_validation_authorization_test.go	unit	go	proposal	unit.internal.plan	4	13514
 tests/_staged/internal/plan/plan_test.go	unit	go	proposal	unit.internal.plan	27	32174
 tests/_staged/internal/plan/precheck_test.go	unit	go	proposal	unit.internal.plan	3	3614
@@ -178,6 +179,7 @@ tests/_staged/internal/store/atomic_test.go	unit	go	storage-markdown	unit.intern
 tests/_staged/internal/store/b3_authorization_test.go	unit	go	storage-markdown	unit.internal.store	1	2883
 tests/_staged/internal/store/merge_test.go	unit	go	storage-markdown	unit.internal.store	3	6746
 tests/_staged/internal/store/note_blocks_test.go	unit	go	storage-markdown	unit.internal.store	2	8029
+tests/_staged/internal/store/note_review_carry_test.go	unit	go	storage-markdown	unit.internal.store	1	2192
 tests/_staged/internal/store/opinion_layout_test.go	unit	go	storage-markdown	unit.internal.store	3	3071
 tests/_staged/internal/store/proposal_test.go	unit	go	storage-markdown	unit.internal.store	2	4976
 tests/_staged/internal/store/receipt_test.go	unit	go	storage-markdown	unit.internal.store	1	2691

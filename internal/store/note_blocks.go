@@ -76,10 +76,18 @@ var ErrNoteBlockEmpty = errors.New("有序块的 body 为空")
 // Heading 可选：给出时渲染为 **H3**（契约 §4.2 第 3 条），用于保持原文章节结构。
 // 之所以是 H3 而不是 H2：H2 是分区骨架，Note 的固定四分区靠它切分，
 // 原文章节若也用 H2 就会把一篇 Note 切成十几个「未知分区」。
+// SourceRef / Annotation / Label 是 Schema v2 §4.2 的**审阅式 Note 元数据**，由解析层
+// （internal/plan）原样携带过来：source 块用 SourceRef 标出对应 Source 正文行段
+// （形如 `L<start>-L<end>`，是行段引用而非批注），agent 块用 Annotation 标出内置批注类型、
+// Label 承载扩展批注的人读标签。三者都是**尚未参与落盘渲染**的元数据——NoteBlockBytes 当前一个字节
+// 都不读它们（T12-1 边界：只承载、不改 writer 输出）。渲染消费留待后续批次接入。
 type NoteBlock struct {
-	Role    NoteBlockRole
-	Heading string
-	Body    []byte
+	Role       NoteBlockRole
+	Heading    string
+	Body       []byte
+	SourceRef  string
+	Annotation string
+	Label      string
 }
 
 // NoteBlockBytes 把有序块渲染成「整理正文」的分区正文字节。
