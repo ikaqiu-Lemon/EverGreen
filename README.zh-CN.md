@@ -433,7 +433,7 @@ tags:
 
 ```console
 $ eg index build     # 构建 SQLite/FTS5 加速层
-$ eg check           # 只读结构体检（恰 7 个 check，零写入）
+$ eg check           # 只读结构体检（恰 8 个 check，零写入）
 $ eg reconcile       # 全库对账（R1–R7，可能写入）
 ```
 
@@ -655,7 +655,7 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 
 | 命令 | 用途 |
 | --- | --- |
-| `eg check [--strict]` | 只读结构体检 —— 恰 7 个 check，零写入 |
+| `eg check [--strict]` | 只读结构体检 —— 恰 8 个 check，零写入 |
 | `eg reconcile [--dry-run]` | 全库对账 R1–R7，含补写 |
 | `eg index build\|rebuild\|status\|sync` | 管理派生索引 |
 | `eg bench` | 只读采样五个性能指标 |

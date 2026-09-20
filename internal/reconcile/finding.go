@@ -80,10 +80,10 @@ func NormalizeOrderedTargets(in []string, arity int) ([]string, error) {
 // NewFinding 按枚举真源构造一条 finding。
 //
 // severity **不接受调用方自带**：一律从 checkTable 取，杜绝「同一 check 两处分级」；
-// 未知 check（第 13 个取值）与空 detail 一律报错，不静默产出半成品 finding。
+// 未知 check（第 14 个取值）与空 detail 一律报错，不静默产出半成品 finding。
 //
 // targets 走两条口径之一，由 check 决定（不由调用方决定）：
-//   - 默认（十一个 check）：集合语义 —— 去重 + 字典序升序（合同 §2 第 3 条）；
+//   - 默认（十二个 check）：集合语义 —— 去重 + 字典序升序（合同 §2 第 3 条）；
 //   - 顺序固定例外（恰 `domain_moved` 一个，合同 §8）：次序逐字保留、元数恰
 //     `DomainMovedTargetArity`，元数不符或有空位一律**报错**（不静默降级成集合语义）。
 func NewFinding(check string, targets []string, detail string) (Finding, error) {

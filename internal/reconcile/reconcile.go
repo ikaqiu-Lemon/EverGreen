@@ -83,7 +83,7 @@ type Result struct {
 // TestRepairSpecIsDescriptionOnly。真正的写入由 CLI 层把它编排成内存 ChangePlan、
 // 经 plan 的完整校验链交 store 落盘（写权限矩阵与写前内容比对一格不豁免）。
 type RepairSpec struct {
-	// Check 是触发本意向的 check（十二值封闭枚举之一）。
+	// Check 是触发本意向的 check（十三值封闭枚举之一）。
 	Check string
 	// Path 是待修对象的 vault 相对路径。
 	Path string

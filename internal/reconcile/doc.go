@@ -19,8 +19,8 @@
 //
 // # 本 task（T-…-049）的范围边界
 //
-// 本包在 T-…-049 只定死两张封闭表 —— Finding 四键 schema（finding.go）与 check 十二值
-// 封闭枚举 + 诊断码双向单射（check.go）—— 外加只读检查器入口骨架（reconcile.go）。
+// 本包在 T-…-049 只定死两张封闭表 —— Finding 四键 schema（finding.go）与 check 十三值
+// 封闭枚举 + 诊断码双向单射（check.go；十二值起，A-62 追加 W29 后为十三值）—— 外加只读检查器入口骨架（reconcile.go）。
 // **R1–R7 七项检查逻辑一项都不实现**（分属 T-…-050 ~ T-…-056）；不注册任何命令
 // （eg reconcile 属 T-…-058、eg check 属 T-…-059）；不动报告体（属 T-…-057）。
 // 阶段标注：**全量 Markdown 扫描版**，复用 query 的扫描底座，本包不另写扫描器、

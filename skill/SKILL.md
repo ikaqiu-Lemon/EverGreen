@@ -595,10 +595,10 @@ eg check [--json]
 
 | 项 | 口径 |
 |-|-|
-| 职责 | `eg reconcile --dry-run` 的**只读别名子集**：**只跑 R3 + R4 恰 7 个 check**——重复 ID / 悬空引用 / 孤儿 / 关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复<br>其中**悬空引用（E12）覆盖 frontmatter 全部引用承载字段（恰四类）**：`note.source→原文` / `card.sources[].note→材料笔记` / `card.sources[].source→原文` / `replaced_by.target→知识卡`；关系条目 `target` 缺失走 R3 的 `relation_target_missing`（E13），不进 E12 |
+| 职责 | `eg reconcile --dry-run` 的**只读别名子集**：**只跑 R3 + R4 恰 8 个 check**——重复 ID / 悬空引用 / 孤儿 / 关系目标缺失 / 关系前缀非法 / 反向关系不对称 / 关系重复 / validated 观点缺有效支撑（`opinion_unsupported_validated`，R3 · W29，A-62 新增）<br>其中**悬空引用（E12）覆盖 frontmatter 全部引用承载字段（恰四类）**：`note.source→原文` / `card.sources[].note→材料笔记` / `card.sources[].source→原文` / `replaced_by.target→知识卡`；关系条目 `target` 缺失走 R3 的 `relation_target_missing`（E13），不进 E12 |
 | 是否写入 | **否**：零写入、**恒 0 次 commit**、不改写 `eg report --last`，也没有 `--fix` / `--repair`（修复走 `eg reconcile`） |
 | 未判面 | R1 / R2 / R5 / R6 / R7 的 5 个 check **不判**（未判 ≠ 不存在，全量判定请跑 `eg reconcile`） |
-| 是否前置 | `eg check` **命令本身不作为任何写命令的前置**；不接受任何范围收窄或可见性参数。**M6 现态**：`eg check --strict` 对本命令 finding 是**恒等变换**——`eg check` 只判 R3/R4 结构（`E11`–`E14` / `W13`–`W20`），与强校验升级面（`W1`/`W2`/`W3`/`W4`/`W6`，真源 `internal/reconcile/strict.go`）**不相交**，故 `--strict` 不改本命令任何 finding severity、不改退出码。真正把 `W1`/`W2`/`W3`/`W4`/`W6` 升 error 并退 `5` + `E15` 的是 **A 类写命令内部的写前强校验**（自动执行，复用同一 strict 逻辑），**不需要 Agent 手动先跑 `eg check`**（见 §11） |
+| 是否前置 | `eg check` **命令本身不作为任何写命令的前置**；不接受任何范围收窄或可见性参数。**M6 现态**：`eg check --strict` 对本命令 finding 是**恒等变换**——`eg check` 只判 R3/R4 结构（`E11`–`E14` / `W13`–`W20` / `W29`），与强校验升级面（`W1`/`W2`/`W3`/`W4`/`W6`，真源 `internal/reconcile/strict.go`）**不相交**，故 `--strict` 不改本命令任何 finding severity、不改退出码。真正把 `W1`/`W2`/`W3`/`W4`/`W6` 升 error 并退 `5` + `E15` 的是 **A 类写命令内部的写前强校验**（自动执行，复用同一 strict 逻辑），**不需要 Agent 手动先跑 `eg check`**（见 §11） |
 
 `eg check` 的**退出码**（恰三档）：`0` 无 error 级 finding（含只有 warning）/ `1` 参数非法（零写入）/
 `2` 存在 error 级 finding（零写入、零提交）。它**永不**产出 `git_uncommitted` / `reviewed_at_missing` /

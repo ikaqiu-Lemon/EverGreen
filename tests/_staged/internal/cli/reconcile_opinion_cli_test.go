@@ -258,6 +258,104 @@ func TestCheckCLIOnOpinionVaultStaysEightChecksReadOnly(t *testing.T) {
 	}
 }
 
+// —— ②′ 判据 2′：validated 且零有效 incoming supports 的观点 → W29，`eg check` 与
+// `eg reconcile --dry-run` **双入口**逐字同事实，且两条只读命令都零权威写 / 零事务 / 零 commit ——
+
+// w29Findings 过滤出 opinion_unsupported_validated（W29）的 finding。
+func w29Findings(fs []rcFinding) []rcFinding {
+	var out []rcFinding
+	for _, f := range fs {
+		if f.Check == reconcile.CheckOpinionUnsupportedValidated {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// assertSingleW29 断言恰 1 条 W29 finding 且四键逐字达标：
+// check=opinion_unsupported_validated、code=W29、severity=warning、targets=[oid]。
+func assertSingleW29(t *testing.T, where string, fs []rcFinding, oid string) {
+	t.Helper()
+	got := w29Findings(fs)
+	if len(got) != 1 {
+		t.Fatalf("%s：W29 应恰 1 条，实得 %d 条：%+v", where, len(got), fs)
+	}
+	f := got[0]
+	if f.Check != reconcile.CheckOpinionUnsupportedValidated {
+		t.Fatalf("%s：check = %q，期望 %q", where, f.Check, reconcile.CheckOpinionUnsupportedValidated)
+	}
+	if code, ok := reconcile.CodeOf(f.Check); !ok || code != reconcile.CodeW29 {
+		t.Fatalf("%s：%s ↔ 诊断码 = %q（ok=%t），期望 %q", where, f.Check, code, ok, reconcile.CodeW29)
+	}
+	if f.Severity != reconcile.SeverityWarning {
+		t.Fatalf("%s：severity = %q，期望 %q", where, f.Severity, reconcile.SeverityWarning)
+	}
+	if !reflect.DeepEqual(f.Targets, []string{oid}) {
+		t.Fatalf("%s：targets = %v，期望 [%s]", where, f.Targets, oid)
+	}
+}
+
+// TestOpinionUnsupportedValidatedSurfacedByBothCommandsReadOnly：把库里的观点经真实
+// `eg opinion validate` 推到 validation=validated（它没有任何 incoming supports，关系只有
+// 卡↔卡一条），于是它成为 W29 的唯一命中。随后 `eg check` 与 `eg reconcile --dry-run`
+// **两条只读入口**都必须逐字点名这条 W29（check/code/severity/targets 一字不差），
+// 且退出码只到 warning 档（恒 0，非 error）、权威字节 / 事务集合 / commit 数三格逐一不变。
+//
+// 与 TestReconcileCLILegalOpinionVaultAllGreen 成对：那支证明「合法观点零误报」，
+// 本支证明「一旦 validated 且失支撑就必被双入口点名」——后者一红即说明前者的绿可能是空的。
+func TestOpinionUnsupportedValidatedSurfacedByBothCommandsReadOnly(t *testing.T) {
+	const validateAt = "2026-10-21T09:00:00+08:00"
+	dir, _, opinionRel := opinionVault(t)
+
+	// 前置：观点默认 pending，此时零 W29；经真实 CLI 推到 validated 才触发 W29。
+	setOpinionValidationVia(t, dir, validateAt, SubOpinionValidate, applyOpinionID, false)
+	if got := opinionValidationOf(t, dir, opinionRel); got != model.ValidationValidated {
+		t.Fatalf("前置不成立：观点应已 validated，实得 %q", got)
+	}
+	if got := strings.TrimSpace(gitOut(t, dir, "status", "--porcelain")); got != "" {
+		t.Fatalf("前置不成立：validate 后工作区应干净（validate 自提交），实得 %q", got)
+	}
+
+	// 只读性基线：在两条命令之前把权威字节 / 事务 / commit 三格快照下来。
+	beforeBytes := opVaultBytes(t, dir)
+	beforeCommits := gitLogCount(t, dir)
+	beforeTxns := txnIDsOn(t, dir)
+
+	// —— 入口一：eg check（R3/R4 只读子集）——
+	ccode, cout, cerr := runCheckCLI(t, dir)
+	if ccode != ExitOK {
+		t.Fatalf("eg check 退出码 = %d，期望 0（W29 只到 warning 档，无 error 级 finding）：%s\n%s", ccode, cerr, cout)
+	}
+	assertSingleW29(t, "eg check", chkFindings(t, cout), applyOpinionID)
+
+	// —— 入口二：eg reconcile --dry-run（全库 R1–R7）——
+	rcode, rout, rerr := runReconcileCLI(t, newTestRoot(t, dir), dir, "--dry-run")
+	if rcode != ExitOK {
+		t.Fatalf("eg reconcile --dry-run 退出码 = %d，期望 0（W29 只到 warning 档）：%s\n%s", rcode, rerr, rout)
+	}
+	assertSingleW29(t, "eg reconcile --dry-run",
+		rcAssertReconcileShape(t, rcRawAt(t, []byte(rout), "data", "reconcile")), applyOpinionID)
+
+	// —— 只读性：两条命令跑完之后，权威字节 / 事务集合 / commit 数三格逐一不变 ——
+	if got := opVaultBytes(t, dir); !reflect.DeepEqual(got, beforeBytes) {
+		t.Fatalf("W29 双入口必须零写入：权威字节发生变化\n前 %v\n后 %v",
+			opSortedKeys(beforeBytes), opSortedKeys(got))
+	}
+	if got := gitLogCount(t, dir); got != beforeCommits {
+		t.Fatalf("W29 双入口恒 0 次提交：commit 数 %d → %d", beforeCommits, got)
+	}
+	if got := txnIDsOn(t, dir); !reflect.DeepEqual(sortedCopy(got), sortedCopy(beforeTxns)) {
+		t.Fatalf("W29 双入口不得开事务：事务集合 %v → %v", beforeTxns, got)
+	}
+	if got := strings.TrimSpace(gitOut(t, dir, "status", "--porcelain")); got != "" {
+		t.Fatalf("W29 双入口之后工作区应仍干净，实得 %q", got)
+	}
+	// 观点本身逐字节未被动过（W29 只报告，绝不改 validation / 补关系 / 落盘）。
+	if got := opVaultBytes(t, dir)[opinionRel]; got != beforeBytes[opinionRel] {
+		t.Fatal("W29 只读命令改写了观点字节（W29 是只报告项，零 validation 自动修改）")
+	}
+}
+
 // opSetReplacedBy 用**外部编辑**给一份产物的 frontmatter 写入 `replaced_by: {target, reason}`。
 //
 // 为什么用外部编辑而不是 `eg replaced-by`：写命令会在落盘前校验 target 端点是否真实存在

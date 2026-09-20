@@ -898,6 +898,32 @@ func TestR3OpinionUnsupportedValidated(t *testing.T) {
 				nil, []query.OpinionEntry{opValidated(opOpinion(oA))})},
 			wantW29: 0,
 		},
+		// —— supporter 是**观点**（不是知识卡）的三格：证明有效性判定同时消费 Opinion.Deleted，
+		// 而不是只看 Card.Deleted。supporter 观点自身是 pending（默认），故不会自带 W29 干扰计数。——
+		{
+			name: "incoming supporter 是未删除观点 supports → W29=0（有效 incoming 支持压制，consumes Opinion 面）",
+			in: Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+				opValidated(opOpinion(oA)),
+				opOpinion(oB, r3Rel(model.RelationSupports, oA)),
+			})},
+			wantW29: 0,
+		},
+		{
+			name: "incoming supporter 观点已逻辑删除 → 支持无效 → W29=1（须消费 Opinion.Deleted）",
+			in: Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+				opValidated(opOpinion(oA)),
+				opDeleted(opOpinion(oB, r3Rel(model.RelationSupports, oA))),
+			})},
+			wantW29: 1,
+		},
+		{
+			name: "incoming supporter 观点是 deprecated（未删除）→ 仍有效 → W29=0",
+			in: Input{Scan: opScanOf(nil, nil, []query.OpinionEntry{
+				opValidated(opOpinion(oA)),
+				opDeprecated(opOpinion(oB, r3Rel(model.RelationSupports, oA))),
+			})},
+			wantW29: 0,
+		},
 		{
 			name: "同一 supporter 的重复 supports 边 → 去重后仍算 1 个有效支持 → W29=0",
 			in: Input{Scan: opScanOf(
