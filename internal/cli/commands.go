@@ -44,7 +44,7 @@ func commands() []*Command {
 		// M4 全库对账（T-…-058）：注册表总量随之 18 → 19。
 		reconcileCommand(),
 		// M4 只读结构体检（T-…-059）：`eg reconcile --dry-run` 的只读真子集
-		// （恰 R3 / R4 七个 check）。注册表总量随之 19 → 20（M4 收口值）。
+		// （恰 R3 / R4 八个 check）。注册表总量随之 19 → 20（M4 收口值）。
 		checkCommand(),
 		// M5 派生索引（T-…-065 三子命令 + T-…-066 阶段 B 补 `sync`）：
 		// `eg index build|rebuild|status|sync` 一次注册。注册表总量随之 20 → 21 ——

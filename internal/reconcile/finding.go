@@ -16,7 +16,7 @@ import (
 // 键集合**不增不减**：新增第五个字段会被 finding_test.go 的
 // TestFindingSchemaExactlyFourKeys 当场判红（字段数 + JSON tag 集合 + 序列化键集合三重比对）。
 type Finding struct {
-	Check    string   `json:"check"`    // 十二值封闭枚举，见 check.go
+	Check    string   `json:"check"`    // 十三值封闭枚举，见 check.go
 	Severity string   `json:"severity"` // 恰两值：error | warning
 	Targets  []string `json:"targets"`  // 非 nil；空集合序列化为 []，不得为 null
 	Detail   string   `json:"detail"`   // 非空单句，含足以复算的事实
@@ -112,7 +112,7 @@ func NewFinding(check string, targets []string, detail string) (Finding, error) 
 	}, nil
 }
 
-// Validate 逐键反证四键封闭：check ∈ 十二值、severity == 表内分级、
+// Validate 逐键反证四键封闭：check ∈ 十三值、severity == 表内分级、
 // targets 非 nil 且已归一化（默认口径：去重 + 升序；顺序固定例外：元数恰 arity + 元素非空
 // + 次序不做任何要求，见 check.go 的封闭例外表）、detail 非空。
 func (f Finding) Validate() error {

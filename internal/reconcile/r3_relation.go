@@ -66,7 +66,7 @@ package reconcile
 //
 // target 存在性看**落盘事实**（StructureIndex 的对象索引），不做任何 status / deleted_at /
 // 可见性过滤 —— 与 R4 §6.3 末段同源口径：展示面过滤不得渗进对账判定。
-// Input.Scan 为 nil（未取数）时四项整体零产出；判定面按合同以**全库**扫描快照为准
+// Input.Scan 为 nil（未取数）时五项整体零产出；判定面按合同以**全库**扫描快照为准
 // （受限扫描面会把「没扫到」误判成「不存在」，取数口径由调用方保证，与查询侧
 // 「Q2 只在全库扫描面判定」的诚实性口径一致）。
 
@@ -79,7 +79,7 @@ import (
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
 )
 
-// R3 是本检查项的 R 编号（与 checkTable 内四行 R3 的 R 列同值）。
+// R3 是本检查项的 R 编号（与 checkTable 内五行 R3 的 R 列同值）。
 const R3 = "R3"
 
 // R3SubcheckCount 是 R3 的子检查数：恰 5（E13 / E14 / W15 / W16 + A-62 新增 W29）。
@@ -666,7 +666,7 @@ func checkR3Relation(in Input) ([]Finding, []RepairSpec) {
 
 // R3ScanOf 是给命令层与用例的便利函数：把 vault 快照折成 R3 需要的 Input。
 //
-// R3 只需要「全库扫描结果」：关系事实与 target 存在性都在知识卡这一个事实面上
+// R3 只需要「全库扫描结果」：关系事实与 target 存在性都在知识卡∪观点端点这一事实面上
 // （`sources/` 分区与 Git 状态与本项无关，故 Sources / Status 保持零值）。
 // **扫描底座仍复用 internal/query**，本包不另写扫描器。
 func R3ScanOf(vaultRoot string, scan *query.ScanResult) Input {
@@ -675,7 +675,8 @@ func R3ScanOf(vaultRoot string, scan *query.ScanResult) Input {
 
 // 注册：R3 是本包第三个落地的检查项（R1 属 T-…-050、R2 属 T-…-051、R4 属 T-…-052）。
 //
-// 四项判定合并成**一项注册**：它们共用同一份关系事实序列与同一份对象索引，
-// 且合同 §7 把四者定义为同一条 R 编号。R5 / R6 / R7 分属 T-…-054 / 055 / 056，
+// 五项判定合并成**一项注册**：前四项共用同一份关系事实序列（collectRelationFacts）与
+// 同一份对象索引，第五项（W29）直接消费同一份 Scan 与对象索引（不经关系事实归集）；
+// 合同 §7 把五者定义为同一条 R 编号。R5 / R6 / R7 分属 T-…-054 / 055 / 056，
 // 本文件因此**恰追加一项**（注册项数的加法等式见 r1_git_test.go 的自守用例）。
 func init() { checkers = append(checkers, checkR3Relation) }

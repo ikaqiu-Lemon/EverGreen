@@ -89,13 +89,13 @@ const CheckReportFieldNotice = "报告 reconcile 三键保持占位（ran=false�
 //
 // 强校验升级面恰 `W1`/`W2`/`W3`/`W4`/`W6`（真源在 internal/reconcile/strict.go），五个码都属
 // plan 层写前校验诊断；而 `eg check` 只判 R3/R4 结构，finding 用的是 `E11`–`E14` / `W13`–`W20`
-// 段，**与升级面不相交**。因此 `--strict` 在本命令上是恒等变换：不改任何 finding 的 severity、
+// / `W29`（A-62 追加）段，**与升级面不相交**。因此 `--strict` 在本命令上是恒等变换：不改任何 finding 的 severity、
 // 不改退出码、不扩 check 枚举——这是「升级面恰五条」的必然，也是默认路径零漂移的一体两面。
 // 之所以仍接这个 flag：写命令与只读体检对 `--strict` 的**参数面**要一致（A-56 默认宽松 +
 // `--strict` 显式开启），命令间不能一个认得一个不认得。真正让 W1~W6 升 error 并退 5 的是
 // 写命令的写前强校验（S3 precheck），不是本命令。
 const CheckStrictNotice = "eg check --strict 对本命令 finding 是恒等变换：强校验升级面（W1/W2/W3/W4/W6）" +
-	"属 plan 层写前校验诊断，与 eg check 的 R3/R4 结构码（E11–E14 / W13–W20）不相交；" +
+	"属 plan 层写前校验诊断，与 eg check 的 R3/R4 结构码（E11–E14 / W13–W20 / W29）不相交；" +
 	"退出码与 check 枚举一字不变（真正把 W1~W6 升 error 退 5 的是写命令的写前强校验）"
 
 // checkCommand 注册 `eg check`（合同 §13：写入=否、commit 恒 0 次、三档退出码）。

@@ -39,7 +39,7 @@ const (
 	SeverityWarning = "warning"
 )
 
-// 诊断码：error 段 E11–E14、warning 段 W13–W20（合同 §3，与 check 双向单射）。
+// 诊断码：error 段 E11–E14、warning 段 W13–W20 加 A-62 追加的 W29（合同 §3，与 check 双向单射）。
 //
 // W 段为 W13–W20 加 A-62 追加的 W29：被默认隐藏的失效端点提示属只读查询域（Q 段，归 T-…-061），
 // 既不进本表、也不占 W 段的下一个号（合同 §3 的 2026-11-12 阶段 B 修正）。
@@ -83,7 +83,7 @@ type CheckSpec struct {
 
 // checkTable 是**唯一真源**：恰 CheckCount 行，行序 = 合同 §3 表格行序。
 //
-// 类型是长度固定的数组而不是 slice —— 这就是「第 13 个取值在编译期失败」的落点：
+// 类型是长度固定的数组而不是 slice —— 这就是「第 14 个取值在编译期失败」的落点：
 // 追加第 14 行会得到 "index 13 out of bounds" 编译错误，删一行则少一个初始值、
 // 表内出现零值行并被 check_test.go 的表驱动用例判红。
 var checkTable = [CheckCount]CheckSpec{
@@ -272,7 +272,7 @@ func IsKnownCode(code string) bool {
 	return ok
 }
 
-// ParseCheck 把外部字符串收敛到封闭枚举：第 13 个取值一律报错（不静默通过）。
+// ParseCheck 把外部字符串收敛到封闭枚举：第 14 个取值一律报错（不静默通过）。
 func ParseCheck(s string) (string, error) {
 	if !IsKnownCheck(s) {
 		return "", fmt.Errorf("未知 check %q：check 是恰 %d 值的封闭枚举（合同 §3）", s, CheckCount)
