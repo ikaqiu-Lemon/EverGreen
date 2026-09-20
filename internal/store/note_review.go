@@ -10,13 +10,15 @@ package store
 //     把每条 omission 的 source_ref / reason 编进一条版本化机器锚点，满足设计真源对 omissions
 //     的「校验 + source_ref round-trip」要求。它**不**新增任何名为「遗漏说明」的可见分区或清单——
 //     遗漏是机器元数据，靠锚点严格读回，而不是渲染成读者可见的段落。
-//   - extraction_coverage[] **尚未消费**：其落盘形态由后续批次（T12-4）按设计真源确定，
-//     本文件刻意不声称它「最终会渲染成某某清单」，以免把尚未定案的形态写死成注释里的伪约束。
+//   - extraction_coverage[] **已被消费**：语义校验由 plan 侧 note_coverage.go 承担（T12-4，
+//     契约 §4.2.3），校验通过后原样透传给 NoteExtraction.Coverage；落盘渲染 / 读回的唯一实现
+//     收在 mdfile 的覆盖矩阵协议（RenderCoverageMatrix / ParseCoverageMatrix）——渲染成「提取
+//     结果」里紧随 Knowledge/Opinion 清单之后的一张覆盖矩阵表 + 每行一条独立版本化机器锚点。
 //
 // # 为什么定义在 store
 //
-// 与 NoteBlock / NoteExtraction 同处一包：这两组数据的下游消费（校验、round-trip、
-// 以及将来可能的渲染）都围绕写路径展开（§16.3），放在 store 让 plan 侧以类型别名引用、
+// 与 NoteBlock / NoteExtraction 同处一包：这两组数据的下游消费（校验、round-trip、渲染）
+// 都围绕写路径展开（§16.3），放在 store 让 plan 侧以类型别名引用、
 // 免去逐字段拷贝的转换函数，也就免去「加字段只改一处」的漂移点。
 //
 // # 命名口径
@@ -41,8 +43,9 @@ type Omission struct {
 //   - Outputs 产出卡 ID；
 //   - Reason 缘由。
 //
-// 唯一性、引用有效性、与 output_cards 的一致性、disposition 取值等判定全部属后续批次；
-// 本结构体目前只承载解析结果，其落盘形态待 T12-4 按设计真源接入。
+// 唯一性、引用有效性、与 output_cards 的一致性、disposition 取值等语义判定由 plan 侧
+// note_coverage.go 承担（T12-4，契约 §4.2.3）；本结构体承载解析结果，其落盘渲染由 mdfile 的
+// 覆盖矩阵协议按各原始字段落地。
 type ExtractionCoverage struct {
 	Module      string
 	SourceRefs  []string

@@ -174,8 +174,10 @@ func noteBlocksOp(noteID string, blocks ...string) string {
 // noteBlocksOpOm 造一条 v2 write_note op，omissions 显式给出（数组按输入顺序原样保留，
 // 不排序 / 不去重 / 不重排；本批不预设 omissions 的任何「报告序」语义）。
 func noteBlocksOpOm(noteID string, omissions []string, blocks ...string) string {
+	joined := strings.Join(blocks, ",")
 	return `{"op":"write_note","source":"s-20260901-attention","note_id":"` + noteID + `",
- "blocks":[` + strings.Join(blocks, ",") + `],"omissions":[` + strings.Join(omissions, ",") + `]}`
+ "blocks":[` + joined + `],"omissions":[` + strings.Join(omissions, ",") + `]` +
+		covMatrixFor(joined, nil) + `}`
 }
 
 // srcBlock 造一个带 source_ref 的 source 块（契约 §4.2 第 2 条：source 块必给非空 ref）。
@@ -225,8 +227,10 @@ func TestWriteNoteBlocksOrderIsPreservedVerbatim(t *testing.T) {
 		at += idx + len(want)
 	}
 	// 顺序对了还不够：块数必须一致（不去重、不合并、不丢块）。
-	if got := strings.Count(raw, "### "); got != 4 {
-		t.Fatalf("四个带 heading 的块应渲染出 4 个 H3，实得 %d：\n%s", got, raw)
+	// 只数「整理正文」分区内的 H3：提取结果里的覆盖矩阵标题（### 覆盖矩阵，契约 §4.2.3）
+	// 不是来源块，不该混进块数核对。
+	if got := strings.Count(noteReviewSection(t, raw), "### "); got != 4 {
+		t.Fatalf("四个带 heading 的块应在「整理正文」渲染出 4 个 H3，实得 %d：\n%s", got, raw)
 	}
 }
 

@@ -22,7 +22,7 @@ import (
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
-// NoteExtraction 是 Note「提取结果」分区的两组清单（契约 §5.1）。
+// NoteExtraction 是 Note「提取结果」分区的 Knowledge/Opinion 清单 + 覆盖矩阵（契约 §5.1 / §4.2.3）。
 //
 // **类型别名**而不是新结构体，理由同 NoteBlock：渲染的唯一实现在 store，
 // 在此再定义一份同形结构体就必须写一个逐字段拷贝的转换函数，而那正是两处漂移的起点。
@@ -209,6 +209,9 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		if !v.noteFidelity(op, cov) {
 			return nil, false
 		}
+		if !v.noteCoverageValidate(op) {
+			return nil, false
+		}
 		body, err := store.NoteReviewBytes(op.Blocks, op.Omissions)
 		if err != nil {
 			v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
@@ -282,8 +285,9 @@ func CoverageThreshold(anchors int) int {
 	return int(math.Ceil(float64(anchors) / 2))
 }
 
-// noteExtraction 把 `output_cards` 按 ID 前缀拆成 Knowledge / Opinion 两组
-// （契约 §5.1「提取结果」两个 H3 小节）。
+// noteExtraction 组装 Note「提取结果」的载荷：把 `output_cards` 按 ID 前缀拆成 Knowledge /
+// Opinion 两组清单（契约 §5.1「提取结果」两个 H3 小节），并在 v2 blocks 路径把已过语义校验的
+// `extraction_coverage`（覆盖矩阵，§4.2.3）原样挂到 Coverage 上透传给 store 渲染。
 //
 // 分组只看 ID 前缀（`k-` / `o-`），不看 mode、不看顺序、不做任何推断：
 // 前缀是类型的唯一真源（§3.1），据它分组才不会与目录布局对不上。
@@ -317,7 +321,13 @@ func (v *validator) noteExtraction(op *Op) *NoteExtraction {
 			knowledge = append(knowledge, item)
 		}
 	}
-	return &NoteExtraction{Knowledge: knowledge, Opinions: opinions}
+	ext := &NoteExtraction{Knowledge: knowledge, Opinions: opinions}
+	// v2 blocks 路径已通过 noteCoverageValidate 的语义闸门，coverage 原样透传给 store 渲染覆盖矩阵；
+	// 兼容路径（v1 sections / v1 blocks / v2 sections）不携带 coverage，覆盖矩阵不出现。
+	if op.BlocksGiven && v.p.Version == PlanVersion && op.ExtractionCoverageGiven {
+		ext.Coverage = op.ExtractionCoverage
+	}
+	return ext
 }
 
 // opinionItem 给一条 Opinion 清单项补上 `[<validation>]` 标记。

@@ -96,6 +96,7 @@ tests/_staged/internal/index/scratch_test.go	unit	go	index-search	unit.internal.
 tests/_staged/internal/index/watermark_test.go	unit	go	index-search	unit.internal.index	6	6875
 tests/_staged/internal/mdfile/assets_test.go	unit	go	storage-markdown	unit.internal.mdfile	42	22388
 tests/_staged/internal/mdfile/block_merge_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	5329
+tests/_staged/internal/mdfile/coverage_matrix_test.go	unit	go	storage-markdown	unit.internal.mdfile	36	24685
 tests/_staged/internal/mdfile/fuzz_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	3911
 tests/_staged/internal/mdfile/mdfile_test.go	unit	go	storage-markdown	unit.internal.mdfile	12	18113
 tests/_staged/internal/mdfile/note_review_roundtrip_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	22284
@@ -110,13 +111,14 @@ tests/_staged/internal/model/validation_transition_test.go	unit	go	storage-markd
 tests/_staged/internal/plan/atomic_finalizer_test.go	unit	go	proposal	unit.internal.plan	3	7712
 tests/_staged/internal/plan/atomic_test.go	unit	go	proposal	unit.internal.plan	5	11094
 tests/_staged/internal/plan/authorize_test.go	unit	go	proposal	unit.internal.plan	7	16222
-tests/_staged/internal/plan/executor_note_v2_test.go	unit	go	proposal	unit.internal.plan	3	13361
-tests/_staged/internal/plan/knowledge_opinion_v2_test.go	unit	go	proposal	unit.internal.plan	10	29454
+tests/_staged/internal/plan/executor_note_v2_test.go	unit	go	proposal	unit.internal.plan	3	13411
+tests/_staged/internal/plan/knowledge_opinion_v2_test.go	unit	go	proposal	unit.internal.plan	10	29722
 tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	60072
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2765
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	11184
-tests/_staged/internal/plan/note_annotation_test.go	unit	go	proposal	unit.internal.plan	13	14330
+tests/_staged/internal/plan/note_annotation_test.go	unit	go	proposal	unit.internal.plan	13	14381
+tests/_staged/internal/plan/note_coverage_test.go	unit	go	proposal	unit.internal.plan	34	21984
 tests/_staged/internal/plan/note_fidelity_test.go	unit	go	proposal	unit.internal.plan	21	27822
 tests/_staged/internal/plan/note_review_parse_test.go	unit	go	proposal	unit.internal.plan	6	14826
 tests/_staged/internal/plan/opinion_validation_authorization_test.go	unit	go	proposal	unit.internal.plan	4	13514
@@ -126,7 +128,7 @@ tests/_staged/internal/plan/relation_ko_chain_test.go	unit	go	proposal	unit.inte
 tests/_staged/internal/plan/remove_relation_idempotent_test.go	unit	go	proposal	unit.internal.plan	1	4129
 tests/_staged/internal/plan/replaced_by_ko_test.go	unit	go	proposal	unit.internal.plan	5	10217
 tests/_staged/internal/plan/set_stale_test.go	unit	go	proposal	unit.internal.plan	8	11798
-tests/_staged/internal/plan/source_coverage_test.go	unit	go	proposal	unit.internal.plan	20	26706
+tests/_staged/internal/plan/source_coverage_test.go	unit	go	proposal	unit.internal.plan	20	29227
 tests/_staged/internal/plan/state_write_m3_test.go	unit	go	proposal	unit.internal.plan	5	8274
 tests/_staged/internal/proposal/execution_test.go	unit	go	proposal	unit.internal.proposal	7	23034
 tests/_staged/internal/proposal/id_test.go	unit	go	proposal	unit.internal.proposal	3	4732
@@ -182,6 +184,7 @@ tests/_staged/internal/report/support_check_test.go	unit	go	ops-diagnostics	unit
 tests/_staged/internal/rules/rules_test.go	unit	go	capture-ingest	unit.internal.rules	9	6136
 tests/_staged/internal/store/atomic_test.go	unit	go	storage-markdown	unit.internal.store	7	8528
 tests/_staged/internal/store/b3_authorization_test.go	unit	go	storage-markdown	unit.internal.store	1	2883
+tests/_staged/internal/store/coverage_render_test.go	unit	go	storage-markdown	unit.internal.store	4	4391
 tests/_staged/internal/store/merge_test.go	unit	go	storage-markdown	unit.internal.store	3	6746
 tests/_staged/internal/store/note_blocks_test.go	unit	go	storage-markdown	unit.internal.store	2	8029
 tests/_staged/internal/store/note_review_carry_test.go	unit	go	storage-markdown	unit.internal.store	1	2192

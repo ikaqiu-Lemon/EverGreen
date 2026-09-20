@@ -65,8 +65,9 @@ type Action struct {
 	Relation     *RelationWrite
 	Gaps         []string
 
-	// Extraction 是 Note「提取结果」两组清单（Schema v2 §5.1）：由 `op.OutputCards`
-	// 按 ID 前缀拆分而来。**不在 store 侧再拆一次**——前缀分组会产出 I1 诊断
+	// Extraction 是 Note「提取结果」的 Knowledge/Opinion 清单 + 覆盖矩阵（Schema v2 §5.1 /
+	// §4.2.3）：两组清单由 `op.OutputCards` 按 ID 前缀拆分而来，覆盖矩阵由 v2 blocks 路径经
+	// note_coverage.go 语义校验后原样透传。**不在 store 侧再拆一次**——前缀分组会产出 I1 诊断
 	// （既非 `k-` 也非 `o-` 的条目），而 store 不产出 plan 诊断，拆分只能发生在这一侧。
 	//
 	// 因此 Action 上**不再**保留一份未分组的 OutputCards：留着它就会出现「有人从

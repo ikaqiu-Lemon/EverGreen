@@ -34,8 +34,9 @@ func annFiles(body string) map[string]string {
 
 // annNote 造一条 v2 write_note op（omissions 显式空数组，声明无删除）。
 func annNote(blocks ...string) string {
+	joined := strings.Join(blocks, ",")
 	return `{"op":"write_note","source":"s-20260901-ann","note_id":"n-20261017-ann","blocks":[` +
-		strings.Join(blocks, ",") + `],"omissions":[]}`
+		joined + `],"omissions":[]` + covMatrixFor(joined, nil) + `}`
 }
 
 // annValidate 用给定 Source body 与 blocks 跑一次 v2 校验。

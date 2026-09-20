@@ -17,19 +17,67 @@ package plan
 //     （前导空白物理行 + writer 补尾换行）计行号，而不是去读尚未落盘的 Env、也不是直接用 op.Body 原样。
 //   - W21 仍是 warning，--strict 下不升级。
 //
-// 本批**不**做：结构资产扫描（图片 / 代码块 / 表格 …，属 T12-2B）、annotation / label 语义与渲染
-// （T12-3）、机器锚点、extraction_coverage 校验 / 渲染（T12-4）。因此这里既不要求 role: agent 给
-// annotation，也不比较 source 块正文是否逐字等于 Source 对应行。
+// 本文件只裁定来源覆盖，**不**做：结构资产扫描（图片 / 代码块 / 表格 …，属 T12-2B）、annotation /
+// label 语义与渲染（T12-3）、机器锚点，以及 extraction_coverage 的语义校验 / 渲染（那是
+// note_coverage.go 与 mdfile 覆盖矩阵协议的职责，T12-4 §4.2.3）。因此这里既不要求 role: agent 给
+// annotation，也不比较 source 块正文是否逐字等于 Source 对应行；下面回填的最小合法 extraction_coverage
+// 仅为让这些既有 T12-2A 判据在 v2 blocks 必填覆盖矩阵的前提下仍能构造合法 op，不代表本文件负责其语义。
 
 import (
 	"bytes"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
+
+// covRefRe / covCardRe 从块 / 产出卡 JSON 里抽出 source_ref 与 card ID（供覆盖矩阵回填复用）。
+var (
+	covRefRe  = regexp.MustCompile(`"source_ref"\s*:\s*"([^"]*)"`)
+	covCardRe = regexp.MustCompile(`"card"\s*:\s*"([^"]*)"`)
+)
+
+// covUniqMatches 按出现序抽取正则第一捕获组、去重（不排序、不改写字节）。
+func covUniqMatches(re *regexp.Regexp, s string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(s, -1) {
+		if v := m[1]; !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// covMatrixFor 依据 blocks 声明的 source_ref 与（可选）output_cards 造一份**语义合法**的
+// extraction_coverage 片段（形如 `,"extraction_coverage":[...]`，可直接拼进 op）。
+//
+// 契约 §4.2 第 6 条 / §4.2.3：plan_version:2 且 blocks[] 的 write_note 必须显式给出非空覆盖矩阵。
+// 这些既有 T12-2A/2B/3 判据只考来源覆盖 / 保真 / 批注，本身不预设覆盖矩阵内容，故此处回填一份
+// 恰好合法的最小矩阵：无产出卡 → 单个 note_only 模块覆盖全部 ref（outputs 空、reason 非空）；
+// 有产出卡 → 单个 outputs 模块覆盖全部 ref 且引用全部卡（与 output_cards 成员双向一致）。
+// 无任何 source_ref 时返回空串——那类 op 会在更早的来源 / 块校验处失败，走不到覆盖闸门。
+func covMatrixFor(blocksJoined string, cards []string) string {
+	refs := covUniqMatches(covRefRe, blocksJoined)
+	if len(refs) == 0 {
+		return ""
+	}
+	var cardIDs []string
+	for _, c := range cards {
+		cardIDs = append(cardIDs, covUniqMatches(covCardRe, c)...)
+	}
+	var mod string
+	if len(cardIDs) == 0 {
+		mod = ncMod("整段整理", refs, "覆盖全部来源范围，仅整理归纳", "note_only", nil, "整段仅忠实整理，无独立复用产物。")
+	} else {
+		mod = ncMod("整段整理", refs, "覆盖全部来源范围并产出卡片", "outputs", cardIDs, "")
+	}
+	return `,"extraction_coverage":[` + mod + `]`
+}
 
 // —— 夹具与小工具 ——
 
@@ -69,11 +117,13 @@ func covOm(ref, reason string) string {
 // covNote 造一条 v2 write_note op。withOm=false 表示**根本不给 omissions 字段**
 // （用来考「v2 blocks 必须显式给 omissions」）。
 func covNote(noteID string, blocks []string, omissions []string, withOm bool) string {
+	joined := strings.Join(blocks, ",")
 	op := `{"op":"write_note","source":"` + covSrcID + `","note_id":"` + noteID +
-		`","blocks":[` + strings.Join(blocks, ",") + `]`
+		`","blocks":[` + joined + `]`
 	if withOm {
 		op += `,"omissions":[` + strings.Join(omissions, ",") + `]`
 	}
+	op += covMatrixFor(joined, nil)
 	return op + `}`
 }
 
@@ -91,11 +141,13 @@ func covInline(t *testing.T, addBody string, blocks []string, omissions []string
 	files := map[string]string{}
 	add := `{"op":"add_source","source_id":"s-20260901-inline","url":"https://example.com/i",` +
 		`"title":"内联原文","saved_at":"2026-09-01T10:00:00+08:00","body":"` + addBody + `"}`
+	joined := strings.Join(blocks, ",")
 	note := `{"op":"write_note","source":"s-20260901-inline","note_id":"n-20261017-inl","blocks":[` +
-		strings.Join(blocks, ",") + `]`
+		joined + `]`
 	if withOm {
 		note += `,"omissions":[` + strings.Join(omissions, ",") + `]`
 	}
+	note += covMatrixFor(joined, nil)
 	note += `}`
 	return run(t, vault(t, files), v2Plan(t, files, add+","+note))
 }
@@ -222,7 +274,7 @@ func TestSamePlanSnapshotMatchesPersistedBody(t *testing.T) {
 			files := map[string]string{rel: string(raw.Bytes)}
 			resPersisted := run(t, vault(t, files), v2Plan(t, files,
 				`{"op":"write_note","source":"`+sid+`","note_id":"n-20261017-persist","blocks":[`+
-					strings.Join(blocks, ",")+`],"omissions":[]}`))
+					strings.Join(blocks, ",")+`],"omissions":[]`+covMatrixFor(strings.Join(blocks, ","), nil)+`}`))
 			requireNoError(t, resPersisted)
 		})
 	}

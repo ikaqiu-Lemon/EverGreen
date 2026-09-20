@@ -11,7 +11,7 @@ package store
 //     `用户补充`）：`整理正文` 由 plan 侧的有序 `blocks[]` 渲染而来——v2「plan_version:2 且
 //     blocks[]」走 NoteReviewBytes（机器锚点 + 多类型标签 + omissions 元数据），v1 兼容路径走
 //     NoteBlockBytes（旧字节形态，agent 块统一「补充」）；`提取结果` 按 Knowledge / Opinion
-//     两组列出本次产出（NoteExtraction.Bytes）。
+//     两组清单列出本次产出，其后（v2 blocks 路径）接一张覆盖矩阵（NoteExtraction.Bytes）。
 //   - 「提取结果」是本次加工快照（`- k-…（新建｜复用｜补充）`），此后不随卡片演进回写（EG-SRC-03）。
 //   - 笔记写成功后在同一次调用里把收件区条目移出（EG-SRC-02，键为 `source_id`）；
 //     S1 不保证两次写入强原子：条目未成功移出时**如实返回** InboxSkip（*SkipError），
@@ -49,7 +49,7 @@ type NoteSpec struct {
 	Tags     []string
 	Sections []SectionAppend
 
-	// Extraction 是「提取结果」的两组清单（Schema v2 §5.1）。
+	// Extraction 是「提取结果」的 Knowledge/Opinion 清单 + 覆盖矩阵（Schema v2 §5.1 / §4.2.3）。
 	//
 	// 取**已分好组**的结构而不是一个扁平的 []string：按 ID 前缀分组会产出诊断
 	// （前缀既非 `k-` 也非 `o-` 的条目要记一条 I1），而本包不产出 plan 诊断。
@@ -102,9 +102,13 @@ func noteContent(spec NoteSpec) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 「提取结果」：两组清单接在该分区**既有载荷之后**（v1 plan 的兼容映射可能已经
+	// 「提取结果」：两组清单 + 覆盖矩阵接在该分区**既有载荷之后**（v1 plan 的兼容映射可能已经
 	// 往同一个分区写过一段原样字节，两者按「先分区载荷、后本次产出」的顺序相接）。
-	if list := spec.Extraction.Bytes(); len(list) > 0 {
+	list, err := spec.Extraction.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	if len(list) > 0 {
 		if existing := sections[mdfile.SecExtraction]; len(existing) > 0 {
 			sections[mdfile.SecExtraction] = append(existing, '\n')
 		}

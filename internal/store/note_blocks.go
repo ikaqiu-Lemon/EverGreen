@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 )
 
@@ -164,7 +165,7 @@ func quoteAgentBody(body []byte) []byte {
 	return out
 }
 
-// NoteExtraction 是「提取结果」分区的两组清单（契约 §5.1）。
+// NoteExtraction 是「提取结果」分区的 Knowledge/Opinion 清单 + 覆盖矩阵（契约 §5.1 / §4.2.3）。
 //
 // 定义在 store 而不是 plan：渲染的唯一实现在 ExtractionList（写路径硬约束 §16.3），
 // 而结构体与它的渲染函数分家的第一个后果就是「加一组清单」时只改了其中一处。
@@ -175,23 +176,57 @@ func quoteAgentBody(body []byte) []byte {
 type NoteExtraction struct {
 	Knowledge []string
 	Opinions  []string
+	// Coverage 是「提取结果」里紧随两组清单之后的**覆盖矩阵**（契约 §4.2.3 / §5.1）：
+	// 由 plan 侧校验通过后原样携带过来（类型别名 ExtractionCoverage），渲染 / 读回的唯一实现
+	// 收在 mdfile 的覆盖矩阵协议里（RenderCoverageMatrix / ParseCoverageMatrix），本包只做透传。
+	Coverage []ExtractionCoverage
 }
 
-// Empty 报告两组是否都为空（都空则不写「提取结果」的正文）。
+// Empty 报告三组是否都为空（都空则不写「提取结果」的正文）。
 func (e *NoteExtraction) Empty() bool {
-	return e == nil || (len(e.Knowledge) == 0 && len(e.Opinions) == 0)
+	return e == nil || (len(e.Knowledge) == 0 && len(e.Opinions) == 0 && len(e.Coverage) == 0)
 }
 
-// Bytes 把两组清单渲染成「提取结果」的分区正文字节。
+// Bytes 把两组清单 + 覆盖矩阵渲染成「提取结果」的分区正文字节。
 //
 // 命名不带 `Render` 前缀：B1 用「写形态」名字前缀（Write / Create / Append / Render …）
 // 界定本包的**写入口恰三个**，纯字节格式化函数一旦叫 Render* 就会被计入写形态，
 // 让「三个写入口」这条结构性判据失真。函数做的是拼字节、不碰磁盘，Bytes 才是准确的名字。
-func (e *NoteExtraction) Bytes() []byte {
+//
+// 覆盖矩阵接在 Knowledge/Opinion 清单**之后**（清单非空时隔一个空行）；矩阵渲染由 mdfile 负责，
+// 其 fail-closed 校验（形态非法即报错）原样上抛——store 不静默丢一张读者本该看到的表。
+func (e *NoteExtraction) Bytes() ([]byte, error) {
 	if e == nil {
-		return nil
+		return nil, nil
 	}
-	return ExtractionList(e.Knowledge, e.Opinions)
+	out := ExtractionList(e.Knowledge, e.Opinions)
+	if len(e.Coverage) > 0 {
+		matrix, err := mdfile.RenderCoverageMatrix(toReviewCoverage(e.Coverage))
+		if err != nil {
+			return nil, err
+		}
+		if len(out) > 0 {
+			out = append(out, '\n')
+		}
+		out = append(out, matrix...)
+	}
+	return out, nil
+}
+
+// toReviewCoverage 把 store 的覆盖项透传成 mdfile 的渲染载体（同形、逐字段搬运，不改写 / 不排序）。
+func toReviewCoverage(cov []ExtractionCoverage) []mdfile.ReviewCoverage {
+	out := make([]mdfile.ReviewCoverage, len(cov))
+	for i, c := range cov {
+		out[i] = mdfile.ReviewCoverage{
+			Module:      c.Module,
+			SourceRefs:  c.SourceRefs,
+			Summary:     c.Summary,
+			Disposition: c.Disposition,
+			Outputs:     c.Outputs,
+			Reason:      c.Reason,
+		}
+	}
+	return out
 }
 
 // ExtractionList 把「提取结果」的两组清单渲染成分区正文字节。
