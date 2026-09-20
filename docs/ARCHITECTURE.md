@@ -51,3 +51,9 @@ Production packages intentionally contain no `_test.go` files. Authoritative Go
 tests live under `tests/_staged/` and are materialized beside production code by
 the manifest-driven test runner. Shell, contract, fuzz, mutation, and
 performance suites are registered in `tests/manifest/suites.yaml`.
+
+## Related design documents
+
+| Document | Scope |
+| --- | --- |
+| [STORAGE_DESIGN.md](STORAGE_DESIGN.md) | Candidate block boundaries and card materialization (Simplified Chinese) |
