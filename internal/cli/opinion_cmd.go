@@ -1,24 +1,32 @@
 package cli
 
-// `eg opinion` 的命令外壳、search / show 只读检索实现与 validate/reject **骨架合同**
-// （读路径检索拆分设计 §5.4；T-…-006 批次 B1a 起，D 批补齐 validate/reject 用法 / 退出码 / 授权合同）。
+// `eg opinion` 的命令外壳：search / show 只读检索 / 单条视图，validate / reject（含 validate
+// --reopen）已接通的**观点验证生命周期直写事务**（读路径检索拆分设计 §5.4；生命周期状态机与写入
+// 由 T-007 落地）。
 //
-// # 本批做什么（D 批 · 骨架合同）
+// # search / show（只读）
 //
-// search / show 已接通只读检索 / 单条视图（前序批次）。本批**只补 validate/reject 的合同**、
-// **不接状态机**：给它们落定用法面（必带非空 --reason + --user-request）、退出码面
-// （缺/空 reason 或读 flag → 退 1；缺 --user-request → 退 2、E19；授权齐备 → 仍 NotWired 退 1）
-// 与授权面（命令行 --user-request 显式佐证，N-1 反伪造）。观点验证生命周期状态机与任何写入归
-// T-007，本骨架一格不碰 store / plan / txn（零文件变化、零 commit）。子命令集合与顺序**恰**为
-// search|show|validate|reject，不增删。T-007 批次 A2 起：注册 `--reopen` 参数面与分域合同
-// （bool、默认 false，**仅 validate 接受**：把验证态复议回 pending），但仍不接状态机 / 写入。
+// search 把检索面固定为观点（runOpinionSearch 恒置 Kind=opinion），复用 `eg search` 的过滤 / 分页
+// 口径并追加 validation 与 relation_summary；show 按 <o-id> 全库定位单条观点、只读投影。两者都不碰
+// 任何 store / plan / git 写口：零文件变化、零 commit，退出码只可能 0 / 1。
+//
+// # validate / reject（写路径：观点验证生命周期）
+//
+// validate / reject（含 validate --reopen）经 runOpinion → runOpinionLifecycle → opinionLifecycleCritical
+// 落地为直写事务：与 mark-reviewed / undelete 同一把 run.lock、同一套 S1~S9 时序。命令名 + --reopen
+// 映射成目标验证态（validate → validated；validate --reopen → pending；reject → rejected），action
+// 一律由 model.ValidationTransition(from,to) 复算（CLI 从不自报）；合法边恰五条，三个自环与
+// rejected→validated 逆向直跳非法（撤销否决须先 reopen 回 pending 再 validate）。观点验证属用户显式
+// 写路径（P-U）：缺 --user-request → 退 2、E19；Agent / 自动路径（P-A）不得代替用户写 validation。
+// 成功恰改写目标观点单文件、恰一个 verb=process commit。被验证观点的支持面由
+// W29（opinion_unsupported_validated）巡检：validated 却零有效 incoming supports 时告警。
 //
 // # 参数面（父命令注册 8 个读 flag + 2 个写路径 flag --reason / --reopen，恰不含 --kind）
 //
 // 读 flag：domain / 可重复 tag / since / until / include-deleted / include-deprecated / limit /
 // offset —— 与 `eg search` / `eg card show` 同名同义，供 search / show 复用同一套口径。
-// 写路径 flag：--reason —— 观点验证 / 驳回的理由，**只允许** validate/reject 使用；
-// --reopen —— 观点复议开关（bool、默认 false），**只允许** validate 使用（rejected/validated →
+// 写路径 flag：--reason —— 观点采纳 / 驳回 / 复议的理由，**只允许** validate / reject 使用；
+// --reopen —— 观点复议开关（bool、默认 false），**只允许** validate 使用（validated/rejected →
 // pending 复议边；观点 schema v2 设计 §6.1/§6.2）。**刻意不注册 --kind**：opinion 检索面天然只搜
 // 观点（runOpinionSearch 把 Kind 固定成 opinion），再给 kind 开关即多余且可诱导误用；
 // `eg opinion search --kind …` 因此被参数解析当场判成「未定义 flag」→ 退 1、零写入。
@@ -35,16 +43,23 @@ package cli
 // （relation_summary 的 JSON 键固定 supports / limits / opposing）。普通 `eg search` 的 JSON
 // 合同（SearchHitKeys / SearchDataKeys）一字不改：观点专属事实一个键都不进 eg search 输出。
 //
-// # 只读零副作用 / 写路径骨架零副作用
+// # 副作用与退出码
 //
-// search / show 没有任何 store / plan / git 写口调用：零文件变化、零 commit，退出码只可能 0 / 1。
-// validate / reject 骨架同样不接任何写口：授权失败退 2、授权齐备退 1（NotWired），两者都零文件
-// 变化、零 commit —— 真正的写行为由 T-007 落地。
-//
-// # 阶段边界（本批不做，后续批次做）
-//
-//   - validate / reject 的验证生命周期状态机与写参数合同、--reopen 复议**写行为** → T-007 后续批次。
-//     本批（A2）只补 --reopen 的参数面与分域合同，不造任何写行为。
+// search / show：零文件变化、零 commit（退出码 0 / 1）。
+// validate / reject 按真实阶段裁决退出码（与 mark-reviewed / undelete 同源，见 opinionLifecycleCritical
+// 与 opinionLifecycleFinish）：
+//   - 参数非法 / 缺空 reason → 退 1；缺 --user-request（E19）/ 观点不存在（E18）/ 非法验证边 → 退 2；
+//     以上皆零权威写、零 commit；
+//   - 写前预演阻断（S4 / 命令层 B3：S3 锁内重读后、S4 落盘前目标被并发改写，ExpectedHash 守卫命中）→
+//     退 3：目标态不生效、命令层零覆盖零还原（并发新字节原样保留）、零事务、零 commit；
+//   - 原子提交失败且成功回滚（S6）→ 退 3：目标保持事务前像、零 commit；
+//   - Git 提交失败（S7 / B4）→ 退 4：validation 目标态已由 commit marker 定盘并保留、不回滚，但无 Git
+//     commit（仍走完 S8 写后索引同步）；
+//   - 锁不可用（E16，run.lock 等待超时）/ enterTxnCritical 的事务安全复核·恢复屏障 fail-closed（E15）→
+//     退 5，零权威写、零 commit；opinion **不跑** plan 的 --strict 预检，故 E15 只源于 S1/S2 的
+//     锁 + 恢复屏障，与 --strict 升级面无关；S4 单文件原子域守卫是防御性兜底（E21 → 退 1），不进 5；
+//   - 成功 → 目标观点单文件写入 + 恰一个 verb=process commit。
+// 不存在「所有失败都零权威写」这一笼统结论：退 4 的目标态已在磁盘生效并保留。
 
 import (
 	"errors"
@@ -60,7 +75,7 @@ import (
 )
 
 // 四个子命令名（**恰四个**，顺序即 --help 顺序：设计 §5.4 逐字 search|show|validate|reject）。
-// 后续批次接管时只允许**填实现**，不得增删或重排这四个子命令。
+// 这四个子命令固定不变，不得增删或重排。
 const (
 	SubOpinionSearch   = "search"
 	SubOpinionShow     = "show"
@@ -72,9 +87,10 @@ const (
 const OpinionReasonFlag = "reason"
 
 // OpinionReopenFlag 是 validate 的观点复议 flag 名（bool，默认 false；注册点与分域拒绝逐字共用同一字面量）。
-// 语义（观点 schema v2 设计 §6.1/§6.2）：把观点验证态**复议回 pending**（rejected/validated → pending，
+// 语义（观点 schema v2 设计 §6.1/§6.2）：把观点验证态**复议回 pending**（validated/rejected → pending，
 // 出现新反例时降级），复用 `eg opinion validate --reopen` 而不新增命令。**只作用于 validate**：
-// reject / search / show 显式带它一律退 1（逐字点名 --reopen）。本批只补参数面与分域合同、不接状态机。
+// reject / search / show 显式带它一律退 1（逐字点名 --reopen）。--reopen 已接通复议边（validate --reopen
+// → 目标态 pending），由 opinionTargetValidation 映射、model.ValidationTransition 复算。
 const OpinionReopenFlag = "reopen"
 
 // opinionReopenValidateOnlyHint 是 reject / search / show 显式带 --reopen 时用法错的逐字理由
@@ -90,12 +106,12 @@ func opinionCommand() *Command {
 	return &Command{
 		Name:        "opinion",
 		Display:     "opinion search|show|validate|reject",
-		Summary:     "观点子系统：检索 / 查看 / 采纳 / 驳回（search + show 已接通只读；validate/reject 骨架合同就绪，状态机随 T-007 落地）",
+		Summary:     "观点子系统：检索 / 查看 / 采纳 / 驳回（search / show 只读；validate / reject 已接通观点验证生命周期直写事务，成功单文件、单 commit verb=process）",
 		Owner:       "T-evergreen.knowledge_opinion_split-158614-006",
 		Subs:        OpinionSubcommands(),
 		SubRequired: true,
-		// 刻意**不设** ReadOnly：opinion 含 validate / reject 写子命令（骨架阶段虽不写盘，
-		// 但命令语义属写路径），父命令一旦标只读，框架的零副作用断言就会与那两条写子命令冲突。
+		// 刻意**不设** ReadOnly：opinion 含 validate / reject 写子命令（已接通观点验证生命周期
+		// 直写事务，走 run.lock + S1~S9），父命令一旦标只读，框架的零副作用断言就会与那两条写子命令冲突。
 		// search / show 的只读性由各自 run 函数「不碰任何写口」保证，不靠命令级 ReadOnly 标记。
 		Usage: `eg opinion search <q> [--domain <d>] [--tag <t>]... [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--include-deleted] [--limit <n>] [--offset <n>] [--json]
 eg opinion show <o-id> [--include-deprecated] [--limit <n>] [--offset <n>] [--json]
@@ -119,11 +135,11 @@ show 的查看参数（只读单条观点视图；只吃 --include-deprecated �
   --include-deprecated   否，默认 false；展示对端 deprecated 的关系条目（默认隐藏并计 Q4；不影响已删除维度）
   --limit <n> / --offset <n>  否；一个全局 limit/offset 跨 supports/limits/opposing 三组正反共六段，截断产恰一条 W25
 
-validate / reject 的写路径参数（骨架合同：状态机随 T-007 落地，本批不写盘、不接 store/plan/txn）：
-  --reason <text>        是；采纳 / 驳回的理由（缺 / 空串 / 纯空白 → 退 1；search / show 显式带它也 → 退 1）
+validate / reject 的写路径参数（观点验证生命周期已接通：单文件原子事务，成功恰一个 commit，verb=process）：
+  --reason <text>        是；采纳 / 驳回 / 复议的理由（缺 / 空串 / 纯空白 → 退 1；search / show 显式带它也 → 退 1）
   --user-request         是（全局 flag）；本次调用由用户显式发起的命令行佐证（观点验证属写路径，
                          文件内容不能自证，N-1）。缺它 → 退 2、零写入，data.errors[] 恰一条 E19（path=--user-request）
-  --reopen               否，默认 false，**仅 validate**；把观点验证态复议回 pending（rejected/validated
+  --reopen               否，默认 false，**仅 validate**；把观点验证态复议回 pending（validated/rejected
                          → pending，出现新反例时降级）；reject / search / show 显式带它 → 退 1（逐字点名 --reopen）
 
 search 已接通：只读检索观点（domains/<d>/opinions/**.md），validation 三态（pending /
@@ -132,12 +148,33 @@ validated / rejected）全部召回、绝不隐式过滤；每条命中带 valid
 show 已接通：按 <o-id> 全库定位单条观点，显式给出 validation、五分区正文、sources、supports /
 limits / opposing 三组各正反两段（空段写“无”）；悬空对端标“目标不存在”并产 Q2；对端 deprecated
 默认隐藏并计 Q4，--include-deprecated 才展示；已删除观点仍可显式查看并标 [已删除]。
-search / show 都只读：零文件变化、零 commit。validate / reject **仍是未挂载骨架**：判定顺序为
-位置参数 → <o-id> 形态 → flag 分域 → 缺/空 reason（以上均退 1）→ 缺 --user-request（退 2、E19）→
-授权齐备（非空 reason + --user-request）仍 NotWired 退 1；全程零写入零 commit。
+search / show 都只读：零文件变化、零 commit。
+validate / reject 已接通观点验证生命周期直写事务：action 由 model.ValidationTransition(from,to) 唯一复算、
+CLI 从不自报。合法验证边**恰五条**——pending -> validated（validate）、pending -> rejected（reject）、
+validated -> rejected（reject）、validated -> pending（reopen）、rejected -> pending（reopen）；三个自环与
+rejected -> validated 逆向直跳一律非法（撤销否决须先 reopen 回 pending，再 validate）。目标态映射：
+validate → validated、validate --reopen → pending、reject → rejected。判定顺序逐字锁：位置参数 →
+<o-id> 形态 → flag 分域 → 缺/空 reason（以上均退 1）→ 缺 --user-request（退 2、E19）→ 锁内重读定 from →
+非法边退 2。观点验证是用户显式写路径（P-U）：Agent / 自动路径（P-A）不得代替用户写 validation。
+失败语义按阶段分（**并非所有失败都零权威写**）：
+  - 参数 / 授权 / 非法边 / 写前阻断：本命令零权威写、零 commit；
+  - S4 预演 / 命令层 B3（S3 锁内重读后、S4 落盘前目标被并发改写，ExpectedHash 守卫命中）：目标态不生效，
+    命令层不覆盖 / 不还原并发写入（并发新内容原样保留），零事务、零 commit（退 3）；
+  - S6 原子提交失败且成功回滚：退 3，目标保持事务前像、零 commit；
+  - S7 Git 提交失败：退 4，validation 目标态已在磁盘生效并保留、不回滚，但无 Git commit；
+  - 成功：目标观点**单文件**（write-set 恰 1 条）+ 恰一个 verb=process commit，全程同一把 run.lock。
+被验证观点的支持面由 W29（opinion_unsupported_validated）巡检：validation=validated 却零**有效 incoming
+supports** 时告警。有效 incoming supports 口径：只计**指向本观点的 incoming supports 边**（本观点自己发出的
+outgoing supports 不计）；supporter 必须**存在且未删除**（supporter 已删除 → 该支持无效）；supporter 为
+deprecated 但未删除**仍有效**；同一 supporter 的重复 supports 边**去重、只算一次**。W29 只报告，绝不自动
+改 validation 或补关系。
 缺 / 未知子命令、位置参数个数不符、ID 形态非法 → 一律退 1、零写入。
-退出码：0（零命中 / 单条视图也退 0） | 1 参数非法 / 领域未登记 / 观点不存在 / 缺空 reason / 实现未挂载（均零写入）
-        | 2 授权失败（validate/reject 缺 --user-request；零写入零 commit）
+退出码：0 成功（目标单文件写入 + 恰一个 verb=process commit；零命中 / 单条视图也退 0）
+        | 1 参数非法 / 领域未登记 / 缺空 reason（零权威写、零 commit）
+        | 2 授权失败（缺 --user-request → E19）/ 观点不存在（E18）/ 非法验证边（零权威写、零 commit）
+        | 3 写前预演阻断（S4 / 命令层 B3：目标态不生效、并发写入原样保留、零事务）或原子提交失败已整体回滚（S6：目标保持前像）——两者均零 commit
+        | 4 Git 提交失败（S7/B4：validation 目标态已在磁盘生效并保留、不回滚，但无 Git commit）
+        | 5 run.lock 不可用（E16）/ enterTxnCritical 事务安全复核·恢复屏障 fail-closed（E15）：零权威写、零 commit（本命令不跑 --strict 预检）
 `,
 		Flags: func(fs *flagSet) {
 			// 与 eg search 同名同义的检索面（search.go 的 runSearch 复用同一套口径）。
@@ -158,9 +195,9 @@ search / show 都只读：零文件变化、零 commit。validate / reject **仍
 			// validate 专属写路径 flag：观点复议开关（bool，默认 false）。同样注册在父命令上，
 			// 因此 reject / search / show 也能解析到它 —— 但它**只作用于 validate**（把验证态复议回
 			// pending；观点 schema v2 设计 §6.1/§6.2），其余三条子命令显式带 --reopen 一律退 1、
-			// 逐字点名（见 validateOpinionArgs 的 rejectOpinionFlags）。本批只补参数面与分域合同、
-			// 不接状态机：validate --reopen 授权齐备仍 NotWired（零写入零 commit）。
-			fs.Bool(OpinionReopenFlag, false, "观点复议：把验证态复议回 pending（仅 validate；rejected/validated → pending）")
+			// 逐字点名（见 validateOpinionArgs 的 rejectOpinionFlags）。--reopen 已接通复议边：
+			// validate --reopen 走 opinionTargetValidation → 目标态 pending，由状态机复算 action。
+			fs.Bool(OpinionReopenFlag, false, "观点复议：把验证态复议回 pending（仅 validate；validated/rejected → pending）")
 			// 分页（S4 · T-…-068）：注册点唯一，见 page.go。search 与 show 共用。
 			pageFlags(fs)
 			// **不注册 --kind**：opinion 检索面天然只搜观点（见文件头「参数面」）。
@@ -172,14 +209,14 @@ search / show 都只读：零文件变化、零 commit。validate / reject **仍
 // opinionSearchFilterFlags 是「只在 search 子命令成立」的检索过滤 flag（次序固定，供拒绝与用例逐格比对）。
 //
 // 这些 flag 注册在 opinion 父命令上，show / validate / reject 与 search 共享同一个 FlagSet，
-// 因此那三条子命令能**解析**到它们；show 视图按 <o-id> 精确定位、不做检索过滤，validate/reject
-// 尚未挂载，都必须在 Validate 阶段显式拒绝——否则 `eg opinion show o-… --domain x` 会被静默
-// 忽略，「参数写了却不生效」比报错更坏。分页（limit/offset）不在此列：search 与 show 都吃它。
+// 因此那三条子命令能**解析**到它们；show 视图按 <o-id> 精确定位、不做检索过滤，validate / reject
+// 是写路径、不吃只读检索 flag，都必须在 Validate 阶段显式拒绝——否则 `eg opinion show o-… --domain x`
+// 会被静默忽略，「参数写了却不生效」比报错更坏。分页（limit/offset）不在此列：search 与 show 都吃它。
 func opinionSearchFilterFlags() []string {
 	return []string{"domain", "tag", "since", "until", SearchIncludeDeletedFlag}
 }
 
-// opinionPageFlags 是 search 与 show 共用的分页 flag（validate/reject 尚未挂载，显式带即退 1）。
+// opinionPageFlags 是 search 与 show 共用的分页 flag（validate / reject 属写路径、不吃分页，显式带即退 1）。
 func opinionPageFlags() []string {
 	return []string{query.PageLimitFlag, query.PageOffsetFlag}
 }
@@ -210,9 +247,9 @@ func rejectOpinionFlags(inv *Invocation, names []string, hint string) error {
 // show / validate / reject 恰 1 个 <o-id>（须经 model.OpinionID.Valid）：
 //   - show 只吃 --include-deprecated 与分页，显式带任一检索过滤 flag（domain/tag/since/until/
 //     include-deleted）或写路径 --reason → 退 1；
-//   - validate / reject 属写路径骨架：显式带任一读路径 flag（检索过滤 / 可见性 / 分页）→ 退 1，
+//   - validate / reject 属写路径：显式带任一读路径 flag（检索过滤 / 可见性 / 分页）→ 退 1，
 //     且**必带非空 --reason**（缺 / 空串 / 纯空白 → 退 1）。判定顺序逐字锁：位置参数 → <o-id> 形态 →
-//     flag 分域 → 缺/空 reason（授权判定在 runOpinionLifecycleSkeleton，晚于这里，见其文件注释）。
+//     flag 分域 → 缺/空 reason（授权判定在 runOpinionLifecycle，晚于这里，见其函数注释）。
 //
 // 缺 / 未知子命令由 dispatch 的 SubRequired 分支先行拦下，这里的兜底 default 只覆盖「子命令为空」
 // 这一残余路径，措辞与 dispatch 一致。
@@ -262,7 +299,7 @@ func validateOpinionArgs(inv *Invocation) error {
 		// flag 分域：validate/reject 是写路径，一律不吃只读检索 / 查看 / 分页 flag（**不含 --reason**：
 		// 那是本档必填项，紧随其后单独判空）。
 		if err := rejectOpinionFlags(inv, opinionReadFlags(),
-			"该参数属只读检索 / 查看路径，验证 / 驳回子命令（写路径骨架）不接受任何读 flag"); err != nil {
+			"该参数属只读检索 / 查看路径，验证 / 驳回子命令（写路径）不接受任何读 flag"); err != nil {
 			return err
 		}
 		// --reopen 分域：**只 validate 接受**（把验证态复议回 pending），reject 显式带它 → 退 1、
@@ -273,7 +310,7 @@ func validateOpinionArgs(inv *Invocation) error {
 				return err
 			}
 		}
-		// 缺 / 空 reason **先于**授权判定（授权在 runOpinionLifecycleSkeleton；这里退 1、那里退 2，
+		// 缺 / 空 reason **先于**授权判定（授权在 runOpinionLifecycle；这里退 1、那里退 2，
 		// 两码绝不互相冒名）：空串 / 纯空白同样按缺失处理，写路径不接受空理由。
 		if strings.TrimSpace(inv.String(OpinionReasonFlag)) == "" {
 			return &UsageError{Msg: fmt.Sprintf(
@@ -286,13 +323,14 @@ func validateOpinionArgs(inv *Invocation) error {
 		strings.Join(OpinionSubcommands(), " | "))}
 }
 
-// runOpinion 是 `eg opinion` 的分发壳：search / show 走已接通的只读视图，validate / reject 走
-// **骨架合同**（授权判定 + 未挂载状态机），本批一格不碰 store / plan / txn。
+// runOpinion 是 `eg opinion` 的分发壳：search / show 走已接通的只读视图；validate / reject
+// （含 validate --reopen）走已接通的**观点验证生命周期直写事务** runOpinionLifecycle
+// （取锁 → S1~S9、状态机复算、单文件事务、verb=process commit）。
 //
-// validate / reject 的授权齐备路径一律返回 NotWiredError —— 与框架「命令已注册、Handler 未挂载」
-// 时 dispatch 自发的错误**逐字同源**（退 1、零文件变化、零 commit）。缺 --user-request 则先在
-// 授权判定处退 2（E19）。后续批次接管时只需在 runOpinionLifecycleSkeleton 里填状态机实现，
-// 本壳的「未挂载即退 1、授权失败退 2、全程零写入」边界不放宽。
+// 末尾的 default 分支**不可达**：inv.Sub 恒是四个已登记子命令之一（缺 / 未知子命令已由 dispatch 的
+// SubRequired 与 validateOpinionArgs 先行拦下）。它只是纯防御性兜底 —— 万一注册表与分发失配才会触到，
+// 返回 NotWiredError 让框架把「命令已注册、Handler 未接」这一内部装配错误显式暴露。它**不描述**
+// validate / reject 的行为（后两者的真实行为在 runOpinionLifecycle）。
 func (r *Root) runOpinion(inv *Invocation) (*Result, error) {
 	switch inv.Sub {
 	case SubOpinionSearch:
@@ -302,6 +340,7 @@ func (r *Root) runOpinion(inv *Invocation) (*Result, error) {
 	case SubOpinionValidate, SubOpinionReject:
 		return r.runOpinionLifecycle(inv)
 	}
+	// 防御性 fallback（不可达）：仅在注册表 / 分发装配失配时触发，绝非 validate / reject 的正常出口。
 	return nil, &NotWiredError{Command: inv.Cmd.Display, Owner: inv.Cmd.Owner}
 }
 
@@ -414,7 +453,7 @@ func (r *Root) opinionLifecycleCritical(inv *Invocation, rep *report.Report,
 
 	from := op.Validation
 	// action 只能由状态机从 (from,to) 复算：自环 / rejected->validated 逆跳 / 非法端点在此
-	// 退 2、零写入、**不取号、无 commit**（先于 S4 预演，绝不落半截产物、也绝不冒名 NotWired）。
+	// 退 2、零写入、**不取号、无 commit**（先于 S4 预演，绝不落半截产物）。
 	action, terr := model.ValidationTransition(from, to)
 	if terr != nil {
 		return nil, &ValidationError{Msg: fmt.Sprintf(
@@ -455,10 +494,17 @@ func (r *Root) opinionLifecycleCritical(inv *Invocation, rep *report.Report,
 	// EndAtomic），**不取号、不发 intent、不提交、不跑 Git**，直接返回阻断错误交人工处置，
 	// 绝不把一个写面已经外溢 / 落空的预演继续推进成事务。这一格由源码显式守住，不靠
 	// 「成功后 intent 恰含一个文件」间接证明。
+	//
+	// **这是防御性兜底、只在故障注入下可达**：合同下唯一写口对一次 validation 流转恒产恰一条
+	// write-set，正常路径走不到这里。它发生在 **S4 末、S5（openTxn）之前**，因此本命令零权威写、
+	// 零事务、零 commit。返回值走 blockedError(…, **nil**)：无底层 txn 诊断 ⇒ 兜底 E21（非 E15），
+	// classifyExit5 不会把它提升成 PrecheckFailedError，ExitCodeFor 最终判 **退出码 1**。它既不是
+	// E15「写前强校验失败」，也**不经** plan 的 --strict 预检（本命令根本不调用 plan.Precheck）——
+	// 故用户文档不暴露这个仅注入可达的内部守卫，只在此开发注释中如实标注其真值。
 	if len(ws) != 1 || ws[0].Path != rel {
 		return nil, blockedError(fmt.Sprintf(
-			"opinion %s 的原子预演写集违反单文件原子域（本次零写入、零事务、零 commit）：期望恰 1 个"+
-				"目标文件 %s，实得 %d 个 %v", inv.Sub, rel, len(ws), writeSetPaths(ws)), nil)
+			"opinion %s 的原子预演写集违反单文件原子域（防御性兜底：E21 → 退 1，S5 前零权威写、零事务、零 commit）："+
+				"期望恰 1 个目标文件 %s，实得 %d 个 %v", inv.Sub, rel, len(ws), writeSetPaths(ws)), nil)
 	}
 
 	// —— S5：分配 txn_id → 记进锁正文 → 发布 intent（发布屏障）。审计边界是「分配成功」（A-59）。——

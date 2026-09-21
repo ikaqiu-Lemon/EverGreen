@@ -60,7 +60,21 @@ CANON_CMDS=(
 #   ①「摘掉 M5 期追加后恰 20」②「20 条命令名逐条在场」
 # 仍原样判定，且新增命令必须真在 --help 里（登记了没注册 = 名单造假，见下方 for 循环）。
 M5_ADDED_CMDS=(index bench)
-WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#M5_ADDED_CMDS[@]}))
+# ── addendum（读路径拆分批次 · post-M5 / post-M6 现态重钉，非放宽历史）：
+#    观点子系统 `eg opinion` 是 M5 之后新增的顶层命令，同样如实登记为后来者。M4 结论
+#    「恰 20 条」仍由「摘掉 M4 之后所有新增项（index / bench / opinion）」逐条复算，
+#    一个字不放宽、不把当时的 20 篡成 23。
+POST_M5_ADDED_CMDS=(opinion)
+# M4 之后所有新增的顶层命令（M5 期 index/bench + 读路径拆分 opinion）；计数复算时整体摘掉。
+POST_M4_ADDED_CMDS=("${M5_ADDED_CMDS[@]}" "${POST_M5_ADDED_CMDS[@]}")
+WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M4_ADDED_CMDS[@]}))
+
+# 当前真实的 23 条顶层命令**简单名**（= eg --help 命令区首词；用于四份文档现态覆盖检查）。
+CURRENT_CMDS=(
+  init config capture context apply search card rel report
+  deprecate restore replaced-by proposal delete undelete mark-reviewed unreviewed edit
+  reconcile check index bench opinion
+)
 
 STEP=0
 PASS=0
@@ -81,22 +95,22 @@ step "从源码构建 eg 到沙箱（不落 bin/ dist/）"
   -o "${EG}" ./cmd/eg) || die "编译失败"
 ok "eg 已构建：${EG}"
 
-# ---------------------------------------------------------------- 2. eg 实际命令数恰 20
-step "eg --help 顶层命令数恰 ${WANT_COMMANDS_NOW}（= M4 收口 ${WANT_COMMANDS} + M5 期追加 ${#M5_ADDED_CMDS[@]}）"
+# ---------------------------------------------------------------- 2. eg 实际命令数恰 23
+step "eg --help 顶层命令数恰 ${WANT_COMMANDS_NOW}（= M4 收口 ${WANT_COMMANDS} + M4 之后追加 ${#POST_M4_ADDED_CMDS[@]}）"
 CMD_COUNT="$("${EG}" --help </dev/null 2>/dev/null | awk '
   /^命令/ {inblk=1; next}
   /^全局 flag/ {inblk=0}
   inblk && /^  [a-z]/ {n++}
   END {print n+0}')"
 [ "${CMD_COUNT}" = "${WANT_COMMANDS_NOW}" ] || die "eg --help 命令数 = ${CMD_COUNT}，期望 ${WANT_COMMANDS_NOW}"
-# M4 结论复算：摘掉 M5 期追加的命令后恰 20（历史结论不放宽）。
-[ "$((CMD_COUNT - ${#M5_ADDED_CMDS[@]}))" = "${WANT_COMMANDS}" ] \
-  || die "摘掉 M5 期追加命令后 = $((CMD_COUNT - ${#M5_ADDED_CMDS[@]}))，期望 M4 收口值 ${WANT_COMMANDS}"
-# M5 期追加的命令必须真的在 --help 里（登记了却没注册 = 名单造假）。
-for c in "${M5_ADDED_CMDS[@]}"; do
-  "${EG}" --help </dev/null 2>/dev/null | grep -qE "^  ${c}( |$)" || die "M5 期登记的命令 ${c} 不在 --help 命令区"
+# M4 结论复算：摘掉 M4 之后追加的命令（index / bench / opinion）后恰 20（历史结论不放宽）。
+[ "$((CMD_COUNT - ${#POST_M4_ADDED_CMDS[@]}))" = "${WANT_COMMANDS}" ] \
+  || die "摘掉 M4 之后追加命令后 = $((CMD_COUNT - ${#POST_M4_ADDED_CMDS[@]}))，期望 M4 收口值 ${WANT_COMMANDS}"
+# M4 之后追加的命令必须真的在 --help 里（登记了却没注册 = 名单造假）。
+for c in "${POST_M4_ADDED_CMDS[@]}"; do
+  "${EG}" --help </dev/null 2>/dev/null | grep -qE "^  ${c}( |$)" || die "M4 之后登记的命令 ${c} 不在 --help 命令区"
 done
-ok "eg 实际顶层命令数 = ${CMD_COUNT}；摘掉 M5 期追加后 = ${WANT_COMMANDS}（M4 收口值）"
+ok "eg 实际顶层命令数 = ${CMD_COUNT}；摘掉 M4 之后追加后 = ${WANT_COMMANDS}（M4 收口值，历史保真）"
 
 # ---------------------------------------------------------------- 3. README / SKILL.md 命令清单与实际一致
 step "README.md 与 skill/SKILL.md 覆盖全部 ${WANT_COMMANDS} 条命令名（逐条 grep -F）"
@@ -110,11 +124,39 @@ done
 # 顶层命令**总数**在两份文档里逐字在场：M4 期这里 grep 的是「20」，但 M5 把总数推到 22 后，
 # 裸 grep -F "20" 会被日期 / 章节号等无关串轻易蒙对（假阳性）。故重钉为：两份文档必须登记
 # **当期总数 ${WANT_COMMANDS_NOW}**，且必须与「命令」二字同行出现（把断言钉在语义上下文里）。
+# ── addendum（post-M5 现态）：读路径拆分批次追加 opinion 后，当期总数由 22 再抬为 23；
+#    ${WANT_COMMANDS_NOW} 已随之为 23，本断言无需再改数字（口径长青）。
 for doc in "${REPO_ROOT}/README.md" "${REPO_ROOT}/skill/SKILL.md"; do
   grep -qE "命令.*${WANT_COMMANDS_NOW}|${WANT_COMMANDS_NOW}[^0-9].*命令" "${doc}" \
     || die "$(basename "${doc}") 未在命令语境里登记当期顶层命令总数 ${WANT_COMMANDS_NOW}"
 done
 ok "README / SKILL.md 命令清单与 M4 的 ${WANT_COMMANDS} 条逐条一致，且登记当期总数 ${WANT_COMMANDS_NOW}"
+
+# ---------------------------------------------------------------- 3b. 四份文档各自覆盖当前 23 条并登记总数（杜绝聚合互相补漏）
+# post-M5 现态门禁：README / README.zh-CN / INSTALL / SKILL **每一份**都须自证覆盖当前 23 条
+# 顶层命令（简单名）且在命令语境登记当前总数 23；README.zh-CN 与 INSTALL 不再豁免（历史 M4 步只查
+# README+SKILL 的复合形态，此步补齐现态四文档面，二者互不覆盖）。
+step "README / README.zh-CN / INSTALL / SKILL 各自覆盖当前 ${WANT_COMMANDS_NOW} 条命令并登记总数"
+ALL_DOCS=("${REPO_ROOT}/README.md" "${REPO_ROOT}/README.zh-CN.md" "${REPO_ROOT}/INSTALL.md" "${REPO_ROOT}/skill/SKILL.md")
+CUR_WANT="$(printf '%s\n' "${CURRENT_CMDS[@]}" | sort -u)"
+[ "$(printf '%s\n' "${CURRENT_CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "${WANT_COMMANDS_NOW}" ] \
+  || die "CURRENT_CMDS 去重后不是 ${WANT_COMMANDS_NOW} 条（期望集合自身有重复 = 名单造假）"
+for doc in "${ALL_DOCS[@]}"; do
+  b="$(basename "${doc}")"
+  # 方向 A（文档 ⊆ 实际）：本文档出现的 `eg <名>` 不得有实际不存在的命令。
+  DSET="$(grep -ohE '\beg [a-z][a-z-]*' "${doc}" | awk '{print $2}' | sort -u)"
+  BOGUS="$(comm -23 <(printf '%s\n' "${DSET}") <(printf '%s\n' "${CUR_WANT}"))"
+  [ -z "${BOGUS}" ] || die "${b} 出现实际不存在的命令：$(printf '%s' "${BOGUS}" | tr '\n' ' ')"
+  # 方向 B（实际 ⊆ 文档）：当前 23 条命令名逐条在**本文档自身**在场（不靠其它文档补漏）。
+  miss=0
+  for c in "${CURRENT_CMDS[@]}"; do
+    grep -qE "\beg ${c}\b" "${doc}" || { printf '  MISSING in %s: eg %s\n' "${b}" "${c}"; miss=$((miss + 1)); }
+  done
+  [ "${miss}" = "0" ] || die "${b} 缺 ${miss} 条当前命令名（每份文档都须自证覆盖全部 ${WANT_COMMANDS_NOW} 条）"
+  grep -qE "命令.*${WANT_COMMANDS_NOW}|${WANT_COMMANDS_NOW}[^0-9].*命令" "${doc}" \
+    || die "${b} 未在命令语境里登记当前顶层命令总数 ${WANT_COMMANDS_NOW}"
+done
+ok "四份文档各自覆盖当前 ${WANT_COMMANDS_NOW} 条命令、无实际不存在命令、均登记当前总数 ${WANT_COMMANDS_NOW}"
 
 # ---------------------------------------------------------------- 4. 版本号三处一致 + 文档消费面
 step "版本号一致：version.go == make print-version == eg --version，逐字含 ${WANT_VERSION}"

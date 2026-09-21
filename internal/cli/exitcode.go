@@ -94,9 +94,18 @@ func ExitCode5Enabled() bool { return true }
 // 反面同样封闭：只读命令（search / card / context / report / unreviewed / check / bench）
 // 不取锁、不开事务，其 help **不得**列 5 —— 声明一个永不出现的分支同样是漂移。
 // 断言在 tests/_staged/internal/cli/root_help_contract_test.go 里做双向（iff）比对。
+//
+// 现态 addendum（不改上面 I-…-012 的历史叙述）：上文「15 条」是 I-…-012 修复当时的临界区命令数。
+// 此后 opinion 子系统的写路径（validate / reject）随 T-007 落地，其 opinionLifecycleCritical 复用
+// 同一把 `.index/run.lock` 与 enterTxnCritical（A 类强事务）：因此可能撞上 E16 run.lock 不可用，或
+// enterTxnCritical 的**事务安全复核 / 恢复屏障** fail-closed 携 E15（S2 恢复屏障五形态、损坏事务、
+// 路径逃逸、seq 溢出、reserved 类型违规等写前安全阻断）。注意 opinion 的 E15 **不来自** plan 的
+// `--strict` 预检——opinionLifecycleCritical 不调用 plan.Precheck；其 S4 单文件原子域守卫是防御性
+// 兜底，走 blockedError(…, nil) → E21 → 退出码 1，**不进** 5。故按同一「代码路径」口径新增入列 ——
+// 当前白名单共 16 条，opinion 是 post-I-012 的新增项。本 addendum 只同步 help 分类，不改 ExitCodeFor 映射。
 var precheckOrLockHelpCommands = []string{
 	"apply", "capture", "config", "delete", "deprecate", "edit", "index", "init",
-	"mark-reviewed", "proposal", "reconcile", "rel", "replaced-by", "restore", "undelete",
+	"mark-reviewed", "opinion", "proposal", "reconcile", "rel", "replaced-by", "restore", "undelete",
 }
 
 // PrecheckOrLockHelpCommands 返回必须在 `--help` 里声明退出码 5 的顶层命令白名单（升序副本）。

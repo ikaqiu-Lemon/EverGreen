@@ -608,7 +608,7 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 
 ## 命令参考
 
-顶层命令共 22 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
+顶层命令共 23 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
 
 **初始化**
 
@@ -633,6 +633,35 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 | `eg search <query>` | 带排序与分页的知识卡检索 |
 | `eg card show <k-id>` | 单卡：五分区 + sources + 正反向关系 |
 | `eg rel <k-id>` | 论证关系；`--replaced-by` 切到替代指针视图 |
+| `eg opinion search <q>` | 只读观点检索：等价 `eg search` 但固定只搜观点（`o-*`），同一套 domain/tag/since/until/include-deleted/limit/offset（**不含 `--kind`**）；每条命中带 `validation`（pending/validated/rejected 全召回、绝不隐式过滤）与 `supports`/`limits`/`opposing` 计数。零写入、零 commit。 |
+| `eg opinion show <o-id>` | 只读单条观点视图：五分区、`validation`、sources、支持 / 限制 / 反对三组各正反两段（空段显式写「无」）；只吃 `--include-deprecated`/`--limit`/`--offset`。零写入、零 commit。 |
+
+**观点验证生命周期（P-U，已落地）。** `eg opinion validate` / `eg opinion reject` 是观点 `validation`
+的用户显式写路径。action **只由状态机**从 `(from, to)` 唯一复算，CLI 从不自报。合法验证边**恰五条**：
+`pending -> validated`（validate）、`pending -> rejected`（reject）、`validated -> rejected`（reject）、
+`validated -> pending`（reopen）、`rejected -> pending`（reopen）。三个自环与逆向直跳 `rejected -> validated`
+一律非法 —— 撤销否决必须先 `reopen` 回 `pending`、再 `validate`（`rejected -> validated` 从来不是合法直跳边）。
+`--reopen` **仅 `validate` 接受**（`validated`/`rejected` → `pending` 降级复议）；`reject`/`search`/`show`
+显式带它退 `1`。每条写路径都必须带 `--user-request`（P-U）；缺它退 `2`、恰一条 `E19`、零写入、零 commit。
+成功恰改写目标观点**单文件**（write-set 恰 1 条）、恰一个 `verb=process` commit。**Agent / 自动路径（P-A）
+不得代替用户写 `validation`**（不得采纳 / 驳回观点，也不得把这两条当可用能力）。
+
+失败语义**按阶段分**——「所有失败都零权威写」是错的：
+
+- 参数非法 / 缺空 `--reason`（退 `1`）、授权失败 / 观点不存在 / 非法验证边（退 `2`）、`run.lock` 不可用 `E16` /
+  `enterTxnCritical` 事务安全复核·恢复屏障 fail-closed `E15`（退 `5`）：本命令**零权威写、零 commit**；本命令
+  **不跑** plan 的 `--strict` 预检，其 `E15` 只源于 S1/S2 的锁与恢复屏障，与强校验升级面无关。
+- 写前预演阻断 —— S4 / 命令层 B3（S3 锁内重读后、S4 落盘前目标被并发改写，`ExpectedHash` 守卫命中）：
+  目标态**不生效**，命令层**不覆盖也不还原**并发字节（并发新内容原样保留），零事务、零 commit，退 `3`。
+- 原子提交失败且成功回滚（S6）：退 `3`，目标保持事务前像、零 commit。
+- Git 提交失败（S7 / B4）：退 `4`，validation 目标态**已在磁盘生效并保留**（不回滚），但**无 Git commit**。
+- 成功：目标观点单文件 + 恰一个 `verb=process` commit。
+
+已 `validated` 却零有效 **incoming** `supports` 的观点由 `W29`（`opinion_unsupported_validated`）在对账 /
+体检时告警：只报告、绝不自动改 `validation` 或补关系。有效 incoming supports 口径：只计**指向本观点的
+incoming `supports` 边**（本观点自己发出的 **outgoing** `supports` 不计）；supporter 必须**存在且未删除**
+（supporter 已删除 → 该支持无效）；supporter 为 **deprecated 但未删除仍有效**；同一 supporter 的重复
+`supports` 边**去重、只算一次**。
 
 **编辑与生命周期**（均由用户发起）
 

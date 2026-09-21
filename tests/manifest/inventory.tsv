@@ -274,9 +274,9 @@ tests/e2e/cli-core/d2_error_authority.sh	e2e	shell	cli-core	e2e.cli-core.d2_erro
 tests/e2e/docs-cli/d4_dist_docs_platform.sh	e2e	shell	docs-cli	e2e.docs-cli.d4_dist_docs_platform	124	29203
 tests/e2e/docs-cli/docs_cli_authorization_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_authorization_and_limits	60	21668
 tests/e2e/docs-cli/docs_cli_contract_and_exitcodes.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_contract_and_exitcodes	60	18274
-tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_current_state_and_limits	45	15529
-tests/e2e/docs-cli/docs_cli_roster_and_dist_provenance.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_dist_provenance	36	13794
-tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_embedded_skill	44	15758
+tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_current_state_and_limits	91	31227
+tests/e2e/docs-cli/docs_cli_roster_and_dist_provenance.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_dist_provenance	41	17195
+tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_embedded_skill	47	17774
 tests/e2e/edit/block_merge.sh	e2e	shell	edit	e2e.edit.block_merge	39	14988
 tests/e2e/edit/edit.sh	e2e	shell	edit	e2e.edit.edit	66	16290
 tests/e2e/index-search/degrade_fallback.sh	e2e	shell	index-search	e2e.index-search.degrade_fallback	48	16035
@@ -413,7 +413,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24828
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24976
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

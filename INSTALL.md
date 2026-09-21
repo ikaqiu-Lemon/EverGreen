@@ -164,6 +164,38 @@ The active M6 transaction diagnostics are `E15`, `E16`, `W26`, `W27`, and
 block-level safety（块级安全合并）, and lock contention. `.index/txn/` is the
 transaction journal（事务日志）. `W21` remains unassigned（不分配）.
 
+## Command roster
+
+Evergreen exposes 23 top-level commands（顶层命令共 23 条）. Run `eg <command> --help`
+for the authoritative flags and exit codes; the table below is the post-install
+roster you can verify against `eg --help`.
+
+| Command | Purpose |
+| --- | --- |
+| `eg init` | Initialize a Git-backed vault |
+| `eg config` | Read/write `default_domain` / `domains` |
+| `eg capture` | Record a source and register the inbox |
+| `eg context` | Read-only processing context (candidate cards + base hashes) |
+| `eg apply` | Apply a ChangePlan — the only write channel |
+| `eg search` | Ranked, paginated card search |
+| `eg card` | `eg card show <k-id>`: single card view |
+| `eg rel` | Argument relationships (and `--replaced-by` pointers) |
+| `eg report` | `eg report --last`: replay the latest write report |
+| `eg deprecate` | Retire a card |
+| `eg restore` | Reactivate a retired card |
+| `eg replaced-by` | Point a retired card/opinion at its replacement |
+| `eg proposal` | Proposal state machine (`new`/`list`/`show`/`approve`/`reject`) |
+| `eg delete` | Logical deletion (needs an approved proposal + `--confirm`) |
+| `eg undelete` | Reverse a logical deletion |
+| `eg mark-reviewed` | Record review state |
+| `eg unreviewed` | List unreviewed artifacts |
+| `eg edit` | Replace an explicitly authorized card section |
+| `eg reconcile` | Full-vault reconcile (R1–R7, may write) |
+| `eg check` | Read-only structural check (exactly 8 checks, zero writes) |
+| `eg index` | Build/rebuild/status/sync the derived index |
+| `eg bench` | Read-only performance sampling (five metrics) |
+| `eg opinion` | Opinion subsystem: `search`/`show` (read-only) + `validate`/`reject` (user-initiated validation lifecycle, `--user-request` mandatory, single-file `verb=process` commit) |
+
 ## Runtime directories
 
 - `.eg/` stores the latest report and is excluded through

@@ -44,14 +44,25 @@ EG="${WORK}/eg"
 
 # 当期期望版本号（写死；唯一决策出处见 ${SPEC_REL} §1.1）。C2b·M6 现态重钉：0.5.0-m5 → 0.6.0-m6。
 WANT_VERSION="0.6.0-m6"
+# M5 收口值（历史锚点，恒不放宽）：M5 收口顶层命令恰 22 条。
 WANT_COMMANDS=22
 
-# M5 收口的 22 条顶层命令名（与 `eg --help` 命令区首词逐条对应，**双向恰等**的期望集合）。
+# M5 收口的 22 条顶层命令名（与 `eg --help` 命令区首词逐条对应，M5 历史结论「恰 22」的复算基准）。
 CANON_CMDS=(
   init config capture context apply search card rel report
   deprecate restore replaced-by proposal delete undelete mark-reviewed unreviewed edit
   reconcile check index bench
 )
+
+# ── addendum（读路径拆分批次 · post-M5 / post-M6 现态重钉，非放宽历史）：
+#    观点子系统 `eg opinion` 是 M5 收口之后新增的顶层命令，不属于任何历史里程碑
+#    （M4=20 / M5=22 / M6=22 均在它之前收口）。故如实登记为「post-M5 追加项」，当前真实顶层
+#    命令集合抬为 23（= 22 + opinion）；M5 历史结论「恰 22」由「摘掉后续新增项」逐条复算，
+#    一个字不放宽、不把当时的 22 篡成 23。追加项必须真在 `eg --help` 命令区（登记了没注册 = 名单造假）。
+POST_M5_ADDED_CMDS=(opinion)
+# 当前真实顶层命令集合（23 条）= M5 收口 22 + 读路径拆分批次追加的 opinion。
+CURRENT_CMDS=("${CANON_CMDS[@]}" "${POST_M5_ADDED_CMDS[@]}")
+WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M5_ADDED_CMDS[@]}))
 
 # `eg index` 的四个子命令（合同 §7.2：恰四个，封闭）。
 INDEX_SUBS=(build rebuild status sync)
@@ -81,49 +92,55 @@ step "从源码构建 eg 到沙箱（不落 bin/ dist/）"
   -o "${EG}" ./cmd/eg) || die "编译失败"
 ok "eg 已构建：${EG}"
 
-# ---------------------------------------------------------------- 2. 顶层命令集合与 22 条清单双向恰等
-step "eg --help 顶层命令名集合与 M5 收口清单双向恰等（恰 ${WANT_COMMANDS} 条）"
+# ---------------------------------------------------------------- 2. 顶层命令集合与当前 23 条清单双向恰等
+step "eg --help 顶层命令名集合与当前清单双向恰等（恰 ${WANT_COMMANDS_NOW} 条 = M5 收口 ${WANT_COMMANDS} + 读路径拆分追加 ${#POST_M5_ADDED_CMDS[@]}）"
 ACTUAL="$("${EG}" --help </dev/null 2>/dev/null | awk '
   /^命令/ {inblk=1; next}
   /^全局 flag/ {inblk=0}
   inblk && /^  [a-z]/ {print $1}' | sort -u)"
-WANT="$(printf '%s\n' "${CANON_CMDS[@]}" | sort -u)"
+WANT="$(printf '%s\n' "${CURRENT_CMDS[@]}" | sort -u)"
 N_ACTUAL="$(printf '%s\n' "${ACTUAL}" | grep -c .)"
-[ "${N_ACTUAL}" = "${WANT_COMMANDS}" ] || die "实际顶层命令数 = ${N_ACTUAL}，期望 ${WANT_COMMANDS}"
-[ "$(printf '%s\n' "${CANON_CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "${WANT_COMMANDS}" ] \
-  || die "CANON_CMDS 去重后不是 ${WANT_COMMANDS} 条（期望集合自身有重复 = 名单造假）"
+[ "${N_ACTUAL}" = "${WANT_COMMANDS_NOW}" ] || die "实际顶层命令数 = ${N_ACTUAL}，期望 ${WANT_COMMANDS_NOW}"
+[ "$(printf '%s\n' "${CURRENT_CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "${WANT_COMMANDS_NOW}" ] \
+  || die "CURRENT_CMDS 去重后不是 ${WANT_COMMANDS_NOW} 条（期望集合自身有重复 = 名单造假）"
 if [ "${ACTUAL}" != "${WANT}" ]; then
   printf '  仅实际有：\n%s\n  仅清单有：\n%s\n' \
     "$(comm -23 <(printf '%s\n' "${ACTUAL}") <(printf '%s\n' "${WANT}"))" \
     "$(comm -13 <(printf '%s\n' "${ACTUAL}") <(printf '%s\n' "${WANT}"))" >&2
-  die "顶层命令集合与 M5 收口清单不恰等"
+  die "顶层命令集合与当前清单不恰等"
 fi
-ok "顶层命令集合 == M5 清单，恰 ${WANT_COMMANDS} 条（双向恰等）"
+# 历史结论复算：摘掉读路径拆分批次追加的命令后，恰是 M5 收口清单（22 条）——历史结论不放宽、不篡改。
+HIST="$(comm -23 <(printf '%s\n' "${ACTUAL}") <(printf '%s\n' "${POST_M5_ADDED_CMDS[@]}" | sort -u))"
+HIST_WANT="$(printf '%s\n' "${CANON_CMDS[@]}" | sort -u)"
+N_HIST="$(printf '%s\n' "${HIST}" | grep -c .)"
+[ "${N_HIST}" = "${WANT_COMMANDS}" ] || die "摘掉读路径拆分追加后 = ${N_HIST}，期望 M5 收口值 ${WANT_COMMANDS}"
+[ "${HIST}" = "${HIST_WANT}" ] || die "摘掉读路径拆分追加后与 M5 收口清单不恰等（历史结论被篡改）"
+# 追加项必须真在 --help 命令区（登记了却没注册 = 名单造假）。
+for c in "${POST_M5_ADDED_CMDS[@]}"; do
+  printf '%s\n' "${ACTUAL}" | grep -qx "${c}" || die "读路径拆分登记的命令 ${c} 不在 --help 命令区"
+done
+ok "顶层命令集合 == 当前清单，恰 ${WANT_COMMANDS_NOW} 条（双向恰等）；摘掉 opinion 后 = ${WANT_COMMANDS}（M5 收口值，历史保真）"
 
-# ---------------------------------------------------------------- 3. 文档命令集合与实际双向恰等
-step "README / INSTALL / SKILL.md 中的 \`eg <名>\` 集合与实际 ${WANT_COMMANDS} 条双向恰等"
-DOC_CMDS="$(grep -ohE '\beg [a-z][a-z-]*' "${DOCS[@]}" | awk '{print $2}' | sort -u)"
-if [ "${DOC_CMDS}" != "${WANT}" ]; then
-  printf '  文档写了但实际不存在（示范无效命令）：\n%s\n  实际有但文档未写（漏文档）：\n%s\n' \
-    "$(comm -23 <(printf '%s\n' "${DOC_CMDS}") <(printf '%s\n' "${WANT}"))" \
-    "$(comm -13 <(printf '%s\n' "${DOC_CMDS}") <(printf '%s\n' "${WANT}"))" >&2
-  die "文档命令集合与实际命令集合不恰等"
-fi
-# 每条命令名必须在**每一份**文档里至少出现一次吗？—— 不是：INSTALL 是安装口径，
-# 只要求 README + SKILL 逐条覆盖（与 M4 期口径一致，不放宽也不越界加严到 INSTALL）。
-for doc in "${REPO_ROOT}/README.md" "${REPO_ROOT}/skill/SKILL.md"; do
+# ---------------------------------------------------------------- 3. 四份文档各自与当前 23 条双向恰等 + 逐条覆盖 + 登记总数
+step "README / README.zh-CN / INSTALL / SKILL 各自覆盖全部 ${WANT_COMMANDS_NOW} 条命令并登记当前总数（杜绝聚合互相补漏）"
+ALL_DOCS=("${REPO_ROOT}/README.md" "${REPO_ROOT}/README.zh-CN.md" "${REPO_ROOT}/INSTALL.md" "${REPO_ROOT}/skill/SKILL.md")
+for doc in "${ALL_DOCS[@]}"; do
+  b="$(basename "${doc}")"
+  # 方向 A（文档 ⊆ 实际）：本文档出现的 `eg <名>` 不得有实际不存在的命令（示范无效命令）。
+  DSET="$(grep -ohE '\beg [a-z][a-z-]*' "${doc}" | awk '{print $2}' | sort -u)"
+  BOGUS="$(comm -23 <(printf '%s\n' "${DSET}") <(printf '%s\n' "${WANT}"))"
+  [ -z "${BOGUS}" ] || die "${b} 出现实际不存在的命令：$(printf '%s' "${BOGUS}" | tr '\n' ' ')"
+  # 方向 B（实际 ⊆ 文档）：当前 23 条命令名逐条在**本文档自身**在场（不靠其它文档补漏；README.zh-CN 同判）。
   miss=0
-  for c in "${CANON_CMDS[@]}"; do
-    grep -qE "\beg ${c}\b" "${doc}" || { printf '  MISSING in %s: eg %s\n' "$(basename "${doc}")" "${c}"; miss=$((miss + 1)); }
+  for c in "${CURRENT_CMDS[@]}"; do
+    grep -qE "\beg ${c}\b" "${doc}" || { printf '  MISSING in %s: eg %s\n' "${b}" "${c}"; miss=$((miss + 1)); }
   done
-  [ "${miss}" = "0" ] || die "$(basename "${doc}") 缺 ${miss} 条命令名"
+  [ "${miss}" = "0" ] || die "${b} 缺 ${miss} 条当前命令名（每份文档都须自证覆盖全部 ${WANT_COMMANDS_NOW} 条）"
+  # 当前总数在命令语境里被登记（防被日期 / 章节号蒙对）。
+  grep -qE "命令.*${WANT_COMMANDS_NOW}|${WANT_COMMANDS_NOW}[^0-9].*命令" "${doc}" \
+    || die "${b} 未在命令语境里登记当前顶层命令总数 ${WANT_COMMANDS_NOW}"
 done
-# 当期总数必须在「命令」语境里被登记（防被日期 / 章节号蒙对）。
-for doc in "${REPO_ROOT}/README.md" "${REPO_ROOT}/skill/SKILL.md"; do
-  grep -qE "命令.*${WANT_COMMANDS}|${WANT_COMMANDS}[^0-9].*命令" "${doc}" \
-    || die "$(basename "${doc}") 未在命令语境里登记当期总数 ${WANT_COMMANDS}"
-done
-ok "三份文档的命令集合 == 实际集合；README / SKILL 逐条在场且登记总数 ${WANT_COMMANDS}"
+ok "四份文档各自覆盖全部 ${WANT_COMMANDS_NOW} 条命令、无实际不存在命令、均登记当前总数 ${WANT_COMMANDS_NOW}"
 
 # ---------------------------------------------------------------- 4. 版本号五处同真
 step "版本号五处同真：version.go == make print-version == eg --version == README == INSTALL == 决策文档（${WANT_VERSION}）"

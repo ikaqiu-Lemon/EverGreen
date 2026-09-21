@@ -662,7 +662,45 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg rel <k-id>` | Argument relationships; `--replaced-by` switches to replacement pointers |
 | `eg opinion search <q>` | Read-only opinion search: like `eg search` but fixed to opinions (`o-*`), with the same domain/tag/since/until/include-deleted/limit/offset flags (no `--kind`). Every hit carries `validation` (pending/validated/rejected, all returned — never implicitly filtered) plus `relation_summary` counts (`supports`/`limits`/`opposing`). Zero writes, zero commit. |
 | `eg opinion show <o-id>` | Read-only single-opinion view: five sections, `validation`, sources, and the support/limit/opposing relation groups (each with forward and reverse segments; empty segments are shown explicitly). Accepts only `--include-deprecated`/`--limit`/`--offset` (never the search filter flags); dangling targets are flagged, deprecated peers are hidden by default. Zero writes, zero commit. `eg card show` on an `o-*` id exits `1` and points you here. |
-| `eg opinion validate\|reject <o-id>` | Registered skeleton only: still unimplemented — every legal invocation exits `1` with zero writes and zero commit; the validate/reject lifecycle lands in later batches. |
+| `eg opinion validate <o-id>` / `eg opinion reject <o-id>` | User-initiated validation lifecycle (landed). Rewrites exactly the target opinion's `validation` in a single-file atomic transaction and one `verb=process` commit. `validate` → `validated`; `validate --reopen` → `pending`; `reject` → `rejected`. `--user-request` is mandatory (else exit `2` with `E19`, zero writes, zero commit). Failure is staged, not uniformly "zero write": see the lifecycle notes below. |
+
+**Opinion validation lifecycle (P-U, landed).** `eg opinion validate` / `eg opinion reject` are the
+user-initiated write path for an opinion's `validation`. The action is recomputed **solely by the
+state machine** from `(from, to)` — the CLI never self-reports it. There are exactly five legal edges:
+`pending -> validated` (validate), `pending -> rejected` (reject), `validated -> rejected` (reject),
+`validated -> pending` (reopen), and `rejected -> pending` (reopen). The three self-loops and the
+reverse jump `rejected -> validated` are illegal — to undo a rejection you must first `reopen` back to
+`pending` and then `validate` again (`rejected -> validated` is never a direct edge). `--reopen` is
+accepted **only by `validate`** (`validated`/`rejected` → `pending`). Every write demands
+`--user-request` (P-U); without it the command exits `2` with a single `E19`, zero writes, zero commit.
+Success rewrites exactly one file (the target opinion) and produces one `verb=process` commit. Agents
+(the automated P-A path) must not write `validation` on the user's behalf.
+
+Failure is **staged** — "all failures are zero-write" is wrong:
+
+- Bad arguments / missing-or-empty `--reason` (exit `1`); authorization failure / opinion-not-found /
+  illegal validation edge (exit `2`); `run.lock` unavailable `E16`, or the `enterTxnCritical`
+  transaction-safety recheck / recovery barrier failing closed `E15` (exit `5`) — this command does
+  **not** run the plan `--strict` pre-check, so its `E15` arises only from the S1/S2 lock + recovery
+  barrier, never from a strict-upgrade surface: the command performs **zero authoritative write, zero
+  commit**.
+- Pre-write dry-run block — S4 / command-level B3 (the target is concurrently rewritten after the
+  in-lock re-read at S3 and before the S4 landing, tripping the `ExpectedHash` guard): the target state
+  does **not** take effect; the command **neither overwrites nor restores** the concurrent bytes (the
+  concurrent content is preserved verbatim); zero transaction, zero commit; exit `3`.
+- Atomic commit fails **and** rollback succeeds (S6): exit `3`; the target keeps its pre-transaction
+  image; zero commit.
+- Git commit fails (S7 / B4): exit `4`; the validation target state **is already durable on disk and is
+  kept** (no rollback), but there is **no Git commit**.
+- Success: exactly the target opinion's single file + exactly one `verb=process` commit.
+
+A `validated` opinion with zero effective **incoming** `supports` is surfaced by `W29`
+(`opinion_unsupported_validated`) at reconcile/check time — a report-only signal that never edits
+`validation` or synthesizes relations. Effective-incoming-supports rule: only `supports` edges **pointing
+at this opinion** count (this opinion's own **outgoing** `supports` do **not**); the supporter must
+**exist and be not-deleted** (a deleted supporter makes that support ineffective); a supporter that is
+**deprecated but not deleted still counts**; duplicate `supports` edges from the same supporter are
+**de-duplicated and counted once**.
 
 **Editing and lifecycle** (all user-initiated)
 
