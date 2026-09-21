@@ -258,7 +258,7 @@ C="$(apply_user <<JSON
  "requirement_ids":["EG-EDIT-04"],
  "base":{"${REL_A}":"${BASE_STALE}"},
  "ops":[{"op":"append_card","card":"${CARD_A}","initiator":"user",
-         "sections":{"解释与依据":"用户要求补的依据。\n"}}]}
+         "sections":{"条件与边界":"用户要求补的依据。\n"}}]}
 JSON
 )"
 [ "${C}" = "3" ] || { cat "${WORK}/out.txt"; die "用户显式路径遇到外部改动应退 3，实退 ${C}"; }

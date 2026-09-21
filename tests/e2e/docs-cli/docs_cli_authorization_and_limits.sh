@@ -36,15 +36,15 @@ SPEC_REL_M3="projects/evergreen/s1_main_flow/docs/specs/2026-11-08-m3-release-an
 #      ② 当前值正面断言（version.go == make print-version == eg --version == 当期决策文档
 #         == 当期版本，且历史值一律不得作为**生效值**残留 —— 逐个旧值对撞，比原来只挡
 #         `0.2.0-m2` 一个值更严）。
-# ── C2b·M6 现态重钉（同上「指针随里程碑走 + 历史值不得为生效值」口径，非放宽）：
-#    M6 · T-…-075 把版本推进到 `0.6.0-m6`，当期决策指针切到 M6 发布口径文档，`0.5.0-m5` 并入历史值集合
-#    （随即也必须「不得作为生效值残留」）；M2/M3 历史基线只读复算一格不动。
-SPEC_REL="projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-release-and-version.md"
+# ── 阶段化重钉（同上「指针随里程碑走 + 历史值不得为生效值」口径，非放宽）：
+#    本 Epic（knowledge_opinion_split）把版本推进到 `0.7.0-m7`，当期决策指针切到本 Epic §0.0 版本口径出处，
+#    `0.6.0-m6` 并入历史值集合（随即也必须「不得作为生效值残留」）；M2/M3 历史基线只读复算一格不动。
+SPEC_REL="projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
 DECISION_DOC="${EG_CONTRACTS}/${SPEC_REL}"
 DECISION_DOC_M2="${EG_CONTRACTS}/${SPEC_REL_M2}"
 DECISION_DOC_M3="${EG_CONTRACTS}/${SPEC_REL_M3}"
-HIST_VERSIONS=("0.2.0-m2" "0.3.0-m3" "0.4.0-m4" "0.5.0-m5")
-CUR_VERSION="0.6.0-m6"
+HIST_VERSIONS=("0.2.0-m2" "0.3.0-m3" "0.4.0-m4" "0.5.0-m5" "0.6.0-m6")
+CUR_VERSION="0.7.0-m7"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/eg-m3-docs.XXXXXX")"
 SANDBOX="${WORK}/sandbox"

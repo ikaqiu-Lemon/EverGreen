@@ -32,18 +32,18 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # 测试体系公共 helper（EG_FIXTURES / EG_CONTRACTS / 磁盘前置检查）。
 . "${REPO_ROOT}/tests/lib/common.sh"
-# ── C2b·M6 现态重钉（延续「决策出处 = docsReleaseSpec 当期指针」的历史口径，非放宽）：
-#    M6 · T-…-075 把版本推进到 0.6.0-m6，唯一决策出处随 docs_test.go 的 docsReleaseSpec 一并
-#    切到 M6 发布口径文档；M5 文档只读历史、事实一字未改。第五处一致仍锁「决策文档逐字含当期版本号」。
-SPEC_REL="projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-release-and-version.md"
+# ── 阶段化重钉（延续「决策出处 = docsReleaseSpec 当期指针」的历史口径，非放宽）：
+#    本 Epic（knowledge_opinion_split）把版本推进到 0.7.0-m7，唯一决策出处随 docs_test.go 的 docsReleaseSpec 一并
+#    切到本 Epic §0.0 版本口径出处；M6 及更早文档只读历史、事实一字未改。第五处一致仍锁「决策文档逐字含当期版本号」。
+SPEC_REL="projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
 DECISION_DOC="${EG_CONTRACTS}/${SPEC_REL}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/eg-m5-docs.XXXXXX")"
 VAULT="${WORK}/vault"
 EG="${WORK}/eg"
 
-# 当期期望版本号（写死；唯一决策出处见 ${SPEC_REL} §1.1）。C2b·M6 现态重钉：0.5.0-m5 → 0.6.0-m6。
-WANT_VERSION="0.6.0-m6"
+# 当期期望版本号（写死；唯一决策出处见 ${SPEC_REL} §0.0）。阶段化重钉：0.6.0-m6 → 0.7.0-m7。
+WANT_VERSION="0.7.0-m7"
 # M5 收口值（历史锚点，恒不放宽）：M5 收口顶层命令恰 22 条。
 WANT_COMMANDS=22
 
@@ -161,10 +161,10 @@ DOC_VER="$(grep -oE '\*\*`[0-9]+\.[0-9]+\.[0-9]+[^`]*`\*\*' "${DECISION_DOC}" | 
 [ "${DOC_VER}" = "${WANT_VERSION}" ] || die "决策文档声明版本号 = ${DOC_VER}，期望 ${WANT_VERSION}"
 grep -Fq "未知" "${DECISION_DOC}" || die "决策文档必须对「是否推送远端 / tag」标注「未知」"
 # version.go / Makefile 内不得残留上一里程碑版本字面量（M-005 判据 16 第二格）。
-# ── C2b·M6 现态重钉：上一里程碑随 M6 收口由 0.4.0-m4 变为 0.5.0-m5，逐字对撞目标同步推进（非放宽）。
-PREV="$({ grep -F '0.5.0-m5' "${REPO_ROOT}/internal/version/version.go" "${REPO_ROOT}/Makefile" || true; } | wc -l | tr -d ' ')"
-[ "${PREV}" = "0" ] || die "version.go / Makefile 仍残留 0.5.0-m5（${PREV} 处）"
-ok "五处版本号逐字一致：${WANT_VERSION}；0.5.0-m5 零残留；决策文档 tag/推送标「未知」"
+# ── 阶段化重钉：上一里程碑随本 Epic 收口由 0.5.0-m5 变为 0.6.0-m6，逐字对撞目标同步推进（非放宽）。
+PREV="$({ grep -F '0.6.0-m6' "${REPO_ROOT}/internal/version/version.go" "${REPO_ROOT}/Makefile" || true; } | wc -l | tr -d ' ')"
+[ "${PREV}" = "0" ] || die "version.go / Makefile 仍残留 0.6.0-m6（${PREV} 处）"
+ok "五处版本号逐字一致：${WANT_VERSION}；0.6.0-m6 零残留；决策文档 tag/推送标「未知」"
 
 # ---------------------------------------------------------------- 5. 内嵌 SKILL.md 与源文件同字节
 step "eg init 落盘的 SKILL.md 与 skill/SKILL.md 逐字相等（go:embed 未过期）"

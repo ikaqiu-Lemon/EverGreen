@@ -264,7 +264,7 @@ cat >"${WORK}/plan.json" <<JSON
   "base": { "${CARD_REL}": "$(chash "${CARD_REL}")" },
   "ops": [
     { "op": "append_card", "card": "${CARD}",
-      "sections": { "解释与依据": "- Agent 追加的一条依据。\n" } }
+      "sections": { "条件与边界": "- Agent 追加的一条依据。\n" } }
   ]
 }
 JSON
@@ -302,7 +302,22 @@ CODE="$(eg_code apply --plan "${WORK}/plan_agent_mark.json" --json)"
 ok "B-5 Agent 路径写不了 reviewed_at：退 2、字节不变、零 commit"
 
 step "B-6 用户在编辑器里改卡并把 updated_at 推新 → 该卡**重新**计入清单，reviewed_at 仍一字未动"
-awk '{ if ($1 == "updated_at:") print "updated_at: '\''2026-09-20T10:00:00+08:00'\''"; else print }' \
+# mark-reviewed / apply 写入的 reviewed_at / updated_at 取的是**真实墙钟**（非固定时刻），
+# 因此这里不能沿用写死的日期当「推新」——写死值一旦早于当前 reviewed_at，判据就会随墙钟推移
+# 假性失败。改为从**当前 reviewed_at 派生出严格更晚的一刻**（+1 天），模拟用户在编辑器里把
+# updated_at 推到过目时刻之后，使「updated_at > reviewed_at 重新成立 → 重新计入清单」这条
+# 判据与墙钟无关地稳定成立（reviewed_at 本身仍一字不动）。
+CARD_REVIEWED_NOW="$(fmvalue_of "${CARD_REL}" reviewed_at)"
+NEW_UPDATED="$(python3 - "${CARD_REVIEWED_NOW}" <<'PY_BUMP'
+import sys
+from datetime import datetime, timedelta
+t = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")) + timedelta(days=1)
+print(t.isoformat())
+PY_BUMP
+)"
+stamp_gt "${NEW_UPDATED}" "${CARD_REVIEWED_NOW}" ||
+  die "前置：派生的 updated_at（${NEW_UPDATED}）必须严格晚于 reviewed_at（${CARD_REVIEWED_NOW}）"
+awk -v nu="updated_at: '${NEW_UPDATED}'" '{ if ($1 == "updated_at:") print nu; else print }' \
   "${VAULT}/${CARD_REL}" >"${WORK}/card.md" && cp "${WORK}/card.md" "${VAULT}/${CARD_REL}"
 gitv add -A >/dev/null
 gitv -c user.name=eg -c user.email=eg@example.com commit -q -m "edit: 用户在编辑器里改了这张卡"

@@ -206,7 +206,7 @@ cat >"${WORK}/plan_b3.json" <<JSON
   "base": { "${CARD_REL}": "${CARD_HASH}" },
   "ops": [
     { "op": "append_card", "card": "${CARD}",
-      "sections": { "解释与依据": "- 这条不应落盘\n" } }
+      "sections": { "条件与边界": "- 这条不应落盘\n" } }
   ]
 }
 JSON
@@ -245,9 +245,7 @@ cat >"${WORK}/plan2.json" <<JSON
       "output_cards": [{ "card": "${CARD}", "mode": "补充" }] },
     { "op": "append_card", "card": "${CARD}",
       "sections": {
-        "解释与依据": "- 补充依据：可扩展的前提之一是知识能被系统自验证。\n",
-        "条件与边界": "- 补充边界：纯人工维护的知识库不满足自验证条件。\n",
-        "理解自检": "- 无法自我验证的方法还算可扩展吗？\n" } },
+        "条件与边界": "- 补充边界：纯人工维护的知识库不满足自验证条件。\n- 补充依据：可扩展的前提之一是知识能被系统自验证。\n" } },
     { "op": "add_material_rel", "card": "${CARD}", "source": "${SRC2}", "note": "${NOTE2}",
       "rel": "support", "reason": "第二篇从自验证角度为该卡结论提供支持性材料依据" }
   ]
@@ -257,9 +255,9 @@ code=$(eg_code apply --plan "${WORK}/plan2.json" --json)
 [ "${code}" = "0" ] || { cat "${WORK}/out.json" >&2; die "第二篇 apply 退出码 ${code}，期望 0"; }
 CORE_AFTER="$(sed -n '/^## 知识内容$/,/^## /p' "${VAULT}/${CARD_REL}" | md5sum)"
 [ "${CORE_BEFORE}" = "${CORE_AFTER}" ] || die "append_card 改动了「知识内容」分区"
-contains "${VAULT}/${CARD_REL}" "补充依据" || die "「解释与依据」未收到追加"
-contains "${VAULT}/${CARD_REL}" "补充边界" || die "「条件与边界」未收到追加"
-ok "三分区追加成功，「知识内容」字节不变"
+contains "${VAULT}/${CARD_REL}" "补充依据" || die "「条件与边界」未收到补充依据行"
+contains "${VAULT}/${CARD_REL}" "补充边界" || die "「条件与边界」未收到补充边界行"
+ok "条件与边界追加成功（v2 知识卡自动路径仅此一格可写），「知识内容」字节不变"
 
 # ---------------------------------------------------------------- 10. report
 step "eg report --last：与磁盘逐项交叉核对"
@@ -311,13 +309,22 @@ ok "E6 拦截、零写入、目标文件字节不变"
 
 # ---------------------------------------------------------------- 13. 产物可解析
 step "产物可被 Obsidian 打开（机器替代判据）"
+# Schema v2 固定分区数按实体类型区分（真源 internal/mdfile：CardSections()=3、NoteSections()=4）：
+#   知识卡（domains/**/knowledge/）= 3（知识内容 / 条件与边界 / 用户补充）；
+#   材料笔记（domains/**/notes/）   = 4（整理正文 / 提取结果 / 存疑与待验证 / 用户补充）。
+# 旧的「一律 5」是 v1 五分区口径（卡与笔记都 5）；v2 起两类分区面各自收敛，故按类型逐一钉死。
 while IFS= read -r f; do
   head -1 "${f}" | grep -q '^---$' || die "${f} 缺 frontmatter"
   if grep -q '^# ' "${f}"; then die "${f} 出现 H1（分区一律 H2）"; fi
   n="$(grep -c '^## ' "${f}")"
-  [ "${n}" = "5" ] || die "${f} 的 H2 分区数 = ${n}，期望 5"
+  case "${f}" in
+    */knowledge/*) want=3 ;;
+    */notes/*)     want=4 ;;
+    *)             die "未预期的产物路径（既非 knowledge 卡也非 notes 笔记）：${f}" ;;
+  esac
+  [ "${n}" = "${want}" ] || die "${f} 的 H2 分区数 = ${n}，期望 ${want}（Schema v2 按类型）"
 done < <(find "${VAULT}/domains" -name '*.md')
-ok "全部笔记 / 知识卡：frontmatter 齐全、无 H1、恰 5 个 H2 分区"
+ok "全部知识卡（3 分区）/ 材料笔记（4 分区）：frontmatter 齐全、无 H1、H2 分区数按 Schema v2 类型恰好"
 
 printf '\n===================================================\n'
 printf 'M1 端到端验收脚本通过：%d 步 / %d 条断言\n' "${STEP}" "${PASS}"

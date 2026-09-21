@@ -7,7 +7,7 @@
 #     §4.1 对账与可见性 / §5 已知限制表（darwin 两支与 linux/arm64 的运行验证结论）/
 #     「`.eg/` 状态目录与 vault 的关系」三条声明；
 #   `evergreen/README.md` §"make 目标" 与 §"不引入 cgo" / 平台反向说明；
-#   `2027-02-21-m6-release-and-version.md`（版本 0.6.0-m6 唯一决策出处）。
+#   knowledge_opinion_split Schema-v2 决策文档 §0.0（当期版本 0.7.0-m7 唯一决策出处）。
 #
 # 为什么需要这支 suite：D4 审计（审计方法合同 `2027-03-10-system-audit-method-contract.md`
 # §2 三面对照）发现下列条目「声明面写了、实现面实测一致、但当前测试体系没有任何 suite
@@ -81,9 +81,9 @@ SBX="${WORK}/evergreen"        # 仓库副本（一切构建只在这里发生�
 EG="${WORK}/eg"                # 从沙箱产物拷出的被测二进制
 VAULT="${WORK}/notes/evergreen"
 
-# 当期期望版本号（M6 收口值；唯一决策出处见 teamwork 的 2027-02-21-m6-release-and-version.md §1.1）。
+# 当期期望版本号（唯一决策出处见 teamwork 的 knowledge_opinion_split Schema-v2 决策文档 §0.0）。
 # 写死而非从 version.go 反推，否则一致性判据退化成自证。
-WANT_VERSION="0.6.0-m6"
+WANT_VERSION="0.7.0-m7"
 
 STEP=0
 PASS=0

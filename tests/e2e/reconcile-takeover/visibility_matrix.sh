@@ -14,7 +14,7 @@
 #   G5  replaced_by 链两方向：旧卡（deprecated）默认可见新卡（active）；
 #       新卡（active）默认隐藏旧卡（deprecated），--include-deprecated 后显示（反向 relations_in）。
 # 另钉三条全局不变量（所有组合都成立）：
-#   · data 键序**逐字不变**：rel 恒五键、card 恒十六键（keys_unsorted 保留原文次序）；
+#   · data 键序**逐字不变**：rel 恒五键、card 恒十七键（keys_unsorted 保留原文次序）；
 #   · 所有查询**退出码恒 0**（读路径不因 flag 变非零）；
 #   · 全程**零写入零 commit**：git status --porcelain 计数与 git log 计数逐字不变、HEAD 不动。
 #
@@ -81,7 +81,7 @@ data_keys()   { jq -c '.data | keys_unsorted' "$1"; }
 assert_eq() { [ "$2" = "$3" ] || die "$1：期望「$3」实际「$2」"; }
 
 REL_KEYS='["id","relations_out","relations_in","scanned_files","skipped_files"]'
-CARD_KEYS='["id","title","domain","status","deprecated","created_at","updated_at","path","tags","markers","sections","sources","relations_out","relations_in","deleted","unreviewed"]'
+CARD_KEYS='["id","title","domain","status","deprecated","created_at","updated_at","path","tags","markers","sections","unknown_sections","sources","relations_out","relations_in","deleted","unreviewed"]'
 
 writecard() { # writecard <id> <body-frontmatter-tail>
   local id="$1"; shift
@@ -190,7 +190,7 @@ assert_eq "G5 NEW card include relations_in" "$(froms_in "${J}")" "k-20260920-ol
 ok "G5 两方向成立：旧→新默认可见；新→旧默认隐藏、include 后显示（rel 与 card show 一致）"
 
 # ---------------------------------------------------------------- 6. data 键序逐字不变（四组合）
-step "data 键序逐字不变：rel 恒五键、card show 恒十六键（默认 / include 各一遍）"
+step "data 键序逐字不变：rel 恒五键、card show 恒十七键（默认 / include 各一遍）"
 for mode in "" "--include-deprecated"; do
   # shellcheck disable=SC2086
   J="$(run_json rel k-20260910-hub ${mode})"
@@ -199,7 +199,7 @@ for mode in "" "--include-deprecated"; do
   J="$(run_json card show k-20260910-hub ${mode})"
   assert_eq "card(${mode:-默认}) data 键序" "$(data_keys "${J}")" "${CARD_KEYS}"
 done
-ok "四组合下 data 键序逐字等于 M2 冻结面（rel 五键 / card 十六键），未新增第 N+1 键"
+ok "四组合下 data 键序逐字等于当前冻结面（rel 五键 / card 十七键），未新增第 N+1 键"
 
 # ---------------------------------------------------------------- 7. 零写入零 commit
 step "全程零写入零 commit：porcelain=0、git log 计数不变、HEAD 不动"

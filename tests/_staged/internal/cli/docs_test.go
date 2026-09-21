@@ -30,9 +30,11 @@ const (
 	//   M3：2026-11-08-m3-release-and-version.md（只读保留为历史出处）
 	//   M4：2026-12-11-m4-release-and-version.md（只读保留为历史出处；K-062-01 收敛）
 	//   M5：2027-01-17-m5-release-and-version.md（只读保留为历史出处；T-…-069）
-	//   M6：2027-02-21-m6-release-and-version.md（自 M6 起当期版本号唯一出处；T-…-075）
-	// 只把当期指针往前挪属**阶段化更新**，不放宽任何断言：M2/M3/M4/M5 四份文档仍在盘、事实一字未改。
-	docsReleaseSpec = "../../../teamwork/projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-release-and-version.md"
+	//   M6：2027-02-21-m6-release-and-version.md（只读保留为历史出处；T-…-075）
+	//   knowledge_opinion_split（当期）：2026-09-15-knowledge-opinion-schema-v2-design.md
+	//     —— 本 Epic 版本号与发布口径的唯一决策出处（§0.0），逐字声明当期版本号并对推送 / tag 标「未知」。
+	// 只把当期指针往前挪属**阶段化更新**，不放宽任何断言：M2/M3/M4/M5/M6 各份历史文档仍在盘、事实一字未改。
+	docsReleaseSpec = "../../../teamwork/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
 )
 
 func readDocs(t *testing.T, path string) string {

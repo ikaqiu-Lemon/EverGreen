@@ -386,16 +386,17 @@ T058_REG_OUT="$( { grep -rnE 'Name:[[:space:]]*"reconcile"' "${REPO_ROOT}/intern
 [ "${T058_REG_OUT}" = "0" ] ||
   die "reconcile 命令注册形态的唯一落点必须是 internal/cli/reconcile.go，别处实得 ${T058_REG_OUT}"
 cnt0 '检查侧出现越界能力' -rnE '\.index/|FTS5|[Ss][Qq][Ll]ite|flock|P95' "${REPO_ROOT}/internal/reconcile/"
-# 计数面不动：op 恒 16、content_hash 面不减、有序 targets 例外恰 1 项。
-# op 数恒 16（本 task 不新增 op）：判据沿用 internal/plan 侧的既有等式行。
-# 2026-09-07 随 M4 · T-…-055 阶段 3 **按实测重钉锚点**（判据本体一格不放宽，反而更严）：
-# T-…-055 阶段 1 的 `set_stale`（A-33）让 `internal/plan` 侧的等式行由字面 `!= 16` 改写成
-# 加法等式 `m3AllOps, m4NewOps = 16, 1` + `!= m3AllOps+m4NewOps`，旧字面锚点因此漂移
-# （grep 计数 0 → 本行 `set -e` 直接崩）。重钉后锚定那条加法等式：它同时钉住「M3 期 16
-# 逐字未改写」与「M4 期新增恰 1（即 set_stale 那一个，不属本 task）」——本 task 若偷偷新增
-# op，加数 1 必然被迫改大，本格立刻红。
-OPS="$(grep -c 'm3AllOps, m4NewOps = 16, 1' "$(eg_test_path internal/plan/m3_test.go)")"
-[ "${OPS}" = "1" ] || die "AllOpNames 必须仍是「M3 期 16 + M4 新增 1」（本 task 不新增 op）"
+# 计数面不动：op 全集不缩、content_hash 面不减、有序 targets 例外恰 1 项。
+# op 全集加法等式（本 task 不新增 op）：判据沿用 internal/plan 侧的既有等式行。
+# 重钉链（判据本体一格不放宽，反而更严）：
+#   · M4 · T-…-055 `set_stale`（A-33）把等式钉成 `m3AllOps, m4NewOps = 16, 1`（全集 17）；
+#   · knowledge_opinion_split（Schema v2，4b36712）新增两个 Opinion 写口，主链路 7→9，
+#     全集 17→19，等式随之重钉为 `mainOps, m3Ops, editOps, m4NewOps = 9, 8, 1, 1`
+#     （逐项写死，任一项漂移即判红；见 internal/plan/m3_test.go 的加法等式与 t.Fatalf）。
+# 锚定当前这条加法等式：它把「主链路 9 / M3 8 / 编辑 1 / M4 新增 1」四项逐字钉死——
+# 本 task（跨领域移动，reconcile 侧）若偷偷新增 op，任一加数必然被迫改动，本格立刻红。
+OPS="$(grep -c 'mainOps, m3Ops, editOps, m4NewOps = 9, 8, 1, 1' "$(eg_test_path internal/plan/m3_test.go)")"
+[ "${OPS}" = "1" ] || die "AllOpNames 等式必须仍是「主链路 9 + M3 8 + 编辑 1 + M4 新增 1 = 19」（本 task 不新增 op）"
 [ "$(grep -c 'OrderedTargetsCheckCount = 1' "${REPO_ROOT}/internal/reconcile/check.go")" = "1" ] ||
   die "有序 targets 例外必须恰 1 项（封闭例外面）"
 [ "$(grep -rn 'content_hash' "${REPO_ROOT}" --include='*.go' --include='*.md' --include='*.sh' |

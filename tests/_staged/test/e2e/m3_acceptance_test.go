@@ -208,6 +208,11 @@ func TestDiagnosticCodesCovered(t *testing.T) {
 	for i := 13; i <= 20; i++ {
 		m4Codes["W"+strconv.Itoa(i)] = true
 	}
+	// **knowledge_opinion_split · A-62 追加（同一手法，只增不改）**：对账合同 §3 把 `W29`
+	// （opinion_unsupported_validated，R3 第五项）正式发放给 internal/reconcile 的 check 枚举，
+	// 唯一字面量落点是 internal/reconcile/check.go 的 CodeW29 常量（其余包只引用该常量、无字面量）。
+	// 因此把 W29 并入 reconcile 分域允许集；W29 出现在 reconcile 之外的任何包仍判越界（双侧等号一格不放宽）。
+	m4Codes["W29"] = true
 	// **M5 · T-…-065 追加一域（同一手法，只增不改）**：M5 索引架构合同 A-45 把
 	// `W22`–`W25` / `Q5` 发放给 S4 索引面，其中 T-…-065 只实际启用 **W23 / W24**
 	// （索引缺失 / 索引不可用两态）。分域表因此从一行变两行，两行都是双侧等号。
@@ -357,11 +362,11 @@ func TestDiagnosticCodesCovered(t *testing.T) {
 				mdfileSeen++
 				continue
 			}
-			t.Fatalf("%s 出现越界诊断码 %s（M3 闭合 23 值之外；E11–E14 / W13–W20 只许"+
+			t.Fatalf("%s 出现越界诊断码 %s（M3 闭合 23 值之外；E11–E14 / W13–W20 / W29 只许"+
 				"出现在 internal/reconcile，W22 / W23 / W24 只许出现在 internal/index，"+
 				"W25 只许出现在 internal/query，E15 / E16 / W26 / W28 只许出现在 internal/txn，"+
 				"W27 只许出现在 internal/mdfile，E17–E25 只许出现在 internal/cli/codes.go 这一个文件，"+
-				"E26+ / W29+ / I2+ 留给下游 task）", p, m[1])
+				"E26+ / W30+ / I2+ 留给下游 task）", p, m[1])
 		}
 	})
 	if m4Seen == 0 {

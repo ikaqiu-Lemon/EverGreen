@@ -143,7 +143,7 @@ Evergreen 有意**不**抓取、也不理解内容。语义由你的 agent 负�
 每个 [release](https://github.com/ikaqiu-Lemon/EverGreen/releases) 都附带 Linux 与 macOS 二进制。
 
 ```console
-$ VER=v0.6.0-m6
+$ VER=v0.7.0-m7
 $ OS=$(uname -s | tr '[:upper:]' '[:lower:]')          # linux | darwin
 $ ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
@@ -987,7 +987,7 @@ make lint         # gofmt + vet + 写路径守卫 + 依赖方向 + 公开仓卫�
 
 ## 项目信息
 
-- **版本：** `0.6.0-m6` · **模块：** `github.com/ikaqiu-Lemon/EverGreen`
+- **版本：** `0.7.0-m7` · **模块：** `github.com/ikaqiu-Lemon/EverGreen`
 - **安全：** 漏洞私下报告流程见 [SECURITY.md](SECURITY.md)
 - **隐私：** 纯本地数据处理模型见 [PRIVACY.md](PRIVACY.md)
 - **行为准则：** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

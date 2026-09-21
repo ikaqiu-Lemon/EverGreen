@@ -34,17 +34,18 @@ set -Eeuo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # 测试体系公共 helper（EG_FIXTURES / EG_CONTRACTS / 磁盘前置检查）。
 . "${REPO_ROOT}/tests/lib/common.sh"
-# 唯一决策出处 = M6 发布口径文档（docs_test.go 的 docsReleaseSpec 指针目标）。
-SPEC_REL="projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-release-and-version.md"
+# 唯一决策出处 = 本 Epic（knowledge_opinion_split）当期 Schema-v2 决策文档（docs_test.go 的 docsReleaseSpec 指针目标）。
+# 阶段化更新：当期指针随 Epic 推进切到 §0.0「版本号与发布口径」出处；M6 及更早发布文档只读、事实一字未改。
+SPEC_REL="projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
 DECISION_DOC="${EG_CONTRACTS}/${SPEC_REL}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/eg-m6-docs.XXXXXX")"
 VAULT="${WORK}/vault"
 EG="${WORK}/eg"
 
-# 当期期望版本号（写死；唯一决策出处见 ${SPEC_REL} §1.1）。M6 现态：0.5.0-m5 → 0.6.0-m6。
-WANT_VERSION="0.6.0-m6"
-PREV_VERSION="0.5.0-m5"
+# 当期期望版本号（写死；唯一决策出处见 ${SPEC_REL} §0.0）。knowledge_opinion_split 现态：0.6.0-m6 → 0.7.0-m7。
+WANT_VERSION="0.7.0-m7"
+PREV_VERSION="0.6.0-m6"
 # M6 收口值：M6 不新增顶层命令，故与 M5 收口清单逐字相同（历史锚点，恒不放宽）。
 WANT_COMMANDS=22
 
@@ -310,7 +311,7 @@ printf '  version.go=%s  make print-version=%s  eg --version=%s\n' "${GO_VER}" "
 [ "${CLI_VER}" = "${WANT_VERSION}" ] || die "eg --version = ${CLI_VER}，期望 ${WANT_VERSION}"
 grep -Fq "${WANT_VERSION}" "${REPO_ROOT}/README.md" || die "README 未登记版本号 ${WANT_VERSION}"
 grep -Fq "${WANT_VERSION}" "${REPO_ROOT}/INSTALL.md" || die "INSTALL 未登记版本号 ${WANT_VERSION}"
-[ -f "${DECISION_DOC}" ] || die "缺 M6 发布口径决策文档：teamwork/${SPEC_REL}"
+[ -f "${DECISION_DOC}" ] || die "缺当期 Epic 版本决策文档：teamwork/${SPEC_REL}"
 DOC_VER="$(grep -oE '\*\*`[0-9]+\.[0-9]+\.[0-9]+[^`]*`\*\*' "${DECISION_DOC}" | head -1 | tr -d '*`')"
 [ "${DOC_VER}" = "${WANT_VERSION}" ] || die "决策文档声明版本号 = ${DOC_VER}，期望 ${WANT_VERSION}"
 grep -Fq "未知" "${DECISION_DOC}" || die "决策文档必须对「是否推送远端 / tag」标注「未知」"

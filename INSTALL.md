@@ -1,6 +1,6 @@
 # Install Evergreen
 
-This guide installs and exercises Evergreen `eg` version `0.6.0-m6`.
+This guide installs and exercises Evergreen `eg` version `0.7.0-m7`.
 
 ## Requirements
 

@@ -1,3 +1,5 @@
+ca7fddb30e9a6d5c130c9c6b902ed17b4d6a7b7904fb423b26778c1bc59d0e7f  projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md
+b9257c9a412e969d55342ed975955e93a94e3fe7e2745a7ca089c2a0bb99a19c  projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md
 4acfb6c79b7cb180fa295e40493155e285537c45549ba152e974597396e0bbcc  projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md
 57579ed7cbb6d02764d5f984a070ba24e89ca452525471e189158ef318394e38  projects/evergreen/s1_main_flow/docs/specs/2026-08-31-language-selection.md
 6eb71a158046361f47905f3f1f257ab2ce669cf89df528d8e20affcc4b39dc6c  projects/evergreen/s1_main_flow/docs/specs/2026-08-31-m1-task-review-round2.md
@@ -11,7 +13,7 @@ d35b87f99a9fe5ac6bef088098dd29907b38e8e98658b952d56532d35003ea01  projects/everg
 ffa9fe286f267b1eb8eb7dfb172057aa91dd5621cc32635d0e76345f13bba10c  projects/evergreen/s1_main_flow/docs/specs/2026-09-17-m1-acceptance-report.md
 746ff2c61a2272a9e1a47bb693e220133beb05409dedd3e1df62ace7300d4b71  projects/evergreen/s1_main_flow/docs/specs/2026-09-19-m2-query-contract.md
 8d10d0ef8d6ede69dac537cc54a5a8ab32699c266e873616f9bf8de048a333a4  projects/evergreen/s1_main_flow/docs/specs/2026-10-03-m2-release-and-version.md
-e897ebbe7943fc809a7b618d15828a78060140832a0900f3ad21da4f9f1f498c  projects/evergreen/s1_main_flow/docs/specs/2026-10-06-m2-ppe-agent-e2e-evidence.md
+0915839c2f15bae903de2c19c9190371173dcaaca1d2acc1857a65bdab052842  projects/evergreen/s1_main_flow/docs/specs/2026-10-06-m2-ppe-agent-e2e-evidence.md
 505d0e4d7449d1984151b73c90c9a4d03551a4e0cbeb4a47075dfd521562323b  projects/evergreen/s1_main_flow/docs/specs/2026-10-09-m2-acceptance-report.md
 00fc076e48d9baf35f8a6de036d717ee9dfcb17992e011161b0143ba00c8cc9d  projects/evergreen/s1_main_flow/docs/specs/2026-10-10-m3-proposal-state-contract.md
 de60532dc45dae00af0ca77c20c482d65b00436bcd8a49910998dc948530d556  projects/evergreen/s1_main_flow/docs/specs/2026-10-10-m3-user-authorization-contract.md

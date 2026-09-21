@@ -5,7 +5,7 @@ BIN        := bin/eg
 PKG        := ./cmd/eg
 # Keep this default in sync with internal/version.DefaultVersion.
 # Release builds may override it with `make release VERSION=x.y.z`.
-VERSION    ?= 0.6.0-m6
+VERSION    ?= 0.7.0-m7
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE       ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Version=$(VERSION) -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Commit=$(COMMIT) -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Date=$(DATE)

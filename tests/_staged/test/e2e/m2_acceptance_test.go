@@ -179,9 +179,14 @@ func TestS1NineCommandsAreImplemented(t *testing.T) {
 	// internal/cli/cli_test.go 的 wantCommandCount = 22）。T-…-069 按实测把总数从过程值
 	// 21 重钉到收口值 22 —— 数字变了是**事实变了**（T-…-068 已真实注册 `eg bench`），
 	// 「全部非占位 + 全部已挂载」这两条判据依旧逐字不变、一格未放宽。
-	if len(cmds) != 22 {
-		t.Fatalf("命令数应为 22（S1 九命令 + M3 状态三命令 + S2 proposal + M3 delete / undelete + "+
-			"mark-reviewed / unreviewed + edit + M4 reconcile / check + M5 index / bench），实际 %d", len(cmds))
+	// knowledge_opinion_split（Schema v2）B1a 再新增 `opinion` 一条：**22 → 23**（加法等式
+	// M3 期 18 + M4 期 2 + M5 期 2 + 本 Epic 1 = 23，逐项复算见 internal/cli/cli_test.go 的
+	// wantCommandCount = 23 与 opinion_cmd_test.go 的 TestCommandCountTwentyThree）。M5 收口值 22
+	// 那一格原样保留在 TestCommandCountTwentyTwo（它改证「摘掉 opinion 后恰 22」）。数字变了是
+	// **事实变了**（`eg opinion` 已真实注册），「全部非占位 + 全部已挂载」两条判据依旧一格未放宽。
+	if len(cmds) != 23 {
+		t.Fatalf("命令数应为 23（S1 九命令 + M3 状态三命令 + S2 proposal + M3 delete / undelete + "+
+			"mark-reviewed / unreviewed + edit + M4 reconcile / check + M5 index / bench + opinion），实际 %d", len(cmds))
 	}
 	for _, c := range cmds {
 		if c.Placeholder {

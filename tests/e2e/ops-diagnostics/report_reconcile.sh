@@ -181,7 +181,7 @@ cat >"${WORK}/plan.json" <<JSON
   "base": { "${CARD_REL}": "$(chash "${CARD_REL}")" },
   "ops": [
     { "op": "append_card", "card": "${CARD}",
-      "sections": { "解释与依据": "- 非对账路径追加的一条依据。\n" } }
+      "sections": { "条件与边界": "- 非对账路径追加的一条依据。\n" } }
   ]
 }
 JSON

@@ -35,12 +35,12 @@ SANDBOX="${WORK}/evergreen"
 VAULT="${WORK}/vault"
 EG="${WORK}/eg"
 
-# 当期期望版本号（M6 收口值；唯一决策出处见 teamwork 的 2027-02-21-m6-release-and-version.md §1.1）。
+# 当期期望版本号（唯一决策出处见 teamwork 的 knowledge_opinion_split Schema-v2 决策文档 §0.0）。
 # 写死而非从 version.go 反推：否则「四处一致」会退化成自证（被测对象自己定义期望值）。
-# ── C2b·M6 现态重钉（同「当期期望值 = WANT_VERSION，本脚本按里程碑更新」的历史口径，非放宽）：
-#    M6 · T-…-075 按发布口径把版本推进到 0.6.0-m6，故当期期望值由 0.5.0-m5 抬为 0.6.0-m6；
-#    M4_VERSION 反证锚点一字未改（0.6.0-m6 仍严格新于它、且它仍不得出现在任何赋值行）。
-WANT_VERSION="0.6.0-m6"
+# ── 阶段化重钉（同「当期期望值 = WANT_VERSION，本脚本按里程碑更新」的历史口径，非放宽）：
+#    本 Epic（knowledge_opinion_split）按发布口径把版本推进到 0.7.0-m7，故当期期望值由 0.6.0-m6 抬为 0.7.0-m7；
+#    M4_VERSION 反证锚点一字未改（0.7.0-m7 仍严格新于它、且它仍不得出现在任何赋值行）。
+WANT_VERSION="0.7.0-m7"
 # M4 收口值：作为**历史锚点 + 反证基线**保留（M4 结论「当期曾是它」不删，但它不得再是当期取值）。
 M4_VERSION="0.4.0-m4"
 WANT_COMMANDS=20

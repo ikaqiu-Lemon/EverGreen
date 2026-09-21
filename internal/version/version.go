@@ -12,7 +12,7 @@ package version
 import "runtime"
 
 // DefaultVersion is the local-development fallback and must match Makefile.
-const DefaultVersion = "0.6.0-m6"
+const DefaultVersion = "0.7.0-m7"
 
 // ScaffoldVersion is retained as a regression sentinel.
 const ScaffoldVersion = "0.0.0-dev"

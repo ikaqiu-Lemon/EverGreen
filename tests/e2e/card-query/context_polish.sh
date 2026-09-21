@@ -112,7 +112,9 @@ eg context --source "${SRC}" >"${WORK}/ctx.txt" 2>"${WORK}/ctx.err"
 grep -Fq '得分 ' "${WORK}/ctx.txt" || { cat "${WORK}/ctx.txt"; die "文本模式必须逐张打印得分"; }
 grep -Fq '· 命中卡的 ' "${WORK}/ctx.txt" || { cat "${WORK}/ctx.txt"; die "文本模式必须打印命中理由"; }
 # 文本候选区的 ID 顺序 == --json 的 candidates 顺序。
-grep -F '  候选 ' "${WORK}/ctx.txt" | sed 's/^  候选 \([^　]*\).*/\1/' >"${WORK}/txt.ids"
+# knowledge_opinion_split：文本候选区行首由 `候选` 收敛为 `知识候选`（另有 `观点候选`，本例 0 条），
+# 与 --json 的 knowledge_candidates / opinion_candidates 分列同源；此处只锁知识候选序列。
+grep -F '  知识候选 ' "${WORK}/ctx.txt" | sed 's/^  知识候选 \([^　]*\).*/\1/' >"${WORK}/txt.ids"
 tr ',' '\n' <"${WORK}/ctx1.json" | grep -o '"id":"k-[^"]*"' | sed 's/"id":"\(.*\)"/\1/' |
   awk '!seen[$0]++' >"${WORK}/json.ids.all"
 COUNT_TXT="$(wc -l <"${WORK}/txt.ids" | tr -d ' ')"
@@ -121,9 +123,9 @@ while read -r cid; do
   grep -Fq "\"id\":\"${cid}\"" "${WORK}/ctx1.json" || die "文本出现了 JSON 里没有的候选 ${cid}"
 done <"${WORK}/txt.ids"
 # 逐张打印的条数与总数行一致。
-grep -Fq "候选相似卡 ${COUNT_TXT} 张" "${WORK}/ctx.txt" ||
+grep -Fq "知识候选 ${COUNT_TXT} 张" "${WORK}/ctx.txt" ||
   { cat "${WORK}/ctx.txt"; die "总数行与逐张打印条数不一致"; }
-ok "候选 ${COUNT_TXT} 张：理由非空、文本与 JSON 同序同事实"
+ok "知识候选 ${COUNT_TXT} 张：理由非空、文本与 JSON 同序同事实"
 
 # ---------------------------------------------------------------- 4. base 口径稳定
 step "③ 重复读取的 data.base 逐字相等，且值均为 SHA-256"

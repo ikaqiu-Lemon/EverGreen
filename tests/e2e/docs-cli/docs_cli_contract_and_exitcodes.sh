@@ -42,17 +42,17 @@ PARENT="$(cd "${REPO_ROOT}/.." && pwd)"
 #      再加版本链**严格单调递增**一格：历史基线 < 当前值（回退版本号即红）。
 SPEC_REL_M2="projects/evergreen/s1_main_flow/docs/specs/2026-10-03-m2-release-and-version.md"
 SPEC_REL_M3="projects/evergreen/s1_main_flow/docs/specs/2026-11-08-m3-release-and-version.md"
-# 当期（M6）版本决策文档：本脚本比对的「当前版本号」唯一出处。
-# C2b·M6 现态重钉（沿用 M3/M5 已落地的「当期指针随里程碑走」口径，非放宽）：M6 · T-…-075
-# 把版本推进到 0.6.0-m6，故 SPEC_REL 指向 M6 发布口径文档、CUR_VERSION 抬为 0.6.0-m6、
-# 0.5.0-m5 降为历史基线（须 < 当前且不得作为生效值残留）；M2/M3 历史基线只读一字未动。
-SPEC_REL="projects/evergreen/s1_main_flow/docs/specs/2027-02-21-m6-release-and-version.md"
+# 当期（knowledge_opinion_split）版本决策文档：本脚本比对的「当前版本号」唯一出处。
+# 阶段化重钉（沿用「当期指针随里程碑走」口径，非放宽）：本 Epic 把版本推进到 0.7.0-m7，
+# 故 SPEC_REL 指向本 Epic §0.0 版本口径出处、CUR_VERSION 抬为 0.7.0-m7、
+# 0.6.0-m6 降为历史基线（须 < 当前且不得作为生效值残留）；M2/M3 历史基线只读一字未动。
+SPEC_REL="projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
 DECISION_DOC="${EG_CONTRACTS}/${SPEC_REL}"
 DECISION_DOC_M2="${EG_CONTRACTS}/${SPEC_REL_M2}"
 DECISION_DOC_M3="${EG_CONTRACTS}/${SPEC_REL_M3}"
 # 历史里程碑版本号基线（逐字，只读；顺序即里程碑顺序）与当期值。
-HIST_VERSIONS=("0.2.0-m2" "0.3.0-m3" "0.4.0-m4" "0.5.0-m5")
-CUR_VERSION="0.6.0-m6"
+HIST_VERSIONS=("0.2.0-m2" "0.3.0-m3" "0.4.0-m4" "0.5.0-m5" "0.6.0-m6")
+CUR_VERSION="0.7.0-m7"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/eg-m2-docs.XXXXXX")"
 SANDBOX="${WORK}/sandbox"

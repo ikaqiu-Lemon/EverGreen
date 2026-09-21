@@ -2,9 +2,16 @@
 # `eg card show` 端到端脚本（T-evergreen.s1_main_flow-158614-022）。
 #
 # 判据来源：M2 查询合同 `2026-09-19-m2-query-contract.md`
-#   §2.1 定位与退出口径 / §2.2 data 键表 + 五分区键序 + markers
+#   §2.1 定位与退出口径 / §2.2 data 键表 + markers
 #   §3.2 正向与反向取数（反向 = 全库扫描，不走索引）/ §3.3 两级排序
 #   §5.1 Q1 / Q2 诊断（悬空引用与坏文件绝不静默）/ §6 只读零副作用。
+#
+# 本 Epic（knowledge_opinion_split）Schema-v2 决策源：
+#   `projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md`
+#   —— Card 固定分区由 v1 五分区收敛为三分区（知识内容 / 条件与边界 / 用户补充）；
+#   被移除的 `解释与依据` / `理解自检` 不再是固定分区，只经 data.unknown_sections 有序暴露，
+#   固定 sections 键集合恒为三键、绝不因非固定分区扩张（internal/query/card.go CardDetail）。
+#   下面对 sections 键序 / 缺分区 / 非固定分区的断言按此真源加严，不放宽、不删断言。
 #
 # 约束：离线、可重复执行、无外部依赖（只用 bash / coreutils / git / go）；
 # 任何一条断言不成立立刻非零退出。全程零交互（stdin 接 /dev/null）。
@@ -152,17 +159,26 @@ snapshot "${WORK}/before.txt"
 ok "git status / git log 条数 / .md 字节与 mtime 快照就绪"
 
 # ---------------------------------------------------------------- 3. 单卡视图 JSON
-step "eg card show <k-id> --json：14 键齐备、五分区键序固定、sources / 正向关系"
+step "eg card show <k-id> --json：键表齐备、三分区键序固定、非固定分区经 unknown_sections、sources / 正向关系"
 [ "$(eg_code card show k-20260901-attention --json)" = "0" ] ||
   { cat "${WORK}/err.txt"; die "card show --json 应退 0"; }
 cp "${WORK}/out.txt" "${WORK}/a.json"
 for k in '"id"' '"title"' '"domain"' '"status"' '"deprecated"' '"created_at"' '"updated_at"' \
-  '"path"' '"tags"' '"markers"' '"sections"' '"sources"' '"relations_out"' '"relations_in"'; do
+  '"path"' '"tags"' '"markers"' '"sections"' '"unknown_sections"' '"sources"' '"relations_out"' '"relations_in"'; do
   grep -Fq -- "${k}" "${WORK}/a.json" || die "--json 缺合同 §2.2 的键 ${k}"
 done
-# 五分区键序固定为声明序（F5）：用一条正则逐字比对次序。
-grep -Eq '"sections":\{"知识内容":.*"解释与依据":.*"条件与边界":.*"用户补充":.*"理解自检":' \
-  "${WORK}/a.json" || { cat "${WORK}/a.json"; die "sections 键序不是五分区声明序"; }
+# 固定分区键序固定为 Schema-v2 三分区声明序（F5，加严）：用一条正则逐字比对次序。
+grep -Eq '"sections":\{"知识内容":.*"条件与边界":.*"用户补充":' \
+  "${WORK}/a.json" || { cat "${WORK}/a.json"; die "sections 键序不是 Schema-v2 三分区声明序"; }
+# 固定 sections 恒三键、不因被移除的 v1 分区扩张：sections 对象内绝不出现 解释与依据 / 理解自检。
+SECTIONS_OBJ="$(grep -oE '"sections":\{[^}]*\}' "${WORK}/a.json")" || die "a.json 缺 sections 对象"
+for legacy in '解释与依据' '理解自检'; do
+  printf '%s' "${SECTIONS_OBJ}" | grep -Fq -- "${legacy}" &&
+    die "固定 sections 被 v1 分区 ${legacy} 扩张（Schema-v2 三分区恒定失守）"
+done
+# 被移除的 v1 分区必须经 unknown_sections 有序暴露（不静默丢弃）：CARD_A 物理带 解释与依据 → 理解自检。
+grep -Eq '"unknown_sections":\[\{"name":"解释与依据",.*"name":"理解自检"' "${WORK}/a.json" ||
+  { cat "${WORK}/a.json"; die "解释与依据 / 理解自检 未按序经 unknown_sections 暴露"; }
 grep -Fq '"source":"s-20260901-x"' "${WORK}/a.json" || die "sources[] 未原样透出"
 grep -Fq '"rel":"support"' "${WORK}/a.json" || die "sources[].rel 未原样透出"
 # 正向关系：type 固定次序（opposing → limits → supports），元素恰五键。
@@ -229,7 +245,7 @@ diff -u "${WORK}/want_sortkeys.txt" "${WORK}/got_sortkeys.txt" ||
 grep -Fq '"relations_in"' "${WORK}/a_all.json" || die "--include-deprecated 视图缺 relations_in 键"
 grep -Fq '"exit_code":0' "${WORK}/a.json" || die "正常路径必须退 0"
 grep -Fq '"exit_code":0' "${WORK}/a_all.json" || die "--include-deprecated 也必须退 0"
-ok "14 键齐备；sections 键序 = 五分区声明序；sources / relations_out 双视图双向锁（默认 2 条 / 放开 3 条 = M2 §3.3 原序）+ 四级键恰 4"
+ok "键表齐备；sections 键序 = Schema-v2 三分区声明序、被移除 v1 分区经 unknown_sections 有序暴露；sources / relations_out 双视图双向锁（默认 2 条 / 放开 3 条 = M2 §3.3 原序）+ 四级键恰 4"
 
 # ---------------------------------------------------------------- 4. 反向关系（全库扫描）
 step "反向关系：A 指向 B → card show B 的 relations_in[] 含 from == A（跨领域亦然）"
@@ -249,9 +265,10 @@ ok "反向关系来自全库扫描（跨领域可见）；opposing 单向存储�
 # ---------------------------------------------------------------- 5. 缺分区 + 失效标记
 step "缺分区键仍在值为空串；失效卡 markers = [失效] 且 deprecated: true（合同 §2.2）"
 [ "$(eg_code card show k-20260902-rnn --json)" = "0" ] || die "card show B 应退 0"
-grep -Fq '"解释与依据":""' "${WORK}/out.txt" || die "缺分区应「键仍在、值为空串」"
+# B 只写了「知识内容」，v2 另两个固定分区（条件与边界 / 用户补充）缺失：键仍在、值为空串。
+grep -Fq '"条件与边界":""' "${WORK}/out.txt" || die "缺分区应「键仍在、值为空串」"
 [ "$(eg_code card show k-20260902-rnn)" = "0" ] || die "card show B（文本）应退 0"
-grep -Fq '分区 解释与依据：（本分区缺失）' "${WORK}/out.txt" || die "文本模式缺「（本分区缺失）」标注"
+grep -Fq '分区 条件与边界：（本分区缺失）' "${WORK}/out.txt" || die "文本模式缺「（本分区缺失）」标注"
 [ "$(eg_code card show k-20260903-ops)" = "0" ] || die "card show C（文本）应退 0"
 grep -q '^\[失效\]' "${WORK}/out.txt" || { cat "${WORK}/out.txt"; die "文本模式缺 [失效] 前缀"; }
 for m in '[已删除]' '[未过目]' '[材料支持不足]'; do

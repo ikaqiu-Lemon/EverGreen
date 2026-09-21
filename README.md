@@ -154,7 +154,7 @@ Two properties fall out of this shape:
 Binaries for Linux and macOS are attached to each [release](https://github.com/ikaqiu-Lemon/EverGreen/releases).
 
 ```console
-$ VER=v0.6.0-m6
+$ VER=v0.7.0-m7
 $ OS=$(uname -s | tr '[:upper:]' '[:lower:]')            # linux | darwin
 $ ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
@@ -168,7 +168,7 @@ eg_linux_amd64: OK
 $ chmod +x "eg_${OS}_${ARCH}"
 $ sudo mv "eg_${OS}_${ARCH}" /usr/local/bin/eg
 $ eg --version
-eg 0.6.0-m6 (commit …, built …)
+eg 0.7.0-m7 (commit …, built …)
 ```
 
 Each release also ships `PROVENANCE.txt`, which binds the release version and source commit to the
@@ -187,7 +187,7 @@ $ git clone https://github.com/ikaqiu-Lemon/EverGreen.git
 $ cd EverGreen
 $ make build          # native bin/eg + cross-compiled dist/
 $ ./bin/eg --version
-eg 0.6.0-m6 (commit …, built …)
+eg 0.7.0-m7 (commit …, built …)
 ```
 
 **Requirements:** Go 1.25+, Git, GNU Make. Python 3 with PyYAML is needed only to run the
@@ -1070,7 +1070,7 @@ from two machines at once — the lock is local-only.
 
 ## Project information
 
-- **Version:** `0.6.0-m6` · **Module:** `github.com/ikaqiu-Lemon/EverGreen`
+- **Version:** `0.7.0-m7` · **Module:** `github.com/ikaqiu-Lemon/EverGreen`
 - **Security:** private vulnerability reporting in [SECURITY.md](SECURITY.md)
 - **Privacy:** local-only data-handling model in [PRIVACY.md](PRIVACY.md)
 - **Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

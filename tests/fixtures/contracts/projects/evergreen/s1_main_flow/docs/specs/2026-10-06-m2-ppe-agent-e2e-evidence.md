@@ -77,7 +77,12 @@ capture( → process( → relate(
 
 > [query-before.txt] rel：k-20260918-scaling-compute 的正向 0 条 / 反向 0 条（扫描 1 个 .md，跳过 0 个；只读，零写入零 commit）
 > [query-after.txt] rel：k-20260918-scaling-compute 的正向 0 条 / 反向 1 条（扫描 2 个 .md，跳过 0 个；只读，零写入零 commit）
-> [query-after.txt] 反向关系：k-20260901-verification-principle --limits--> k-20260918-scaling-compute  理由：验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长（来源卡：domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+> [query-after.txt] 反向关系：k-20260901-verification-principle --limits--> k-20260918-scaling-compute  理由：验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长（来源：domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+
+> **M2 原始留痕（历史事实，逐字保留，非当前 CLI 输出）**：M2 首跑时 `eg rel` 的反向来源展示词为「来源卡：」，当时逐字引用为——
+> 反向关系：k-20260901-verification-principle --limits--> k-20260918-scaling-compute  理由：验证原则限定了既有卡结论的适用前提：可随算力扩展的通用方法要把算力真正转化为知识规模，前提是这些知识能被系统自身验证；原文指出若错误只能由人发现和纠正，知识系统的规模就受限于人所能监控与理解的范围并长期脆弱，因此算力增长本身不足以保证知识规模增长（来源卡：domains/ai-infra/knowledge/k-20260901-verification-principle.md）
+
+**Schema v2 展示词演进（说明，不改历史事实）**：knowledge_opinion_split 打通 opinion 关系端点后，`eg rel` 的反向来源展示词由 M2 期的「来源卡：」泛化为当前的「来源：」（同一目标路径、同一论证事实，仅展示前缀演进）。上方带 `> [query-after.txt]` 前缀的一行是**当前 CLI** 的逐字输出，供机器读取核对当前 `query-after.txt`；紧随其后的「M2 原始留痕」保留 M2 期「来源卡：」原句以存历史真相。两行并列，历史不被覆盖。
 
 补充查询证据：`eg search 自验证` 从 0 命中变为 1 命中新卡；
 `eg search 算力` 始终只命中既有卡，反向印证三维度 `different`。
