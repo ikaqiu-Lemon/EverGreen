@@ -65,8 +65,8 @@ k-20260915-attention-parallelism  注意力用并行访问替代了循环结构 
 - [快速开始](#快速开始)
 - [核心概念](#核心概念)
   - [vault（知识库）](#vault知识库)
-  - [四种实体](#四种实体)
-  - [知识卡的五个分区](#知识卡的五个分区)
+  - [四种学习实体与控制面](#四种学习实体与控制面)
+  - [实体模板](#实体模板)
   - [关系](#关系)
   - [ChangePlan](#changeplan)
 - [与 coding agent 配合使用](#与-coding-agent-配合使用)
@@ -110,13 +110,13 @@ Evergreen 有意**不**抓取、也不理解内容。语义由你的 agent 负�
                   ▼                               ▼
         ┌──────────────────┐   ② context   ┌────────────────────────┐
         │   eg capture     │ ────────────▶ │   eg apply --plan      │
-        │   收录原文        │  候选卡 +     │  校验 → 授权 → 写区间   │
-        └────────┬─────────┘  content_hash │  → 恰一次 commit       │
+        │   收录原文        │  知识/观点候选 │  校验 → 授权 → 写区间   │
+        └────────┬─────────┘  + content_hash│  → 恰一次 commit       │
                  │                         └───────────┬────────────┘
                  ▼                                     ▼
         ┌──────────────────────────────────────────────────────────┐
         │   你的 vault = 一个 Markdown 的 Git 仓库（唯一权威来源）    │
-        │   sources/ · domains/<d>/notes/ · domains/<d>/knowledge/  │
+        │   sources/ · <d>/notes/ · <d>/knowledge/ · <d>/opinions/  │
         └──────────────┬───────────────────────────────┬───────────┘
                        │ 可重建                         │ 只读
                        ▼                               ▼
@@ -217,8 +217,8 @@ Evergreen 从不抓取 URL，正文由你（或你的 agent）清洗好后传入
 ```console
 $ cat > /tmp/body.txt <<'EOF'
 Rich Sutton 认为，能利用算力的通用方法，长期表现优于把人类领域知识直接写进系统的方法。
-国际象棋、围棋、语音识别与计算机视觉都出现过同一个模式：人工注入知识的方案短期领先，
-随后被算力驱动的通用方法反超。
+国际象棋、围棋、语音识别与计算机视觉都出现过同一个模式：人工注入知识的方案短期领先，随后被算力驱动的方法反超。
+长期应当押注可扩展的搜索与学习，而不是把人类已经知道的东西编码进系统。
 EOF
 
 $ eg capture \
@@ -248,8 +248,11 @@ commit：capture(ai-infra): 收录 s-20260915-the-bitter-lesson
 $ eg context --source s-20260915-the-bitter-lesson --json
 ```
 
-这是只读调用，返回原文正文、同领域相似的候选卡（`candidates`），以及最关键的 `base`
-（文件 → `content_hash` 映射）：
+这是只读调用，返回原文正文、同领域相似的候选实体，以及最关键的 `base`（文件 → `content_hash`
+映射）。候选分两类：`knowledge_candidates`（可复用 / 扩展的已有知识 `k-*`）与 `opinion_candidates`
+（已有观点 `o-*`）。旧字段 `candidates` 仍为 0.7.x 兼容保留，且**恒等于 `knowledge_candidates`**；
+`eg context` **无条件发出恰一条 `I1` 弃用提示**（与调用方是否读取该字段无关），并将在 **0.8.0 删除**。
+知识与观点候选分别进入 plan 的 `base`：
 
 ```json
 {
@@ -259,6 +262,8 @@ $ eg context --source s-20260915-the-bitter-lesson --json
       "unprocessed.md": "sha256:ed58e18b227f787c87257d9d6356997aae9eb9bb238858ba158d7da6bcdb9584"
     },
     "candidates": [],
+    "knowledge_candidates": [],
+    "opinion_candidates": [],
     "cards": [],
     "notes": [],
     "proposals": [],
@@ -285,14 +290,15 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 
 ### 4. 通过 ChangePlan 写入
 
-存成 `plan.json`，其中 `base` 换成上一步拿到的真实 hash：
+原文落盘时正文首行 `L1` 是模板前导空行，因此三行真实正文分别落在 `L2`、`L3`、`L4`。存成
+`plan.json`，其中 `base` 换成上一步拿到的真实 hash：
 
 ```json
 {
-  "plan_version": 1,
+  "plan_version": 2,
   "verb": "process",
   "domain": "ai-infra",
-  "reason": "把 The Bitter Lesson 沉淀成一张可独立复用的知识卡",
+  "reason": "把 The Bitter Lesson 沉淀成一条可复用知识和一条观点",
   "requirement_ids": ["EG-KNW-04"],
   "convergence": [],
   "base": { "unprocessed.md": "sha256:ed58e18b…" },
@@ -300,43 +306,63 @@ $ eg context --source s-20260915-the-bitter-lesson --json
     {
       "op": "write_note",
       "source": "s-20260915-the-bitter-lesson",
-      "note_id": "n-20260915-the-bitter-lesson",
+      "note_id": "n-20260915-bitter-lesson",
       "title": "The Bitter Lesson（Rich Sutton, 2019）",
-      "sections": {
-        "材料提炼": "- 原文主张：能利用算力的通用方法长期看最有效。\n- 原文举例：国际象棋、围棋、语音识别、计算机视觉。\n",
-        "Agent 分析": "- 适用面以「有明确评估信号、可大规模搜索或学习」的任务为主。\n"
-      },
-      "output_cards": [{ "card": "k-20260915-bitter-lesson", "mode": "新建" }],
-      "coverage_gaps": ["counterexample"]
+      "blocks": [
+        { "role": "source", "source_ref": "L2-L2", "heading": "主张", "body": "Rich Sutton 认为，能利用算力的通用方法，长期表现优于把人类领域知识直接写进系统的方法。" },
+        { "role": "source", "source_ref": "L3-L3", "heading": "证据", "body": "国际象棋、围棋、语音识别与计算机视觉都出现过同一个模式：人工注入知识的方案短期领先，随后被算力驱动的方法反超。" },
+        { "role": "source", "source_ref": "L4-L4", "heading": "结论", "body": "长期应当押注可扩展的搜索与学习，而不是把人类已经知道的东西编码进系统。" },
+        { "role": "agent",  "annotation": "summary", "body": "定义及其适用面是稳定知识；对经济押注的判断是价值评价，落成观点。" }
+      ],
+      "omissions": [],
+      "extraction_coverage": [
+        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "主张与其历史依据沉淀为一条可复用知识。", "disposition": "outputs", "outputs": ["k-20260915-bitter-lesson"] },
+        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "对长期押注的判断作为观点跟踪。",             "disposition": "outputs", "outputs": ["o-20260915-scale-bet"] }
+      ],
+      "output_cards": [
+        { "card": "k-20260915-bitter-lesson", "mode": "新建" },
+        { "card": "o-20260915-scale-bet", "mode": "新建" }
+      ]
     },
     {
-      "op": "create_card",
+      "op": "create_knowledge",
       "card_id": "k-20260915-bitter-lesson",
       "title": "能利用算力的通用方法长期胜过人工注入知识",
       "tags": ["ai", "method"],
       "sources": [
-        {
-          "source": "s-20260915-the-bitter-lesson",
-          "note": "n-20260915-the-bitter-lesson",
-          "rel": "support",
-          "reason": "原文用四个领域的历史给出该结论的直接依据"
-        }
+        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "原文用四个领域的历史给出该结论的直接依据" }
       ],
       "sections": {
-        "知识内容": "在算力成本持续指数下降的前提下，依赖搜索与学习、能随算力扩展的通用方法，长期表现优于把人类领域知识直接写进系统的方法。\n",
-        "解释与依据": "- 依据原文：算力可用量随时间指数增长，方法的可扩展性决定长期上限。\n",
-        "条件与边界": "- 前提是算力可持续增长、任务具备可大规模搜索或学习的结构。\n",
-        "理解自检": "- 如果算力成本停止下降，这个结论还成立吗？\n"
+        "知识内容": "依赖搜索与学习、能随算力扩展的通用方法，长期表现优于把人类领域知识直接写进系统的方法。\n",
+        "条件与边界": "前提是算力可持续增长、任务具备可大规模搜索或学习的结构。\n"
+      }
+    },
+    {
+      "op": "create_opinion",
+      "opinion_id": "o-20260915-scale-bet",
+      "title": "把人类知识编码进系统是一个长期上会输的押注",
+      "sources": [
+        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "原文的收尾押注" }
+      ],
+      "sections": {
+        "观点": "投资可扩展的搜索与学习，长期上胜过投资人工编码的领域知识。\n",
+        "论据与推理": "算力持续变便宜，可扩展方法的上限会随时间抬升。\n"
       }
     },
     {
       "op": "add_open_question",
-      "note": "n-20260915-the-bitter-lesson",
+      "note": "n-20260915-bitter-lesson",
       "question": "在数据或评估信号受限的任务上，这个结论是否仍然成立？"
     }
   ]
 }
 ```
+
+`write_note` 是 v2 canonical 形态：`blocks[]` 按顺序复现原文各行（每个 `source` 块用 `source_ref` 回指
+它来自的物理行区间），`omissions[]` **显式**登记你有意丢弃的行（即便为空也要写空数组），
+`extraction_coverage[]` 则把每个来源区间闭合到 `outputs` / `note_only` / `missing` 上。知识经
+`create_knowledge` 落地（三分区），价值判断经 `create_opinion` 落地（五分区，`validation` 默认
+`pending` —— agent 路径永远不得设 `validated`/`rejected`）。
 
 务必先 dry-run —— 它完整跑校验，**零写入**：
 
@@ -349,9 +375,8 @@ $ eg apply --plan plan.json --dry-run
 --dry-run：零写入、零 commit，以下是将写入的清单
 知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
 关系：材料 0 条，论证 0 条
-写入文件 2 个：domains/ai-infra/notes/n-….md、domains/ai-infra/knowledge/k-….md
+写入文件 3 个：domains/ai-infra/notes/n-….md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
 commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
-· [I1] info ops[0] ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
 ```
 
 确认无误后正式写入：
@@ -362,20 +387,21 @@ $ eg apply --plan plan.json
 
 ```console
 状态：completed（exit_code=0，ok=true）
-材料笔记：n-20260915-the-bitter-lesson（领域 ai-infra，domains/ai-infra/notes/n-….md，重新加工 false）
+材料笔记：n-20260915-bitter-lesson（领域 ai-infra，domains/ai-infra/notes/n-….md，重新加工 false）
 知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
-关系：材料 1 条，论证 0 条
-未决问题：n-20260915-the-bitter-lesson ← 在数据或评估信号受限的任务上，这个结论是否仍然成立？
-写入文件 3 个：domains/ai-infra/notes/n-….md、unprocessed.md、domains/ai-infra/knowledge/k-….md
-commit：b4a69a2aa11ee969f3bf22e7696670a97654ebb1
+关系：材料 2 条，论证 0 条
+未决问题：n-20260915-bitter-lesson ← 在数据或评估信号受限的任务上，这个结论是否仍然成立？
+写入文件 4 个：domains/ai-infra/notes/n-….md、unprocessed.md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
+commit：842c8ddb03a2bbe2eab7c5a99f4495fe1979ba17
 显著变更：new_core_card（k-20260915-bitter-lesson）新建知识卡：承载本次加工的新核心含义
 ```
 
 ### 5. 读回来
 
 ```console
-$ eg search 算力                             # 带排序与分页的知识卡检索
-$ eg card show k-20260915-bitter-lesson     # 五分区 + sources + 正反向关系
+$ eg search 算力                             # 带排序与分页的知识检索（默认 --kind knowledge）
+$ eg card show k-20260915-bitter-lesson     # 单条知识：三分区 + sources + 正反向关系
+$ eg opinion show o-20260915-scale-bet      # 单条观点：五分区 + validation + 关系分组
 $ eg rel k-20260915-bitter-lesson           # 论证关系，正向与反向
 $ eg report --last                          # 只读复现最近一次写入报告
 ```
@@ -391,7 +417,7 @@ rel：k-20260915-bitter-lesson 的正向 0 条 / 反向 1 条（扫描 2 个 .md
 分页：--limit=50 --offset=0，本页 关系条目 1 条 / 共 1 条（截断=false；limit 是本次返回条数的全局上限）
 ```
 
-落盘的卡片，和你手写出来的完全一样：
+落盘的卡片，和你手写出来的完全一样 —— 一条知识卡恰有三个固定分区：
 
 ```markdown
 ---
@@ -402,7 +428,7 @@ created_at: '2026-09-15'
 updated_at: '2026-09-15T14:11:40+08:00'
 sources:
   - source: 's-20260915-the-bitter-lesson'
-    note: 'n-20260915-the-bitter-lesson'
+    note: 'n-20260915-bitter-lesson'
     rel: 'support'
     reason: '原文用四个领域的历史给出该结论的直接依据'
 tags:
@@ -412,21 +438,13 @@ tags:
 
 ## 知识内容
 
-在算力成本持续指数下降的前提下，依赖搜索与学习、能随算力扩展的通用方法，长期表现优于把人类领域知识直接写进系统的方法。
-
-## 解释与依据
-
-- 依据原文：算力可用量随时间指数增长，方法的可扩展性决定长期上限。
+依赖搜索与学习、能随算力扩展的通用方法，长期表现优于把人类领域知识直接写进系统的方法。
 
 ## 条件与边界
 
-- 前提是算力可持续增长、任务具备可大规模搜索或学习的结构。
+前提是算力可持续增长、任务具备可大规模搜索或学习的结构。
 
 ## 用户补充
-
-## 理解自检
-
-- 如果算力成本停止下降，这个结论还成立吗？
 ```
 
 ### 6. 可选：建索引与体检
@@ -449,8 +467,9 @@ SKILL.md                          # agent 操作规程，由 eg init 写入
 unprocessed.md                    # 收件区：已收录但未加工的原文
 sources/                          # s-*  收录的原始材料
 domains/<domain>/notes/           # n-*  材料笔记（忠于原文）
-domains/<domain>/knowledge/       # k-*  知识卡（可复用的论断）
-proposals/                        # p-*  高风险操作提案（按需创建）
+domains/<domain>/knowledge/       # k-*  知识（稳定、可复用的论断）
+domains/<domain>/opinions/        # o-*  观点（评价、因果 / 预测判断）
+proposals/                        # p-*  控制面：高风险操作提案（按需创建）
 .index/                           # 派生 SQLite + run.lock + 事务日志（.gitignore）
 .eg/                              # 最近一次报告状态（.git/info/exclude）
 ```
@@ -460,31 +479,53 @@ proposals/                        # p-*  高风险操作提案（按需创建）
 **领域（domain）** 是顶层分区（`ai-infra`、`product` …）。Evergreen **绝不**替你选领域：未配置
 `default_domain` 时，除 `init` / `config` 外一律提示配置并退 `1`。
 
-### 四种实体
+### 四种学习实体与控制面
+
+Evergreen 用一条固定的 **Source → Note → {Knowledge, Opinion}** 链来建模一篇原文。四种实体承载你
+学到的东西；`Proposal` 是独立的控制面对象，不是学习实体：
 
 | 前缀 | 实体 | 作用 |
 | --- | --- | --- |
-| `s-` | **原文** | 收录的原始材料，作为不可变证据。 |
-| `n-` | **材料笔记** | 对单篇原文的忠实提炼；agent 自己的判断另放「Agent 分析」，与原文主张分离。 |
-| `k-` | **知识卡** | 一个可独立理解 / 引用 / 复用的知识单元，也是被检索和被连接的对象。 |
-| `p-` | **提案** | 高风险操作的申请，等待人工批准。 |
+| `s-` | **Source（原文）** | 收录的原始材料，作为不可变证据，一篇原文一个文件。 |
+| `n-` | **Note（笔记）** | 单篇原文的完整、顺序忠实的正文，就近在被评述的文字旁放置可移除的批注。 |
+| `k-` | **Knowledge（知识）** | 稳定的定义 / 组成 / 步骤 / 条件 / 数据。只做整理拆分去重 —— 绝不做多跳推导。这也是 search 默认返回的对象。 |
+| `o-` | **Opinion（观点）** | 评价、因果或预测论断，或一种取舍。承载它的论据、反例和验证生命周期。**当你分不清一件事是 Knowledge 还是 Opinion 时，优先归为 Opinion。** |
+
+`Proposal`（`p-*`）位于仓库根，驱动等待人工批准的高风险操作；它是控制面，绝不可被当作四种学习实体
+之一。
 
 ID 稳定、可读、带日期前缀（`k-20260915-bitter-lesson`）。两条代码级硬规则：`s-` 绝不可写进
-`relations`，`k-` 绝不可写进 `sources`。
+`relations`，`k-`/`o-` 绝不可写进 `sources`。
 
-### 知识卡的五个分区
+### 实体模板
 
-每张卡恰有这五个分区，顺序固定：
+每种学习实体都有一组固定、有序的分区，落盘时按字节逐字比较：
+
+**Knowledge —— 三分区：**
 
 | 分区 | 内容 | 谁可以写 |
 | --- | --- | --- |
 | 知识内容 | 论断本身，一卡一个知识点 | 仅建卡时由 agent 写；之后修改需用户显式授权 |
-| 解释与依据 | 为什么成立，须有材料依据 | agent 可追加 |
 | 条件与边界 | 何时成立、何时不成立 | agent 可追加 |
 | 用户补充 | 你自己的补充 | **只有你。** agent 永久禁写 |
-| 理解自检 | 开放式问题，不预设成立方 | agent 可追加 |
 
-材料笔记也有自己的五个分区：材料提炼、Agent 分析、用户补充、存疑与待验证、产出知识卡。
+**Opinion —— 五分区：**
+
+| 分区 | 内容 |
+| --- | --- |
+| 观点 | 评价 / 判断本身 |
+| 论据与推理 | 支撑它的推理与证据 |
+| 条件与反例 | 何处适用、何处失效 |
+| 待验证 | 待核查项；`validation` 生命周期落在 frontmatter |
+| 用户补充 | **只有你。** |
+
+**Note —— 四分区：** 整理正文、提取结果、存疑与待验证、用户补充。
+
+旧 v1 的 Knowledge 分区「解释与依据」与「理解自检」**不是**当前固定分区；当更旧的 vault 仍带着它们时，
+会作为未知 / 兼容分区原样逐字保留并以 info 提示，绝不改写。
+
+同样，旧 v1 的 Note 分区「材料提炼」「Agent 分析」「产出知识卡」**也不是**当前固定的 Note 模板分区；
+当存量 vault 仍带着它们时，会被兼容映射并按字节原样保真，绝不清零。（完整的 v1 Note 规程不在此处展开。）
 
 这套切分正是让 agent 保持诚实的关键：它可以丰富论断周围的**推理**，但无法悄悄重定义论断本身，
 也永远碰不到你写的字。
@@ -525,21 +566,23 @@ ChangePlan 是 Evergreen 对外的契约：**唯一的程序化写入通道。**
 
 | 键 | 用途 |
 | --- | --- |
-| `plan_version` | 恒为 `1` |
+| `plan_version` | 当前 plan 为 `2`。支持集合为 `{1, 2}`；`plan_version: 1` 的 plan 仍为兼容而被接受，并给恰一条 `I1` 迁移 info。 |
 | `verb` | commit verb —— 主链路用 `process`，重新加工用 `reprocess` |
 | `domain` | 一份 plan 只写一个领域 |
 | `reason` | 本次写入的理由 |
 | `requirement_ids` | 可追溯标签，会体现在 commit 正文 |
-| `convergence[]` | 对每张被比较的候选卡逐条记录收敛判定（见下） |
+| `convergence[]` | 对每张被比较的候选逐条记录收敛判定（见下） |
 | `base` | `eg context` 给出的 文件 → `content_hash`，用于乐观并发 |
 | `ops[]` | 要执行的操作 |
 
-主链路可用的七个 op：
+主链路的九个 canonical op：
 
-`add_source` · `write_note` · `create_card` · `append_card` · `add_material_rel` ·
-`add_relation` · `add_open_question`
+`add_source` · `write_note` · `create_knowledge` · `append_knowledge` · `create_opinion` ·
+`append_opinion` · `add_material_rel` · `add_relation` · `add_open_question`
 
-未知 op 是硬错误（`E5`、退 `2`、零写入）—— Evergreen 选择失败关闭，而不是猜。
+`create_card` 与 `append_card` 是 `create_knowledge` / `append_knowledge` 的**兼容别名**：它们会被
+归一到 canonical 名并给一条 `I1` 迁移 info，因此新 plan 应直接使用 canonical op。未知 op 是硬错误
+（`E5`、退 `2`、零写入）—— Evergreen 选择失败关闭，而不是猜。
 
 ---
 
@@ -553,7 +596,7 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 ```text
 第 0 步  agent 自行抓取并清洗正文        （CLI 不做任何网络 I/O）
    ①     eg capture          收录原文，登记收件区
-   ②     eg context          取候选卡与 base content hash
+   ②     eg context          取知识候选 + 观点候选 + base content hash
    ③     语义处理             唯一允许调用模型的环节
    ④     eg apply --plan     唯一写入通道
    ⑤     渲染报告             如实转述写了什么、跳过了什么、为什么
@@ -562,46 +605,54 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 若抓取失败或正文为空，正确做法是**停下**：在报告里写明原因，不落任何文件。绝不能用占位文本、
 摘要或搜索结果冒充正文。
 
-### 判断卡是否已存在
+### Knowledge 还是 Opinion，以及判断它是否已存在
 
-写入前，agent 要把新材料与每张候选卡在三个维度上逐一比较：
+先给材料分类。稳定的定义、组成、步骤、条件与数据是 **Knowledge**（`create_knowledge`）；评价、
+因果或预测论断、比较与取舍是 **Opinion**（`create_opinion`）。分不清时**优先归为 Opinion** —— 它自带
+有争议论断所需的论据 / 反例 / 验证机制。
+
+写入前，agent 要把新材料与每个候选在三个维度上逐一比较：
 
 - **核心知识**相同还是不同？
 - **成立条件**相同还是不同？
 - **独立复用用途**相同还是不同？
 
-规则是**宁拆勿并**：任一维度不同 —— 或者判不出来 —— 就新建一张卡，并写明为什么。只有三维度全部
-相同才允许复用已有卡。每次比较都记进 `convergence[]`，Evergreen 原样回带、不重新判断。
+规则是**宁拆勿并**：任一维度不同 —— 或者判不出来 —— 就新建一个实体，并写明为什么。只有三维度全部
+相同才允许复用已有实体。每次比较都记进 `convergence[]`，Evergreen 原样回带、不重新判断。
 
 这个判定恰好映射到七种结果：
 
 | `relation` | 情形 | 应产出的 op |
 | --- | --- | --- |
-| `independent_new` | 确实是新知识 | `create_card` + `add_material_rel` |
-| `same_semantics` | 已被覆盖 | 不新建卡，只 `add_material_rel` |
-| `non_core_supplement` | 补充依据或边界 | `append_card` 到「解释与依据」/「条件与边界」（**不动「知识内容」**）+ `add_material_rel` |
-| `core_change` | 论断本身变了 | 新建 `create_card` + `add_relation` 指向原卡；**原卡不改写、不失效** |
-| `conflict_coexist` | 与已有卡冲突 | 两卡同时 `active` + **恰一条** `opposing` |
-| `uncertain` | 本材料无法定论 | `add_open_question`，不建卡 |
-| `deprecated` | 让卡失效 | **agent 不可用** —— 只能由用户发起 |
+| `independent_new` | 确实是新的 | `create_knowledge`（或 `create_opinion`）+ `add_material_rel` |
+| `same_semantics` | 已被覆盖 | 不新建实体，只 `add_material_rel` |
+| `non_core_supplement` | 补充依据或边界 | `append_knowledge` / `append_opinion` 到非核心分区（**绝不动核心的「知识内容」/「观点」**）+ `add_material_rel` |
+| `core_change` | 论断本身变了 | 新建 `create_knowledge`/`create_opinion` + `add_relation` 指向原实体；**原实体不改写、不失效** |
+| `conflict_coexist` | 与已有实体冲突 | 两者同时 `active` + **恰一条** `opposing` |
+| `uncertain` | 本材料无法定论 | `add_open_question`，不建实体 |
+| `deprecated` | 让实体失效 | **agent 不可用** —— 只能由用户发起 |
 
-### 如实登记覆盖缺失
+### 忠实的笔记：覆盖与遗漏
 
-写笔记前，agent 要对七类要点自评 —— `core_claim`、`key_evidence`、`counterexample`、`boundary`、
-`method`、`conclusion`、`limitation` —— 把**原文未表达**的写进 `coverage_gaps`，它们会以 `I1` info
-出现在最终报告里。这个字段记录的是**原文**缺什么，不是用来掩盖 agent 自己漏写的要点，也不得为了
-凑满七项而编造原文没有的内容。
+`write_note` 忠实登记整篇原文。`blocks[]` 按顺序复现每一非空行（agent 批注作为 `role: agent` 块穿插
+其间）；`omissions[]` **显式**列出你有意丢弃的确切行区间及理由（即便为空也要写空数组）；
+`extraction_coverage[]` 把每个来源区间闭合到 `outputs`（成了 Knowledge/Opinion）、`note_only`（留在
+笔记里）或 `missing`。`missing` 会以 `E2` 阻断本次 apply，因此覆盖在构造上是闭合的 —— 它不是用来掩盖
+agent 自己遗漏的地方，agent 也不得编造内容去填它。
 
 ### agent 绝不可做的事
 
 - 用编辑器 / shell / 脚本改 vault 内文件，或自行 `git commit` / `reset` / `checkout`。
   只能走 `eg apply`。
-- 写已有卡的「知识内容」，或写任何产物的「用户补充」。
+- 写已有 Knowledge 的核心「知识内容」分区，或已有 Opinion 的核心「观点」分区，或任何产物的
+  「用户补充」分区。
+- 把 Opinion 的 `validation` 设为 `validated` / `rejected` —— 这条生命周期只由用户发起；写入非
+  `pending` 的 validation 的 plan 会被拒（`E2`）。
 - 生成状态类 op（`deprecate`、`restore`、`delete`、`undelete`、`set_replaced_by`）。
   缺 `initiator: user` 时这些是 **error** 而非 warning —— 退 `2`、零写入。
 - 一份 plan 写两个领域。
-- 把多跳推导结论沉淀成新卡：它没有自己的材料依据，落盘会绕过依据强制。这类结论应写进笔记的
-  「Agent 分析」或存疑分区。
+- 把多跳推导结论沉淀成 Knowledge：它没有自己的材料依据，落盘会绕过依据强制。这类结论应写进笔记的
+  分析或写成 Opinion。
 - 编造原文、笔记、理由或 ID。
 
 ---
@@ -622,7 +673,7 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 | 命令 | 用途 |
 | --- | --- |
 | `eg capture` | 收录原文并登记收件区 |
-| `eg context` | 只读：候选卡 + `base` content hash |
+| `eg context` | 只读：`knowledge_candidates` + `opinion_candidates`（+ 兼容 `candidates`）+ `base` content hash |
 | `eg apply --plan <file\|->` | 校验并应用 ChangePlan —— 唯一写入通道 |
 | `eg report --last` | 只读复现最近一次产出报告体的写命令（`eg apply` 或 `eg capture`） |
 
@@ -630,8 +681,8 @@ Evergreen 就是为 agent 驱动而设计的。`eg init` 会把 `SKILL.md` 作�
 
 | 命令 | 用途 |
 | --- | --- |
-| `eg search <query>` | 带排序与分页的知识卡检索 |
-| `eg card show <k-id>` | 单卡：五分区 + sources + 正反向关系 |
+| `eg search <query>` | 带排序与分页的检索。默认 `--kind knowledge`；`--kind opinion` 固定搜观点、`--kind all` 两类都返回。 |
+| `eg card show <k-id>` | 单条知识：三分区 + sources + 正反向关系 |
 | `eg rel <k-id>` | 论证关系；`--replaced-by` 切到替代指针视图 |
 | `eg opinion search <q>` | 只读观点检索：等价 `eg search` 但固定只搜观点（`o-*`），同一套 domain/tag/since/until/include-deleted/limit/offset（**不含 `--kind`**）；每条命中带 `validation`（pending/validated/rejected 全召回、绝不隐式过滤）与 `supports`/`limits`/`opposing` 计数。零写入、零 commit。 |
 | `eg opinion show <o-id>` | 只读单条观点视图：五分区、`validation`、sources、支持 / 限制 / 反对三组各正反两段（空段显式写「无」）；只吃 `--include-deprecated`/`--limit`/`--offset`。零写入、零 commit。 |
@@ -702,7 +753,8 @@ incoming `supports` 边**（本观点自己发出的 **outgoing** `supports` 不
 
 ## 读路径：排序、分页与降级
 
-**匹配分。** `eg search` 只检索知识卡，材料笔记与原文不进结果。命中 title +3、tags +2、正文 +1，
+**匹配分。** `eg search` 默认 `--kind knowledge`，因此只有 Knowledge 进结果；`--kind opinion` 固定搜
+观点、`--kind all` 两类都返回 —— 笔记与原文永不进结果。命中 title +3、tags +2、正文 +1，
 每词每字段至多计一次。
 
 **全序。** 检索结果按 匹配分降序 → `updated_at` 倒序 → `created_at` 倒序 → `id` 升序 排列。
@@ -816,6 +868,11 @@ Evergreen 绝不把你的 YAML 过一遍序列化器。它解析原始字节、�
 
 索引是 `.index/` 下的 SQLite/FTS5 数据库（基于 `modernc.org/sqlite`，纯 Go，无需 CGO）。它是
 **纯加速层**：不被任何命令依赖、不是任何命令的前置、在 `.gitignore` 内、不随仓库分发。
+
+它在 `index_meta` 中带 `schema_version = 2`，共六张表 —— `index_meta`、`cards`、`cards_fts`、
+`relations`、`files`、`skipped`。Knowledge 与 Opinion 共用 `cards`/`cards_fts`，由 `kind` 列区分
+（`knowledge` / `opinion`）；观点的 `validation` 也落在同一行。**没有增量 schema 迁移**：当盘上的
+`schema_version` 不匹配时，整个索引被丢弃并从 Markdown 重建。
 
 ```console
 $ eg index build              # 构建

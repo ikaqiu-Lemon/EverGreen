@@ -74,8 +74,8 @@ destructive operations, stable exit codes, and a full audit trail in Git.
 - [Quick start](#quick-start)
 - [Core concepts](#core-concepts)
   - [The vault](#the-vault)
-  - [Four entity types](#four-entity-types)
-  - [The five-section knowledge card](#the-five-section-knowledge-card)
+  - [Four learning entities and a control plane](#four-learning-entities-and-a-control-plane)
+  - [Entity templates](#entity-templates)
   - [Relationships](#relationships)
   - [The ChangePlan](#the-changeplan)
 - [Using Evergreen with a coding agent](#using-evergreen-with-a-coding-agent)
@@ -120,13 +120,13 @@ Evergreen owns the disk.
                    ▼                                     ▼
         ┌──────────────────┐   ② context      ┌────────────────────────┐
         │   eg capture     │ ───────────────▶ │   eg apply --plan      │
-        │ store raw source │  candidates +    │  validate → authorize  │
-        └────────┬─────────┘  content hashes  │  → write spans → commit│
-                 │                            └───────────┬────────────┘
+        │ store raw source │  knowledge +     │  validate → authorize  │
+        └────────┬─────────┘  opinion cands.  │  → write spans → commit│
+                 │            + content hashes└───────────┬────────────┘
                  ▼                                        ▼
         ┌─────────────────────────────────────────────────────────────┐
         │   your vault = a Git repo of Markdown (source of truth)      │
-        │   sources/ · domains/<d>/notes/ · domains/<d>/knowledge/     │
+        │   sources/ · <d>/notes/ · <d>/knowledge/ · <d>/opinions/     │
         └───────────────┬─────────────────────────────────┬───────────┘
                         │ rebuildable                     │ read-only
                         ▼                                 ▼
@@ -232,10 +232,9 @@ Evergreen never fetches URLs. You (or your agent) supply already-cleaned body te
 
 ```console
 $ cat > /tmp/body.txt <<'EOF'
-Rich Sutton argues that general methods leveraging computation ultimately outperform
-methods that build in human domain knowledge. Chess, Go, speech recognition and
-computer vision all showed the same pattern: handcrafted knowledge led early, then
-compute-driven general methods overtook it.
+Rich Sutton argues that general methods leveraging computation ultimately outperform methods that build in human domain knowledge.
+Chess, Go, speech recognition and computer vision all showed the same pattern: handcrafted knowledge led early, then compute-driven methods overtook it.
+The long-run bet is on scalable search and learning, not on encoding what humans already know.
 EOF
 
 $ eg capture \
@@ -266,8 +265,13 @@ capture` copies its content into `sources/`.
 $ eg context --source s-20260915-the-bitter-lesson --json
 ```
 
-This read-only call returns the source body, similar existing cards (`candidates`), and — most
-importantly — `base`, a map of file → `content_hash`:
+This read-only call returns the source body, similar existing entities, and — most importantly —
+`base`, a map of file → `content_hash`. Candidates come in two typed lists: `knowledge_candidates`
+(existing Knowledge `k-*` to reuse or extend) and `opinion_candidates` (existing Opinion `o-*`). The
+legacy `candidates` field is still emitted for 0.7.x compatibility and is **identically equal to
+`knowledge_candidates`**; `eg context` **unconditionally emits exactly one `I1` deprecation info** for
+it (independent of whether a caller reads the field), and it will be **removed in 0.8.0**. Both typed
+lists feed the plan's `base`:
 
 ```json
 {
@@ -277,6 +281,8 @@ importantly — `base`, a map of file → `content_hash`:
       "unprocessed.md": "sha256:49d70d685f07d2b18acfaa97893565bd6e7c252a6a0deb43ec1c94a35ae656f5"
     },
     "candidates": [],
+    "knowledge_candidates": [],
+    "opinion_candidates": [],
     "cards": [],
     "notes": [],
     "proposals": [],
@@ -303,58 +309,80 @@ file changed underneath you, Evergreen skips that file instead of clobbering it.
 
 ### 4. Write through a ChangePlan
 
-Save this as `plan.json`, pasting in the `base` hash from step 3:
+The captured source persists with a template blank as body line `L1`, so its three real content
+lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash from step 3:
 
 ```json
 {
-  "plan_version": 1,
+  "plan_version": 2,
   "verb": "process",
   "domain": "ai-infra",
-  "reason": "distill The Bitter Lesson into one reusable card",
+  "reason": "distill The Bitter Lesson into reusable knowledge and one opinion",
   "requirement_ids": ["EG-KNW-04"],
   "convergence": [],
-  "base": { "unprocessed.md": "sha256:c98b6403…" },
+  "base": { "unprocessed.md": "sha256:879b6ef5…" },
   "ops": [
     {
       "op": "write_note",
       "source": "s-20260915-the-bitter-lesson",
-      "note_id": "n-20260915-the-bitter-lesson",
+      "note_id": "n-20260915-bitter-lesson",
       "title": "The Bitter Lesson (Rich Sutton, 2019)",
-      "sections": {
-        "材料提炼": "- Claim: general methods that leverage computation win in the long run.\n- Examples: chess, Go, speech recognition, computer vision.\n",
-        "Agent 分析": "- Applies mainly to tasks with a clear evaluation signal and room for search or learning.\n"
-      },
-      "output_cards": [{ "card": "k-20260915-bitter-lesson", "mode": "新建" }],
-      "coverage_gaps": ["counterexample"]
+      "blocks": [
+        { "role": "source", "source_ref": "L2-L2", "heading": "Claim",   "body": "Rich Sutton argues that general methods leveraging computation ultimately outperform methods that build in human domain knowledge." },
+        { "role": "source", "source_ref": "L3-L3", "heading": "Evidence", "body": "Chess, Go, speech recognition and computer vision all showed the same pattern: handcrafted knowledge led early, then compute-driven methods overtook it." },
+        { "role": "source", "source_ref": "L4-L4", "heading": "Bet",      "body": "The long-run bet is on scalable search and learning, not on encoding what humans already know." },
+        { "role": "agent",  "annotation": "summary", "body": "The definition and its scope are stable knowledge; the economic bet is a value judgement, so it becomes an opinion." }
+      ],
+      "omissions": [],
+      "extraction_coverage": [
+        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "Claim and its historical grounds become one reusable card.", "disposition": "outputs", "outputs": ["k-20260915-bitter-lesson"] },
+        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "The long-run bet is a value judgement, tracked as an opinion.",  "disposition": "outputs", "outputs": ["o-20260915-scale-bet"] }
+      ],
+      "output_cards": [
+        { "card": "k-20260915-bitter-lesson", "mode": "新建" },
+        { "card": "o-20260915-scale-bet", "mode": "新建" }
+      ]
     },
     {
-      "op": "create_card",
+      "op": "create_knowledge",
       "card_id": "k-20260915-bitter-lesson",
       "title": "General methods that scale with compute beat hand-coded knowledge",
       "tags": ["ai", "method"],
       "sources": [
-        {
-          "source": "s-20260915-the-bitter-lesson",
-          "note": "n-20260915-the-bitter-lesson",
-          "rel": "support",
-          "reason": "the article grounds the claim in four domains of history"
-        }
+        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "the article grounds the claim in four domains of history" }
       ],
       "sections": {
-        "知识内容": "While compute keeps getting exponentially cheaper, methods built on search and learning that scale with compute outperform methods that encode human domain knowledge directly.\n",
-        "解释与依据": "- Available compute grows exponentially, so scalability sets the long-run ceiling.\n",
-        "条件与边界": "- Assumes compute keeps growing and the task admits large-scale search or learning.\n",
-        "理解自检": "- Would this still hold if compute stopped getting cheaper?\n"
+        "知识内容": "Methods built on search and learning that scale with compute outperform methods that encode human domain knowledge directly.\n",
+        "条件与边界": "Assumes compute keeps growing and the task admits large-scale search or learning.\n"
+      }
+    },
+    {
+      "op": "create_opinion",
+      "opinion_id": "o-20260915-scale-bet",
+      "title": "Encoding human knowledge is a losing long-run bet",
+      "sources": [
+        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "the article's closing bet" }
+      ],
+      "sections": {
+        "观点": "Investing in scalable search and learning beats investing in hand-coded domain knowledge.\n",
+        "论据与推理": "Compute keeps getting cheaper, so scalable methods raise their ceiling over time.\n"
       }
     },
     {
       "op": "add_open_question",
-      "note": "n-20260915-the-bitter-lesson",
+      "note": "n-20260915-bitter-lesson",
       "question": "Does this hold for tasks with scarce data or weak evaluation signals?"
     }
   ]
 }
 ```
+
+`write_note` is the v2 canonical shape: `blocks[]` reproduce the source lines in order (each `source`
+block cites the physical range it came from via `source_ref`), `omissions[]` records — explicitly,
+even when empty — the lines you deliberately dropped, and `extraction_coverage[]` closes the loop by
+dispositioning every source range as `outputs`, `note_only`, or `missing`. Knowledge lands through
+`create_knowledge` (three sections), value judgements through `create_opinion` (five sections,
+`validation` defaults to `pending` — the agent path may never set `validated`/`rejected`).
 
 Always dry-run first — it runs full validation with **zero writes**:
 
@@ -367,9 +395,8 @@ $ eg apply --plan plan.json --dry-run
 --dry-run：零写入、零 commit，以下是将写入的清单
 知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
 关系：材料 0 条，论证 0 条
-写入文件 2 个：domains/ai-infra/notes/n-….md、domains/ai-infra/knowledge/k-….md
+写入文件 3 个：domains/ai-infra/notes/n-….md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
 commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
-· [I1] info ops[0].coverage_gaps：提炼覆盖项缺失：counterexample（反例），已原样透传进报告
 ```
 
 Then apply for real:
@@ -380,22 +407,23 @@ $ eg apply --plan plan.json
 
 ```console
 状态：completed（exit_code=0，ok=true）
-材料笔记：n-20260915-the-bitter-lesson（领域 ai-infra，domains/ai-infra/notes/n-….md，重新加工 false）
+材料笔记：n-20260915-bitter-lesson（领域 ai-infra，domains/ai-infra/notes/n-….md，重新加工 false）
 知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
-关系：材料 1 条，论证 0 条
-未决问题：n-20260915-the-bitter-lesson ← Does this hold for tasks with scarce data…?
-写入文件 3 个：domains/ai-infra/notes/n-….md、unprocessed.md、domains/ai-infra/knowledge/k-….md
-commit：aec3d508aa1fcc66d82596fa591fc8fd17bc8f8d
+关系：材料 2 条，论证 0 条
+未决问题：n-20260915-bitter-lesson ← Does this hold for tasks with scarce data…?
+写入文件 4 个：domains/ai-infra/notes/n-….md、unprocessed.md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
+commit：842c8ddb03a2bbe2eab7c5a99f4495fe1979ba17
 显著变更：new_core_card（k-20260915-bitter-lesson）新建知识卡：承载本次加工的新核心含义
 ```
 
 ### 5. Read it back
 
 ```console
-$ eg search compute                         # ranked, paginated card search
-$ eg card show k-20260915-bitter-lesson     # five sections + sources + both link directions
-$ eg rel k-20260915-bitter-lesson           # argument relationships, outbound and inbound
-$ eg report --last                          # replay the last write report, read-only
+$ eg search compute                          # ranked, paginated Knowledge search (default --kind knowledge)
+$ eg card show k-20260915-bitter-lesson      # one Knowledge card: three sections + sources + both link directions
+$ eg opinion show o-20260915-scale-bet       # one Opinion: five sections + validation + relation groups
+$ eg rel k-20260915-bitter-lesson            # argument relationships, outbound and inbound
+$ eg report --last                           # replay the last write report, read-only
 ```
 
 `eg rel` always reports both directions separately, and says which file each edge is stored in:
@@ -409,7 +437,8 @@ rel：k-20260915-bitter-lesson 的正向 0 条 / 反向 1 条（扫描 2 个 .md
 分页：--limit=50 --offset=0，本页 关系条目 1 条 / 共 1 条（截断=false；limit 是本次返回条数的全局上限）
 ```
 
-The card on disk is exactly what you would have written by hand:
+The card on disk is exactly what you would have written by hand — a Knowledge card has three fixed
+sections:
 
 ```markdown
 ---
@@ -420,7 +449,7 @@ created_at: '2026-09-15'
 updated_at: '2026-09-15T14:06:50+08:00'
 sources:
   - source: 's-20260915-the-bitter-lesson'
-    note: 'n-20260915-the-bitter-lesson'
+    note: 'n-20260915-bitter-lesson'
     rel: 'support'
     reason: 'the article grounds the claim in four domains of history'
 tags:
@@ -430,21 +459,13 @@ tags:
 
 ## 知识内容
 
-While compute keeps getting exponentially cheaper, methods built on search and learning that scale with compute outperform methods that encode human domain knowledge directly.
-
-## 解释与依据
-
-- Available compute grows exponentially, so scalability sets the long-run ceiling.
+Methods built on search and learning that scale with compute outperform methods that encode human domain knowledge directly.
 
 ## 条件与边界
 
-- Assumes compute keeps growing and the task admits large-scale search or learning.
+Assumes compute keeps growing and the task admits large-scale search or learning.
 
 ## 用户补充
-
-## 理解自检
-
-- Would this still hold if compute stopped getting cheaper?
 ```
 
 ### 6. Optional: build the index and check health
@@ -467,8 +488,9 @@ SKILL.md                          # agent operating contract, written by eg init
 unprocessed.md                    # inbox of captured-but-unprocessed sources
 sources/                          # s-*  raw captured material
 domains/<domain>/notes/           # n-*  material notes (faithful to the source)
-domains/<domain>/knowledge/       # k-*  knowledge cards (reusable claims)
-proposals/                        # p-*  risky-operation proposals (created on demand)
+domains/<domain>/knowledge/       # k-*  knowledge cards (stable, reusable claims)
+domains/<domain>/opinions/        # o-*  opinions (evaluations, causal/predictive judgements)
+proposals/                        # p-*  control-plane: risky-operation proposals (on demand)
 .index/                           # derived SQLite + run.lock + txn journal  (via .gitignore)
 .eg/                              # last-report state    (via .git/info/exclude)
 ```
@@ -480,36 +502,61 @@ A **domain** is a top-level partition (`ai-infra`, `product`, …). Evergreen wi
 you: if `default_domain` is unset, every command except `init` and `config` exits `1` and tells you
 to configure it.
 
-### Four entity types
+### Four learning entities and a control plane
+
+Evergreen models a source through a fixed **Source → Note → {Knowledge, Opinion}** chain. Four
+entities carry what you learn; `Proposal` is a separate control-plane object, not a learning entity:
 
 | Prefix | Entity | Role |
 | --- | --- | --- |
-| `s-` | **Source** | Raw captured material. Immutable evidence. |
-| `n-` | **Note** | A faithful distillation of one source. Contains the agent's analysis, kept separate from the source's own claims. |
-| `k-` | **Card** | One independently reusable knowledge unit. This is what you search and link. |
-| `p-` | **Proposal** | A request to perform a risky operation, pending human approval. |
+| `s-` | **Source** | Raw captured material. Immutable evidence, one file per source. |
+| `n-` | **Note** | The complete, order-faithful body of one source, with removable annotations placed inline right next to the text they comment on. |
+| `k-` | **Knowledge** | A stable definition / composition / step / condition / datum. Split, dedupe, and tidy only — never a multi-hop inference. This is what search returns by default. |
+| `o-` | **Opinion** | An evaluation, causal or predictive claim, or a trade-off. Carries its argument, counter-examples, and validation lifecycle. **When you cannot tell whether something is Knowledge or Opinion, prefer Opinion.** |
+
+`Proposal` (`p-*`) lives at the repository root and drives risky operations pending human approval; it
+is a control surface and must never be treated as one of the four learning entities.
 
 IDs are stable, human-readable, and date-prefixed (`k-20260915-bitter-lesson`). Two hard rules,
-enforced in code: an `s-` ID may never appear in `relations`, and a `k-` ID may never appear in
+enforced in code: an `s-` ID may never appear in `relations`, and a `k-`/`o-` ID may never appear in
 `sources`.
 
-### The five-section knowledge card
+### Entity templates
 
-Every card has exactly these sections, in this order:
+Each learning entity has a fixed, ordered set of sections, compared byte-for-byte on disk:
+
+**Knowledge — three sections:**
 
 | Section | Contains | Who may write it |
 | --- | --- | --- |
-| 知识内容 — *Knowledge* | The claim itself, one unit per card | Agent on creation only; changing it later needs explicit user authorization |
-| 解释与依据 — *Rationale* | Why it holds, grounded in sources | Agent may append |
+| 知识内容 — *Knowledge* | The stable claim itself, one unit per card | Agent on creation only; changing it later needs explicit user authorization |
 | 条件与边界 — *Conditions* | When it holds and when it does not | Agent may append |
 | 用户补充 — *User notes* | Your own additions | **Only you.** Agents are permanently forbidden here |
-| 理解自检 — *Self-check* | Open questions, no presupposed answer | Agent may append |
 
-Material notes have their own five: 材料提炼 (extraction), Agent 分析 (analysis), 用户补充 (user
-notes), 存疑与待验证 (open questions), 产出知识卡 (produced cards).
+**Opinion — five sections:**
 
-This split is what keeps an agent honest: it may enrich the *reasoning* around a claim, but it
-cannot silently redefine the claim, and it can never touch your words.
+| Section | Contains |
+| --- | --- |
+| 观点 — *Opinion* | The evaluation / judgement itself |
+| 论据与推理 — *Argument* | The reasoning and evidence behind it |
+| 条件与反例 — *Conditions & counter-examples* | Where it applies and where it breaks |
+| 待验证 — *To verify* | Open checks; the `validation` lifecycle lives in frontmatter |
+| 用户补充 — *User notes* | **Only you.** |
+
+**Note — four sections:** 整理正文 (tidied body), 提取结果 (extraction results), 存疑与待验证 (open
+questions), 用户补充 (user notes).
+
+The legacy v1 Knowledge sections 解释与依据 and 理解自检 are **not** current fixed sections; when an
+older vault still carries them they are preserved verbatim as unknown/compatibility sections and
+surfaced with an info, never rewritten.
+
+Likewise, the legacy v1 Note sections 材料提炼 (material extraction), Agent 分析 (agent analysis)
+and 产出知识卡 (produced knowledge cards) are **not** part of the current fixed Note template; where
+an existing vault still carries them they are compatibility-mapped and kept byte-for-byte, never
+zeroed out. (The full v1 Note procedure is out of scope here.)
+
+This split is what keeps an agent honest: it may enrich the *reasoning* around a claim, but it cannot
+silently redefine the claim, and it can never touch your words.
 
 ### Relationships
 
@@ -548,22 +595,24 @@ channel.** It has exactly eight top-level keys:
 
 | Key | Purpose |
 | --- | --- |
-| `plan_version` | Always `1` |
+| `plan_version` | `2` for current plans. The supported set is `{1, 2}`; a `plan_version: 1` plan is still accepted for compatibility and flagged with a single `I1` migration info. |
 | `verb` | Commit verb — `process` normally, `reprocess` when re-deriving a note |
 | `domain` | Exactly one domain per plan |
 | `reason` | Why this write happens |
 | `requirement_ids` | Traceability tags, surfaced in the commit body |
-| `convergence[]` | Per-candidate-card reasoning about overlap (see below) |
+| `convergence[]` | Per-candidate reasoning about overlap (see below) |
 | `base` | file → `content_hash` from `eg context`, for optimistic concurrency |
 | `ops[]` | The operations to perform |
 
-The seven operations available on the main pipeline:
+The nine canonical operations on the main pipeline:
 
-`add_source` · `write_note` · `create_card` · `append_card` · `add_material_rel` ·
-`add_relation` · `add_open_question`
+`add_source` · `write_note` · `create_knowledge` · `append_knowledge` · `create_opinion` ·
+`append_opinion` · `add_material_rel` · `add_relation` · `add_open_question`
 
-An unknown op is a hard error (`E5`, exit `2`, zero writes) — Evergreen fails closed rather than
-guessing.
+`create_card` and `append_card` are **compatibility aliases** for `create_knowledge` and
+`append_knowledge`: they are normalized to the canonical names and raise an `I1` migration info, so
+new plans should use the canonical ops. An unknown op is a hard error (`E5`, exit `2`, zero writes) —
+Evergreen fails closed rather than guessing.
 
 ---
 
@@ -577,7 +626,7 @@ authoritative operating procedure; point your agent at it.
 ```text
 step 0  agent fetches and cleans the body text        (no network I/O in the CLI)
    ①    eg capture          store the source, add to inbox
-   ②    eg context          get candidate cards + base content hashes
+   ②    eg context          get knowledge + opinion candidates + base content hashes
    ③    semantic processing the only step where a model is involved
    ④    eg apply --plan     the single write channel
    ⑤    render the report   restate what was written, skipped, and why
@@ -586,48 +635,58 @@ step 0  agent fetches and cleans the body text        (no network I/O in the CLI
 If fetching fails or the body is empty, the correct behavior is to **stop** — report the failure and
 write nothing. Placeholder or summarized text must never stand in for a real source.
 
-### Deciding whether a card already exists
+### Knowledge or Opinion, and deciding whether one already exists
 
-Before writing, the agent compares the new material against each candidate card on three dimensions:
+First classify the material. Stable definitions, compositions, steps, conditions, and data are
+**Knowledge** (`create_knowledge`); evaluations, causal or predictive claims, comparisons, and
+trade-offs are **Opinion** (`create_opinion`). When you cannot tell, **prefer Opinion** — it carries
+the argument/counter-example/validation machinery a contested claim needs.
+
+Before writing, the agent compares the new material against each candidate on three dimensions:
 
 - **core knowledge** — same or different?
 - **conditions** — same or different?
 - **reuse purpose** — same or different?
 
 The rule is *split rather than merge*: if any dimension differs — or if the agent cannot tell — make
-a new card and record why. Only all-three-`same` may reuse an existing card. Each comparison is
+a new entity and record why. Only all-three-`same` may reuse an existing one. Each comparison is
 recorded in `convergence[]`, and Evergreen passes it through verbatim without re-judging it.
 
 That verdict maps onto exactly seven outcomes:
 
 | `relation` | Situation | Operations to emit |
 | --- | --- | --- |
-| `independent_new` | genuinely new | `create_card` + `add_material_rel` |
-| `same_semantics` | already covered | no new card; just `add_material_rel` |
-| `non_core_supplement` | adds rationale or boundary | `append_card` to *Rationale* / *Conditions* (never *Knowledge*) + `add_material_rel` |
-| `core_change` | the claim itself shifted | new `create_card` + `add_relation` to the old card; **the old card is neither edited nor retired** |
-| `conflict_coexist` | contradicts an existing card | both stay `active` + exactly one `opposing` link |
-| `uncertain` | cannot be settled from this material | `add_open_question`; no card |
-| `deprecated` | retire a card | **not available to agents** — user-initiated only |
+| `independent_new` | genuinely new | `create_knowledge` (or `create_opinion`) + `add_material_rel` |
+| `same_semantics` | already covered | no new entity; just `add_material_rel` |
+| `non_core_supplement` | adds a condition or argument | `append_knowledge` / `append_opinion` to a non-core section (never the core *Knowledge*/*Opinion* claim) + `add_material_rel` |
+| `core_change` | the claim itself shifted | new `create_knowledge`/`create_opinion` + `add_relation` to the old one; **the old entity is neither edited nor retired** |
+| `conflict_coexist` | contradicts an existing entity | both stay `active` + exactly one `opposing` link |
+| `uncertain` | cannot be settled from this material | `add_open_question`; no entity |
+| `deprecated` | retire an entity | **not available to agents** — user-initiated only |
 
-### Honest gaps
+### Faithful notes: coverage and omissions
 
-Before writing a note the agent self-assesses seven coverage points — `core_claim`,
-`key_evidence`, `counterexample`, `boundary`, `method`, `conclusion`, `limitation` — and lists the
-ones **the source never addressed** in `coverage_gaps`. Those surface as `I1` info in the final
-report. The field records what the *source* lacked; it is not a place to hide the agent's own
-omissions, and the agent must not invent points to fill it.
+`write_note` records the whole source faithfully. `blocks[]` reproduce every non-empty line in order
+(agent annotations are interleaved as `role: agent` blocks); `omissions[]` lists — explicitly, even
+when empty — the exact line ranges you deliberately dropped and why; and `extraction_coverage[]`
+dispositions every source range as `outputs` (it became Knowledge/Opinion), `note_only` (kept in the
+note), or `missing`. A `missing` disposition blocks the apply with an `E2`, so coverage is closed by
+construction — it is not a place to hide the agent's own omissions, and the agent must not invent
+content to fill it.
 
 ### What agents may never do
 
 - Edit vault files with an editor, shell, or script — or run `git commit` / `reset` / `checkout`
   themselves. `eg apply` only.
-- Write the *Knowledge* section of an existing card, or the *User notes* section of anything.
+- Write the core *知识内容* section of an existing Knowledge card, or the core *观点* section of an
+  existing Opinion, or the *用户补充* section of anything.
+- Set an Opinion's `validation` to `validated` / `rejected` — that lifecycle is user-initiated only;
+  a plan that writes a non-`pending` validation is rejected (`E2`).
 - Emit lifecycle operations (`deprecate`, `restore`, `delete`, `undelete`, `set_replaced_by`).
   Without `initiator: user` these are errors, not warnings — exit `2`, zero writes.
 - Write two domains in one plan.
-- Turn a multi-hop inference into a new card: with no material evidence of its own it would bypass
-  the evidence requirement. Such conclusions belong in the note's analysis section.
+- Turn a multi-hop inference into Knowledge: with no material evidence of its own it would bypass the
+  evidence requirement. Such conclusions belong in the note's analysis or in an Opinion.
 - Fabricate a source, note, reason, or ID.
 
 ---
@@ -649,7 +708,7 @@ authoritative argument list — every help page documents its own exit codes.
 | Command | Purpose |
 | --- | --- |
 | `eg capture` | Store source material and add it to the inbox |
-| `eg context` | Read-only: candidate cards + `base` content hashes |
+| `eg context` | Read-only: `knowledge_candidates` + `opinion_candidates` (+ legacy `candidates`) + `base` content hashes |
 | `eg apply --plan <file\|->` | Validate and apply a ChangePlan — the only write channel |
 | `eg report --last` | Read-only replay of the last report-producing write (`eg apply` or `eg capture`) |
 
@@ -657,8 +716,8 @@ authoritative argument list — every help page documents its own exit codes.
 
 | Command | Purpose |
 | --- | --- |
-| `eg search <query>` | Ranked, paginated card search |
-| `eg card show <k-id>` | One card: five sections, sources, both link directions |
+| `eg search <query>` | Ranked, paginated search. Defaults to `--kind knowledge`; `--kind opinion` or `--kind all` widen the set. |
+| `eg card show <k-id>` | One Knowledge card: three sections, sources, both link directions |
 | `eg rel <k-id>` | Argument relationships; `--replaced-by` switches to replacement pointers |
 | `eg opinion search <q>` | Read-only opinion search: like `eg search` but fixed to opinions (`o-*`), with the same domain/tag/since/until/include-deleted/limit/offset flags (no `--kind`). Every hit carries `validation` (pending/validated/rejected, all returned — never implicitly filtered) plus `relation_summary` counts (`supports`/`limits`/`opposing`). Zero writes, zero commit. |
 | `eg opinion show <o-id>` | Read-only single-opinion view: five sections, `validation`, sources, and the support/limit/opposing relation groups (each with forward and reverse segments; empty segments are shown explicitly). Accepts only `--include-deprecated`/`--limit`/`--offset` (never the search filter flags); dangling targets are flagged, deprecated peers are hidden by default. Zero writes, zero commit. `eg card show` on an `o-*` id exits `1` and points you here. |
@@ -743,8 +802,10 @@ at this opinion** count (this opinion's own **outgoing** `supports` do **not**);
 
 ## Reading: sorting, pagination, and fallback
 
-**Scoring.** `eg search` matches only knowledge cards — notes and sources never appear in hits. A
-term scores +3 in the title, +2 in tags, +1 in the body, counted at most once per term per field.
+**Scoring.** `eg search` defaults to `--kind knowledge`, so only Knowledge cards appear in hits;
+`--kind opinion` fixes the search to opinions and `--kind all` returns both — notes and sources never
+appear. A term scores +3 in the title, +2 in tags, +1 in the body, counted at most once per term per
+field.
 
 **Total ordering.** Results sort by score desc → `updated_at` desc → `created_at` desc → `id` asc.
 Relationship listings order by type (`opposing` → `limits` → `supports` → `derives`) → peer ID →
@@ -875,6 +936,12 @@ The index is a SQLite/FTS5 database (via `modernc.org/sqlite`, pure Go — no CG
 is a 可重建派生物 — a **pure accelerator**: not required by any command, never a prerequisite,
 gitignored, and never distributed with the repository.
 
+It carries `schema_version = 2` in `index_meta` and holds six tables — `index_meta`, `cards`,
+`cards_fts`, `relations`, `files`, `skipped`. Knowledge and Opinion share `cards`/`cards_fts`,
+distinguished by a `kind` column (`knowledge` / `opinion`); an opinion's `validation` rides the same
+row. There is **no incremental schema migration**: when the on-disk `schema_version` does not match,
+the whole index is discarded and rebuilt from Markdown.
+
 ```console
 $ eg index build              # build it
 $ eg index status --strict    # read-only health report
@@ -983,7 +1050,7 @@ No. It's Markdown with YAML frontmatter in a normal Git repository. Delete the b
 is still readable, greppable, and diffable.
 
 **Why is everything in Chinese?**
-Two separate reasons. The five section names are a frozen part of the on-disk contract and are
+Two separate reasons. The section names are a frozen part of the on-disk contract and are
 compared byte-for-byte, so renaming them would break every existing vault. The CLI help text and the
 human-readable report renderer are currently Chinese-only — English localization is not implemented.
 The machine-facing surface is language-neutral: `--json`, diagnostic codes (`E15`, `W26`, `Q5`, …),

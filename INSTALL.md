@@ -104,6 +104,38 @@ inside the vault and should not enter the vault's Git history.
 Agent-assisted processing continues with `eg context`, a generated ChangePlan,
 and `eg apply --plan`.
 
+## Schema v2 summary
+
+After installing, know these Schema v2 contract facts (the full walkthrough is
+in [README.md](README.md); this is only the post-install
+compatibility/validation digest):
+
+- **ChangePlan `plan_version`.** Current plans use `plan_version: 2`; the
+  supported set is `{1, 2}`. A `plan_version: 1` plan is still accepted for
+  compatibility and flagged with a single `I1` migration info.
+- **Index `schema_version`.** The derived index carries `schema_version = 2`
+  and still holds six tables. There is no incremental migration: on a version
+  mismatch the whole index is discarded and rebuilt from Markdown.
+- **`eg context` candidates.** The context envelope now returns
+  `knowledge_candidates` and `opinion_candidates`. The legacy `candidates`
+  field stays for 0.7.x compatibility (always equal to `knowledge_candidates`);
+  `eg context` unconditionally emits exactly one `I1` deprecation info for it,
+  and it is **removed in 0.8.0**.
+- **Four learning entities, two domain directories.** Source (`s-*`),
+  Note (`n-*`), Knowledge (`k-*` under `domains/<d>/knowledge/`) and Opinion
+  (`o-*` under `domains/<d>/opinions/`); `Proposal` (`p-*`) is a control plane,
+  not a learning entity.
+- **Canonical ops / alias migration.** The main pipeline has nine canonical
+  ops including `create_knowledge` / `create_opinion`; `create_card` /
+  `append_card` are compatibility aliases normalized to
+  `create_knowledge` / `append_knowledge` with an `I1`.
+- **Knowledge vs Opinion.** Stable definitions/steps/conditions/data are
+  Knowledge (three sections); evaluations, causal/predictive claims and
+  trade-offs are Opinion (five sections, `validation` defaults to `pending`).
+  When unsure, prefer Opinion.
+- **Search default.** `eg search` defaults to `--kind knowledge`; use
+  `--kind opinion` or `--kind all` to widen the set.
+
 ## Review and logical deletion
 
 ```console
@@ -175,7 +207,7 @@ roster you can verify against `eg --help`.
 | `eg init` | Initialize a Git-backed vault |
 | `eg config` | Read/write `default_domain` / `domains` |
 | `eg capture` | Record a source and register the inbox |
-| `eg context` | Read-only processing context (candidate cards + base hashes) |
+| `eg context` | Read-only processing context (`knowledge_candidates` + `opinion_candidates` + legacy `candidates` + base hashes) |
 | `eg apply` | Apply a ChangePlan — the only write channel |
 | `eg search` | Ranked, paginated card search |
 | `eg card` | `eg card show <k-id>`: single card view |

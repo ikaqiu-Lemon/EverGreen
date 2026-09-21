@@ -17,6 +17,7 @@ tests/_staged/internal/cli/delete_release_order_test.go	unit	go	cli-core	unit.in
 tests/_staged/internal/cli/delete_test.go	unit	go	cli-core	unit.internal.cli	5	19293
 tests/_staged/internal/cli/delete_transaction_test.go	unit	go	cli-core	unit.internal.cli	6	28929
 tests/_staged/internal/cli/deprecate_test.go	unit	go	cli-core	unit.internal.cli	6	10958
+tests/_staged/internal/cli/docs_schema_v2_test.go	unit	go	cli-core	unit.internal.cli	12	37855
 tests/_staged/internal/cli/docs_test.go	unit	go	cli-core	unit.internal.cli	8	12180
 tests/_staged/internal/cli/edit_test.go	unit	go	cli-core	unit.internal.cli	7	16426
 tests/_staged/internal/cli/exit5_classify_test.go	unit	go	cli-core	unit.internal.cli	6	5551
@@ -413,7 +414,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	24976
+tests/manifest/traceability.tsv	manifest	data	-	-	0	24978
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

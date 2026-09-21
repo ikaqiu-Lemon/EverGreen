@@ -17,6 +17,7 @@ tests/_staged/internal/cli/delete_release_order_test.go	internal/cli/delete_rele
 tests/_staged/internal/cli/delete_test.go	internal/cli/delete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/delete_transaction_test.go	internal/cli/delete_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/deprecate_test.go	internal/cli/deprecate_test.go	evergreen	unit	go
+tests/_staged/internal/cli/docs_schema_v2_test.go	internal/cli/docs_schema_v2_test.go	evergreen	unit	go
 tests/_staged/internal/cli/docs_test.go	internal/cli/docs_test.go	evergreen	unit	go
 tests/_staged/internal/cli/edit_test.go	internal/cli/edit_test.go	evergreen	unit	go
 tests/_staged/internal/cli/exit5_classify_test.go	internal/cli/exit5_classify_test.go	evergreen	unit	go
