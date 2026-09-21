@@ -76,16 +76,22 @@ eg context (--source <s-id> | --note <n-id>) [--domain <d>] [--json]
 ```
 
 - **输入**：`--source` 与 `--note` 二选一。
-- **输出**（`data`）：`source`（含正文字节）、`cards` / `notes` / `candidates`（候选卡白名单）、
-  **`base`（`id 或 vault 内相对路径 → content_hash`）**、`domain` / `default_domain` / `default_domain_fallback`。
+- **输出**（`data`）：`source`（含正文字节）、`notes`、`knowledge_candidates`（知识候选 `k-*`）/
+  `opinion_candidates`（观点候选 `o-*`），**`base`（`id 或 vault 内相对路径 → content_hash`）**、
+  `domain` / `default_domain` / `default_domain_fallback`。
+- **`candidates` 已弃用（D-3，兼容期保留）**：`--json` 信封仍输出 `candidates`，其内容**恒等于**
+  `knowledge_candidates`，并由 `query.Build` **无条件**在 `diagnostics` 里带**恰一条** `I1`
+  「`candidates` 已弃用，改读 `knowledge_candidates`」。`candidates` 在 0.7.x 全程保留、0.8.0 移除；
+  新写的调用方一律改读 `knowledge_candidates` / `opinion_candidates`，不要再依赖 `candidates`。
 - **只读**：零文件变化、零 commit。可安全重跑。
 - **失败处置**：退 `2`（对象不存在或 frontmatter 不可解析）→ 核对 ID；退 `1`（未配置 `default_domain`）→
   先 `eg config set default_domain <d>`，**不要**自行猜一个领域。
 
 ### 2.3 ③ 语义处理（唯一允许调用模型的环节）
 
-在这一步产出：材料笔记四类内容、知识卡（新建 / 复用 / 追加）、材料关系与论证关系、存疑条目、
-`convergence[]` 逐卡判定、`coverage_gaps` 自评。判据见 §3，落成 ChangePlan 的规则见 §4。
+在这一步产出：**审阅式学习版 Note**（`write_note.blocks[]` 有序块 + `omissions[]` + `extraction_coverage[]`
+覆盖矩阵，见 §3.6）、Knowledge（`k-*`，新建 / 复用 / 追加）与 Opinion（`o-*`，新建 / 追加，见 §3.7）、
+材料关系与论证关系、存疑条目、`convergence[]` 逐卡判定。判据见 §3，落成 ChangePlan 的规则见 §4。
 **这一步不碰磁盘**：不要用编辑器 / shell 直接写 vault 里的任何文件。
 
 **判断收敛前可用三条只读查询命令复核**（M2 起全部真实可用；**零文件变化、零 commit，可任意次调用**，
@@ -99,8 +105,9 @@ eg rel <k-id> [--to <id>] [--include-deprecated] [--json]
 
 - `eg search`：`eg context` 的候选卡只覆盖同领域相似卡；怀疑漏了别的说法时按关键词再搜一遍，
   确认「是不是已经有一张卡在讲同一件事」。失效卡也会出现在结果里并带 `[失效]` 标记。
-- `eg card show`：拿到候选卡的**五分区全文** + `sources[]` + 正反向关系，用来逐维度比对
-  §3.1 的三维度（只看标题下判断 = 判错）。
+- `eg card show`：拿到候选 Knowledge 卡的**三分区全文**（「知识内容」/「条件与边界」/「用户补充」，见 §3.7）
+  + `sources[]` + 正反向关系，用来逐维度比对 §3.1 的三维度（只看标题下判断 = 判错）；观点卡的
+  五分区全文改用 `eg opinion show <o-id>`（读路径，见 §8.5.1）。
 - `eg rel`：查这张卡**已经**有哪些论证关系（正向 `relations[]` + 反向全库扫描），
   避免把已存在的关系再写一遍（同对重复会记 W8），也便于判 `core_change` / `conflict_coexist`。
 - **`--include-deprecated`（M4 起，`eg rel` / `eg card show` 专属只读 flag）**：默认视图**隐藏对端
@@ -164,48 +171,66 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 
 | `convergence[].relation` | 处理关系 | 应产出的 op 组合 |
 |-|-|-|
-| `independent_new` | 独立新增 | `create_card`（新卡直接 `active`）+ `add_material_rel` |
-| `same_semantics` | 语义相同 | **不新建卡**；只 `add_material_rel` 把新材料挂到已有卡 |
-| `non_core_supplement` | 非核心补充 | `append_card` 到「解释与依据」/「条件与边界」（**不动「知识内容」**）+ `add_material_rel` |
-| `core_change` | 核心变化 | `create_card` 新卡 + `add_relation`（`limits` / `derives` 等）指向原卡；**原卡不改写、不失效** |
-| `conflict_coexist` | 冲突并存 | 两卡同时 `active` + **恰一条** `add_relation`（`type: opposing`，方向由 CLI 规范化） |
-| `uncertain` | 存疑 | `add_open_question` 写入材料笔记「存疑与待验证」分区；不建卡 |
+| `independent_new` | 独立新增 | `create_knowledge` / `create_opinion`（新条目直接 `active`）+ `add_material_rel` |
+| `same_semantics` | 语义相同 | **不新建条目**；只 `add_material_rel` 把新材料挂到已有 `k-*` / `o-*` |
+| `non_core_supplement` | 非核心补充 | `append_knowledge` / `append_opinion` 到可追加分区（**不动「知识内容」/「观点」**）+ `add_material_rel` |
+| `core_change` | 核心变化 | `create_knowledge` 新卡 + `add_relation`（`limits` / `derives` 等）指向原卡；**原卡不改写、不失效** |
+| `conflict_coexist` | 冲突并存 | 两条同时 `active` + **恰一条** `add_relation`（`type: opposing`，方向由 CLI 规范化） |
+| `uncertain` | 存疑 | `add_open_question` 写入 Note「存疑与待验证」分区；不建条目 |
 | `deprecated` | 失效 | **S1/M1 不可用**：只由用户提出（S2），Agent **不得**生成任何状态类 op |
+
+> `convergence[].card` 现在可指向 `k-*` **或** `o-*`（字段名保持 `card` 不改，D-2）。上表 op 组合里
+> `create_card` / `append_card` 仅作**兼容别名**（§4.4）保留；**新 plan 一律直接写 `create_knowledge` /
+> `append_knowledge` / `create_opinion` / `append_opinion`**，不要再用别名。
 
 `relation` 必须与三维度结论自洽：**三维度全 `same` ⟺ `same_semantics`**，其余六值必须至少一个维度
 `different`（CLI 的一致性判据逐字如此）。
 不自洽或缺失只会得到 **W5 warning**（不拦截），但**属于规程违规**，不得当作默认写法。
 
-### 3.3 知识卡粒度、材料笔记、关系、自检
+### 3.3 Knowledge / Opinion 粒度、Note、关系
 
-- [ ] **一卡 = 一个可独立理解 / 引用 / 复用的知识单元**；一张卡只承载一个知识点。
-- [ ] **材料笔记忠于原文、不夹带评价**；Agent 自己的判断只放「Agent 分析」分区。
+- [ ] **一条 Knowledge = 一个可独立理解 / 引用 / 复用的知识单元**；一条只承载一个知识点。
+- [ ] **Knowledge 只允许直接来自 Note 的整理内容**，只整理 / 拆分 / 去重，**不论证、不推导**；
+      Agent 的多跳推导不得写成 Knowledge（写进 Note 的 `reflection` 批注或落成 Opinion）。
+- [ ] **Opinion 记录可讨论的判断**：观点 + 论据 + 推理 + 条件 + 反例 + 验证结果；Opinion 不需要作者模型。
+- [ ] **Note 忠于原文、来源与 Agent 不混写**：来源正文只放 `role: source` 块，Agent 说明只放 `role: agent` 批注
+      （见 §3.6 / §3.8）；取消固定分区、取消任何长度 / 压缩率目标。
 - [ ] **材料关系四要素齐全**：`source` + `note` + `rel`（`support` / `against` / `context`）+ `reason`；
       **论证关系四要素齐全**：`from` + `type`（`derives` / `supports` / `limits` / `opposing`）+ `target` + `reason`。
 - [ ] `reason` 必须有实质内容，**不许写成关系名本身**（否则 W2 warning）。
-- [ ] **理解自检只写开放式问题**，不预设成立方；**不得引入掌握度、评分、复习排程一类字段**；笔记**不生成**理解自检。
-- [ ] **自检回答不自动成为知识**：回答只落在知识卡「理解自检」分区，要不要转成卡**由用户自行决定**，
-      Agent 不得把回答直接建成新卡或追加进「知识内容」。
+- [ ] **存疑只写开放式问题**（`add_open_question` → Note「存疑与待验证」），不预设成立方；
+      **不得引入掌握度、评分、复习排程一类字段**。Agent **不得**直接改写 Opinion 的 `validation`（见 §3.7）。
 
-### 3.4 提炼覆盖自评 `coverage_gaps`（EG-EXT-02）
+### 3.4 语义模块拆分与提炼覆盖矩阵 `extraction_coverage`
 
-生成 `write_note` 之前，按七类要点逐项自评本篇原文是否表达过；**原文未表达的要点写进 `coverage_gaps`**，
-使「覆盖项缺失」在最终报告中可见。取值是**受控枚举七值**，逐字如下：
+提炼前必须先把 Note 拆成**比章节更细的语义模块**（定义、组成、步骤 / 状态流、API / 数据结构 / 接入位置、
+条件与边界、数据 / 时效事实，以及评价 / 因果判断 / 预测 / 优劣比较 / 取舍主张），**不得直接从章节标题
+跳到少量主题卡**。随后建立 `Note 模块 → Knowledge / Opinion / Note-only` 的**覆盖矩阵**，逐项写进
+`write_note.extraction_coverage[]`：
 
-| 枚举值 | 覆盖要点 |
+| 字段 | 说明 |
 |-|-|
-| `core_claim` | 核心论点 |
-| `key_evidence` | 关键证据 |
-| `counterexample` | 反例 |
-| `boundary` | 条件与边界 |
-| `method` | 方法 |
-| `conclusion` | 结论 |
-| `limitation` | 局限与不确定性 |
+| `module` | 本 Note 内唯一的模块标识 |
+| `source_refs[]` | 非空，只能引用本次 `blocks[]` 已声明的来源范围 |
+| `summary` | 具体描述该模块讲了什么 |
+| `disposition` | 封闭三值：`outputs` / `note_only` / `missing` |
+| `outputs[]` | `disposition=outputs` 时列一个或多个 `k-*` / `o-*`，且与 `output_cards` 双向一致 |
+| `reason` | `note_only` / `missing` 必填，说明为何不产出 / 待补什么 |
 
-- [ ] 逐项自评七类要点，**不得编造原文未出现的要点**来填满七项（与「不虚构材料来源与依据」同一条底线）。
-- [ ] `coverage_gaps` **只登记原文没有**的要点，**不得**用来掩盖 Agent 自己漏写的要点。
-- [ ] **无缺失时不写该字段**（缺字段或空数组 = 无缺失，CLI 不会自行推断、不会补全）。
-- [ ] 取值不在受控枚举内 → I1 info，原样透传进报告，不拦截；但仍属规程违规。
+- [ ] 每个 `source_ref` **至少进入一个模块**；可独立复用的事实**不能只藏在 Opinion 的「论据与推理」里**，必须同时产出 Knowledge。
+- [ ] `outputs` 不得带 `reason`；`note_only` 必须给非空 `reason` 且不得有 `outputs`；`missing` 必须给 `reason` 且不得有 `outputs`。
+- [ ] **`missing` 无条件报 `E2`、退 `2` 阻止 apply**：可执行 ChangePlan 里**缺漏必须为 0**。
+- [ ] `output_cards` 与各模块 `outputs` **双向一致**：一方有、另一方没有都会被拦。
+- [ ] writer 在 Note「提取结果」分区渲染 Knowledge / Opinion 清单 + 完整覆盖矩阵，使 review 能从任一模块追到产物或 `Note-only` 理由。
+
+> **`W21` 不是覆盖证明**：`W21`（§4.3）只是「来源块数显著少于原文章节数」的**启发式 warning**，
+> 只能发现极端结构退化，**看不见块内遗漏**；它**不能替代来源保真（§3.8）与「缺漏 = 0」**，更不因为没报 `W21` 就说明覆盖完整。
+
+> **v1 兼容：`coverage_gaps`**。v1（`plan_version: 1`）的 `write_note` 用受控枚举七值
+> `core_claim` / `key_evidence` / `counterexample` / `boundary` / `method` / `conclusion` / `limitation`
+> 的 `coverage_gaps` 做覆盖自评：**原文未表达的要点写进 `coverage_gaps`**，**不得编造原文未出现的要点**，
+> **无缺失时不写该字段**。该机制在兼容期仍被受理，但**新 plan 用 `plan_version: 2` 的 `extraction_coverage[]`
+> 覆盖矩阵**表达提炼去向，不再用 `coverage_gaps`。
 
 ### 3.5 收敛结论怎么被呈现（M2 起四个出口同源同事实）
 
@@ -226,11 +251,96 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
 - [ ] **不得改写、不得合并同类项、不得省略「未给出」**，也不得把 CLI 没说的收敛理由补进报告。
 - [ ] 想复述「为什么这么收敛」就把 `note` 原文引出来；`note` 是空的就写「未给出」，不要临时编一个理由。
 
+### 3.6 Note 的准确含义（审阅式学习版）
+
+**Note 是文章的「审阅式学习版」。它不是 summary、改写稿或 manifest。**
+
+```text
+Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Agent 批注
+```
+
+删除全部 Agent 批注后，剩余内容必须仍是一篇**结构完整、可独立阅读**的来源正文；保留批注后，Note 应帮助
+用户建立学习路线、识别重点、辨析概念、理解局限并回顾全文。原文语言符合阅读需要时逐字保留；需要翻译时
+只忠实转换语言，不借翻译重组论证、压缩例子或改变主张边界。**取消固定分区、取消任何长度 / 压缩率目标。**
+
+| 允许的整理 | 说明 |
+|-|-|
+| 忠实翻译或统一语言 | 逐段转换语言，不压缩、重组或替作者收窄结论 |
+| 删除网页导航、广告、评论区、重复页眉页脚 | 只删可证明的页面噪声，并逐项进入 `omissions[]` |
+| 修复损坏的排版 | 可机械调整标题层级、恢复折叠表格；不得改变信息 |
+| 完整保留结构资产 | 图片、图注、表格、代码块、列表、引用、链接和脚注尽可能原位保留 |
+| 为便于理解补充必要说明 | 只能作为显式 Agent 批注就近插入；**因此 Note 可以比原文更长** |
+| 保持原文的章节顺序、论证顺序、叙事顺序 | 顺序是硬约束 |
+
+| 不应发生 | 为什么 |
+|-|-|
+| 把 500 行文章压成 7 条摘要 | 丢掉「具体讲了什么」 |
+| 把来源段落改写成 Agent 自己的概括 | 丢掉作者的定义、例子、推理过程和措辞边界 |
+| 静默删除图片、表格、代码、脚注或中间论证 | 结构仍像文章，但关键信息已不可恢复 |
+| 按 Agent 自己的分类重排文章 | 破坏原文论证结构 |
+| 将后文结论提前 | 破坏叙事顺序，读者失去推导过程 |
+| 把来源内容和 Agent 新推导混成一段 | 权威性污染，无法区分谁说的 |
+| 只记录「文章提到了什么」 | 退化为 manifest |
+
+### 3.7 Knowledge vs Opinion 判定
+
+| 类型 | 职责 | Agent 被允许做什么 |
+|-|-|-|
+| **Knowledge**（`k-*`） | 直接记录稳定知识；完整保留定义、组成、步骤、条件和必要例子 | **只整理、拆分、去重**；不论证、不推导 |
+| **Opinion**（`o-*`） | 记录可讨论的判断；含观点、论据、推理、条件、反例和验证结果 | 论证、给反例、标注验证状态（`validation` 除外） |
+
+判定口径：
+
+- 原文里是**定义 / 组成 / 步骤 / 条件 / 数据** → **Knowledge**。
+- 是**评价 / 因果判断 / 预测 / 优劣比较 / 取舍主张** → **Opinion**。
+- **拿不准时优先 Opinion**（Opinion 可经验证升级；错标为 Knowledge 会污染知识视图）。
+
+分区（分区名逐字固定）：
+
+- **Knowledge 三分区**：「知识内容」（required）/「条件与边界」（optional）/「用户补充」（never-write）。
+- **Opinion 五分区**：「观点」（required）/「论据与推理」/「条件与反例」/「待验证」/「用户补充」（never-write）。
+- Opinion 新建默认 `validation: pending`（`create_opinion` 写入）。`validation` 生命周期
+  （`pending` / `validated` / `rejected`）**只能由用户显式路径（P-U）流转**；**Agent 自动路径不得写 `validation`**，
+  也不得在 plan 里把 `validation` 直接设成 `validated` / `rejected`（否则 `E2`）。
+- Opinion 的支持 / 限制 / 反对靠论证关系（`supports` / `limits` / `opposing`）表达，正反向都可见（§6.4 现态）。
+
+### 3.8 来源保真闭环与批注意图（`blocks[]`）
+
+**闭环步骤**：清理 Source（去掉页面噪声）→ 建完整保真清单 → 按物理行号**连续** `source_ref` 覆盖正文 →
+`omissions[]` **只登记可证明的网页噪声** → 去掉 Agent 批注后**复核正文仍结构完整、可独立阅读**。
+
+- `role` **二值封闭**：`source`（来源正文或忠实逐段翻译）| `agent`（Agent 批注）。
+- `role: source` **必须**给 `source_ref`（`L<start>-L<end>`，相对 Source frontmatter 后正文物理行、按顺序单调递增、不重叠、不交叉），**不得**带 `annotation` / `label`。
+- `role: agent` **必须**给 `annotation`，**不得**带 `source_ref`。
+- `blocks[].source_ref` 与 `omissions[].source_ref` 的**并集必须覆盖每个非空正文行**；空洞 / 重叠 / 逆序都报 `E2`。
+- `omissions[]` **只允许**页面导航、广告、评论区、重复页眉页脚等噪声；**不得**用它删作者的定义、论据、例子、结论或参考资料。
+- **结构资产**（图片、图注、表格、代码块、列表、引用、链接、脚注）的数量与相对顺序必须与来源范围一致；**不能静默删中间论证**。
+
+**内置七类批注（`annotation`）** —— 类型与数量**按真实学习需要决定，不设配额，不要求每篇用满七类**：
+
+| `annotation` | 渲染标记 | 用途 |
+|-|-|-|
+| `guide` | `[Agent 导读]` | 给出学习路线、前置概念与阅读问题 |
+| `supplement` | `[Agent 补充]` | 背景、术语、额外例子、损坏格式的可读恢复 |
+| `emphasis` | `[Agent 强调]` | 指出本段学习重点及其重要性 |
+| `summary` | `[Agent 总结]` | 章节结束后的局部总结，不得替代章节正文 |
+| `distinction` | `[Agent 辨析]` | 容易混淆的概念、边界或常见误读 |
+| `verification` | `[Agent 待验证]` | 时效事实、证据不足判断与后续核验方法 |
+| `reflection` | `[Agent 反思]` | 全文方法、价值、局限和可迁移经验的复盘 |
+
+- 内置 key 使用固定中文标签，**不得用 `label` 改写其含义**。
+- **扩展 key** 必须匹配 `^[a-z][a-z0-9_-]{0,31}$` 并**同时给出非空 `label`**；新增类型要能回答「它解决什么独立学习需求」。
+- 批注**紧邻被解释正文**（同一章节内）：导读位于正文开头、总结位于对应章节末尾、反思位于全文与参考资料之后；**不要全局堆到文末**。
+
 ## 4. ChangePlan 填写规则
 
-顶层恰 8 键：`plan_version`(=1) / `verb` / `domain` / `reason` / `requirement_ids` / `convergence[]` /
-`base` / `ops[]`。S1 的 op 恰七个：`add_source`、`write_note`、`create_card`、`append_card`、
+顶层恰 8 键：`plan_version` / `verb` / `domain` / `reason` / `requirement_ids` / `convergence[]` /
+`base` / `ops[]`。**`plan_version` 支持集合 `{1, 2}`；当前 plan 一律写 `2`**，旧的 `plan_version: 1`
+仍被受理但会各得**恰一条 `I1` 兼容提示**（见 §4.4）。主链路 canonical op **恰九个**：`add_source`、
+`write_note`、`create_knowledge`、`append_knowledge`、`create_opinion`、`append_opinion`、
 `add_material_rel`、`add_relation`、`add_open_question`（未知 op → **E5**，退 `2` 零写入）。
+`create_card` / `append_card` 仅作**兼容别名**规范化到 `create_knowledge` / `append_knowledge`（§4.4），
+**新 plan 不要再用**。
 
 - **`verb`**：主链路用 `process`；重新加工用 `reprocess`。未知值 → warning 并退化为 `process`。
   （另有三个 commit verb 由 CLI 自己产生：`init`（`eg init`）、`capture`（`eg capture`）、以及 commit verb `reconcile`（`eg config set`）——commit verb `reconcile` **≠ S3 `eg reconcile` 命令**，后者属 S3、**S1 不可用**，`eg --help` 里也不出现。）
@@ -240,19 +350,39 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
   省略某个被改文件 → **W6 warning + 跳过该文件**（该处内容根本不会落盘）；与磁盘不一致 → 按 B3 跳过该文件并进
   `skipped[]`（`kind=file_changed`、`cause=content_hash_mismatch`）。新建文件可以不给 `base`。
 - **`convergence[]`**：涉及已有卡时每张被比较的候选卡写一条（§3.1）。
-- **`sections` 的分区名逐字固定**：知识卡「知识内容」「解释与依据」「条件与边界」「用户补充」「理解自检」；
-  材料笔记「材料提炼」「Agent 分析」「用户补充」「存疑与待验证」「产出知识卡」。
+- **`write_note` 用 `blocks[]`（不是 `sections{}`）**：审阅式 Note 由 `blocks[]` + `omissions[]` +
+  `extraction_coverage[]` + `output_cards` 表达（§3.6 / §3.8 / §3.4）；来源块按物理行号连续覆盖正文，
+  批注块紧邻正文。**v1 的 `write_note.sections{}` / `coverage_gaps` 只在兼容期受理，新 plan 禁用。**
+- **`create_knowledge` / `append_knowledge` 的 `sections` 分区名逐字固定**：Knowledge 三分区
+  「知识内容」（必写）「条件与边界」「用户补充」（永不写）；自动路径的 `append_knowledge` 只能追加
+  「条件与边界」。
+- **`create_opinion` / `append_opinion` 的 `sections` 分区名逐字固定**：Opinion 五分区
+  「观点」（必写）「论据与推理」「条件与反例」「待验证」「用户补充」（永不写）；新建默认
+  `validation: pending`，**Agent 不得在 plan 里写 `validation`**（直接写 `validated` / `rejected` → **E2**）。
 - **诊断读法**：每条 error / warning / info 都带 `code` + `level` + `path` + `op_index` + `message` + `target`，
   按 `op_index` 与 `path` 定位后改 plan 重投即可。
+
+### 4.4 op 集合与 v1 兼容
+
+- **canonical op 恰九个**（顺序不敏感，集合封闭）：`add_source`、`write_note`、`create_knowledge`、
+  `append_knowledge`、`create_opinion`、`append_opinion`、`add_material_rel`、`add_relation`、
+  `add_open_question`。此集合之外一律 **E5**（退 `2` 零写入）。
+- **兼容别名**：`create_card` → `create_knowledge`、`append_card` → `append_knowledge`，被规范化后照常执行；
+  **新 plan 不要再用别名**。
+- **`plan_version` 兼容**：支持 `{1, 2}`，当前写 `2`。`plan_version: 1` 的 plan 仍被受理，但会得到**恰一条
+  `I1`** 兼容提示；v1 的 `write_note.sections{}`（材料提炼 / Agent 分析 / 产出知识卡…）与 `coverage_gaps`
+  按兼容映射受理并**按字节原样保留**，不再是当前固定形态。
 
 ## 5. 边界与禁止项（B-01 ~ B-13，逐条硬约束）
 
 - **B-01 不得绕过 `eg apply` 直接改文件**：不得用编辑器 / shell / 脚本改写 vault 内任何 Markdown；
   也不得自行 `git commit` / `git checkout` / `git reset` / 删除文件。
 - **B-02 一份 plan 不得写两个 domain**：一次加工 = 一个领域；跨域目标 → W1 warning，属规程违规。
-- **B-03 对已有卡的自动加工只追加三分区**：「解释与依据」「条件与边界」「理解自检」；
-  **不改「知识内容」**（自动路径写它即 E6）；**「用户补充」任何时候永不写**（E6）。
-- **B-04 新建卡（`create_card`）五分区都可写**，但「知识内容」必写、「用户补充」仍然不可写。
+- **B-03 对已有 Knowledge 的自动加工只追加「条件与边界」**：**不改「知识内容」**（自动路径写它即 E6）；
+  **「用户补充」任何时候永不写**（E6）。Opinion 的自动追加同理只碰「论据与推理」「条件与反例」「待验证」，
+  不写「观点」「用户补充」，也不碰 `validation`。
+- **B-04 新建 Knowledge（`create_knowledge`）可写「知识内容」「条件与边界」**，「知识内容」必写、「用户补充」不可写；
+  新建 Opinion（`create_opinion`）可写「观点」「论据与推理」「条件与反例」「待验证」，「观点」必写、「用户补充」不可写。
 - **B-05 禁止替换或删除已有普通块**：S1 只追加；块替换属 S2，`replace_block` 在 S1 是未知 op（E5）。
 - **B-06 重新加工必须逐字保留用户块**：`write_note` 带 `reprocess: true` 时，「用户补充」与「存疑与待验证」
   的既有内容原样保留（含空行与缩进）；无法逐字保留时 CLI 会跳过并记 `user_block_unsafe`。
@@ -262,10 +392,11 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
 - **B-08 禁止把 `active` 说成「已确认」「已入库」**：`active` 只表示**当前有效**，不代表被人确认过。
 - **B-09 禁止读改其他领域的产物**：只在 `plan.domain` 指定的领域内读写。
 - **B-10 禁止把多跳推导结论沉淀成新卡**：多跳结论没有自己的材料依据，落盘会绕过材料依据强制；
-  这类结论写进材料笔记「Agent 分析」或存疑，不建卡。
+  这类结论作为 Note 的 `reflection` / `verification` 批注就近记录，或登记为 `add_open_question`，不建卡。
 - **B-11 无法判断领域时落 `default_domain` 且不追问**：在报告里说明这次用了 `default_domain_fallback`。
 - **B-12 不确定是否同一知识单元就拆两张卡**，并**逐卡记录三维度比较结论**到 `convergence[]`。
-- **B-13 不虚构材料来源与依据**：文章没表达的部分**留空**，并按 §3.4 登记 `coverage_gaps`；
+- **B-13 不虚构材料来源与依据**：文章没表达的部分宁可**留空**也**不编造**；来源保真按 §3.8 用 `blocks[]`
+  覆盖，网页噪声进 `omissions[]`，提炼去向按 §3.4 用 `extraction_coverage[]` 登记（缺漏必须为 0）；
   不得编造 `source` / `note` / `reason`，不得引用不存在的 ID。
 
 **不得复活的已废弃设计**（出现即 W4，字段被原样忽略；写进 plan 属规程违规）：`candidate` 字段、
@@ -287,20 +418,30 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
 两份样例都能被 `eg apply --dry-run` 接受（退 `0`、零写入）。**`base` 里的 `content_hash` 是占位值，
 正式 apply 前必须用 `eg context` 输出的同名键值逐字替换。**
 
-### 6.1 样例 ①：新建卡 + 材料关系（`independent_new`，带 `coverage_gaps`）
+### 6.1 样例 ①：审阅式 Note + 新建 Knowledge 与两条 Opinion（Knowledge/Opinion 分流）
 
-> 样例 ① 同时给出 `create_card.sources[]` 与 `add_material_rel`（§3.2 `independent_new` 行的 op 组合）：
-> 新卡的材料关系随建卡一并落盘，随后那条**四要素逐字相同**的 `add_material_rel` 会被 CLI 幂等去重，
-> 卡上不会出现第二条。四要素只要有一个字不同，就是另一条关系，会照写。
+> 样例 ① 收录《The Bitter Lesson》：`write_note` 用 `blocks[]` 按物理行号连续覆盖来源正文，就近插入
+> `guide` / `emphasis` / `distinction` / `reflection` 批注（数量随文章需要，不设配额）。分流严格按 §2.2：
+> **Knowledge 只承载原文直接给出的稳定事实**——原文围棋段称「搜索与学习是利用大规模算力最重要的两类技术」、
+> 文末说它们「似乎能随算力任意扩展」（seem to scale arbitrarily），这才是知识卡的内容（按原文措辞收敛，不声称穷尽、
+> 保留 seem 的不确定边界）；而「长期看这两类方法优于把人类知识写进系统」是优劣比较 / 预测，「研究应转向能自行发现的
+> 元方法」是路线取舍主张，两者都属 Opinion，分别沉淀为两条独立观点。`extraction_coverage[]` 覆盖矩阵先把文章
+> 拆成细粒度语义模块——国际象棋 / 围棋 / 语音 / 视觉四段各自独立登记，再逐条给出去向（三条 `outputs` 分别指向
+> 新建的 1 张 Knowledge 与 2 条 Opinion，其余 `note_only` 写明为何不单独立卡），`output_cards` 与之双向一致。
+> 随后 `create_knowledge` 沉淀那条稳定事实（三分区）、两条 `create_opinion` 分别沉淀长期优劣判断与路线取舍主张
+> （五分区，默认 `validation: pending`），`add_open_question` 记录一个待验证问题。`omissions` 为空数组显式给出。
 
 <!-- e2e-sample: 1 -->
 ```json
 {
-  "plan_version": 1,
+  "plan_version": 2,
   "verb": "process",
   "domain": "ai-infra",
-  "reason": "把《The Bitter Lesson》沉淀成一张可独立复用的知识卡",
-  "requirement_ids": ["EG-KNW-04", "EG-CVG-01", "EG-EXT-02"],
+  "reason": "把《The Bitter Lesson》整理成审阅式学习版 Note，并沉淀一张知识卡与两条观点",
+  "requirement_ids": [
+    "EG-KNW-04",
+    "EG-CVG-01"
+  ],
   "convergence": [],
   "base": {
     "unprocessed.md": "sha256:00000000000000000000000000000000000000000000000000000000placeholder"
@@ -311,60 +452,366 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
       "source": "s-20260917-the-bitter-lesson",
       "note_id": "n-20260917-the-bitter-lesson",
       "title": "The Bitter Lesson（Rich Sutton, 2019）",
-      "sections": {
-        "材料提炼": "- 原文主张：70 年 AI 研究最大的教训是，能利用算力的通用方法长期看最有效，且优势很大。\n- 原文依据：算力成本持续指数下降（摩尔定律的推广），因此搜索与学习这两类可随算力扩展的通用方法最终胜出。\n- 原文举例：国际象棋、围棋、语音识别、计算机视觉四个领域都出现过「人工注入知识短期领先、算力驱动的通用方法最终反超」。\n- 原文结论：应把人类已有认知当作待发现对象，而不是直接写进系统；系统要能自己发现。\n",
-        "Agent 分析": "- 该主张的适用面：以「有明确评估信号、可大规模搜索或学习」的任务为主；原文未讨论数据受限或评估信号缺失的场景。\n- 与工程实践的接口：它约束的是长期技术路线选择，不是单次交付的取舍。\n"
-      },
-      "output_cards": [{ "card": "k-20260917-bitter-lesson", "mode": "新建" }],
-      "coverage_gaps": ["counterexample"]
+      "blocks": [
+        {
+          "role": "source",
+          "source_ref": "L2-L2",
+          "body": "The Bitter Lesson",
+          "heading": "The Bitter Lesson"
+        },
+        {
+          "role": "source",
+          "source_ref": "L4-L5",
+          "body": "Rich Sutton\nMarch 13, 2019"
+        },
+        {
+          "role": "agent",
+          "annotation": "guide",
+          "body": "本文含一个稳定事实与两条判断：事实是「搜索与学习是两类能利用大规模计算的通用方法」（原文围棋段称其为「最重要的两类技术」，文末说它们「似乎能随算力任意扩展」，未称穷尽）；判断一是「长期看这两类方法优于把人类知识写进系统」，判断二是「研究应转向能自行发现的元方法」。下面据此分流：事实沉淀为知识卡，两条判断各沉淀为一条观点。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L7-L27",
+          "body": "The biggest lesson that can be read from 70 years of AI research is\nthat general methods that leverage computation are ultimately the most\neffective, and by a large margin. The ultimate reason for this is\nMoore's law, or rather its generalization of continued exponentially\nfalling cost per unit of computation. Most AI research has been\nconducted as if the computation available to the agent were constant\n(in which case leveraging human knowledge would be one of the only ways\nto improve performance) but, over a slightly longer time than a typical\nresearch project, massively more computation inevitably becomes\navailable. Seeking an improvement that makes a difference in the\nshorter term, researchers seek to leverage their human knowledge of the\ndomain, but the only thing that matters in the long run is the\nleveraging of computation. These two need not run counter to each\nother, but in practice they tend to. Time spent on one is time not\nspent on the other. There are psychological commitments to investment\nin one approach or the other. And the human-knowledge approach tends to\ncomplicate methods in ways that make them less suited to taking\nadvantage of general methods leveraging computation.  There were\nmany examples of AI researchers' belated learning of this bitter\nlesson,\nand it is instructive to review some of the most prominent."
+        },
+        {
+          "role": "agent",
+          "annotation": "emphasis",
+          "body": "这段是「长期优劣」判断本身：短期靠人工知识领先、长期只有算力的杠杆作用决定胜负。它是优劣比较与预测，按 §2.2 归观点（o-20260917-bitter-lesson），不作知识卡。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L29-L39",
+          "body": "In computer chess, the methods that defeated the world champion,\nKasparov, in 1997, were based on massive, deep search. At the time,\nthis was looked upon with dismay by the majority of computer-chess\nresearchers who had pursued methods that leveraged human understanding\nof the special structure of chess. When a simpler, search-based\napproach with special hardware and software proved vastly more\neffective, these human-knowledge-based chess researchers were not good\nlosers. They said that ``brute force\" search may have won this time,\nbut it was not a general strategy, and anyway it was not how people\nplayed chess. These researchers wanted methods based on human input to\nwin and were disappointed when they did not.",
+          "heading": "计算机国际象棋"
+        },
+        {
+          "role": "source",
+          "source_ref": "L41-L56",
+          "body": "A similar pattern of research progress was seen in computer Go, only\ndelayed by a further 20 years. Enormous initial efforts went into\navoiding search by taking advantage of human knowledge, or of the\nspecial features of the game, but all those efforts proved irrelevant,\nor worse, once search was applied effectively at scale. Also important\nwas the use of learning by self play to learn a value function (as it\nwas in many other games and even in chess, although learning did not\nplay a big role in the 1997 program that first beat a world champion).\nLearning by self play, and learning in general, is like search in that\nit enables massive computation to be brought to bear. Search and\nlearning are the two most important classes of techniques for utilizing\nmassive amounts of computation in AI research. In computer Go, as in\ncomputer chess, researchers' initial effort was directed towards\nutilizing human understanding (so that less search was needed) and only\nmuch later was much greater success had by embracing search and\nlearning.",
+          "heading": "计算机围棋"
+        },
+        {
+          "role": "source",
+          "source_ref": "L58-L77",
+          "body": "In speech recognition, there was an early competition, sponsored by\nDARPA, in the 1970s. Entrants included a host of special methods that\ntook\nadvantage of human knowledge---knowledge of words, of phonemes, of the\nhuman vocal tract, etc. On the other side were newer methods that were\nmore statistical in nature and did much more computation, based on\nhidden Markov models (HMMs). Again, the statistical methods won out\nover the human-knowledge-based methods. This led to a major change in\nall of natural language processing, gradually over decades, where\nstatistics and computation came to dominate the field. The recent rise\nof deep learning in speech recognition is the most recent step in this\nconsistent direction. Deep learning methods rely even less on human\nknowledge, and use even more computation, together with learning on\nhuge training sets, to produce dramatically better speech recognition\nsystems. As in the games, researchers always tried to make systems that\nworked the way the researchers thought their own minds worked---they\ntried to put that knowledge in their systems---but it proved ultimately\ncounterproductive, and a colossal waste of researcher's time, when,\nthrough Moore's law, massive computation became available and a means\nwas found to put it to good use.",
+          "heading": "语音识别"
+        },
+        {
+          "role": "source",
+          "source_ref": "L79-L83",
+          "body": "In computer vision, there has been a similar pattern. Early methods\nconceived of vision as searching for edges, or generalized cylinders,\nor in terms of SIFT features. But today all this is discarded. Modern\ndeep-learning neural networks use only the notions of convolution and\ncertain kinds of invariances, and perform much better.",
+          "heading": "计算机视觉"
+        },
+        {
+          "role": "agent",
+          "annotation": "distinction",
+          "body": "国际象棋、围棋、语音、视觉是四个各自独立重复同一模式的领域，是上面「长期优劣」判断的历史印证材料——逐段登记、均不单独立卡；其中围棋段（与文末段）点出的「搜索与学习是利用大规模算力的两类技术」这一稳定事实，统一沉淀为知识卡，不藏在观点论据里。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L85-L97",
+          "body": "This is a big lesson. As a field, we still have not thoroughly learned\nit, as we are continuing to make the same kind of mistakes. To see\nthis, and to effectively resist it, we have to understand the appeal of\nthese mistakes. We have to learn the bitter lesson that building in how\nwe think we think does not work in the long run. The bitter lesson is\nbased on the historical observations that 1) AI researchers have often\ntried to build knowledge into their agents, 2) this always helps in the\nshort term, and is personally satisfying to the researcher, but 3) in\nthe long run it plateaus and even inhibits further progress, and 4)\nbreakthrough progress eventually arrives by an opposing approach based\non scaling computation by search and learning. The eventual success is\ntinged with bitterness, and often incompletely digested, because it is\nsuccess over a favored, human-centric approach.",
+          "heading": "这条大教训"
+        },
+        {
+          "role": "source",
+          "source_ref": "L99-L103",
+          "body": "One thing that should be learned from the bitter lesson is the great\npower of general purpose methods, of methods that continue to scale\nwith increased computation even as the available computation becomes\nvery great. The two methods that seem to scale arbitrarily in this way\nare search and learning."
+        },
+        {
+          "role": "agent",
+          "annotation": "emphasis",
+          "body": "这段与围棋段一起给出全文的稳定事实——搜索与学习是两类能利用大规模计算的通用方法（原文说它们「似乎能随算力任意扩展」，未称穷尽）。它与「孰优孰劣」的判断分开，单独沉淀为知识卡（k-20260917-bitter-lesson）。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L105-L117",
+          "body": "The second general point to be learned from the bitter lesson is that\nthe actual contents of minds are tremendously, irredeemably complex; we\nshould stop trying to find simple ways to think about the contents of\nminds, such as simple ways to think about space, objects, multiple\nagents, or symmetries. All these are part of the arbitrary,\nintrinsically-complex, outside world. They are not what should be built\nin, as their complexity is endless; instead we should build in only the\nmeta-methods that can find and capture this arbitrary complexity.\nEssential to these methods is that they can find good approximations,\nbut the search for them should be by our methods, not by us. We want AI\nagents that can discover like we can, not which contain what we have\ndiscovered. Building in our discoveries only makes it harder to see how\nthe discovering process can be done."
+        },
+        {
+          "role": "agent",
+          "annotation": "reflection",
+          "body": "最后一段从描述转向主张：不应把人类已有认知写进系统，而应构建能自行发现的元方法——这是关于研究路线取舍的判断，按 §2.2 归第二条观点（o-20260917-bitter-lesson-meta），不作事实卡。"
+        }
+      ],
+      "omissions": [],
+      "extraction_coverage": [
+        {
+          "module": "标题与署名",
+          "source_refs": [
+            "L2-L2",
+            "L4-L5"
+          ],
+          "summary": "文章标题与作者、发表日期等来源元信息。",
+          "disposition": "note_only",
+          "reason": "来源元信息随正文保真保留，不单独产出卡"
+        },
+        {
+          "module": "长期优劣判断：算力驱动的通用方法长期胜出",
+          "source_refs": [
+            "L7-L27"
+          ],
+          "summary": "短期靠人工知识领先、长期只有算力的杠杆作用决定胜负——这是优劣比较与预测。",
+          "disposition": "outputs",
+          "outputs": [
+            "o-20260917-bitter-lesson"
+          ]
+        },
+        {
+          "module": "历史印证·国际象棋",
+          "source_refs": [
+            "L29-L39"
+          ],
+          "summary": "1997 年击败卡斯帕罗夫的是大规模深度搜索，而非人工注入的国际象棋知识。",
+          "disposition": "note_only",
+          "reason": "单一领域的历史举证，是长期优劣观点的论据材料，不含可独立复用的稳定事实，不单独立卡"
+        },
+        {
+          "module": "历史印证·围棋",
+          "source_refs": [
+            "L41-L56"
+          ],
+          "summary": "围棋同样在放弃人工知识、拥抱搜索与自对弈学习后才取得大突破；本段直接点出「搜索与学习是利用大规模算力最重要的两类技术」。",
+          "disposition": "note_only",
+          "reason": "本段主体是围棋领域的历史举证，作为长期优劣观点的论据保留；其中点出的「搜索与学习是两类利用大规模算力的技术」这一稳定事实与文末段一起沉淀进知识卡 k-20260917-bitter-lesson，此处不重复立卡"
+        },
+        {
+          "module": "历史印证·语音识别",
+          "source_refs": [
+            "L58-L77"
+          ],
+          "summary": "语音识别从基于人类知识的方法转向统计 / HMM / 深度学习，算力与统计方法最终胜出。",
+          "disposition": "note_only",
+          "reason": "单一领域的历史举证，是长期优劣观点的论据材料，不单独立卡"
+        },
+        {
+          "module": "历史印证·计算机视觉",
+          "source_refs": [
+            "L79-L83"
+          ],
+          "summary": "计算机视觉从边缘 / SIFT 等人工特征转向卷积等少量先验的深度网络，效果更好。",
+          "disposition": "note_only",
+          "reason": "单一领域的历史举证，是长期优劣观点的论据材料，不单独立卡"
+        },
+        {
+          "module": "大教训总结：四点历史观察",
+          "source_refs": [
+            "L85-L97"
+          ],
+          "summary": "把四个领域归纳为四点历史观察：人工注入知识短期有效、长期封顶，最终由基于算力扩展的搜索与学习取得突破。",
+          "disposition": "note_only",
+          "reason": "对四段历史的归纳，仍是长期优劣观点的论据材料，不单独立卡"
+        },
+        {
+          "module": "稳定事实：搜索与学习是两类能利用大规模计算的通用方法",
+          "source_refs": [
+            "L41-L56",
+            "L99-L103"
+          ],
+          "summary": "原文围棋段称「搜索与学习是利用大规模算力最重要的两类技术」，文末说它们「似乎能随算力任意扩展」——这是原文直接给出的稳定事实（不声称穷尽、保留 seem 的不确定）。",
+          "disposition": "outputs",
+          "outputs": [
+            "k-20260917-bitter-lesson"
+          ]
+        },
+        {
+          "module": "路线取舍主张：应构建能自行发现的元方法",
+          "source_refs": [
+            "L105-L117"
+          ],
+          "summary": "作者主张不要把人类已有认知写进系统，而应构建能自行发现、随算力扩展的元方法。",
+          "disposition": "outputs",
+          "outputs": [
+            "o-20260917-bitter-lesson-meta"
+          ]
+        }
+      ],
+      "output_cards": [
+        {
+          "card": "k-20260917-bitter-lesson",
+          "mode": "新建"
+        },
+        {
+          "card": "o-20260917-bitter-lesson",
+          "mode": "新建"
+        },
+        {
+          "card": "o-20260917-bitter-lesson-meta",
+          "mode": "新建"
+        }
+      ]
     },
     {
-      "op": "create_card",
+      "op": "create_knowledge",
       "card_id": "k-20260917-bitter-lesson",
-      "title": "能利用算力的通用方法长期胜过人工注入知识",
-      "tags": ["ai", "method"],
+      "title": "搜索与学习是两类能利用大规模计算的通用方法",
+      "tags": [
+        "ai",
+        "scaling",
+        "search",
+        "learning"
+      ],
       "sources": [
         {
           "source": "s-20260917-the-bitter-lesson",
           "note": "n-20260917-the-bitter-lesson",
           "rel": "support",
-          "reason": "原文用国际象棋 / 围棋 / 语音 / 视觉四个领域的历史给出该结论的直接依据"
+          "reason": "原文围棋段（L41-L56）直接指出「搜索与学习是利用大规模算力最重要的两类技术」，文末（L99-L103）补充它们「似乎能随算力任意扩展」"
         }
       ],
       "sections": {
-        "知识内容": "在算力成本持续指数下降的前提下，依赖搜索与学习、能随算力扩展的通用方法，长期表现优于把人类领域知识直接写进系统的方法。\n",
-        "解释与依据": "- 依据原文：算力可用量随时间指数增长，方法的可扩展性决定长期上限。\n- 依据原文的四个历史案例：人工注入知识的方案短期领先，随算力增长被通用方法反超。\n",
-        "条件与边界": "- 前提是算力可持续增长、任务具备可大规模搜索或学习的结构。\n- 原文讨论的是长期趋势，不否认短期内人工知识有效。\n",
-        "理解自检": "- 如果算力成本停止下降，这个结论还成立吗？\n- 「通用方法」与「无先验」是同一件事吗？\n"
+        "知识内容": "在 AI 研究中，搜索（search）与学习（learning）是两类能把大规模计算转化为能力的通用方法——原文围棋段称其为「利用大规模算力最重要的两类技术」。二者都不依赖把人类领域知识直接写进系统。\n",
+        "条件与边界": "- 原文文末只说这两类方法「似乎能随算力任意扩展」（seem to scale arbitrarily），是观察性表述，并未断言穷尽；本卡不声称「仅此两类」，保留这一不确定边界。\n- 这里的「通用方法」特指不绑定特定领域人工知识、能利用大规模计算的方法。\n"
       }
     },
     {
-      "op": "add_material_rel",
-      "card": "k-20260917-bitter-lesson",
-      "source": "s-20260917-the-bitter-lesson",
-      "note": "n-20260917-the-bitter-lesson",
-      "rel": "support",
-      "reason": "原文用国际象棋 / 围棋 / 语音 / 视觉四个领域的历史给出该结论的直接依据"
+      "op": "create_opinion",
+      "opinion_id": "o-20260917-bitter-lesson",
+      "title": "长期看，随算力扩展的通用方法优于把人类知识写进系统",
+      "tags": [
+        "ai",
+        "research-direction"
+      ],
+      "sources": [
+        {
+          "source": "s-20260917-the-bitter-lesson",
+          "note": "n-20260917-the-bitter-lesson",
+          "rel": "support",
+          "reason": "原文用国际象棋 / 围棋 / 语音 / 视觉四个领域的历史印证「长期只有算力的杠杆作用决定胜负」"
+        }
+      ],
+      "sections": {
+        "观点": "在足够长的时间尺度上，依赖搜索与学习、能随算力扩展的通用方法，其表现优于把人类领域知识直接写进系统的方法。\n",
+        "论据与推理": "- 单位算力成本按摩尔定律持续指数下降，长期总能获得远超当下的算力。\n- 短期靠人工知识领先、长期被算力驱动的通用方法反超——国际象棋、围棋、语音识别、计算机视觉四个领域各自独立重复了这一模式。\n",
+        "条件与反例": "- 讨论的是长期趋势，不否认短期内人工知识有效；两条路线并非天然对立，但实践中此消彼长。\n",
+        "待验证": "- 在数据或评估信号严重受限的任务上，这条长期优劣是否仍然成立？\n"
+      }
+    },
+    {
+      "op": "create_opinion",
+      "opinion_id": "o-20260917-bitter-lesson-meta",
+      "title": "AI 研究应放弃把人类认知写进系统，转向能自行发现的元方法",
+      "tags": [
+        "ai",
+        "research-direction"
+      ],
+      "sources": [
+        {
+          "source": "s-20260917-the-bitter-lesson",
+          "note": "n-20260917-the-bitter-lesson",
+          "rel": "support",
+          "reason": "原文结尾（L105-L117）主张只应把「能发现并捕获复杂性的元方法」写进系统，是该取舍判断的直接来源"
+        }
+      ],
+      "sections": {
+        "观点": "AI 研究的长期路线应放弃把人类已有认知直接写进系统，转而构建能自行发现、随算力扩展的元方法。\n",
+        "论据与推理": "- 心智的实际内容极其复杂，试图把它简化后写进系统长期看行不通。\n- 应当内建的只是「能发现并捕获复杂性」的元方法，而不是发现的结果本身。\n",
+        "条件与反例": "- 这是关于研究路线的取舍主张，并非所有工程场景都必须遵循。\n",
+        "待验证": "- 在需要强先验或数据稀缺的场景，纯元方法路线是否可行？\n"
+      }
     },
     {
       "op": "add_open_question",
       "note": "n-20260917-the-bitter-lesson",
-      "question": "在数据或评估信号受限的任务上，这个结论是否仍然成立？"
+      "question": "在数据或评估信号受限的任务上，随算力扩展的通用方法长期占优这一判断是否仍然成立？"
     }
   ]
 }
 ```
 
-### 6.2 样例 ②：复用已有卡 `append_card` 三分区 + 论证关系（`non_core_supplement`，不带 `coverage_gaps`）
+> **实跑预期**：样例 ① 用 `eg apply` 落盘时 **退 `0`、零 warning、零 error**（新建 1 张 Knowledge
+> 与 2 条 Opinion，由三个 create op 内嵌 `sources[]` 各建一条 support 材料关系——共 3 条材料关系，
+> 故**不需要**再补 `add_material_rel`；多写一条重复关系反而会触发 `I1` 幂等去重提示，属无意义噪声，
+> 样例刻意不写）。这条「零 warning」是被 e2e 钉死的实跑预期，不是估计值。
+
+**目标渲染片段（样例 ① 的 Note `n-20260917-the-bitter-lesson`，非样例、不被 e2e 执行）**——
+展示 `blocks[]` 落盘后来源正文与就近 Agent 批注的实际渲染、「提取结果」清单、以及四列覆盖矩阵。
+本片段只演示**方法**（就近批注 + 覆盖矩阵怎么长），**批注的数量与类型按文章实际需要来，不要照抄本例的 5 条、4 类**（`guide`×1 / `emphasis`×2 / `distinction`×1 / `reflection`×1）：
+
+```markdown
+## 整理正文
+
+### The Bitter Lesson
+The Bitter Lesson
+
+Rich Sutton
+March 13, 2019
+
+> **[Agent 导读]** 本文的核心主张：能利用算力、可随算力扩展的通用方法（搜索与学习），长期看优于把人类领域知识直接写进系统……
+
+The biggest lesson that can be read from 70 years of AI research is
+that general methods that leverage computation are ultimately the most
+effective, and by a large margin……
+
+> **[Agent 强调]** 作者反复强调：短期靠人工知识领先，长期被算力驱动的通用方法反超——这条时间尺度上的对比是全文论证的主轴。
+
+### 计算机国际象棋
+In computer chess, the methods that defeated the world champion, Kasparov, in 1997, were based on massive, deep search……
+
+（此处省略「计算机围棋 / 语音识别 / 计算机视觉」三段来源正文，均逐行保真）
+
+> **[Agent 辨析]** 国际象棋、围棋、语音、视觉是四个各自独立重复同一模式的领域，是上面「长期优劣」判断的历史印证材料——逐段登记、均不单独立卡；围棋段（与文末段）点出的「搜索与学习是利用大规模算力的两类技术」这一稳定事实，统一沉淀为知识卡。
+
+### 这条大教训
+This is a big lesson. As a field, we still have not thoroughly learned it……
+
+> **[Agent 强调]** 文末与围棋段一起给出全文的稳定事实——搜索与学习是两类能利用大规模计算的通用方法（原文说它们「似乎能随算力任意扩展」，未称穷尽）。它与「孰优孰劣」的判断分开，单独沉淀为知识卡。
+
+> **[Agent 反思]** 作者最后从描述转向主张：不应把人类已有认知写进系统，而应构建能自行发现的元方法——这是一条关于研究路线取舍的判断，属观点而非事实。
+
+## 提取结果
+
+### Knowledge
+- k-20260917-bitter-lesson（新建）
+
+### Opinion
+- o-20260917-bitter-lesson（新建） `[pending]`
+- o-20260917-bitter-lesson-meta（新建） `[pending]`
+
+### 覆盖矩阵
+
+| 模块 | 来源范围 | 语义模块 | 处置 |
+| --- | --- | --- | --- |
+| `标题与署名` | `L2-L2` `L4-L5` | 文章标题与作者、发表日期等来源元信息。 | Note-only：来源元信息随正文保真保留，不单独产出卡 |
+| `长期优劣判断：算力驱动的通用方法长期胜出` | `L7-L27` | 短期靠人工知识领先、长期只有算力的杠杆作用决定胜负——优劣比较与预测。 | `o-20260917-bitter-lesson` |
+| `历史印证·国际象棋` | `L29-L39` | 1997 年击败卡斯帕罗夫的是大规模深度搜索，而非人工注入的国际象棋知识。 | Note-only：单一领域的历史举证，是长期优劣观点的论据材料，不单独立卡 |
+| `历史印证·围棋` | `L41-L56` | 围棋同样在放弃人工知识、拥抱搜索与自对弈学习后才取得大突破。 | Note-only：本段主体是历史举证；其中点出的「搜索与学习是两类利用大规模算力的技术」稳定事实与文末段一起沉淀进知识卡 |
+| `历史印证·语音识别` | `L58-L77` | 语音识别从人类知识方法转向统计 / HMM / 深度学习，算力与统计方法胜出。 | Note-only：单一领域的历史举证，不单独立卡 |
+| `历史印证·计算机视觉` | `L79-L83` | 计算机视觉从边缘 / SIFT 等人工特征转向卷积等少量先验的深度网络。 | Note-only：单一领域的历史举证，不单独立卡 |
+| `大教训总结：四点历史观察` | `L85-L97` | 把四个领域归纳为四点历史观察：人工注入知识短期有效、长期封顶，最终由搜索与学习取得突破。 | Note-only：对四段历史的归纳，仍是论据材料，不单独立卡 |
+| `稳定事实：搜索与学习是两类能利用大规模计算的通用方法` | `L41-L56` `L99-L103` | 原文围棋段称「搜索与学习是利用大规模算力最重要的两类技术」、文末说它们「似乎能随算力任意扩展」——原文直接给出的稳定事实（不声称穷尽）。 | `k-20260917-bitter-lesson` |
+| `路线取舍主张：应构建能自行发现的元方法` | `L105-L117` | 主张不要把人类认知写进系统，而应构建能自行发现的元方法。 | `o-20260917-bitter-lesson-meta` |
+```
+
+本例就近落了 **5 条、4 类** Agent 批注（`guide`×1 / `emphasis`×2 / `distinction`×1 / `reflection`×1）；覆盖矩阵**九行**逐段
+拆分了国际象棋 / 围棋 / 语音 / 视觉四个独立领域，处置列**三条指向产物卡**（1 张 Knowledge、2 条 Opinion）、
+**六条 Note-only 并写明理由**，与 `output_cards` 双向一致——分流严格遵守 §3.7：稳定事实进 Knowledge、
+优劣判断与路线取舍各进一条 Opinion，可独立复用的「搜索与学习」事实不藏在观点论据里。
+
+### 6.2 样例 ②：审阅式 Note + 复用已有 Knowledge（`non_core_supplement`）
+
+> 样例 ② 收录一篇**仓内自带的确定性测试 fixture**《Search and Learning Have Limits（engineering note,
+> test fixture, 2026）》——它是本仓为演示复用路径准备的 fixture，不是独立公开语料，URL 用的是
+> `*.invalid` 保留域，不指向任何真实网页。这篇材料与样例 ① 新建的知识卡 `k-20260917-bitter-lesson`
+> **同一个核心事实**（搜索与学习是两类能利用大规模计算的通用方法），但**不提出任何新方法**，只补两条
+> **成立条件**：① 算力须对该问题持续增长；② 任务须暴露可被搜索利用的结构或可被学习利用的信号。
+> 因此它是标准的 `non_core_supplement`：先产出来源保真的审阅式 Note，再用 `append_knowledge` 只向
+> 已有卡的「条件与边界」追加这两条条件，并用 `add_material_rel` 接上支持关系。`convergence[]` 逐字记录
+> 三维度结论（`core_knowledge=same` / `conditions=different` / `reuse_purpose=same`）。本样例不新建卡，
+> `eg apply` 会给**恰一条** `I1`（本次未产生知识卡，属合法结果）——这是复用路径的正常信息，不是失败。
 
 <!-- e2e-sample: 2 -->
 ```json
 {
-  "plan_version": 1,
+  "plan_version": 2,
   "verb": "process",
   "domain": "ai-infra",
-  "reason": "第二篇材料补充「通用方法为何能扩展」的前提，按非核心补充追加到已有卡",
-  "requirement_ids": ["EG-CVG-01", "EG-KNW-04"],
+  "reason": "第二篇材料只为已有卡补两条成立条件：算力须持续增长、任务须暴露可搜索结构或可学习信号，按非核心补充追加到已有卡，不新建卡",
+  "requirement_ids": [
+    "EG-CVG-01",
+    "EG-KNW-04"
+  ],
   "convergence": [
     {
       "card": "k-20260917-bitter-lesson",
@@ -372,7 +819,7 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
       "core_knowledge": "same",
       "conditions": "different",
       "reuse_purpose": "same",
-      "note": "两篇都在讲「可随团队扩展的通用方法」，核心知识与独立复用用途相同；第二篇补了一条成立条件（知识必须携带上下文、边界与反例），故 conditions=different，按非核心补充追加到已有卡，不拆新卡"
+      "note": "两篇讲的是同一个核心事实——搜索与学习是两类能利用大规模计算的通用方法；第二篇不提新方法，只补两条成立条件（算力须持续增长、任务须暴露可搜索结构或可学习信号），故 core_knowledge=same、conditions=different、reuse_purpose=same，按非核心补充追加到已有卡，不拆新卡"
     }
   ],
   "base": {
@@ -382,35 +829,208 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
   "ops": [
     {
       "op": "write_note",
-      "source": "s-20260917-knowledge-compounding",
-      "note_id": "n-20260917-knowledge-compounding",
-      "title": "Knowledge Compounding in Small Teams（internal onboarding note, 2026）",
-      "sections": {
-        "材料提炼": "- 原文主张：小团队知识沉淀要优先记录可复用的决策依据，而不是只记录结论。\n- 原文论据：后续成员接手时需要看到上下文、边界和反例，才能在不询问原作者的情况下复用知识。\n- 原文结论：把背景、适用条件与自检问题一起沉淀，知识才能随项目迭代持续复利。\n",
-        "Agent 分析": "- 这一条给「通用方法为何能随团队扩展」补了一个前提：知识条目必须携带可复核的上下文与边界。\n"
-      },
-      "output_cards": [{ "card": "k-20260917-bitter-lesson", "mode": "补充" }]
+      "source": "s-20260917-search-and-learning-have-limits",
+      "note_id": "n-20260917-search-and-learning-have-limits",
+      "title": "Search and Learning Have Limits（engineering note, test fixture, 2026）",
+      "blocks": [
+        {
+          "role": "source",
+          "source_ref": "L2-L2",
+          "body": "Search and Learning Have Limits",
+          "heading": "Search and Learning Have Limits"
+        },
+        {
+          "role": "source",
+          "source_ref": "L4-L4",
+          "body": "engineering note (test fixture), 2026"
+        },
+        {
+          "role": "agent",
+          "annotation": "guide",
+          "body": "这篇工程笔记（测试 fixture）不提出新方法，只给已知事实「搜索与学习是两类能利用大规模计算的通用方法」补两条成立条件：算力须持续增长、任务须暴露可被搜索或学习利用的结构。因此它是对已有卡的非核心补充，不新建卡。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L6-L12",
+          "body": "Search and learning are the two general methods that turn more\ncomputation into more capability, and the well-known lesson is\nthat over a long enough horizon they beat hand-built domain\nknowledge. But \"scales with computation\" is not the same as\n\"always wins\", and it is worth being precise about when these two\nmethods actually pay off. This note adds a condition to that known\nfact rather than proposing a competing method of its own."
+        },
+        {
+          "role": "agent",
+          "annotation": "distinction",
+          "body": "本段复述的正是已有卡的核心事实（搜索与学习是两类能利用大规模计算的通用方法），并非新知识；它明确「可随算力扩展」不等于「总能取胜」，据此引出下面两条成立条件。核心事实相同、只是条件更细，故判 non_core_supplement。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L14-L18",
+          "body": "The first precondition is that computation actually keeps growing\nfor the problem at hand. Search and learning are ways to convert a\ncomputation budget into capability; if that budget is fixed and\nsmall, a carefully hand-built method can stay ahead, simply because\nthere is no extra computation for the general method to ride on."
+        },
+        {
+          "role": "agent",
+          "annotation": "emphasis",
+          "body": "成立条件一：算力必须对该问题持续增长。搜索与学习是把算力预算转成能力的方法；预算固定且小的时候，精心手工构造的方法反而可能领先。这是对已有卡「条件与边界」的一条新增条件。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L20-L25",
+          "body": "The second precondition is a structure the method can exploit.\nSearch needs a space it can enumerate or sample together with a\nsignal that separates good states from bad ones. Learning needs a\ntraining signal that is plentiful and cheap to evaluate. On a task\nthat exposes neither a searchable structure nor a learnable signal,\npouring more computation into search or learning buys very little."
+        },
+        {
+          "role": "source",
+          "source_ref": "L27-L33",
+          "body": "So the two general methods are not a free lunch. They dominate in\nthe long run only where computation keeps growing and the task\nexposes a structure to search or a signal to learn from. Stated as\na boundary on the general-method fact: search and learning scale\nonly when both conditions hold, so a knowledge entry about them\nshould carry those conditions, not merely the headline that they\nscale."
+        },
+        {
+          "role": "agent",
+          "annotation": "summary",
+          "body": "两条条件合起来划出边界：搜索与学习只有在「算力持续增长」且「任务暴露可搜索结构或可学习信号」两者同时成立时才占优。这正是要补进已有卡「条件与边界」的内容。"
+        },
+        {
+          "role": "source",
+          "source_ref": "L35-L37",
+          "body": "This note makes no new headline claim of its own. It only records\nthe conditions under which the two already-known general methods,\nsearch and learning, actually convert computation into capability."
+        }
+      ],
+      "omissions": [],
+      "extraction_coverage": [
+        {
+          "module": "标题与署名",
+          "source_refs": [
+            "L2-L2",
+            "L4-L4"
+          ],
+          "summary": "笔记标题与署名（工程笔记，测试 fixture，2026）等来源元信息。",
+          "disposition": "note_only",
+          "reason": "来源元信息随正文保真保留，不单独产出卡"
+        },
+        {
+          "module": "同核心事实复述与写作意图",
+          "source_refs": [
+            "L6-L12"
+          ],
+          "summary": "复述已知事实——搜索与学习是两类能利用大规模计算的通用方法，并声明本文只为该事实补条件、不提新方法。",
+          "disposition": "note_only",
+          "reason": "该核心事实已由已有卡 k-20260917-bitter-lesson 承载，本段只复述并声明补充意图，不重复立卡"
+        },
+        {
+          "module": "成立条件一·算力须持续增长",
+          "source_refs": [
+            "L14-L18"
+          ],
+          "summary": "第一条成立条件：算力必须对该问题持续增长；预算固定且较小时手工方法可能领先。",
+          "disposition": "outputs",
+          "outputs": [
+            "k-20260917-bitter-lesson"
+          ]
+        },
+        {
+          "module": "成立条件二·任务须暴露可搜索结构或可学习信号",
+          "source_refs": [
+            "L20-L25"
+          ],
+          "summary": "第二条成立条件：任务须暴露可枚举/采样的结构与区分好坏的信号，或大量廉价的训练信号，否则加算力收益很小。",
+          "disposition": "outputs",
+          "outputs": [
+            "k-20260917-bitter-lesson"
+          ]
+        },
+        {
+          "module": "边界归纳",
+          "source_refs": [
+            "L27-L33"
+          ],
+          "summary": "把两条条件归纳为对通用方法事实的边界：仅当两条件同时成立时搜索与学习才占优。",
+          "disposition": "note_only",
+          "reason": "对两条成立条件的归纳收束，作为依据材料随正文保留，不单独立卡"
+        },
+        {
+          "module": "无新增主张声明",
+          "source_refs": [
+            "L35-L37"
+          ],
+          "summary": "明确本文不提出任何新的总括主张，只记录两类已知通用方法真正把算力转成能力的条件。",
+          "disposition": "note_only",
+          "reason": "这段是对「不新建核心知识、只补条件」的自我限定，是 non_core_supplement 判定的直接依据，不单独立卡"
+        }
+      ],
+      "output_cards": [
+        {
+          "card": "k-20260917-bitter-lesson",
+          "mode": "补充"
+        }
+      ]
     },
     {
-      "op": "append_card",
+      "op": "append_knowledge",
       "card": "k-20260917-bitter-lesson",
       "sections": {
-        "解释与依据": "- 补充依据（Knowledge Compounding in Small Teams, 2026）：通用方法能在团队中扩展的前提之一是知识条目携带可复核的决策背景，否则接手成本会抵消复用收益。\n",
-        "条件与边界": "- 补充边界：该结论在「知识携带上下文、边界与反例」时最稳固；只记录孤立结论不满足该条件。\n",
-        "理解自检": "- 如果一条知识只有结论而缺少背景、边界与反例，下一位接手者还能安全复用它吗？\n"
+        "条件与边界": "- 补充成立条件（Search and Learning Have Limits, test fixture, 2026）：搜索与学习要把算力转成能力，需同时满足两条前提——① 算力对该问题持续增长（预算固定且较小时，手工构造的方法可能反而领先）；② 任务暴露可被利用的结构（搜索需可枚举/采样的空间加区分好坏的信号，学习需大量且廉价可评估的训练信号）。两条不同时成立时，往搜索或学习堆算力收益甚微。\n"
       }
     },
     {
       "op": "add_material_rel",
       "card": "k-20260917-bitter-lesson",
-      "source": "s-20260917-knowledge-compounding",
-      "note": "n-20260917-knowledge-compounding",
+      "source": "s-20260917-search-and-learning-have-limits",
+      "note": "n-20260917-search-and-learning-have-limits",
       "rel": "support",
-      "reason": "第二篇从「知识沉淀必须携带上下文」的角度为该卡结论提供支持性材料依据"
+      "reason": "第二篇从成立条件角度支持该卡：给「搜索与学习是两类能利用大规模计算的通用方法」补上算力持续增长与任务可利用结构两条前提"
     }
   ]
 }
 ```
+
+> **实跑预期**：样例 ② 用 `eg apply` 落盘时 **退 `0`、零 error，并带恰一条 `I1`**——`code=I1`、
+> `level=info`、`path=cards`、`op_index=-1`、`message=「本次未产生知识卡：本次只产出材料层内容或关系，
+> 属合法结果，未判失败」`。这是走 `append_knowledge` 复用已有卡、不新建卡的正常信息（不是失败），
+> **不得**出现 `W5` 或任何其他 warning；报告须如实转述这条 `I1`。以上是被 e2e 钉死的精确实跑预期。
+
+**目标渲染片段（样例 ② 的 Note `n-20260917-search-and-learning-have-limits`，非样例、不被 e2e 执行）**——
+同样展示来源正文 + 就近 Agent 批注、「提取结果」清单、四列覆盖矩阵。**注意与样例 ① 的差异**：
+本篇批注更少、类型不同，正是「只学方法、不复制批注数量与类型」的示例：
+
+```markdown
+## 整理正文
+
+### Search and Learning Have Limits
+Search and Learning Have Limits
+
+engineering note (test fixture), 2026
+
+> **[Agent 导读]** 这篇工程笔记（测试 fixture）不提出新方法，只给已知事实「搜索与学习是两类能利用大规模计算的通用方法」补两条成立条件：算力须持续增长、任务须暴露可被搜索或学习利用的结构。
+
+Search and learning are the two general methods that turn more computation into more capability……
+
+> **[Agent 辨析]** 本段复述的正是已有卡的核心事实，并非新知识；「可随算力扩展」不等于「总能取胜」，据此引出下面两条成立条件——故判 non_core_supplement。
+
+The first precondition is that computation actually keeps growing for the problem at hand……
+
+> **[Agent 强调]** 成立条件一：算力必须对该问题持续增长；预算固定且较小时，手工构造的方法反而可能领先。
+
+（此处省略「成立条件二 / 边界归纳」等来源正文，均逐行保真）
+
+> **[Agent 总结]** 两条条件合起来划出边界：搜索与学习只有在「算力持续增长」且「任务暴露可搜索结构或可学习信号」同时成立时才占优。
+
+## 提取结果
+
+### Knowledge
+- k-20260917-bitter-lesson（补充）
+
+### 覆盖矩阵
+
+| 模块 | 来源范围 | 语义模块 | 处置 |
+| --- | --- | --- | --- |
+| `标题与署名` | `L2-L2` `L4-L4` | 笔记标题与署名等来源元信息。 | Note-only：来源元信息随正文保真保留，不单独产出卡 |
+| `同核心事实复述与写作意图` | `L6-L12` | 复述已知事实、声明只为该事实补条件、不提新方法。 | Note-only：核心事实已由已有卡承载，本段只复述并声明补充意图，不重复立卡 |
+| `成立条件一·算力须持续增长` | `L14-L18` | 算力须对该问题持续增长；预算固定且较小时手工方法可能领先。 | `k-20260917-bitter-lesson`（补充） |
+| `成立条件二·任务须暴露可搜索结构或可学习信号` | `L20-L25` | 任务须暴露可枚举/采样结构与区分好坏的信号，或大量廉价训练信号。 | `k-20260917-bitter-lesson`（补充） |
+| `边界归纳` | `L27-L33` | 两条条件合起来划出边界：仅当两者同时成立时搜索与学习才占优。 | Note-only：对两条条件的归纳收束，作为依据材料保留，不单独立卡 |
+| `无新增主张声明` | `L35-L37` | 明确本文不提新主张，只记录两类已知通用方法的成立条件。 | Note-only：对「只补条件、不建核心知识」的自我限定，是 non_core_supplement 判定依据 |
+```
+
+本例就近只落了 **4 条** Agent 批注（`guide` / `distinction` / `emphasis` / `summary`），且没有产出新卡——
+覆盖矩阵**两行**指向产物的都接到**同一张已有卡**（`补充`，两条成立条件同追加进「条件与边界」），其余四行
+Note-only。**这份材料与样例 ① 的知识卡同核心、只多两条成立条件，是真正的 `non_core_supplement`**：不做
+ID 嫁接、不靠标题投机召回；批注数量 / 类型也与样例 ① 明显不同——**照抄数量是误学，真正要学的是「就近批注
++ 覆盖矩阵把每个模块的去向讲清楚」这套方法。**
 
 ## 7. 一次主链路的自检清单（提交报告前逐条勾）
 
@@ -419,7 +1039,10 @@ CLI 不补算、不推断。数组为空或不涉及已有卡时该行块整段�
 - [ ] `plan.base` 的每个值都来自本次 `eg context`，逐字未改。
 - [ ] 每张候选卡在 `convergence[]` 里各一条，`relation` 取自 §3.2 七值且与三维度自洽。
 - [ ] op 组合与 §3.2 表格对得上；没有状态类 op、没有 S2+ op。
-- [ ] `coverage_gaps` 只登记原文没有的要点；无缺失时该字段不出现。
+- [ ] （v2 主路径）`write_note` 先做到来源保真：`blocks[]` 按物理行号连续覆盖原文，网页噪声进 `omissions[]`（无删除时为空数组显式给出）。
+- [ ] （v2 主路径）`extraction_coverage[]` 非空且**缺漏 = 0**：每个语义模块都登记去向（`outputs` / `note_only`），没有 `missing`。
+- [ ] （v2 主路径）`output_cards` 与覆盖矩阵的 `outputs` **双向一致**：清单里的每张卡都能在某模块的 `outputs` 找到，反之亦然。
+- [ ] （v1 兼容自检，仅当 `plan_version: 1`）`coverage_gaps` 只登记原文没有的要点；无缺失时该字段不出现。
 - [ ] 逐卡收敛结论已被最终报告如实转述（卡 ID / 处理关系 / 三维度 / `note` 照搬，缺的写「未给出」，见 §3.5）。
 - [ ] 报告如实转述 `skipped[]` 与 `warnings[]`，退 `3` / `4` 时按 §2.6 处置，**没有**自行做 Git 操作。
 
@@ -458,8 +1081,9 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 - **N-1 反伪造**：plan 或提案里写 `initiator: user` **不能自证**授权，必须由命令行的 `--user-request` 佐证；
   只写字段不给佐证 = 仍是 Agent 路径。
 - **B3 不因授权放宽**：即使走用户显式路径，写前照样逐文件比对 `content_hash`，不一致就跳过该文件并退 `3`。
-- **矩阵第 12 行（🔴）**：「知识内容」分区在 **Agent 自动路径不追加、不改写**；只有 `create_card`
-  新建卡时可以写它。自动路径写「知识内容」→ **E6 退 `2` 零写入**（E6 先于 W7 判定）。
+- **矩阵第 12 行（🔴）**：「知识内容」分区在 **Agent 自动路径不追加、不改写**；只有 canonical
+  `create_knowledge` 新建卡时可以写它（`create_card` 仅历史兼容别名，规范化到 `create_knowledge`，
+  新 plan 不要再写别名，见 §4.4）。自动路径写「知识内容」→ **E6 退 `2` 零写入**（E6 先于 W7 判定）。
   「用户补充」分区**任何路径、任何时候都不写**，`eg edit --section 用户补充` 也必被拒。
 - **W7 升级为 error（R-10，自 S2 起）**：状态类 op（`deprecate` / `restore` / `set_replaced_by` /
   `delete` / `undelete`）缺 `initiator=user` 在 S1 只是 warning，**自 S2 起是 error**——
@@ -831,13 +1455,19 @@ eg --vault "$VAULT" index status --limit 5  # expect: 1
 
 ## 11. S5 / M6 增量规程：强原子事务、锁、事务日志、崩溃恢复、块级安全合并、写前强校验（Agent 必读）
 
-M6（S5）**不新增任何顶层命令**（命令总量仍 **22**），也不改任何命令的用户可见默认行为；它把
+M6（S5）**不新增任何顶层命令**（M6 收口时命令总量为 **22**，历史事实），也不改任何命令的用户可见默认行为；它把
 「写入的原子性与安全性」这一层从「直落实盘 + 事后 Git」升级为**强原子事务**：所有 A 类写命令
 统一走「持锁 → 崩溃恢复 → 锁内重读重校验 → 内存预演 → 发布 intent → 多文件原子提交 →
 提交后 Git → 锁内索引同步 → 释放锁」的固定时序。退出码全集自 M6 起从 `{0,1,2,3,4,6}`
 扩为 **`{0,1,2,3,4,5,6}`**，新增诊断码**恰 5 条**：`E15` / `E16` / `W26` / `W27` / `W28`
-（`W21` 仍不分配）。**Markdown 仍是唯一权威来源**，事务与锁只保护写入过程，不改变「权威=Markdown、
+（**M6 收口时** `W21` 仍不分配，属历史事实）。**Markdown 仍是唯一权威来源**，事务与锁只保护写入过程，不改变「权威=Markdown、
 `.index/` 是派生物」这条根边界。
+
+> **post-M6 / current truth（现态，勿被历史断言误判）**：读路径拆分批次新增了顶层命令 `eg opinion`，
+> **当前顶层命令为 23 个**（见 §8.2 的「当前 23 命令一览」），不再是 M6 收口时的 22。
+> 同时 **`W21` 现已启用**：它是 v2 审阅式 Note 的**非 strict 启发式 warning**（§4.3「来源块数显著少于原文章节数」），
+> **strict 下不升级为 error**，也**不能替代来源保真（§3.8）与「缺漏 = 0」**。历史文档里「M6 命令数 22 / W21 不分配」
+> 描述的是 M6 收口时点的事实，与现态并不矛盾——现态以本段为准。
 
 **一句话先记住：M6 让写入要么全成、要么全不成，且并发写者串行化；Agent 侧不需要任何新动作，
 只需正确识别退出码 `5` 与五个新诊断码，并如实转述。**

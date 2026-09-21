@@ -193,13 +193,30 @@ for c in "${M5_CODES[@]}"; do
     grep -qF "${c}" "${doc}" || die "$(basename "${doc}") 未登记 M5 诊断码 ${c}"
   done
 done
-# W21 仍不分配：三份文档里若提到它，必须处在「不分配 / 留白 / 不使用」语境。
+# W21：历史「不分配」结论保留（不删历史）+ post-M5/M6 / current truth 精确断言（现态已启用）。
+#   现态：读路径拆分后 v2 审阅式 Note 启用 W21 为**非 strict 启发式 warning**（§4.3）；
+#   历史：M5 收口时 W21 不分配，这条历史结论仍须在文档在场、不得被删。
+#   判据：每条 W21 行要么处在历史「不分配」语境、要么处在现态「启发式 warning」语境；二者都不是即判红，
+#         且两类语境至少各出现一次。
+w21_hist=0
+w21_now=0
 for doc in "${DOCS[@]}"; do
   while IFS= read -r line; do
-    printf '%s' "${line}" | grep -qE "不分配|留白|不使用|未分配" \
-      || die "$(basename "${doc}") 在非「不分配」语境提到 W21：${line}"
+    if printf '%s' "${line}" | grep -qE "不分配|留白|不使用|未分配|unassigned"; then
+      w21_hist=1
+    elif printf '%s' "${line}" | grep -qE "启发式|heuristic|不能替代|覆盖证明|覆盖完整"; then
+      w21_now=1
+    else
+      die "$(basename "${doc}") 在既非「不分配(历史)」也非「启发式 warning(现态)」语境提到 W21：${line}"
+    fi
   done < <(grep -F "W21" "${doc}" || true)
 done
+[ "${w21_hist}" = "1" ] || die "W21 历史「不分配」结论从文档中消失（M5 历史不得删除）"
+[ "${w21_now}" = "1" ] || die "W21 现态（v2 审阅式 Note 非 strict 启发式 warning）未在文档在册"
+grep -qE "W21.*启发式|启发式 warning" "${REPO_ROOT}/skill/SKILL.md" \
+  || die "SKILL.md 未把 W21 写成启发式 warning（现态）"
+grep -qE "strict 下不升级|非 strict 启发式" "${REPO_ROOT}/skill/SKILL.md" \
+  || die "SKILL.md 未写明 W21 在 strict 下不升级为 error（现态精确断言）"
 for doc in "${DOCS[@]}"; do
   grep -qF -- "--limit" "${doc}" || die "$(basename "${doc}") 未登记 --limit"
   grep -qF -- "--offset" "${doc}" || die "$(basename "${doc}") 未登记 --offset"

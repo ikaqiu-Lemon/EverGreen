@@ -306,6 +306,7 @@ tests/fixtures/e2e/ppe/raw-session/vault-snapshot/sources/s-20260901-verificatio
 tests/fixtures/e2e/ppe/raw-session/vault-snapshot/unprocessed.md	test/e2e/testdata/ppe/raw-session/vault-snapshot/unprocessed.md	evergreen	fixtures	data
 tests/fixtures/e2e/ppe/seed-k-20260918-scaling-compute.md	test/e2e/testdata/ppe/seed-k-20260918-scaling-compute.md	evergreen	fixtures	data
 tests/fixtures/e2e/ppe/session.md	test/e2e/testdata/ppe/session.md	evergreen	fixtures	data
+tests/fixtures/e2e/search-learning-limits.txt	test/e2e/testdata/search-learning-limits.txt	evergreen	fixtures	data
 tests/fixtures/e2e/verification-key-to-ai.txt	test/e2e/testdata/verification-key-to-ai.txt	evergreen	fixtures	data
 tests/lib/txnctl/commit.go	test/txnctl/commit.go	evergreen	lib	go
 tests/lib/txnctl/main.go	test/txnctl/main.go	evergreen	lib	go

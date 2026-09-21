@@ -5,15 +5,24 @@
 // 无交互、无网络、无手工改文件（除刻意模拟「用户手写」与「外部改动」的两处，
 // 它们本身就是 B2 / B3 的被测场景）。
 //
-// 语料是两篇**真实文章**（`testdata/`，Agent 侧已清洗的正文字节）：
-//   - The Bitter Lesson（Rich Sutton, 2019）—— 主链路第一篇；明显不含反例，
-//     用于 EG-EXT-02 的「覆盖项缺失 → 报告标注」实测；
-//   - Verification, The Key to AI（Rich Sutton, 2001）—— 与已有卡高度相似的第二篇，
-//     走 `append_card` 三分区复用路径。
+// 语料是两份 Agent 侧已清洗的正文字节（`testdata/`）：
+//   - The Bitter Lesson（Rich Sutton, 2019）—— 主链路第一篇，一篇真实公开文章；
+//     用于 EG-EXT-02 的「覆盖项缺失 → 报告标注」实测，并按 §2.2 分流沉淀
+//     1 张 Knowledge（稳定事实：搜索与学习是利用大规模算力的两类通用方法）与
+//     2 条 Opinion（长期优劣判断 / 研究路线取舍主张）；
+//   - Search and Learning Have Limits（engineering note, **test fixture**, 2026）——
+//     本仓自带的确定性测试 fixture（`search-learning-limits.txt`），**不是**独立公开语料，
+//     URL 用 `*.invalid` 保留域、不指向真实网页。它与第一篇产出的知识卡**同一个核心事实**
+//     （搜索与学习是可随算力扩展的两类通用方法），但不提新方法，只补两条**成立条件**
+//     （算力须持续增长、任务须暴露可搜索结构或可学习信号），走 v2 `append_knowledge`
+//     复用路径把这两条追加进已有卡「条件与边界」。该 fixture 是 SKILL 样例 ② 逐字对应，
+//     samples[1] 直接对它真实执行，无 ID 嫁接。
 //
 // ChangePlan 不另写一份：直接取 `SKILL.md` 的两份样例（`skill.Samples`），
 // 只把 `base` 的占位 hash 换成本次 `eg context` 的真值——「文档样例即用例」，
-// 样例漂移会立刻在这里失败。
+// 样例漂移会立刻在这里失败。第二篇的 `eg capture` 标题「Search and Learning …」与已有卡
+// 共享真实主题 token，使 `eg context` 通过确定性打分**真实**把已有卡召回为候选并纳入 base
+// （靠正文语义对齐，不靠标题投机、无人工嫁接卡 ID）。
 package e2e
 
 import (
@@ -59,12 +68,32 @@ const (
 	noteA1      = "n-20260917-the-bitter-lesson"
 	noteA2      = "n-20260917-verification-the-key-to-ai"
 	cardA1      = "k-20260917-bitter-lesson"
-	capturedAt1 = "2026-09-17T09:00:00+08:00"
-	capturedAt2 = "2026-09-17T09:30:00+08:00"
-	url1        = "http://www.incompleteideas.net/IncIdeas/BitterLesson.html"
-	url2        = "http://www.incompleteideas.net/IncIdeas/KeytoAI.html"
-	title1      = "The Bitter Lesson"
-	title2      = "Verification, The Key to AI"
+	// **Schema v2 · T-…-008（T8-3）**：v2 few-shot 的第一篇除新建 Knowledge 外，还把
+	// 两条判断各分流为一张 Opinion（长期优劣判断 + 研究路线取舍主张，新建默认
+	// validation: pending）。e2e 因此多钉两格。
+	opinionA1 = "o-20260917-bitter-lesson"
+	opinionA2 = "o-20260917-bitter-lesson-meta"
+	// **Schema v2 · T-…-008（T8-3）第二篇复用路径专用语料**：SKILL 样例 ② 逐字对应的
+	// **仓内自带确定性测试 fixture**（`search-learning-limits.txt`，非独立公开语料）。
+	// 这组常量只服务 `TestM1RealArticleZeroIntervention` 的复用路径子用例
+	// （直接对该 fixture 真实执行 samples[1]，无 ID 嫁接）；`srcArticle2`/`noteA2`/`url2`/
+	// `title2`（Verification 语料）保留给 `TestM1SafetyBaselines` 与 `ppe_test.go` 复用，两组互不串味。
+	//
+	// 关键点：这份 fixture 与第一篇产出的知识卡讲**同一个核心事实**（搜索与学习是可随
+	// 算力扩展的两类通用方法），只新增两条成立条件；标题「Search and Learning Have Limits」
+	// 与已有卡共享真实主题 token，`eg context` 的候选打分据此**真实**把那张卡召回为候选并
+	// 进入 base——样例 ② 的 base 声明因此由真实语义上下文覆盖，不靠标题投机、不靠任何人工映射。
+	// URL 用 `*.invalid` 保留域，明确不指向任何真实公开网页。
+	srcArticleSLL = "s-20260917-search-and-learning-have-limits"
+	noteSLL       = "n-20260917-search-and-learning-have-limits"
+	urlSLL        = "https://fixtures.evergreen.example.invalid/search-learning-limits"
+	titleSLL      = "Search and Learning Have Limits"
+	capturedAt1   = "2026-09-17T09:00:00+08:00"
+	capturedAt2   = "2026-09-17T09:30:00+08:00"
+	url1          = "http://www.incompleteideas.net/IncIdeas/BitterLesson.html"
+	url2          = "http://www.incompleteideas.net/IncIdeas/KeytoAI.html"
+	title1        = "The Bitter Lesson"
+	title2        = "Verification, The Key to AI"
 )
 
 // buildOnce 保证整轮 e2e 只编一次二进制（真二进制、真进程，不是进程内调用）。
@@ -180,6 +209,23 @@ func (e envelope) report(t *testing.T) report.Report {
 		t.Fatalf("报告体不可解析：%v", err)
 	}
 	return rep
+}
+
+// errorDiags 结构化读取信封的 error 面 `data.errors[]`：按合同 §3，error 级诊断渲染进
+// `data.errors`，且**全是 warning/info 时不建该键**（见 internal/cli/exit.go）。因此
+// 「键缺失」与「空数组」都当作「无 error」返回 nil。这是权威 error 面——不靠 exit=0 间接
+// 保证、也不做 raw 字符串扫描（字符串扫描会把正文里出现的 "error" 字样误判）。
+func (e envelope) errorDiags(t *testing.T) []diag {
+	t.Helper()
+	raw, ok := e.Data["errors"]
+	if !ok {
+		return nil
+	}
+	var ds []diag
+	if err := json.Unmarshal(raw, &ds); err != nil {
+		t.Fatalf("data.errors 不可解析：%v", err)
+	}
+	return ds
 }
 
 func (e envelope) reportKeys(t *testing.T) []string {
@@ -336,15 +382,6 @@ func planFromSample(t *testing.T, sample string, base map[string]string) []byte 
 	return out
 }
 
-// sampleForCapturedArticle keeps the public SKILL examples independent from this
-// regression fixture while still exercising the same ChangePlan shape against
-// the article that the test just captured into the vault.
-func sampleForCapturedArticle(sample, source, note string) string {
-	s := strings.ReplaceAll(sample, "s-20260917-knowledge-compounding", source)
-	s = strings.ReplaceAll(s, "n-20260917-knowledge-compounding", note)
-	return s
-}
-
 // ---------- 主用例 ----------
 
 func TestM1RealArticleZeroIntervention(t *testing.T) {
@@ -402,6 +439,10 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 			filepath.Join("sources", srcArticle1+".md"),
 			filepath.Join("domains", domain, "notes", noteA1+".md"),
 			filepath.Join("domains", domain, "knowledge", cardA1+".md"),
+			// **Schema v2 · T-…-008（T8-3）**：v2 few-shot 把两条判断各分流为一张
+			// Opinion，因此正常路径必须真的落两份观点文件（v1 样例不产观点，此处即会红）。
+			filepath.Join("domains", domain, "opinions", opinionA1+".md"),
+			filepath.Join("domains", domain, "opinions", opinionA2+".md"),
 		} {
 			if _, err := os.Stat(filepath.Join(vault, rel)); err != nil {
 				t.Fatalf("产物缺失 %s：%v", rel, err)
@@ -410,10 +451,16 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		note := readFile(t, filepath.Join(vault, "domains", domain, "notes", noteA1+".md"))
 		// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：v1 的「产出知识卡」
 		// 在契约 §3.2 里更名扩展为「提取结果」（同时列 Knowledge 与 Opinion 两组）。
-		// SKILL.md 的样例仍是 v1 口径，走兼容映射落到新分区名，因此这里改按新名字取。
 		// 判据没放宽：仍要求笔记里能逐字读到本次产出的卡 ID，且旧分区名不得再出现。
 		if !strings.Contains(note, "## "+mdfile.SecExtraction) || !strings.Contains(note, cardA1) {
 			t.Fatalf("笔记「%s」未列出该卡 ID：\n%s", mdfile.SecExtraction, note)
+		}
+		// v2 追加钉住：提取结果同时列出本次分流出的两条 Opinion ID，且带覆盖矩阵。
+		if !strings.Contains(note, opinionA1) || !strings.Contains(note, opinionA2) {
+			t.Fatalf("v2 笔记「%s」未同时列出本次产出的两条观点 %s / %s：\n%s", mdfile.SecExtraction, opinionA1, opinionA2, note)
+		}
+		if !strings.Contains(note, "覆盖矩阵") {
+			t.Fatalf("v2 笔记缺「覆盖矩阵」提炼覆盖表：\n%s", note)
 		}
 		if strings.Contains(note, "## "+mdfile.SecOutputCards) {
 			t.Fatalf("v2 笔记不得再出现 v1 分区名「%s」：\n%s", mdfile.SecOutputCards, note)
@@ -426,6 +473,16 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		}
 		if !strings.Contains(card, "status: 'active'") {
 			t.Fatal("新建卡应直接 active")
+		}
+		// v2 Opinion 生命周期：两条新建观点都必须直接 active、validation 为 pending（Agent 不得直写 validated）。
+		for _, oid := range []string{opinionA1, opinionA2} {
+			op := readFile(t, filepath.Join(vault, "domains", domain, "opinions", oid+".md"))
+			if !strings.Contains(op, "status: 'active'") {
+				t.Fatalf("新建观点 %s 应直接 active：\n%s", oid, op)
+			}
+			if !strings.Contains(op, "validation: 'pending'") {
+				t.Fatalf("v2 新建观点 %s 的 validation 必须是 pending（自动路径不得直写 validated/rejected）：\n%s", oid, op)
+			}
 		}
 		// 收件区条目在同一次写入里移出（EG-SRC-02 的 M1 口径：不保证强原子，但正常路径应移出）。
 		if strings.Contains(readFile(t, filepath.Join(vault, "unprocessed.md")), srcArticle1) {
@@ -440,8 +497,33 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		if len(rep1.Cards.Created) != 1 || rep1.Cards.Created[0] != cardA1 {
 			t.Fatalf("报告 cards.created = %v", rep1.Cards.Created)
 		}
-		if len(rep1.Relations.Material) != 1 {
-			t.Fatalf("报告材料关系 = %d 条，期望 1", len(rep1.Relations.Material))
+		// **诊断纪律（T8-3）**：样例 ① 正式 apply 是「一篇文章分流出 1 卡 + 2 观点」的干净路径，
+		// 断言**恰零 warning、零 error**（新建三张卡各自内嵌 support 材料关系，不重复补关系、
+		// 不触发任何幂等/覆盖告警）。这条零告警是被 e2e 钉死的实跑预期。
+		if len(env1.Warnings) != 0 {
+			t.Fatalf("样例 ① 正式 apply 必须零 warning，实际 %d 条：%s", len(env1.Warnings), env1.raw)
+		}
+		if len(rep1.Warnings) != 0 {
+			t.Fatalf("样例 ① 报告体 warnings 必须为空，实际 %+v", rep1.Warnings)
+		}
+		// **零 error 显式断言（T8-3）**：不靠 exit=0 间接保证、不做字符串扫描——直接结构化读
+		// `data.errors`（缺失或空数组都视为空，见 errorDiags），断言 error 面**恰为空**。
+		if errs := env1.errorDiags(t); len(errs) != 0 {
+			t.Fatalf("样例 ① 正式 apply 必须零 error（结构化读 data.errors），实际 %d 条：%+v", len(errs), errs)
+		}
+		if len(rep1.Relations.Material) != 3 {
+			t.Fatalf("报告材料关系 = %d 条，期望 3（v2 few-shot：1 张 Knowledge + 2 条 Opinion 各一条 support）", len(rep1.Relations.Material))
+		}
+		// 三条材料关系分别落在本次新建的 Knowledge 与两条 Opinion 上（各恰一条）。
+		matTargets := map[string]int{}
+		for _, m := range rep1.Relations.Material {
+			matTargets[m.Card]++
+		}
+		if matTargets[cardA1] != 1 || matTargets[opinionA1] != 1 || matTargets[opinionA2] != 1 {
+			t.Fatalf("材料关系目标分布 = %v，期望 %s / %s / %s 各 1 条", matTargets, cardA1, opinionA1, opinionA2)
+		}
+		if len(rep1.OpenQuestions) != 1 || rep1.OpenQuestions[0].Note != noteA1 {
+			t.Fatalf("报告 open_questions = %+v，期望恰 1 条挂在 %s 上", rep1.OpenQuestions, noteA1)
 		}
 		if len(rep1.Skipped) != 0 {
 			t.Fatalf("正常路径不应有 skipped：%+v", rep1.Skipped)
@@ -475,26 +557,40 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		}
 	})
 
-	// —— EG-EXT-02：覆盖项缺失在两种形态都可见 ——
+	// —— EG-EXT-02（Schema v2 · T-…-008 重钉）：提炼覆盖在笔记与报告两种形态都可见 ——
+	//
+	// v1 用 `coverage_gaps` 把「缺失的覆盖要点」原样透传进报告；v2 契约 §4.2.3 改成
+	// **提炼覆盖矩阵**（extraction_coverage[]）：每个语义模块都必须有 disposition
+	// （outputs / note_only / missing），可执行 few-shot 的缺漏必须为 0。判据没放宽，
+	// 反而更强：既钉住覆盖矩阵在笔记里可读，又钉住 outputs 与 note_only 两种处置都真实出现，
+	// 且 v2 few-shot 不得再残留 v1 的英文覆盖枚举透传（`counterexample` 等）。
+	//
+	// **历史用例名保留（T8-3）**：子用例名沿用 M1 的历史名 `coverage_gap_visible_in_both_forms`
+	// （`TestM1CaseNamesStillPresent` 的历史守卫按此名核对，不得改名/删除）；名字是历史锚点，
+	// 判据本体已按 post-M6 / current truth 加严——从 v1 的「coverage_gaps 枚举透传两形态可见」
+	// 升级为「v2 提炼覆盖矩阵两形态可见 + outputs/note_only 双处置真实出现 + 不得残留 v1 枚举名」。
 	t.Run("coverage_gap_visible_in_both_forms", func(t *testing.T) {
-		if !strings.Contains(env1.raw, "counterexample") {
-			t.Fatal("--json 形态未标注 coverage_gaps 缺失项 counterexample")
+		note := readFile(t, filepath.Join(vault, "domains", domain, "notes", noteA1+".md"))
+		if !strings.Contains(note, "覆盖矩阵") {
+			t.Fatalf("笔记缺提炼覆盖矩阵：\n%s", note)
 		}
-		var hit bool
-		for _, w := range rep1.Warnings {
-			if w.Code == "I1" && strings.Contains(w.Message, "counterexample") {
-				if w.OpIndex < 0 || !strings.Contains(w.Path, "coverage_gaps") {
-					t.Fatalf("覆盖缺失条目缺 op 下标或字段路径：%+v", w)
-				}
-				hit = true
-			}
+		if !strings.Contains(note, "| 模块 | 来源范围 | 语义模块 | 处置 |") {
+			t.Fatalf("覆盖矩阵表头缺失（四列：模块/来源范围/语义模块/处置）：\n%s", note)
 		}
-		if !hit {
-			t.Fatal("报告 warnings[] 里没有 coverage_gaps 缺失条目")
+		// outputs 处置：至少一模块指向本次产出的卡；note_only 处置：至少一模块只随正文保真、不立卡。
+		if !strings.Contains(note, cardA1) {
+			t.Fatalf("覆盖矩阵未把任一模块指向本次产出的卡 %s：\n%s", cardA1, note)
+		}
+		if !strings.Contains(note, "Note-only") {
+			t.Fatalf("覆盖矩阵缺 note_only 处置（应有模块随正文保真、不单独立卡）：\n%s", note)
+		}
+		// v2 few-shot 不再走 coverage_gaps 英文枚举透传：报告两种形态都不应出现受控枚举名。
+		if hit := firstGapName(env1.raw); hit != "" {
+			t.Fatalf("v2 few-shot 不应再透传 v1 覆盖枚举名，报告却出现 %s", hit)
 		}
 		_, text, _ := runEG(t, vault, "report", "--last")
-		if !strings.Contains(text, "counterexample") {
-			t.Fatal("人类可读报告未标注 counterexample 缺失")
+		if firstGapName(text) != "" {
+			t.Fatalf("人类可读报告出现 v1 覆盖枚举名：%s", firstGapName(text))
 		}
 	})
 
@@ -597,21 +693,31 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		}
 	})
 
-	// —— ⑤ 第二篇（高度相似）走 append_card 三分区 ——
+	// —— ⑤ 第二篇（与已有卡高度相关）走 append_knowledge 复用路径（Schema v2） ——
+	//
+	// **历史用例名保留（T8-3）**：子用例名沿用 M1 的历史名 `second_article_append_card`
+	// （`TestM1CaseNamesStillPresent` 的历史守卫按此名核对，不得改名/删除）；名字是历史锚点，
+	// 判据本体已按 post-M6 / current truth 加严——第二篇不再走 v1 `append_card`，而是对 SKILL
+	// 样例 ② 逐字对应的**仓内确定性测试 fixture** 真实 `eg capture` + `eg context` + 直接执行
+	// `samples[1]`（无 ID 嫁接），走 v2 `append_knowledge` 只向已有卡「条件与边界」补两条成立条件。
 	t.Run("second_article_append_card", func(t *testing.T) {
 		cardPath := filepath.Join(vault, "domains", domain, "knowledge", cardA1+".md")
 		beforeCore := sectionBytes(t, readFile(t, cardPath), "知识内容")
 
-		cap2 := captureArticle(t, vault, url2, title2, "verification-key-to-ai.txt", capturedAt2)
-		if got := cap2.str(t, "source_id"); got != srcArticle2 {
-			t.Fatalf("第二篇 source_id = %q", got)
+		// 真实收录样例 ② 对应的仓内确定性测试 fixture（与已有卡同核心、只补成立条件，非 ID 嫁接）。
+		cap2 := captureArticle(t, vault, urlSLL, titleSLL, "search-learning-limits.txt", capturedAt2)
+		if got := cap2.str(t, "source_id"); got != srcArticleSLL {
+			t.Fatalf("第二篇 source_id = %q，期望 %q（capture slug 由标题推导）", got, srcArticleSLL)
 		}
-		base2 := contextBase(t, vault, "source", srcArticle2)
+		// 真实上下文：候选打分把已有卡召回进 base，样例 ② 声明的每个 base 键都必须由此覆盖。
+		base2 := contextBase(t, vault, "source", srcArticleSLL)
+		cardRelSLL := "domains/" + domain + "/knowledge/" + cardA1 + ".md"
+		if base2[cardRelSLL] == "" {
+			t.Fatalf("context 未把已有卡 %s 召回进 base：样例 ② 的 append 目标无 B3 版本依据（base=%v）", cardA1, base2)
+		}
 
-		// 样例 ② 先 dry-run（退 0、零写入）：使用本次 context 的真实 base，
-		// 并把公开示例的独立语料 ID 映射到本 e2e 已收录的第二篇文章。
-		sample2 := sampleForCapturedArticle(samples[1], srcArticle2, noteA2)
-		p := writePlan(t, work, "sample2-dry.json", planFromSample(t, sample2, base2))
+		// 样例 ② 直接执行（不做任何 ID 替换）：先 dry-run（退 0、零写入）。
+		p := writePlan(t, work, "sample2-dry.json", planFromSample(t, samples[1], base2))
 		if env, code := runJSON(t, vault, "apply", "--plan", p, "--dry-run"); code != 0 {
 			t.Fatalf("样例 ② 的 --dry-run 退出码 %d：%s", code, env.raw)
 		}
@@ -619,10 +725,10 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 			t.Fatalf("--dry-run 必须零写入：%s", s)
 		}
 
-		plan2 := planFromSample(t, sample2, base2)
+		plan2 := planFromSample(t, samples[1], base2)
 		env2, code2 := runJSON(t, vault, "apply", "--plan", writePlan(t, work, "plan2.json", plan2))
 		if code2 != 0 {
-			t.Fatalf("第二篇 apply 退出码 %d：%s", code2, env2.raw)
+			t.Fatalf("第二篇 apply 退出码 %d，期望 0：%s", code2, env2.raw)
 		}
 		rep2 := env2.report(t)
 		if len(rep2.Cards.Created) != 0 {
@@ -633,40 +739,77 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		}
 		after := readFile(t, cardPath)
 		if got := sectionBytes(t, after, "知识内容"); got != beforeCore {
-			t.Fatalf("append_card 改动了「知识内容」分区：\n前：%q\n后：%q", beforeCore, got)
+			t.Fatalf("append_knowledge 改动了「知识内容」分区：\n前：%q\n后：%q", beforeCore, got)
 		}
-		// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：SKILL.md 的样例②
-		// 往三个分区追加（`解释与依据` / `条件与边界` / `理解自检`）。契约 D-7 把 Knowledge
-		// 收敛为三分区后，只有 `条件与边界` 仍是自动路径可写分区，另外两个自 v2 起
-		// 不是固定分区 —— 它们既不落盘，也不得被静默吞掉，而要各留一条 I1 交代。
-		//
-		// 判据因此比原来更强：既钉住「该写的写进去了」，又钉住「不该写的一个字节都没写、
-		// 且如实说明了原因」。SKILL.md 的样例本身仍是 v1 口径，属文档同步范围（T-…-008），
-		// 不在本任务改；已登记为 I-…-008。
-		if got := sectionBytes(t, after, mdfile.SecBoundary); !strings.Contains(got, "补充边界") {
-			t.Fatalf("分区「%s」未收到样例②追加内容：%q", mdfile.SecBoundary, got)
+		// **Schema v2 · T-…-008（T8-3）**：v2 few-shot 的样例 ② 用 `append_knowledge` 只往
+		// 「条件与边界」追加一条成立条件（复用已有卡的主路径）。判据钉住两半：
+		//   ① 该写的写进去了（条件与边界收到本次追加的成立条件）；
+		//   ② Knowledge 三分区之外不得凭空长出任何 v1 legacy 分区（`解释与依据` / `理解自检` 等）。
+		if got := sectionBytes(t, after, mdfile.SecBoundary); !strings.Contains(got, "补充成立条件") {
+			t.Fatalf("分区「%s」未收到样例②追加的成立条件：%q", mdfile.SecBoundary, got)
 		}
 		for _, legacy := range mdfile.LegacyV1Sections(mdfile.KindCard) {
 			if strings.Contains(after, "\n## "+legacy+"\n") {
-				t.Fatalf("v2 卡不得因一份 v1 plan 长出「%s」分区：\n%s", legacy, after)
-			}
-			var noticed bool
-			for _, w := range rep2.Warnings {
-				if strings.Contains(w.Message, legacy) && w.Level == "info" {
-					noticed = true
-					break
-				}
-			}
-			if !noticed {
-				t.Fatalf("被忽略的 v1 分区「%s」必须留一条 info 级交代：%+v", legacy, rep2.Warnings)
+				t.Fatalf("v2 卡不得长出 v1 legacy 分区「%s」：\n%s", legacy, after)
 			}
 		}
 		if strings.Contains(sectionBytes(t, after, "用户补充"), "补充依据") {
 			t.Fatal("「用户补充」被写入：B2 / E6 被破坏")
 		}
-		// 无缺失时不写 coverage_gaps：报告里不应出现任何覆盖要点枚举名。
+		// v2 覆盖矩阵无 missing、无 v1 英文覆盖枚举透传：报告里不应出现任何受控枚举名。
 		if hit := firstGapName(env2.raw); hit != "" {
-			t.Fatalf("样例 ② 未声明 coverage_gaps，报告却出现枚举名 %s", hit)
+			t.Fatalf("样例 ② 的报告出现 v1 覆盖枚举名 %s", hit)
+		}
+		// **诊断纪律（T8-3，精确合同）**：复用已有卡且本次未新建知识卡，是合法结果——
+		// 报告的 warnings 列表必须**恰好等于一条** `I1` info，且 code/level/path/op_index/message
+		// 五个字段逐字匹配 `report.NoteZeroCards` 的固定文案；不接受「只数 I1、放过其他 warning」。
+		// 这样任何多出来的 W5（来源保真/覆盖告警）或别的诊断都会当场判红（error 会让 apply 退非 0，
+		// 已由 code2==0 排除）。
+		wantI1 := diag{
+			Code:    report.CodeI1,
+			Level:   report.LevelInfo,
+			Path:    "cards",
+			OpIndex: report.NonOp,
+			Message: report.NoCardNotice + "：本次只产出材料层内容或关系，属合法结果，未判失败",
+		}
+		if len(env2.Warnings) != 1 {
+			t.Fatalf("样例 ② 复用路径的 warnings 必须恰 1 条（那条 I1），实际 %d 条：%s", len(env2.Warnings), env2.raw)
+		}
+		if env2.Warnings[0] != wantI1 {
+			t.Fatalf("样例 ② 的唯一 warning 与预期 I1 不逐字一致：\n实际 %+v\n预期 %+v\n%s", env2.Warnings[0], wantI1, env2.raw)
+		}
+		// 报告体侧同源核对：报告 warnings 也必须恰这一条 I1（防止信封与报告体口径漂移）。
+		if len(rep2.Warnings) != 1 || rep2.Warnings[0].Code != report.CodeI1 ||
+			rep2.Warnings[0].Level != report.LevelInfo || rep2.Warnings[0].Path != "cards" ||
+			rep2.Warnings[0].OpIndex != report.NonOp || rep2.Warnings[0].Message != wantI1.Message {
+			t.Fatalf("样例 ② 报告体 warnings 与预期唯一 I1 不一致：%+v", rep2.Warnings)
+		}
+		// **零 error 显式断言（T8-3）**：I1 是 info 不是 error；正式 apply 的 error 面必须**恰为空**。
+		// 结构化读 `data.errors`（缺失或空数组都视为空），不用字符串扫描，也不靠 exit=0 间接保证。
+		if errs := env2.errorDiags(t); len(errs) != 0 {
+			t.Fatalf("样例 ② 正式 apply 必须零 error（结构化读 data.errors），实际 %d 条：%+v", len(errs), errs)
+		}
+		// 回读落盘 Note：样例 ② 的审阅式笔记真实落在磁盘，且带覆盖矩阵、把复用卡列进提取结果。
+		notePath := filepath.Join(vault, "domains", domain, "notes", noteSLL+".md")
+		if _, err := os.Stat(notePath); err != nil {
+			t.Fatalf("样例 ② 的 Note 未落盘 %s：%v", noteSLL, err)
+		}
+		noteSLLBody := readFile(t, notePath)
+		if !strings.Contains(noteSLLBody, "## "+mdfile.SecExtraction) || !strings.Contains(noteSLLBody, "覆盖矩阵") {
+			t.Fatalf("样例 ② 的 Note 缺「%s / 覆盖矩阵」：\n%s", mdfile.SecExtraction, noteSLLBody)
+		}
+		if !strings.Contains(noteSLLBody, cardA1) {
+			t.Fatalf("样例 ② 的 Note 覆盖矩阵未把复用卡 %s 列进提取结果：\n%s", cardA1, noteSLLBody)
+		}
+		// 材料关系真实落在复用卡上（SLL 原文 + SLL 笔记 → cardA1，一条 support）。
+		var sllMat int
+		for _, m := range rep2.Relations.Material {
+			if m.Card == cardA1 && m.Source == srcArticleSLL {
+				sllMat++
+			}
+		}
+		if sllMat != 1 {
+			t.Fatalf("样例 ② 应恰有 1 条材料关系 %s→%s，实际 %d：%+v", srcArticleSLL, cardA1, sllMat, rep2.Relations.Material)
 		}
 	})
 
@@ -674,7 +817,8 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 	t.Run("B3_content_hash_mismatch_skip", func(t *testing.T) {
 		cardPath := filepath.Join(vault, "domains", domain, "knowledge", cardA1+".md")
 		// context --source 会连同候选卡一起给出 content_hash（收敛判定要用）。
-		base := contextBase(t, vault, "source", srcArticle2)
+		// 复用上一子用例已收录的第二篇（SLL fixture），其 context 会把已有卡召回进 base。
+		base := contextBase(t, vault, "source", srcArticleSLL)
 		before := base["domains/"+domain+"/knowledge/"+cardA1+".md"]
 		if before == "" {
 			t.Fatalf("context 未给出该卡的 content_hash：%v", base)
@@ -1006,26 +1150,30 @@ var m6TxnIDRe = regexp.MustCompile(`^t[0-9a-f]{16}$`)
 
 // TestM1CoverageGapAbsentRerun：同一篇文章去掉 coverage_gaps 重跑 → 报告不出现任何覆盖要点枚举名。
 func TestM1CoverageGapAbsentRerun(t *testing.T) {
-	samples := skillSamples(t)
+	// v1 兼容期回归：`coverage_gaps` 是 v1 write_note 的字段——声明即原样透传进报告，
+	// 不声明则报告不得自行推断任何覆盖枚举名。Schema v2 的 few-shot 已改用提炼覆盖矩阵
+	// （见主用例 coverage_gap_visible_in_both_forms），因此本用例**不再复用 SKILL 样例**，
+	// 而是就地构造一份 v1 plan：既保住 v1 兼容路径不回归，又与 v2 文档同步彻底解耦。
 	run := func(t *testing.T, dropGaps bool) envelope {
 		t.Helper()
 		vault := newVault(t)
 		work := t.TempDir()
 		captureArticle(t, vault, url1, title1, "bitter-lesson.txt", capturedAt1)
 		base := contextBase(t, vault, "source", srcArticle1)
-		body := planFromSample(t, samples[0], base)
+		gaps := `,"coverage_gaps":["counterexample"]`
 		if dropGaps {
-			var m map[string]interface{}
-			if err := json.Unmarshal(body, &m); err != nil {
-				t.Fatal(err)
-			}
-			for _, raw := range m["ops"].([]interface{}) {
-				op := raw.(map[string]interface{})
-				delete(op, "coverage_gaps")
-			}
-			body, _ = json.Marshal(m)
+			gaps = ""
 		}
-		env, code := runJSON(t, vault, "apply", "--plan", writePlan(t, work, "p.json", body))
+		body := fmt.Sprintf(`{"plan_version":1,"verb":"process","domain":%q,
+ "reason":"v1 兼容回归：coverage_gaps 声明与否的报告差异","base":{"unprocessed.md":%q},
+ "ops":[{"op":"write_note","source":%q,"note_id":%q,"title":"The Bitter Lesson",
+  "sections":{"材料提炼":"- 原文主张：能利用算力的通用方法长期最有效。\n"},
+  "output_cards":[{"card":%q,"mode":"新建"}]%s},
+ {"op":"create_card","card_id":%q,"title":"能利用算力的通用方法长期胜过人工注入知识","tags":["ai"],
+  "sources":[{"source":%q,"note":%q,"rel":"support","reason":"原文用四个领域的历史给出该结论的直接依据"}],
+  "sections":{"知识内容":"通用方法长期表现优于把人类领域知识直接写进系统。\n"}}]}`,
+			domain, base["unprocessed.md"], srcArticle1, noteA1, cardA1, gaps, cardA1, srcArticle1, noteA1)
+		env, code := runJSON(t, vault, "apply", "--plan", writePlan(t, work, "p.json", []byte(body)))
 		if code != 0 {
 			t.Fatalf("apply 退出码 %d：%s", code, env.raw)
 		}

@@ -74,7 +74,7 @@ tests/_staged/internal/cli/reserved_runtime_exit5_test.go	unit	go	cli-core	unit.
 tests/_staged/internal/cli/reviewed_test.go	unit	go	cli-core	unit.internal.cli	9	20407
 tests/_staged/internal/cli/root_help_contract_test.go	unit	go	cli-core	unit.internal.cli	5	13551
 tests/_staged/internal/cli/search_test.go	unit	go	cli-core	unit.internal.cli	13	21350
-tests/_staged/internal/cli/skill_test.go	unit	go	cli-core	unit.internal.cli	12	35234
+tests/_staged/internal/cli/skill_test.go	unit	go	cli-core	unit.internal.cli	14	47688
 tests/_staged/internal/cli/t061_final_review_test.go	unit	go	cli-core	unit.internal.cli	3	5144
 tests/_staged/internal/cli/undelete_test.go	unit	go	cli-core	unit.internal.cli	4	10339
 tests/_staged/internal/cli/undelete_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	20086
@@ -221,7 +221,7 @@ tests/_staged/internal/version/version_test.go	unit	go	dist-install	unit.interna
 tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534
 tests/_staged/test/e2e/layout_test.go	e2e	go	arch-boundary	integration.e2e-go	0	3328
-tests/_staged/test/e2e/m1_test.go	integration	go	capture-ingest	integration.e2e-go	5	52389
+tests/_staged/test/e2e/m1_test.go	integration	go	capture-ingest	integration.e2e-go	5	64742
 tests/_staged/test/e2e/m2_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	4	19798
 tests/_staged/test/e2e/m3_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	6	43597
 tests/_staged/test/e2e/m4_r1_takeover_test.go	integration	go	reconcile-takeover	integration.e2e-go	1	5243
@@ -275,9 +275,9 @@ tests/e2e/cli-core/d2_error_authority.sh	e2e	shell	cli-core	e2e.cli-core.d2_erro
 tests/e2e/docs-cli/d4_dist_docs_platform.sh	e2e	shell	docs-cli	e2e.docs-cli.d4_dist_docs_platform	124	29203
 tests/e2e/docs-cli/docs_cli_authorization_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_authorization_and_limits	60	21668
 tests/e2e/docs-cli/docs_cli_contract_and_exitcodes.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_contract_and_exitcodes	60	18274
-tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_current_state_and_limits	91	31227
+tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_current_state_and_limits	96	32847
 tests/e2e/docs-cli/docs_cli_roster_and_dist_provenance.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_dist_provenance	41	17195
-tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_embedded_skill	47	17774
+tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_embedded_skill	51	18981
 tests/e2e/edit/block_merge.sh	e2e	shell	edit	e2e.edit.block_merge	39	14988
 tests/e2e/edit/edit.sh	e2e	shell	edit	e2e.edit.edit	66	16290
 tests/e2e/index-search/degrade_fallback.sh	e2e	shell	index-search	e2e.index-search.degrade_fallback	48	16035
@@ -402,6 +402,7 @@ tests/fixtures/e2e/ppe/raw-session/vault-snapshot/sources/s-20260901-verificatio
 tests/fixtures/e2e/ppe/raw-session/vault-snapshot/unprocessed.md	fixtures	data	capture-ingest	-	0	149
 tests/fixtures/e2e/ppe/seed-k-20260918-scaling-compute.md	fixtures	data	capture-ingest	-	0	543
 tests/fixtures/e2e/ppe/session.md	fixtures	data	capture-ingest	-	0	2506
+tests/fixtures/e2e/search-learning-limits.txt	fixtures	data	-	-	0	1834
 tests/fixtures/e2e/verification-key-to-ai.txt	fixtures	data	capture-ingest	-	0	4397
 tests/fuzz/run_fuzz.sh	fuzz	shell	-	-	5	5059
 tests/lib/common.sh	lib	shell	-	-	1	11223

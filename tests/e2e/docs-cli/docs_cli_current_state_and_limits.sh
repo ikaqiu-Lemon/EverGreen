@@ -352,14 +352,32 @@ done
 for doc in "${DOCS[@]}"; do
   grep -qF -- "--strict" "${doc}" || die "$(basename "${doc}") 未登记 --strict 强校验开关"
 done
-# ④ W21 仍不分配：若三份文档提到它，必须处在「不分配 / 留白 / 不使用」语境。
+# ④ W21：历史「不分配」结论保留（不删历史）+ post-M6 / current truth 精确断言（现态已启用）。
+#   现态：读路径拆分后 v2 审阅式 Note 启用 W21 为**非 strict 启发式 warning**（§4.3）；
+#   历史：M5 / M6 收口时 W21 不分配，这条历史结论仍须在文档在场、不得被删。
+#   判据：每条 W21 行要么处在历史「不分配」语境、要么处在现态「启发式 warning」语境；
+#         二者都不是即判红（杜绝把 W21 吹成覆盖证明或留下自相矛盾表述），且两类语境至少各出现一次。
+w21_hist=0
+w21_now=0
 for doc in "${DOCS[@]}"; do
   while IFS= read -r line; do
-    grep -qE "不分配|留白|不使用|未分配" <<<"${line}" \
-      || die "$(basename "${doc}") 在非「不分配」语境提到 W21：${line}"
+    if grep -qE "不分配|留白|不使用|未分配|unassigned" <<<"${line}"; then
+      w21_hist=1
+    elif grep -qE "启发式|heuristic|不能替代|覆盖证明|覆盖完整" <<<"${line}"; then
+      w21_now=1
+    else
+      die "$(basename "${doc}") 在既非「不分配(历史)」也非「启发式 warning(现态)」语境提到 W21：${line}"
+    fi
   done < <(grep -F "W21" "${doc}" || true)
 done
-ok "M6 能力面逐条正面在场（五术语 + 五诊断码 + --strict；W21 仍不分配）"
+[ "${w21_hist}" = "1" ] || die "W21 历史「不分配」结论从文档中消失（M5/M6 历史不得删除）"
+[ "${w21_now}" = "1" ] || die "W21 现态（v2 审阅式 Note 非 strict 启发式 warning）未在文档在册"
+# 现态精确断言落在 SKILL.md：须写明启用为启发式 warning、strict 下不升级、且不能替代来源保真。
+SKILL_DOC="${REPO_ROOT}/skill/SKILL.md"
+grep -qE "W21.*启发式|启发式 warning" "${SKILL_DOC}" || die "SKILL.md 未把 W21 写成启发式 warning（现态）"
+grep -qE "strict 下不升级|非 strict 启发式" "${SKILL_DOC}" || die "SKILL.md 未写明 W21 在 strict 下不升级为 error（现态精确断言）"
+grep -qF "不能替代来源保真" "${SKILL_DOC}" || die "SKILL.md 未写明 W21 不能替代来源保真（防被吹成覆盖证明）"
+ok "M6 能力面逐条正面在场（五术语 + 五诊断码 + --strict；W21 历史「不分配」保留 + 现态「v2 审阅式 Note 非 strict 启发式 warning」在册）"
 
 # ---------------------------------------------------------------- 7. 退出码 5 现态：绝不再标「未启用」
 step "退出码 5 现态已启用：三份文档不得再声称「未启用」；INSTALL 退出码 5 行含 E15 / E16 两类成因"

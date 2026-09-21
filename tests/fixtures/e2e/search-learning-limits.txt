@@ -1,0 +1,36 @@
+Search and Learning Have Limits
+
+engineering note (test fixture), 2026
+
+Search and learning are the two general methods that turn more
+computation into more capability, and the well-known lesson is
+that over a long enough horizon they beat hand-built domain
+knowledge. But "scales with computation" is not the same as
+"always wins", and it is worth being precise about when these two
+methods actually pay off. This note adds a condition to that known
+fact rather than proposing a competing method of its own.
+
+The first precondition is that computation actually keeps growing
+for the problem at hand. Search and learning are ways to convert a
+computation budget into capability; if that budget is fixed and
+small, a carefully hand-built method can stay ahead, simply because
+there is no extra computation for the general method to ride on.
+
+The second precondition is a structure the method can exploit.
+Search needs a space it can enumerate or sample together with a
+signal that separates good states from bad ones. Learning needs a
+training signal that is plentiful and cheap to evaluate. On a task
+that exposes neither a searchable structure nor a learnable signal,
+pouring more computation into search or learning buys very little.
+
+So the two general methods are not a free lunch. They dominate in
+the long run only where computation keeps growing and the task
+exposes a structure to search or a signal to learn from. Stated as
+a boundary on the general-method fact: search and learning scale
+only when both conditions hold, so a knowledge entry about them
+should carry those conditions, not merely the headline that they
+scale.
+
+This note makes no new headline claim of its own. It only records
+the conditions under which the two already-known general methods,
+search and learning, actually convert computation into capability.

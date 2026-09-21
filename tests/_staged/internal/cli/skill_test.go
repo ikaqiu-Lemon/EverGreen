@@ -189,8 +189,8 @@ func TestSkillBoundaryBullets(t *testing.T) {
 	}{
 		{"B-01", []string{"不得绕过 `eg apply` 直接改文件", "git commit"}},
 		{"B-02", []string{"一份 plan 不得写两个 domain"}},
-		{"B-03", []string{"只追加三分区", "不改「知识内容」", "「用户补充」任何时候永不写"}},
-		{"B-04", []string{"新建卡（`create_card`）五分区都可写"}},
+		{"B-03", []string{"只追加「条件与边界」", "不改「知识内容」", "「用户补充」任何时候永不写"}},
+		{"B-04", []string{"新建 Knowledge（`create_knowledge`）可写", "新建 Opinion（`create_opinion`）可写"}},
 		{"B-05", []string{"禁止替换或删除已有普通块"}},
 		{"B-06", []string{"重新加工必须逐字保留用户块"}},
 		{"B-07", []string{"禁止生成状态类 op"}},
@@ -604,13 +604,20 @@ func TestSkillCommandsExecutable(t *testing.T) {
 	}
 }
 
-// TestSkillSamplesAreValidPlans：两份样例可被解析与校验（e2e 另跑 `eg apply --dry-run`）。
+// TestSkillSamplesAreValidPlans：两份样例是 v2 审阅式 Note plan，可被解析与校验
+// （e2e 另跑真实 `eg apply`，见 test/e2e/m1_test.go）。
+//
+// **Schema v2 · T-…-008（T8-3）重钉**：契约 §4.1/§4.2 把 few-shot 主路径从 v1
+// （`plan_version: 1` + `write_note.sections{}` + `coverage_gaps` + `create_card`/`append_card`）
+// 迁移到 v2（`plan_version: 2` + `write_note.blocks[]` + `omissions[]` +
+// `extraction_coverage[]` + `output_cards` + canonical `create_knowledge`/`append_knowledge`/
+// `create_opinion`）。判据没放宽，反而更强：逐条钉住 v2 结构合同，并硬禁新 plan 残留 v1 口径。
 func TestSkillSamplesAreValidPlans(t *testing.T) {
 	samples := SkillSamples(t)
 	if len(samples) != 2 {
 		t.Fatalf("SKILL.md 应含恰 2 份 ChangePlan 样例，实际 %d 份", len(samples))
 	}
-	var withGaps, withoutGaps int
+	var withOpinion, withAppendKnowledge int
 	for i, raw := range samples {
 		var m struct {
 			PlanVersion int                      `json:"plan_version"`
@@ -623,39 +630,143 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
 			t.Fatalf("样例 %d 不是合法 JSON：%v", i+1, err)
 		}
-		if m.PlanVersion != 1 || m.Verb == "" || m.Domain == "" || m.Reason == "" || len(m.Ops) == 0 {
+		// ① v2 few-shot 必须写 `plan_version: 2`（当前版本），不得再是 v1。
+		if m.PlanVersion != 2 {
+			t.Fatalf("样例 %d 的 plan_version = %d：v2 few-shot 必须写 2（契约 §4.1）", i+1, m.PlanVersion)
+		}
+		if m.Verb == "" || m.Domain == "" || m.Reason == "" || len(m.Ops) == 0 {
 			t.Fatalf("样例 %d 顶层键不完整：%+v", i+1, m)
 		}
 		if _, err := plan.Parse([]byte(raw)); err != nil {
 			t.Fatalf("样例 %d 无法被 plan.Parse 接受：%v", i+1, err)
 		}
 		for _, op := range m.Ops {
-			if op["op"] != "write_note" {
+			name, _ := op["op"].(string)
+			// ② 新 plan 禁用兼容别名——few-shot 是教学样板，绝不能示范弃用写法。
+			if name == "create_card" || name == "append_card" {
+				t.Fatalf("样例 %d 使用兼容别名 %q：v2 few-shot 必须直接写 create_knowledge / append_knowledge（契约 §4.4）", i+1, name)
+			}
+			switch name {
+			case "append_knowledge":
+				withAppendKnowledge++
+			case "create_opinion":
+				withOpinion++
+			}
+			if name != "write_note" {
 				continue
 			}
+			// ③ write_note 必须是 v2 blocks[] 形态，不得残留 v1 sections{} / coverage_gaps。
+			if _, ok := op["sections"]; ok {
+				t.Fatalf("样例 %d 的 write_note 仍用 v1 sections{}：v2 必须用 blocks[]（契约 §4.2）", i+1)
+			}
 			if _, ok := op["coverage_gaps"]; ok {
-				gaps, _ := op["coverage_gaps"].([]interface{})
-				if len(gaps) == 0 {
-					t.Fatalf("样例 %d 的 coverage_gaps 为空数组：无缺失时应直接不写该字段", i+1)
+				t.Fatalf("样例 %d 的 write_note 仍带 v1 coverage_gaps：v2 改用 extraction_coverage[]（契约 §4.2.3）", i+1)
+			}
+			blocks, ok := op["blocks"].([]interface{})
+			if !ok || len(blocks) == 0 {
+				t.Fatalf("样例 %d 的 write_note 缺非空 blocks[]", i+1)
+			}
+			// ④ role 二值封闭，source/agent 字段互斥（契约 §4.2 规则 2/4）。
+			var srcBlocks, agentBlocks int
+			for _, bi := range blocks {
+				b, _ := bi.(map[string]interface{})
+				switch b["role"] {
+				case "source":
+					srcBlocks++
+					if _, ok := b["source_ref"]; !ok {
+						t.Fatalf("样例 %d：role=source 块缺 source_ref", i+1)
+					}
+					if _, ok := b["annotation"]; ok {
+						t.Fatalf("样例 %d：role=source 块不得带 annotation", i+1)
+					}
+				case "agent":
+					agentBlocks++
+					if _, ok := b["annotation"]; !ok {
+						t.Fatalf("样例 %d：role=agent 块缺 annotation", i+1)
+					}
+					if _, ok := b["source_ref"]; ok {
+						t.Fatalf("样例 %d：role=agent 块不得带 source_ref", i+1)
+					}
+				default:
+					t.Fatalf("样例 %d：blocks[].role 只能是 source|agent，实际 %v", i+1, b["role"])
 				}
-				withGaps++
-			} else {
-				withoutGaps++
+			}
+			if srcBlocks == 0 || agentBlocks == 0 {
+				t.Fatalf("样例 %d：v2 few-shot 的 Note 必须同时含 source 块与 agent 批注块（各 ≥1），实际 source=%d agent=%d", i+1, srcBlocks, agentBlocks)
+			}
+			// ⑤ omissions[] 必须显式给出（无删除时空数组）。
+			if _, ok := op["omissions"]; !ok {
+				t.Fatalf("样例 %d：write_note 必须显式给出 omissions[]（无删除时传空数组，契约 §4.2 规则 5）", i+1)
+			}
+			// ⑥ 覆盖矩阵非空、无 missing、与 output_cards 双向一致（契约 §4.2.3）。
+			cov, ok := op["extraction_coverage"].([]interface{})
+			if !ok || len(cov) == 0 {
+				t.Fatalf("样例 %d：write_note 必须给非空 extraction_coverage[] 覆盖矩阵", i+1)
+			}
+			outputSet := map[string]bool{}
+			for _, ci := range cov {
+				c, _ := ci.(map[string]interface{})
+				disp, _ := c["disposition"].(string)
+				switch disp {
+				case "outputs":
+					outs, _ := c["outputs"].([]interface{})
+					if len(outs) == 0 {
+						t.Fatalf("样例 %d：disposition=outputs 的模块缺 outputs[]", i+1)
+					}
+					for _, o := range outs {
+						outputSet[o.(string)] = true
+					}
+				case "note_only":
+					if _, ok := c["reason"]; !ok {
+						t.Fatalf("样例 %d：disposition=note_only 的模块缺 reason", i+1)
+					}
+				case "missing":
+					t.Fatalf("样例 %d：可执行 few-shot 不得出现 disposition=missing（缺漏必须为 0，契约 §4.2.3 规则 6）", i+1)
+				default:
+					t.Fatalf("样例 %d：disposition 只能是 outputs|note_only|missing，实际 %q", i+1, disp)
+				}
+			}
+			ocSet := map[string]bool{}
+			oc, _ := op["output_cards"].([]interface{})
+			for _, o := range oc {
+				mm, _ := o.(map[string]interface{})
+				id, _ := mm["card"].(string)
+				ocSet[id] = true
+			}
+			for id := range outputSet {
+				if !ocSet[id] {
+					t.Fatalf("样例 %d：extraction_coverage.outputs 里的 %s 未出现在 output_cards（双向一致被破坏）", i+1, id)
+				}
+			}
+			for id := range ocSet {
+				if !outputSet[id] {
+					t.Fatalf("样例 %d：output_cards 里的 %s 未出现在任何模块 outputs（双向一致被破坏）", i+1, id)
+				}
 			}
 		}
 	}
-	if withGaps < 1 || withoutGaps < 1 {
-		t.Fatalf("两份样例应一份带非空 coverage_gaps、一份不带：带 %d 份、不带 %d 份", withGaps, withoutGaps)
+	// ⑦ 两份样例覆盖 v2 两条主路径：一份新建 Knowledge+Opinion 双入口，一份 append_knowledge 复用。
+	if withOpinion < 1 {
+		t.Fatal("两份样例应至少一份含 create_opinion：Knowledge/Opinion 分流是 v2 的核心，few-shot 必须示范")
 	}
-	// 样例覆盖 §3.2 表格的两种主路径：新建卡 + 复用已有卡（append_card 三分区）。
+	if withAppendKnowledge < 1 {
+		t.Fatal("两份样例应至少一份含 append_knowledge：复用已有卡是 §3.2 的主路径之一")
+	}
 	joined := strings.Join(samples, "\n")
 	for _, must := range []string{
-		`"op": "create_card"`, `"op": "append_card"`, `"op": "add_material_rel"`,
-		`"op": "add_open_question"`, `"relation": "non_core_supplement"`,
-		`"解释与依据"`, `"条件与边界"`, `"理解自检"`,
+		`"op": "write_note"`, `"op": "create_knowledge"`, `"op": "create_opinion"`,
+		`"op": "append_knowledge"`, `"op": "add_material_rel"`,
+		`"role": "source"`, `"role": "agent"`, `"extraction_coverage"`, `"output_cards"`,
+		`"relation": "non_core_supplement"`,
 	} {
 		if !strings.Contains(joined, must) {
 			t.Fatalf("两份样例合计缺 %s", must)
+		}
+	}
+	// ⑧ v2 few-shot 不得残留 v1 口径关键片段。
+	for _, banned := range []string{`"op": "create_card"`, `"op": "append_card"`, `"coverage_gaps"`} {
+		if strings.Contains(joined, banned) {
+			t.Fatalf("v2 few-shot 不得残留 v1 片段 %s", banned)
 		}
 	}
 }
@@ -774,5 +885,193 @@ func TestSkillConvergencePresentationSection(t *testing.T) {
 	// §7 自检清单必须收一条「收敛结论已如实转述」。
 	if !strings.Contains(doc, "- [ ] 逐卡收敛结论已被最终报告如实转述") {
 		t.Fatal("§7 自检清单缺「逐卡收敛结论已被最终报告如实转述」一条")
+	}
+}
+
+// TestSkillNoteContractV2：SKILL.md 已按 Schema v2 契约重写审阅式 Note 操作合同
+// （T-evergreen.knowledge_opinion_split-158614-008 · T8-3 Acceptance）。
+//
+// 本用例是「SKILL 与契约 §2.1 / §2.2 / §4.2.1-§4.2.3 / §4.4 逐条对齐」的机器判据：
+// 只要 SKILL.md 仍停在 v1/摘要式 Note 口径（无审阅式定义、无来源保真闭环、无覆盖矩阵、
+// 无 Knowledge/Opinion 判定、无 v2 op 集合），下列任一断言即当场变红。判据锁的是
+// **契约里最容易被写成弱口径的那几处硬事实**：来源保真 + 缺漏=0 是每篇必过项，
+// `W21` 只是启发式而非覆盖证明，批注不设配额，Agent 不得写 `validation`。
+func TestSkillNoteContractV2(t *testing.T) {
+	doc := skillText(t)
+	must := func(section string, marks ...string) {
+		for _, m := range marks {
+			if !strings.Contains(doc, m) {
+				t.Fatalf("SKILL.md 缺 %s 明文：%q", section, m)
+			}
+		}
+	}
+
+	// ① §2.1 Note 的准确含义 + 允许/不应两张表逐条进入 SKILL。
+	must("§2.1 Note 定义",
+		"Note 是文章的「审阅式学习版」",
+		"Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Agent 批注",
+		"结构完整、可独立阅读",
+		"取消固定分区")
+	must("§2.1 允许的整理表",
+		"忠实翻译或统一语言",
+		"只删可证明的页面噪声，并逐项进入 `omissions[]`",
+		"因此 Note 可以比原文更长",
+		"顺序是硬约束")
+	must("§2.1 不应发生表",
+		"把 500 行文章压成 7 条摘要",
+		"权威性污染，无法区分谁说的",
+		"退化为 manifest")
+
+	// ② §2.2 Knowledge vs Opinion 判定标准 + 拿不准优先 Opinion + 三/五分区。
+	must("§2.2 Knowledge/Opinion 判定",
+		"定义 / 组成 / 步骤 / 条件 / 数据",
+		"评价 / 因果判断 / 预测 / 优劣比较 / 取舍主张",
+		"拿不准时优先 Opinion",
+		"Knowledge 三分区",
+		"Opinion 五分区")
+
+	// ③ §4.2.1 来源保真闭环 + omissions 用途边界 + 结构资产保真。
+	must("§4.2.1 来源保真",
+		"`source_ref`",
+		"并集必须覆盖每个非空正文行",
+		"只登记可证明的网页噪声",
+		"结构资产")
+
+	// ④ §4.2.2 内置七类批注 + 渲染标记 + 扩展 label 规则 + 不设配额。
+	must("§4.2.2 批注渲染标记",
+		"[Agent 导读]", "[Agent 补充]", "[Agent 强调]", "[Agent 总结]",
+		"[Agent 辨析]", "[Agent 待验证]", "[Agent 反思]")
+	for _, k := range []string{"guide", "supplement", "emphasis", "summary", "distinction", "verification", "reflection"} {
+		if !strings.Contains(doc, "`"+k+"`") {
+			t.Fatalf("SKILL.md 缺内置批注类型 `%s`", k)
+		}
+	}
+	must("§4.2.2 扩展批注",
+		"^[a-z][a-z0-9_-]{0,31}$",
+		"同时给出非空 `label`",
+		"不设配额，不要求每篇用满七类")
+
+	// ⑤ §4.2.3 语义模块拆分 + 覆盖矩阵 + 缺漏=0 + W21 只是启发式（不能替代来源保真/缺漏=0）。
+	must("§4.2.3 覆盖矩阵",
+		"语义模块",
+		"extraction_coverage",
+		"`disposition`",
+		"缺漏必须为 0")
+	must("§4.2.3 W21 定位",
+		"`W21` 不是覆盖证明",
+		"启发式 warning",
+		"不能替代来源保真")
+
+	// ⑥ §4.2 write_note 用 blocks[]：role 二值封闭 + source/agent 字段互斥。
+	must("§4.2 blocks[]",
+		"`blocks[]`",
+		"`source`（来源正文或忠实逐段翻译）",
+		"`agent`",
+		"必须**给 `source_ref`",
+		"必须**给 `annotation`")
+
+	// ⑦ §4.4 op 集合：canonical 恰九个 + 两个兼容别名标注「兼容期，勿用于新 plan」+ plan_version {1,2}。
+	must("§4.4 op 集合",
+		"canonical op 恰九个",
+		"兼容别名",
+		"新 plan 不要再用别名",
+		"支持 `{1, 2}`")
+	for _, opName := range []string{
+		"add_source", "write_note", "create_knowledge", "append_knowledge",
+		"create_opinion", "append_opinion", "add_material_rel", "add_relation", "add_open_question",
+	} {
+		if !strings.Contains(doc, "`"+opName+"`") {
+			t.Fatalf("SKILL.md 缺 v2 canonical op `%s`", opName)
+		}
+	}
+
+	// ⑧ Opinion 生命周期 + Agent 不得写 validation（契约 §6.3 / §4.5）。
+	must("Opinion 生命周期",
+		"Opinion 新建默认 `validation: pending`",
+		"Agent 自动路径不得写 `validation`",
+		"直接设成 `validated` / `rejected`")
+}
+
+// TestSkillSamplesHaveTargetRender：设计 §8 要求每个 few-shot **同时引用目标 Note 与对应覆盖矩阵**。
+//
+// 这里不做「全局 contains」——那样只要文档任意处出现一次「覆盖矩阵」就过，无法反证「只有一份样例
+// 配了目标渲染、另一份漏了」。本判据按样例逐个定位：从每份 tagged JSON 样例里取出 write_note 的
+// note_id，要求文档里存在一个**目标渲染片段**同时满足：① 就是该 note_id 的渲染；② 片段内含
+// 「## 提取结果」清单；③ 片段内含四列覆盖矩阵表头。任一样例缺目标 Note 或覆盖矩阵即红。
+func TestSkillSamplesHaveTargetRender(t *testing.T) {
+	doc := skillText(t)
+	samples := SkillSamples(t)
+	if len(samples) != 2 {
+		t.Fatalf("SKILL.md 应含 2 份 tagged JSON 样例，实际 %d", len(samples))
+	}
+
+	// 目标渲染片段以「**目标渲染片段」起头、紧跟一个 ```markdown 渲染块；把片段严格收敛到该
+	// 渲染块闭合处（不越界扫进下一份样例的 JSON），逐块只归属一个 note_id。
+	const fragMark = "**目标渲染片段"
+	const mdOpen = "```markdown"
+	const mdClose = "\n```"
+	var frags []string
+	for off := 0; ; {
+		p := strings.Index(doc[off:], fragMark)
+		if p < 0 {
+			break
+		}
+		start := off + p
+		rest := doc[start:]
+		mo := strings.Index(rest, mdOpen)
+		if mo < 0 {
+			t.Fatalf("目标渲染片段起头后未跟 ```markdown 渲染块：…%.40s…", rest)
+		}
+		after := rest[mo+len(mdOpen):]
+		mc := strings.Index(after, mdClose)
+		if mc < 0 {
+			t.Fatalf("目标渲染片段的 ```markdown 块未闭合：…%.40s…", rest)
+		}
+		frags = append(frags, rest[:mo+len(mdOpen)+mc+len(mdClose)])
+		off = start + mo + len(mdOpen) + mc + len(mdClose)
+	}
+	if len(frags) != 2 {
+		t.Fatalf("应恰有 2 个「目标渲染片段」（每份样例一个），实际 %d", len(frags))
+	}
+
+	const matrixHeader = "| 模块 | 来源范围 | 语义模块 | 处置 |"
+	for i, s := range samples {
+		var m struct {
+			Ops []struct {
+				Op     string `json:"op"`
+				NoteID string `json:"note_id"`
+			} `json:"ops"`
+		}
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			t.Fatalf("样例 %d 不是合法 JSON：%v", i+1, err)
+		}
+		noteID := ""
+		for _, op := range m.Ops {
+			if op.Op == "write_note" {
+				noteID = op.NoteID
+				break
+			}
+		}
+		if noteID == "" {
+			t.Fatalf("样例 %d 缺 write_note.note_id，无法定位目标渲染片段", i+1)
+		}
+		// 找到唯一引用该 note_id 的目标渲染片段。
+		var hit string
+		hits := 0
+		for _, f := range frags {
+			if strings.Contains(f, noteID) {
+				hit = f
+				hits++
+			}
+		}
+		if hits != 1 {
+			t.Fatalf("样例 %d（note %s）应恰有 1 个目标渲染片段引用它，实际 %d", i+1, noteID, hits)
+		}
+		if !strings.Contains(hit, "## 提取结果") {
+			t.Fatalf("样例 %d（note %s）的目标渲染片段缺「## 提取结果」产物清单", i+1, noteID)
+		}
+		if !strings.Contains(hit, "### 覆盖矩阵") || !strings.Contains(hit, matrixHeader) {
+			t.Fatalf("样例 %d（note %s）的目标渲染片段缺四列覆盖矩阵（表头 %q）", i+1, noteID, matrixHeader)
+		}
 	}
 }
