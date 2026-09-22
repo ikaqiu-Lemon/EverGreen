@@ -234,6 +234,7 @@ type Op struct {
 	// Section / Block / BaseBlockHash 属 replace_block 与 edit_section；
 	// BlockGiven 区分「缺 block」与「空块」。
 	Section       string
+	Candidate     string
 	Block         []byte
 	BlockGiven    bool
 	BaseBlockHash string

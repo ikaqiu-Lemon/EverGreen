@@ -92,3 +92,31 @@ func sectionBodyFraming(payload []byte) []byte {
 	out = append(out, payload...)
 	return append(out, '\n')
 }
+
+// ReplaceCandidateSectionSpec is the candidate-mode payload for edit_section.
+type ReplaceCandidateSectionSpec struct {
+	Rel          string
+	ExpectedHash string
+	ID           model.NoteID
+	Candidate    string
+	Section      string
+	Content      []byte
+}
+
+// ApplyReplaceCandidateSection replaces exactly one unmaterialized candidate
+// H4 payload. Unlike artifact section edits, candidate edits leave frontmatter,
+// including updated_at, byte-identical.
+func (s *Store) ApplyReplaceCandidateSection(spec ReplaceCandidateSectionSpec) (Result, error) {
+	res := Result{Path: spec.Rel}
+	if spec.Rel == "" {
+		return res, ErrNoteRelRequired
+	}
+	if len(spec.Content) == 0 || spec.Content[len(spec.Content)-1] != '\n' {
+		return res, mdfile.ErrPayloadNotLineTerminated
+	}
+	return s.mutateGuarded(spec.Rel, spec.ExpectedHash,
+		func(f File, _ *mdfile.Doc) ([]byte, error) {
+			return mdfile.ReplaceCandidateSection(
+				f.Bytes, spec.Candidate, spec.Section, spec.Content)
+		})
+}

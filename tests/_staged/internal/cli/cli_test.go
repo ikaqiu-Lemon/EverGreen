@@ -63,6 +63,9 @@ var contractUnregisteredFlags = map[string]string{
 	// 这里只对 `section` / `content` 两个新参数做**具名**登记，其余参数照旧逐字可查。
 	"section": "授权合同 §2 矩阵 #12 / #15 的分区维度 + §9 A-13（合同表未给出 eg edit 的参数名）",
 	"content": "授权合同 §9 A-13「核心内容修改入口」+ §10.4「内容逐字生效」（合同表未给出参数名）",
+	// Storage v3 D2.2 在新的 block_boundary_materialization Epic 合同中给出该参数；
+	// 本判据只装载旧 S1~M3 合同快照，因此在此具名登记，不豁免其它参数。
+	"candidate": "Storage v3 正式合同 D2.2：eg edit --candidate <cand-key>",
 	// T-…-066：`eg index status --strict` 的出处是 **M5 索引架构合同** §5.1（强校验路径：
 	// 忽略 mtime 快路径、全量重算 content_hash）与 §8.1（status 行逐字给出 `--strict`）。
 	// 本判据只读 M1~M3 的四份冻结合同，M5 合同不在其中，故与 include-deleted 同例具名登记，
@@ -194,7 +197,7 @@ var wantFlags = map[string][]string{
 	// M3 核心内容编辑（矩阵 #12 P-U ✅ + A-13）：--target / --section / --content 三格，
 	// 外加全局 --user-request 佐证（全局 flag 另计，不进本表）。**不收 --confirm**：
 	// §3 X1「需确认 = 否」，退出码 6 的白名单恰 proposal approve 与 delete 两条。
-	"edit": {"target", "section", "content", "strict"},
+	"edit": {"target", "candidate", "section", "content", "strict"},
 	// M4 全库对账（对账合同 §12 参数表）：**恰一个**命令私有 flag。全库口径不接受任何
 	// 范围收窄参数（收窄属 S4），未声明即由参数解析当场判非法 → 退 1、零写入。
 	"reconcile": {"dry-run"},

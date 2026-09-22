@@ -143,6 +143,21 @@ func (e *executor) editSectionWrite(a Action) {
 	if ed == nil {
 		return
 	}
+	if ed.Candidate != "" {
+		res, err := e.s.ApplyReplaceCandidateSection(store.ReplaceCandidateSectionSpec{
+			Rel:          a.Path,
+			ID:           model.NoteID(a.ID),
+			ExpectedHash: e.expect(a),
+			Candidate:    ed.Candidate,
+			Section:      ed.Section,
+			Content:      ed.Payload,
+		})
+		if !e.record(a, res, err) {
+			return
+		}
+		e.out.SectionsEdited = append(e.out.SectionsEdited, res.Path)
+		return
+	}
 	res, err := e.s.ApplyReplaceSection(store.ReplaceSectionSpec{
 		Rel:          a.Path,
 		ID:           model.CardID(a.ID),

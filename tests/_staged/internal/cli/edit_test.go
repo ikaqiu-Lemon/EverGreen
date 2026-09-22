@@ -10,6 +10,7 @@ package cli
 // 唯一注入的是时间。
 
 import (
+	"bytes"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // runEditCLI 跑一次 `eg edit … --json`，返回退出码、信封与 stderr。
@@ -340,5 +342,96 @@ func TestEdit_LegacyV1SectionStillEditable(t *testing.T) {
 	if !strings.Contains(after, "## "+mdfile.SecSelfCheck) ||
 		!strings.Contains(after, "自检问题。") {
 		t.Fatalf("未被指名的存量分区必须逐字保留：\n%s", after)
+	}
+}
+
+func candidateEditVault(t *testing.T, output string) (string, string, []byte) {
+	t.Helper()
+	dir := applyVault(t)
+	const noteID = "n-20260922-edit-candidate"
+	rel := store.NoteRel("ai-infra", noteID)
+	draft := store.CandidateDraft{
+		Key: "cand-edit", Kind: mdfile.CandidateKindKnowledge, Title: "待编辑候选",
+		SourceRefs: []string{"L1-L1"}, Rel: "support", Reason: "原文直接支持",
+		Tags: []string{"draft"}, Output: output,
+		Sections: []store.CandidateDraftSection{
+			{Name: mdfile.SecKnowledge, Body: []byte("旧候选正文。\n")},
+			{Name: mdfile.SecBoundary, Body: []byte("旧边界。\n")},
+		},
+	}
+	coverage := []store.CandidateCoverage{{
+		Module: "m-1", SourceRefs: []string{"L1-L1"}, Summary: "模块",
+		Disposition: mdfile.CandidateCoverageCandidate, Candidates: []string{"cand-edit"},
+	}}
+	extraction, err := store.CandidateDraftBytes(
+		[]store.CandidateDraft{draft}, coverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := append([]byte("---\nid: "+noteID+"\nsource: s-20260901-attention\n"+
+		"created_at: '2026-09-22'\nupdated_at: '2026-09-22T10:00:00+08:00'\n---\n\n"+
+		"# 候选编辑\n\n## 整理正文\n\n原文正文。\n\n## 提取结果\n\n"), extraction...)
+	raw = append(raw, []byte("\n## 存疑与待验证\n\n保留。\n\n## 用户补充\n\n用户文字。\n")...)
+	writeFileMk(t, filepath.Join(dir, filepath.FromSlash(rel)), string(raw))
+	gitOut(t, dir, "add", "-A")
+	gitOut(t, dir, "-c", "user.name=eg-test", "-c", "user.email=eg-test@example.com",
+		"commit", "-q", "-m", "seed candidate note")
+	return dir, rel, raw
+}
+
+func TestEditCandidateReplacesOnlyNamedH4Payload(t *testing.T) {
+	dir, rel, raw := candidateEditVault(t, "")
+	before, err := mdfile.ParseCandidates(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := before[0].Sections[0]
+	const content = "新的候选正文。\n\n第二段。\n"
+	logBefore := gitLogCount(t, dir)
+	code, env, errOut := runEditCLI(t, dir,
+		"--target", "n-20260922-edit-candidate",
+		"--candidate", "cand-edit",
+		"--section", mdfile.SecKnowledge,
+		"--content", content,
+		"--"+UserRequestFlag)
+	if code != ExitOK {
+		t.Fatalf("candidate edit 应退 0，实际 %d（%s）\n%v", code, errOut, envMessages(env))
+	}
+	after := mustRead(t, filepath.Join(dir, filepath.FromSlash(rel)))
+	framed := append([]byte("\n"), []byte(content)...)
+	framed = append(framed, '\n')
+	if !bytes.Equal(after[:target.BodyStart], raw[:target.BodyStart]) {
+		t.Fatal("candidate payload 之前的字节发生变化")
+	}
+	if !bytes.Equal(after[target.BodyStart:target.BodyStart+len(framed)], framed) {
+		t.Fatalf("candidate payload 未逐字替换：%q", after[target.BodyStart:target.BodyStart+len(framed)])
+	}
+	if !bytes.Equal(after[target.BodyStart+len(framed):], raw[target.End:]) {
+		t.Fatal("candidate payload 之后的字节发生变化")
+	}
+	if got := gitLogCount(t, dir); got != logBefore+1 {
+		t.Fatalf("candidate edit 应恰产生一次 commit：%d → %d", logBefore, got)
+	}
+}
+
+func TestEditCandidateRequiresUserRequestAndUnmaterializedState(t *testing.T) {
+	dir, rel, raw := candidateEditVault(t, "")
+	args := []string{"--target", "n-20260922-edit-candidate",
+		"--candidate", "cand-edit", "--section", mdfile.SecKnowledge, "--content", "新正文。\n"}
+	code, env, _ := runEditCLI(t, dir, args...)
+	if code != ExitValidation || !hasCode(env, "E6") {
+		t.Fatalf("candidate edit 缺 --user-request 应退 2/E6，实得 code=%d env=%v", code, envMessages(env))
+	}
+	if got := mustRead(t, filepath.Join(dir, filepath.FromSlash(rel))); !bytes.Equal(got, raw) {
+		t.Fatal("缺用户授权时 Note 必须逐字不变")
+	}
+
+	dir, rel, raw = candidateEditVault(t, "k-20260922-materialized")
+	code, env, _ = runEditCLI(t, dir, append(args, "--"+UserRequestFlag)...)
+	if code != ExitValidation || !hasCode(env, "E2") {
+		t.Fatalf("已物化 candidate edit 应退 2/E2，实得 code=%d env=%v", code, envMessages(env))
+	}
+	if got := mustRead(t, filepath.Join(dir, filepath.FromSlash(rel))); !bytes.Equal(got, raw) {
+		t.Fatal("已物化 candidate 被拒后 Note 必须逐字不变")
 	}
 }

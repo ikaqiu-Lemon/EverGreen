@@ -9,7 +9,7 @@ tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	11	23378
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24427
-tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	56405
+tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	56690
 tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	15	37438
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
@@ -19,7 +19,7 @@ tests/_staged/internal/cli/delete_transaction_test.go	unit	go	cli-core	unit.inte
 tests/_staged/internal/cli/deprecate_test.go	unit	go	cli-core	unit.internal.cli	6	10958
 tests/_staged/internal/cli/docs_schema_v2_test.go	unit	go	cli-core	unit.internal.cli	12	37855
 tests/_staged/internal/cli/docs_test.go	unit	go	cli-core	unit.internal.cli	8	12443
-tests/_staged/internal/cli/edit_test.go	unit	go	cli-core	unit.internal.cli	7	16426
+tests/_staged/internal/cli/edit_test.go	unit	go	cli-core	unit.internal.cli	9	20534
 tests/_staged/internal/cli/exit5_classify_test.go	unit	go	cli-core	unit.internal.cli	6	5551
 tests/_staged/internal/cli/exit5_test.go	unit	go	cli-core	unit.internal.cli	3	4394
 tests/_staged/internal/cli/exitcode_test.go	unit	go	cli-core	unit.internal.cli	2	2633
@@ -187,7 +187,7 @@ tests/_staged/internal/report/support_check_test.go	unit	go	ops-diagnostics	unit
 tests/_staged/internal/rules/rules_test.go	unit	go	capture-ingest	unit.internal.rules	9	6136
 tests/_staged/internal/store/atomic_test.go	unit	go	storage-markdown	unit.internal.store	7	8528
 tests/_staged/internal/store/b3_authorization_test.go	unit	go	storage-markdown	unit.internal.store	1	2883
-tests/_staged/internal/store/candidate_draft_test.go	unit	go	storage-markdown	unit.internal.store	3	2827
+tests/_staged/internal/store/candidate_draft_test.go	unit	go	storage-markdown	unit.internal.store	4	5091
 tests/_staged/internal/store/coverage_render_test.go	unit	go	storage-markdown	unit.internal.store	4	4391
 tests/_staged/internal/store/merge_test.go	unit	go	storage-markdown	unit.internal.store	3	6746
 tests/_staged/internal/store/note_blocks_test.go	unit	go	storage-markdown	unit.internal.store	2	8029
@@ -206,7 +206,7 @@ tests/_staged/internal/store/state_write_stale_test.go	unit	go	storage-markdown	
 tests/_staged/internal/store/state_write_style_test.go	unit	go	storage-markdown	unit.internal.store	5	7583
 tests/_staged/internal/store/state_write_test.go	unit	go	storage-markdown	unit.internal.store	5	9424
 tests/_staged/internal/store/state_write_validation_test.go	unit	go	storage-markdown	unit.internal.store	13	19721
-tests/_staged/internal/store/store_test.go	unit	go	storage-markdown	unit.internal.store	20	29033
+tests/_staged/internal/store/store_test.go	unit	go	storage-markdown	unit.internal.store	20	29137
 tests/_staged/internal/store/updated_at_test.go	unit	go	storage-markdown	unit.internal.store	8	13056
 tests/_staged/internal/store/writers_test.go	unit	go	storage-markdown	unit.internal.store	14	19831
 tests/_staged/internal/txn/commit_test.go	unit	go	txn-atomicity	unit.internal.txn	10	16520
