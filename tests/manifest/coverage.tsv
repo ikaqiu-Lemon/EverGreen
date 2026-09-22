@@ -10,6 +10,7 @@ edit	0	0	2	0	0	2
 git-integrity	3	0	0	0	0	3
 index-search	13	0	9	0	0	22
 lifecycle	0	2	8	0	0	10
+migration	1	0	0	0	0	1
 note-review	0	0	1	0	0	1
 ops-diagnostics	4	1	5	0	0	10
 perf	0	0	0	0	3	3
@@ -18,4 +19,5 @@ queryset	1	0	0	0	0	1
 reconcile-takeover	12	4	6	0	0	22
 relation	0	1	5	0	0	6
 storage-markdown	41	0	0	0	0	41
+storage-v3-migration	0	0	1	0	0	1
 txn-atomicity	12	1	11	0	0	24

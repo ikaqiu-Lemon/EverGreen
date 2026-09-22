@@ -5,12 +5,11 @@ tests/_staged/internal/cli/apply_inplan_test.go	unit	go	cli-core	unit.internal.c
 tests/_staged/internal/cli/apply_opinion_transaction_test.go	unit	go	cli-core	unit.internal.cli	1	7252
 tests/_staged/internal/cli/apply_test.go	unit	go	cli-core	unit.internal.cli	13	29913
 tests/_staged/internal/cli/bench_test.go	unit	go	cli-core	unit.internal.cli	8	15971
-tests/_staged/internal/cli/candidate_sidecar_test.go	unit	go	cli-core	unit.internal.cli	2	4881
 tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12	13626
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	11	23378
 tests/_staged/internal/cli/check_test.go	unit	go	cli-core	unit.internal.cli	9	24427
-tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	57390
+tests/_staged/internal/cli/cli_test.go	unit	go	cli-core	unit.internal.cli	19	58042
 tests/_staged/internal/cli/context_test.go	unit	go	cli-core	unit.internal.cli	14	34555
 tests/_staged/internal/cli/contract_static_test.go	unit	go	cli-core	unit.internal.cli	3	7905
 tests/_staged/internal/cli/convergence_test.go	unit	go	cli-core	unit.internal.cli	7	11827
@@ -30,6 +29,7 @@ tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	unit	go	cli-c
 tests/_staged/internal/cli/index_after_write_opinion_lifecycle_test.go	unit	go	cli-core	unit.internal.cli	2	5792
 tests/_staged/internal/cli/index_after_write_proposal_test.go	unit	go	cli-core	unit.internal.cli	3	8880
 tests/_staged/internal/cli/index_after_write_undelete_test.go	unit	go	cli-core	unit.internal.cli	1	4408
+tests/_staged/internal/cli/index_candidate_sidecar_test.go	unit	go	cli-core	unit.internal.cli	2	4881
 tests/_staged/internal/cli/index_lock_test.go	unit	go	cli-core	unit.internal.cli	1	22172
 tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	unit.internal.cli	4	30203
 tests/_staged/internal/cli/index_opinion_sync_test.go	unit	go	cli-core	unit.internal.cli	1	33789
@@ -154,10 +154,10 @@ tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query
 tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	17	34709
 tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6619
 tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	unit.internal.query	1	3363
-tests/_staged/internal/query/draft_candidate_context_test.go	unit	go	card-query	unit.internal.query	3	8211
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350
 tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.internal.query.filter	3	4972
 tests/_staged/internal/query/fuzz_test.go	unit	go	card-query	unit.internal.query	2	3912
+tests/_staged/internal/query/index_backed_draft_candidate_context_test.go	unit	go	card-query	unit.internal.query	3	8211
 tests/_staged/internal/query/index_backed_ko_readpath_test.go	unit	go	card-query	unit.internal.query	2	10451
 tests/_staged/internal/query/index_backed_opinion_test.go	unit	go	card-query	unit.internal.query	1	13363
 tests/_staged/internal/query/index_backed_replaced_by_test.go	unit	go	card-query	unit.internal.query	2	12363
@@ -230,6 +230,7 @@ tests/_staged/internal/txn/opinion_path_test.go	unit	go	txn-atomicity	unit.inter
 tests/_staged/internal/txn/recover_test.go	unit	go	txn-atomicity	unit.internal.txn	16	27823
 tests/_staged/internal/txn/safedir_test.go	unit	go	txn-atomicity	unit.internal.txn	2	6427
 tests/_staged/internal/version/version_test.go	unit	go	dist-install	unit.internal.version	5	3945
+tests/_staged/scripts/migrate-storage-v3/migration_test.go	unit	go	migration	unit.scripts.migrate-storage-v3	4	9000
 tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534
 tests/_staged/test/e2e/layout_test.go	e2e	go	arch-boundary	integration.e2e-go	0	3328
@@ -293,7 +294,7 @@ tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.
 tests/e2e/edit/block_merge.sh	e2e	shell	edit	e2e.edit.block_merge	39	14988
 tests/e2e/edit/edit.sh	e2e	shell	edit	e2e.edit.edit	66	16290
 tests/e2e/index-search/degrade_fallback.sh	e2e	shell	index-search	e2e.index-search.degrade_fallback	48	16035
-tests/e2e/index-search/index_build.sh	e2e	shell	index-search	e2e.index-search.index_build	111	30631
+tests/e2e/index-search/index_build.sh	e2e	shell	index-search	e2e.index-search.index_build	110	30191
 tests/e2e/index-search/index_consistency.sh	e2e	shell	index-search	e2e.index-search.index_consistency	101	28765
 tests/e2e/index-search/index_corrupt_rebuild.sh	e2e	shell	index-search	e2e.index-search.index_corrupt_rebuild	112	28492
 tests/e2e/index-search/index_incremental.sh	e2e	shell	index-search	e2e.index-search.index_incremental	64	19474
@@ -330,6 +331,7 @@ tests/e2e/relation/rel_add.sh	e2e	shell	relation	e2e.relation.rel_add	84	14930
 tests/e2e/relation/rel_query.sh	e2e	shell	relation	e2e.relation.rel_query	64	15357
 tests/e2e/relation/rel_remove.sh	e2e	shell	relation	e2e.relation.rel_remove	58	13906
 tests/e2e/relation/relation_reconcile.sh	e2e	shell	relation	e2e.relation.relation_reconcile	61	23663
+tests/e2e/storage-v3-migration/migration.sh	e2e	shell	storage-v3-migration	e2e.storage-v3-migration.migration	18	7297
 tests/e2e/txn-atomicity/atomic_multifile.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.atomic_multifile	29	10882
 tests/e2e/txn-atomicity/c1_aclass_config_init.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.c1_aclass_config_init	55	17481
 tests/e2e/txn-atomicity/c1_addall_disclosure.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.c1_addall_disclosure	36	14863
@@ -418,6 +420,17 @@ tests/fixtures/e2e/ppe/raw-session/vault-snapshot/unprocessed.md	fixtures	data	c
 tests/fixtures/e2e/ppe/seed-k-20260918-scaling-compute.md	fixtures	data	capture-ingest	-	0	543
 tests/fixtures/e2e/ppe/session.md	fixtures	data	capture-ingest	-	0	2506
 tests/fixtures/e2e/search-learning-limits.txt	fixtures	data	-	-	0	1834
+tests/fixtures/e2e/storage-v3-migration/full-copy-manifest.json	fixtures	data	-	-	0	24779
+tests/fixtures/e2e/storage-v3-migration/manifest.json	fixtures	data	-	-	0	3228
+tests/fixtures/e2e/storage-v3-migration/vault/domains/demo/knowledge/k-20260901-legacy-opinion.md	fixtures	data	-	-	0	530
+tests/fixtures/e2e/storage-v3-migration/vault/domains/demo/knowledge/k-20260901-migration-fact.md	fixtures	data	-	-	0	499
+tests/fixtures/e2e/storage-v3-migration/vault/domains/demo/notes/n-20260901-migration.md	fixtures	data	-	-	0	397
+tests/fixtures/e2e/storage-v3-migration/vault/evergreen.yml	fixtures	data	-	-	0	50
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/knowledge/k-20260901-migration-fact.md	fixtures	data	-	-	0	656
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/note-template.md	fixtures	data	-	-	0	738
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/opinions/o-20260901-migration-opinion.md	fixtures	data	-	-	0	701
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/review-plan.json	fixtures	data	-	-	0	1096
+tests/fixtures/e2e/storage-v3-migration/vault/sources/s-20260901-migration.md	fixtures	data	-	-	0	171
 tests/fixtures/e2e/verification-key-to-ai.txt	fixtures	data	capture-ingest	-	0	4397
 tests/fuzz/run_fuzz.sh	fuzz	shell	-	-	5	5059
 tests/lib/common.sh	lib	shell	-	-	1	11223
@@ -430,7 +443,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	25898
+tests/manifest/traceability.tsv	manifest	data	-	-	0	26178
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

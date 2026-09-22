@@ -74,20 +74,32 @@ gitv() { git -C "${VAULT}" -c user.email=eg@example.com -c user.name=eg "$@"; }
 commits() { gitv log --oneline | wc -l | tr -d ' '; }
 porcelain() { gitv status --porcelain | sort; }
 
-# idx_obj <信封文件>：`data.index` 那一整个对象的紧凑原文。
-# 前缀写成 `"data":{"index":`，因此这个切片顺带断言了「data 的首键就是 index」；
-# 该对象是**扁平** map（值里没有嵌套对象），所以 `[^}]*}` 取到的就是完整一格。
-# 一切取值都必须先切片再取键 —— 否则会取到报告里的同名键（报告也有 cards / relations）。
-idx_obj() {
-  grep -o '"data":{"index":{[^}]*}' "$1" | head -1 ||
-    { cat "$1"; die "取不到 data.index（data 首键必须是 index）"; }
+# data.index now contains the nested blocks sidecar status. Use a structured
+# parser so nested braces cannot truncate the object before scalar counters.
+jvalue() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)["data"]["index"][sys.argv[2]]
+if isinstance(value, bool):
+    print(str(value).lower())
+else:
+    print(value)
+PY
 }
-# jnum <信封文件> <键>：取 data.index 下的数字值。
-jnum() { idx_obj "$1" | grep -o "\"$2\":-\?[0-9][0-9]*" | head -1 | sed "s/\"$2\"://"; }
-# jstr <信封文件> <键>：取 data.index 下的字符串值。
-jstr() { idx_obj "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | sed "s/\"$2\":\"//; s/\"$//"; }
-# jhas <信封文件> <键>：data.index 下是否有这一格。
-jhas() { idx_obj "$1" | grep -Fq "\"$2\":"; }
+jnum() { jvalue "$1" "$2"; }
+jstr() { jvalue "$1" "$2"; }
+jhas() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    raise SystemExit(0 if sys.argv[2] in json.load(handle)["data"]["index"] else 1)
+PY
+}
 # authority_sha：domains/ sources/ proposals/ 下全部文件的 sha256 清单（权威零改动的判据）。
 # 某个根目录不存在是允许的（比如还没有任何提案），因此 find 的退出码不参与判定。
 authority_sha() {
@@ -327,12 +339,12 @@ FILES_NOW="$(idx_files)"
 # ── C2a·M6 现态重钉（§3 派生物白名单 + §16.3 runtime-reserved + §16.4 现态重钉授权；保留历史事实 + 现态双侧锁）──
 # 历史事实一格不放宽：**派生 DB 家族**只许 eg.db / eg.db-wal / eg.db-shm 三值（下方 case 的 * 分支原样复算）。
 # M6 现态：build 是 B 类写命令，其锁层按 §16.3/A-53 在 `.index/` 下并存 runtime-reserved 的 run.lock / txn；
-# 二者不是派生物、不进白名单比对，但**必须**是锁层这两项而非任意杂项（case 显式枚举 = 双侧锁，非放宽）。
+# Storage v3 另有可重建的 blocks/ sidecar。三者均不属于 SQLite DB 文件族，逐项显式枚举。
 for f in $(printf '%s' "${FILES_NOW}" | tr ',' ' '); do
   case "${f}" in
-    run.lock|txn) ;;  # M6 runtime-reserved（§16.3）：锁文件 / 事务日志目录，非派生物
+    run.lock|txn|blocks) ;;
     *) printf '%s\n' "${ALLOWED_FILES}" | tr ',' '\n' | grep -qx "${f}" ||
-         die "${IDX_REL}/ 出现非白名单文件 ${f}（派生 DB 允许集合恰 ${ALLOWED_FILES}，另加 M6 runtime-reserved run.lock/txn）" ;;
+         die "${IDX_REL}/ 出现非白名单文件 ${f}（允许 ${ALLOWED_FILES}、blocks 与 M6 runtime-reserved run.lock/txn）" ;;
   esac
 done
 [ "$(porcelain)" = "${BASE_STATUS}" ] ||

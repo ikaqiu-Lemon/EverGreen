@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -854,7 +857,7 @@ func TestReadOnlyCommandsLeaveGitClean(t *testing.T) {
 
 // —— ⑨ 源码级反证：os.Exit / 被禁措辞 / rel 不引用查询包 ——
 
-func TestOnlyMainCallsOsExit(t *testing.T) {
+func TestOnlyMainFunctionsCallOsExit(t *testing.T) {
 	root := "../.."
 	var offenders []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -878,17 +881,42 @@ func TestOnlyMainCallsOsExit(t *testing.T) {
 		if !strings.Contains(string(raw), "os."+"Exit(") {
 			return nil
 		}
-		if filepath.ToSlash(path) == "../../cmd/eg/main.go" {
+		f, err := parser.ParseFile(token.NewFileSet(), path, raw, 0)
+		if err != nil {
+			return err
+		}
+		if f.Name.Name != "main" {
+			offenders = append(offenders, path)
 			return nil
 		}
-		offenders = append(offenders, path)
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "Exit" {
+					return true
+				}
+				pkg, ok := sel.X.(*ast.Ident)
+				if ok && pkg.Name == "os" && fn.Name.Name != "main" {
+					offenders = append(offenders, path+":"+fn.Name.Name)
+				}
+				return true
+			})
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(offenders) > 0 {
-		t.Fatalf("除 cmd/eg/main.go 外不得调用 os.Exit，命中：%v", offenders)
+		t.Fatalf("os.Exit 只能出现在 package main 的 main() 中，命中：%v", offenders)
 	}
 }
 

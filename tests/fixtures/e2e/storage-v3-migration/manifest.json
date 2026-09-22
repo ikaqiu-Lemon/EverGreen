@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "migration_id": "fixture-storage-v3",
+  "domain": "demo",
+  "note": {
+    "id": "n-20260901-migration",
+    "path": "domains/demo/notes/n-20260901-migration.md",
+    "before_hash": "sha256:3823464c962610825264dd44a2a99c2461b3451241f223d1f2b13893e6a16518",
+    "template_path": "migration-input/note-template.md",
+    "template_hash": "sha256:8807b8eb4b810a0e88af64a070c1ad3fa92b9d3875945eaa1b173e71b4090e8a",
+    "review_plan_path": "migration-input/review-plan.json",
+    "review_plan_hash": "sha256:509971a5ba7227d5b51cfadd43f3b449722e7de2a90f895719472725d1c6b0fd",
+    "review_source_refs": [
+      "L1-L3",
+      "L4-L5"
+    ],
+    "preserve_sections": [
+      "存疑与待验证",
+      "用户补充"
+    ],
+    "expected_source_body_hash": "sha256:10a325db6d09732b8088686467197ab126153a84eddfb03651e49193e716b5a1"
+  },
+  "candidates": [
+    {
+      "key": "cand-migration-fact",
+      "output": "k-20260901-migration-fact",
+      "path": "domains/demo/knowledge/k-20260901-migration-fact.md",
+      "before_hash": "sha256:627937167909d3d10bb75806b6799fd9f2792ed684793e0b750d2de59d5dcc76",
+      "seed_path": "migration-input/knowledge/k-20260901-migration-fact.md",
+      "seed_hash": "sha256:d382c1f05b8e767a53e7244ea8b753652e500ad1092167723dc15eac1a0e32b4",
+      "source_refs": [
+        "L1-L3"
+      ]
+    },
+    {
+      "key": "cand-migration-opinion",
+      "output": "o-20260901-migration-opinion",
+      "path": "domains/demo/opinions/o-20260901-migration-opinion.md",
+      "seed_path": "migration-input/opinions/o-20260901-migration-opinion.md",
+      "seed_hash": "sha256:0873db623bc6b4a79816b28b8d3bda8439e3bf814ceb48ead4002b243d4da718",
+      "source_refs": [
+        "L4-L5"
+      ]
+    }
+  ],
+  "coverage": [
+    {
+      "module": "structured-fact",
+      "source_refs": [
+        "L1-L3"
+      ],
+      "summary": "The structured migration fact.",
+      "disposition": "outputs",
+      "outputs": [
+        "k-20260901-migration-fact"
+      ],
+      "reason": ""
+    },
+    {
+      "module": "migration-policy",
+      "source_refs": [
+        "L4-L5"
+      ],
+      "summary": "The fail-closed migration judgment.",
+      "disposition": "outputs",
+      "outputs": [
+        "o-20260901-migration-opinion"
+      ],
+      "reason": ""
+    },
+    {
+      "module": "footnote",
+      "source_refs": [
+        "L4-L5"
+      ],
+      "summary": "The source footnote stays in the Note.",
+      "disposition": "note_only",
+      "outputs": [],
+      "reason": "The footnote is context rather than a standalone artifact."
+    }
+  ],
+  "tombstones": [
+    {
+      "path": "domains/demo/knowledge/k-20260901-legacy-opinion.md",
+      "before_hash": "sha256:ed8973073489da18a13c1838d5340ea571b128c3e605092afbcb1d052a8d5736",
+      "replacement": "o-20260901-migration-opinion",
+      "reason": "The legacy knowledge item is an opinion in Storage v3.",
+      "deleted_at": "2026-09-02T10:00:00Z",
+      "updated_at": "2026-09-02T10:00:00Z"
+    }
+  ],
+  "expected": {
+    "notes": 1,
+    "knowledge": 1,
+    "opinions": 1,
+    "pending_opinions": 1,
+    "material_relations": 2,
+    "argument_relations": 1,
+    "coverage_modules": 3,
+    "note_only_modules": 1,
+    "tombstones": 1
+  }
+}

@@ -1,0 +1,553 @@
+{
+  "schema_version": 1,
+  "migration_id": "deepseek-harness-storage-v3",
+  "domain": "engineering",
+  "note": {
+    "id": "n-20260915-deepseek-harness-deepseek",
+    "path": "domains/engineering/notes/n-20260915-deepseek-harness-deepseek.md",
+    "before_hash": "sha256:95bfd8fdb35b8f383ce74825e645620eb4a3c750e46283f70c2698790bb53054",
+    "template_path": "domains/engineering/groundtruth/schema-v2/golden/notes/n-20260915-deepseek-harness-deepseek.md",
+    "template_hash": "sha256:59f6cf6e46c45d77193aa4978e2a60f60988c60fa01958a974be25c81e9a1978",
+    "review_plan_path": "domains/engineering/groundtruth/schema-v2/plan.template.json",
+    "review_plan_hash": "sha256:77e34729b5753b88bf18e42e5f41240a1b8cd7afd34b3b73bc9d95a5899423af",
+    "review_source_refs": [
+      "L14-L21",
+      "L25-L42",
+      "L44-L70",
+      "L72-L74",
+      "L78-L85",
+      "L87-L118",
+      "L120-L161",
+      "L163-L218",
+      "L220-L246",
+      "L248-L272",
+      "L276-L379",
+      "L381-L425",
+      "L427-L458",
+      "L462-L464",
+      "L466-L473",
+      "L477-L483",
+      "L485-L489",
+      "L491-L493",
+      "L497-L504"
+    ],
+    "preserve_sections": [
+      "存疑与待验证",
+      "用户补充"
+    ],
+    "expected_source_body_hash": "sha256:7cc22a903d963eaf8b025addebe96b8853fa36e389d41b5e979f3492b6d2cae1"
+  },
+  "candidates": [
+    {
+      "key": "cand-harness-production-five-capabilities",
+      "output": "k-20260915-harness-production-five-capabilities",
+      "path": "domains/engineering/knowledge/k-20260915-harness-production-five-capabilities.md",
+      "before_hash": "sha256:85a5c7ecc85de3632e01df3abb55153af2755aff4e969ff09c9d8cc9816c6e63",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-harness-production-five-capabilities.md",
+      "seed_hash": "sha256:356172540e894e642951c1f87d796ca8624777d92ffa0ae7eee3fdf5fce449f9",
+      "source_refs": ["L25-L42"]
+    },
+    {
+      "key": "cand-react-agent-loop",
+      "output": "k-20260915-react-agent-loop",
+      "path": "domains/engineering/knowledge/k-20260915-react-agent-loop.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-react-agent-loop.md",
+      "seed_hash": "sha256:93d8c92c42877c6ad1aad9a6386abcdb86906a160525220de43e68f64e6a7a5c",
+      "source_refs": ["L44-L70", "L72-L74"]
+    },
+    {
+      "key": "cand-agent-development-boundaries",
+      "output": "k-20260915-agent-development-boundaries",
+      "path": "domains/engineering/knowledge/k-20260915-agent-development-boundaries.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-agent-development-boundaries.md",
+      "seed_hash": "sha256:60d3f64ae4119a3e83aa44aac04a1a7c18712656b05791809a1f12fd381ff4cc",
+      "source_refs": ["L78-L85", "L163-L218", "L220-L246"]
+    },
+    {
+      "key": "cand-agent-plugin-two-axes",
+      "output": "k-20260915-agent-plugin-two-axes",
+      "path": "domains/engineering/knowledge/k-20260915-agent-plugin-two-axes.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-agent-plugin-two-axes.md",
+      "seed_hash": "sha256:66f12f6bccbee77f01f10f57a50331d421a90c6dabfb47863e03fd6230332717",
+      "source_refs": ["L248-L272"]
+    },
+    {
+      "key": "cand-dsh-cordis-plugin-layout",
+      "output": "k-20260915-dsh-cordis-plugin-layout",
+      "path": "domains/engineering/knowledge/k-20260915-dsh-cordis-plugin-layout.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-dsh-cordis-plugin-layout.md",
+      "seed_hash": "sha256:de8f3b28f1ed854c95e41699d9e80c032485ed2fe18ff71e6eac1a75fdd17aab",
+      "source_refs": ["L276-L379", "L427-L458"]
+    },
+    {
+      "key": "cand-dsh-spatiotemporal-composability",
+      "output": "k-20260915-dsh-spatiotemporal-composability",
+      "path": "domains/engineering/knowledge/k-20260915-dsh-spatiotemporal-composability.md",
+      "before_hash": "sha256:e284f04a35021799116bc79593bd74498d66a1a9c946eca4fccbab26b5335d84",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-dsh-spatiotemporal-composability.md",
+      "seed_hash": "sha256:0553e9f9b5a48ac50d91946d5a557e367242befc24b9124a00312a009d64f495",
+      "source_refs": ["L427-L458"]
+    },
+    {
+      "key": "cand-agent-self-improvement-levels",
+      "output": "k-20260915-agent-self-improvement-levels",
+      "path": "domains/engineering/knowledge/k-20260915-agent-self-improvement-levels.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-agent-self-improvement-levels.md",
+      "seed_hash": "sha256:24176879ab7011dfda56aa7767cf83321da17d2edf35c977c06fddcd6fffc2de",
+      "source_refs": ["L466-L473"]
+    },
+    {
+      "key": "cand-offline-nearline-online-learning",
+      "output": "k-20260915-offline-nearline-online-learning",
+      "path": "domains/engineering/knowledge/k-20260915-offline-nearline-online-learning.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-offline-nearline-online-learning.md",
+      "seed_hash": "sha256:f1cb904104981eb2cb2ec75d3d09255c7fa28ddaa50c12c8d65497ac73529d34",
+      "source_refs": ["L477-L483"]
+    },
+    {
+      "key": "cand-prime-agent-refinement-workflow",
+      "output": "k-20260915-prime-agent-refinement-workflow",
+      "path": "domains/engineering/knowledge/k-20260915-prime-agent-refinement-workflow.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-prime-agent-refinement-workflow.md",
+      "seed_hash": "sha256:a4259eb6c6240164179c9083175d6b15f6068b9951684fca9276e4ee24f5a530",
+      "source_refs": ["L485-L489"]
+    },
+    {
+      "key": "cand-harness-core-boundary",
+      "output": "o-20260915-harness-core-boundary",
+      "path": "domains/engineering/opinions/o-20260915-harness-core-boundary.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-harness-core-boundary.md",
+      "seed_hash": "sha256:0289cea91c7b1ef44f9f37030b242a4c14225921d5f57f74d8361eb3f5720581",
+      "source_refs": ["L163-L218", "L220-L246"]
+    },
+    {
+      "key": "cand-harness-layer-self-improvement",
+      "output": "o-20260915-harness-layer-self-improvement",
+      "path": "domains/engineering/opinions/o-20260915-harness-layer-self-improvement.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-harness-layer-self-improvement.md",
+      "seed_hash": "sha256:4865e46332e6dafbe444192ab5b096e2ca2f380c668dff0f96680e14d2407000",
+      "source_refs": ["L462-L464"]
+    },
+    {
+      "key": "cand-agent-self-evolution-evaluation-gate",
+      "output": "o-20260915-agent-self-evolution-evaluation-gate",
+      "path": "domains/engineering/opinions/o-20260915-agent-self-evolution-evaluation-gate.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-agent-self-evolution-evaluation-gate.md",
+      "seed_hash": "sha256:358800628d553cacf597af36e36a492fad5d1fb11ab21198980229e0d1337aa3",
+      "source_refs": ["L485-L489", "L491-L493"]
+    },
+    {
+      "key": "cand-dsh-runtime-self-evolution-overengineering",
+      "output": "o-20260915-dsh-runtime-self-evolution-overengineering",
+      "path": "domains/engineering/opinions/o-20260915-dsh-runtime-self-evolution-overengineering.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-dsh-runtime-self-evolution-overengineering.md",
+      "seed_hash": "sha256:cd77304ca5b855121e9e7727dc57a751fcbe3f8cc56abc0189092db9dac3714a",
+      "source_refs": ["L427-L458", "L491-L493"]
+    },
+    {
+      "key": "cand-generative-architecture-runtime-components",
+      "output": "o-20260915-generative-architecture-runtime-components",
+      "path": "domains/engineering/opinions/o-20260915-generative-architecture-runtime-components.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-generative-architecture-runtime-components.md",
+      "seed_hash": "sha256:dc31092372caf379ee13621307eb145588a978cb4fe917bb6fc7327aca35b871",
+      "source_refs": ["L497-L504"]
+    },
+    {
+      "key": "cand-pydantic-ai-extension-model",
+      "output": "k-20260915-pydantic-ai-extension-model",
+      "path": "domains/engineering/knowledge/k-20260915-pydantic-ai-extension-model.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-pydantic-ai-extension-model.md",
+      "seed_hash": "sha256:9c243d7af243e823d10aefac4624c70331facae059e930a015f9171203f84b2c",
+      "source_refs": ["L87-L118"]
+    },
+    {
+      "key": "cand-claude-agent-sdk-extension-model",
+      "output": "k-20260915-claude-agent-sdk-extension-model",
+      "path": "domains/engineering/knowledge/k-20260915-claude-agent-sdk-extension-model.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-claude-agent-sdk-extension-model.md",
+      "seed_hash": "sha256:c73b0cdcd397ca936d907c49af79e0d675a5daa82f00ba54197a80516f04745b",
+      "source_refs": ["L120-L161"]
+    },
+    {
+      "key": "cand-eve-platform-extension-model",
+      "output": "k-20260915-eve-platform-extension-model",
+      "path": "domains/engineering/knowledge/k-20260915-eve-platform-extension-model.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-eve-platform-extension-model.md",
+      "seed_hash": "sha256:0961dc51bc23217a6e649489c0e75bd9d43db18e261b5c768e0ea5f3de27ec26",
+      "source_refs": ["L163-L218"]
+    },
+    {
+      "key": "cand-model-request-preprocessing-paths",
+      "output": "k-20260915-model-request-preprocessing-paths",
+      "path": "domains/engineering/knowledge/k-20260915-model-request-preprocessing-paths.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-model-request-preprocessing-paths.md",
+      "seed_hash": "sha256:edd31134dea24bde2beb1827c7d1475c0274819f3dd903c5ccb208ec7adce0a7",
+      "source_refs": ["L220-L246", "L248-L272"]
+    },
+    {
+      "key": "cand-dsh-tool-lifecycle-feedback",
+      "output": "k-20260915-dsh-tool-lifecycle-feedback",
+      "path": "domains/engineering/knowledge/k-20260915-dsh-tool-lifecycle-feedback.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-dsh-tool-lifecycle-feedback.md",
+      "seed_hash": "sha256:d42bb441a0560f66a3c3dc5b9a5b9e15f1a518888118f7c11c3d21aea0e11d66",
+      "source_refs": ["L276-L379"]
+    },
+    {
+      "key": "cand-dsh-sdk-session-prestep",
+      "output": "k-20260915-dsh-sdk-session-prestep",
+      "path": "domains/engineering/knowledge/k-20260915-dsh-sdk-session-prestep.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-dsh-sdk-session-prestep.md",
+      "seed_hash": "sha256:fdabafc2228862a8fe89e2e6364996665193695d6be267773379d419758dafa6",
+      "source_refs": ["L381-L425"]
+    },
+    {
+      "key": "cand-human-gated-harness-capability-tools",
+      "output": "k-20260915-human-gated-harness-capability-tools",
+      "path": "domains/engineering/knowledge/k-20260915-human-gated-harness-capability-tools.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/knowledge/k-20260915-human-gated-harness-capability-tools.md",
+      "seed_hash": "sha256:48bf23a431acb414439846125b654c543af2c1fe2f967e4a0d9b85cba17a75c4",
+      "source_refs": ["L485-L489"]
+    },
+    {
+      "key": "cand-tool-calling-is-instruction-following",
+      "output": "o-20260915-tool-calling-is-instruction-following",
+      "path": "domains/engineering/opinions/o-20260915-tool-calling-is-instruction-following.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-tool-calling-is-instruction-following.md",
+      "seed_hash": "sha256:0d24757dda0945430c6b966e7776eee43659679a017b5b040cf0fbe468726152",
+      "source_refs": ["L72-L74"]
+    },
+    {
+      "key": "cand-agent-development-is-plugin-development",
+      "output": "o-20260915-agent-development-is-plugin-development",
+      "path": "domains/engineering/opinions/o-20260915-agent-development-is-plugin-development.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-agent-development-is-plugin-development.md",
+      "seed_hash": "sha256:942c98daac6536f825ce3413fa1f172b2abd2277e92c693d6daeb358bb01a4c1",
+      "source_refs": ["L248-L272"]
+    },
+    {
+      "key": "cand-dsh-platform-shape-library-openness",
+      "output": "o-20260915-dsh-platform-shape-library-openness",
+      "path": "domains/engineering/opinions/o-20260915-dsh-platform-shape-library-openness.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-dsh-platform-shape-library-openness.md",
+      "seed_hash": "sha256:6ba0492a9cbfc2ca6292cff2bc02fcf685c0a48a264ecbc17946887d312f0cdf",
+      "source_refs": ["L427-L458"]
+    },
+    {
+      "key": "cand-realtime-self-evolution-demand-depends-on-layer",
+      "output": "o-20260915-realtime-self-evolution-demand-depends-on-layer",
+      "path": "domains/engineering/opinions/o-20260915-realtime-self-evolution-demand-depends-on-layer.md",
+      "seed_path": "domains/engineering/groundtruth/schema-v2/golden/opinions/o-20260915-realtime-self-evolution-demand-depends-on-layer.md",
+      "seed_hash": "sha256:30d73176b14fca09d8107d5e19cadf255c6298c201ca77029c74ab9f2c68d535",
+      "source_refs": ["L466-L473", "L485-L489"]
+    }
+  ],
+  "coverage": [
+    {
+      "module": "article-metadata",
+      "source_refs": ["L14-L21"],
+      "summary": "Title, author, publication date, version, and framing.",
+      "disposition": "note_only",
+      "outputs": [],
+      "reason": "Article metadata and reading context stay in the Note."
+    },
+    {
+      "module": "harness-five-capabilities",
+      "source_refs": ["L25-L42"],
+      "summary": "Agent definition and five production Harness responsibilities.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-harness-production-five-capabilities"],
+      "reason": ""
+    },
+    {
+      "module": "react-loop",
+      "source_refs": ["L44-L70"],
+      "summary": "ReAct context, model, tool, result, and termination flow.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-react-agent-loop"],
+      "reason": ""
+    },
+    {
+      "module": "tool-calling-instruction-following",
+      "source_refs": ["L72-L74"],
+      "summary": "Tool selection and argument generation as schema instruction following.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-tool-calling-is-instruction-following"],
+      "reason": ""
+    },
+    {
+      "module": "loop-termination-and-boundary",
+      "source_refs": ["L72-L74"],
+      "summary": "Termination judgment and the Agent Loop versus loop-engineering boundary.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-react-agent-loop"],
+      "reason": ""
+    },
+    {
+      "module": "agent-development-boundaries",
+      "source_refs": ["L78-L85"],
+      "summary": "Library, Product, and Platform development boundaries.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-agent-development-boundaries"],
+      "reason": ""
+    },
+    {
+      "module": "pydantic-ai-extension-model",
+      "source_refs": ["L87-L118"],
+      "summary": "Pydantic AI tools, constraints, validation, and run_sync.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-pydantic-ai-extension-model"],
+      "reason": ""
+    },
+    {
+      "module": "claude-agent-sdk-extension-model",
+      "source_refs": ["L120-L161"],
+      "summary": "Claude Agent SDK MCP, hooks, and query entry point.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-claude-agent-sdk-extension-model"],
+      "reason": ""
+    },
+    {
+      "module": "eve-platform-extension-model",
+      "source_refs": ["L163-L218"],
+      "summary": "Eve file layout, hosting, schema constraints, and observe-only hooks.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-eve-platform-extension-model"],
+      "reason": ""
+    },
+    {
+      "module": "boundary-control-tradeoff",
+      "source_refs": ["L163-L218", "L220-L246"],
+      "summary": "Core responsibility boundaries and transfer of control.",
+      "disposition": "outputs",
+      "outputs": [
+        "k-20260915-agent-development-boundaries",
+        "o-20260915-harness-core-boundary"
+      ],
+      "reason": ""
+    },
+    {
+      "module": "model-request-preprocessing",
+      "source_refs": ["L220-L246", "L248-L272"],
+      "summary": "Pre-provider compression and security-review integration paths.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-model-request-preprocessing-paths"],
+      "reason": ""
+    },
+    {
+      "module": "plugin-two-axes",
+      "source_refs": ["L248-L272"],
+      "summary": "Plugin shape and assembly are independent dimensions.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-agent-plugin-two-axes"],
+      "reason": ""
+    },
+    {
+      "module": "agent-development-as-plugins",
+      "source_refs": ["L248-L272"],
+      "summary": "Most Agent development occurs outside the framework core.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-agent-development-is-plugin-development"],
+      "reason": ""
+    },
+    {
+      "module": "dsh-cordis-layout",
+      "source_refs": ["L276-L379"],
+      "summary": "DSH layout, Cordis manifest, and plugin assembly.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-dsh-cordis-plugin-layout"],
+      "reason": ""
+    },
+    {
+      "module": "dsh-tool-lifecycle",
+      "source_refs": ["L276-L379"],
+      "summary": "Tool registration and pre/post execution feedback.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-dsh-tool-lifecycle-feedback"],
+      "reason": ""
+    },
+    {
+      "module": "dsh-sdk-session-prestep",
+      "source_refs": ["L381-L425"],
+      "summary": "SDK startup, session reuse, and pre-step message constraints.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-dsh-sdk-session-prestep"],
+      "reason": ""
+    },
+    {
+      "module": "dsh-deep-plugin-scope",
+      "source_refs": ["L427-L458"],
+      "summary": "Compressor and Agent Loop are both replaceable plugins.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-dsh-cordis-plugin-layout"],
+      "reason": ""
+    },
+    {
+      "module": "dsh-platform-shape",
+      "source_refs": ["L427-L458"],
+      "summary": "DSH combines platform-like assembly with library-like openness.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-dsh-platform-shape-library-openness"],
+      "reason": ""
+    },
+    {
+      "module": "temporal-composability",
+      "source_refs": ["L427-L458"],
+      "summary": "Runtime component generation and replacement.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-dsh-spatiotemporal-composability"],
+      "reason": ""
+    },
+    {
+      "module": "spatial-composability",
+      "source_refs": ["L427-L458"],
+      "summary": "Stable IDs, variable implementations, and dependency reassembly.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-dsh-spatiotemporal-composability"],
+      "reason": ""
+    },
+    {
+      "module": "runtime-self-evolution-motivation",
+      "source_refs": ["L427-L458"],
+      "summary": "Everything-is-plugin serves deep runtime self-evolution.",
+      "disposition": "outputs",
+      "outputs": [
+        "o-20260915-dsh-platform-shape-library-openness",
+        "o-20260915-dsh-runtime-self-evolution-overengineering"
+      ],
+      "reason": ""
+    },
+    {
+      "module": "harness-layer-self-improvement",
+      "source_refs": ["L462-L464"],
+      "summary": "Near-term self-improvement is more likely in Harness than weights.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-harness-layer-self-improvement"],
+      "reason": ""
+    },
+    {
+      "module": "model-version-observations",
+      "source_refs": ["L462-L464"],
+      "summary": "Model release frequency and version-specific observations.",
+      "disposition": "note_only",
+      "outputs": [],
+      "reason": "Time-sensitive observations remain explicitly annotated in the Note."
+    },
+    {
+      "module": "self-improvement-levels",
+      "source_refs": ["L466-L473"],
+      "summary": "Five levels from prompts through optimizer code.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-agent-self-improvement-levels"],
+      "reason": ""
+    },
+    {
+      "module": "realtime-demand-by-layer",
+      "source_refs": ["L466-L473"],
+      "summary": "The need for real-time self-evolution depends on the changed layer.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-realtime-self-evolution-demand-depends-on-layer"],
+      "reason": ""
+    },
+    {
+      "module": "offline-nearline-online",
+      "source_refs": ["L477-L483"],
+      "summary": "Offline, nearline, and online learning definitions.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-offline-nearline-online-learning"],
+      "reason": ""
+    },
+    {
+      "module": "current-self-evolution-demand",
+      "source_refs": ["L485-L489"],
+      "summary": "Current products need state updates more than deep runtime replacement.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-realtime-self-evolution-demand-depends-on-layer"],
+      "reason": ""
+    },
+    {
+      "module": "human-gated-capability-tools",
+      "source_refs": ["L485-L489"],
+      "summary": "Capability tools still rely on human evaluation and deployment.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-human-gated-harness-capability-tools"],
+      "reason": ""
+    },
+    {
+      "module": "prime-agent-refinement",
+      "source_refs": ["L485-L489"],
+      "summary": "Prime Agent proposes, evaluates, and conditionally retains changes.",
+      "disposition": "outputs",
+      "outputs": ["k-20260915-prime-agent-refinement-workflow"],
+      "reason": ""
+    },
+    {
+      "module": "feedback-signal-comparison",
+      "source_refs": ["L491-L493"],
+      "summary": "Agent evaluation is costlier and less objective than ranking feedback.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-agent-self-evolution-evaluation-gate"],
+      "reason": ""
+    },
+    {
+      "module": "evaluation-gate-bottleneck",
+      "source_refs": ["L485-L489", "L491-L493"],
+      "summary": "Evaluation and admission are the current bottleneck.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-agent-self-evolution-evaluation-gate"],
+      "reason": ""
+    },
+    {
+      "module": "dsh-overengineering-conclusion",
+      "source_refs": ["L491-L493"],
+      "summary": "Deep runtime replacement is overengineering for general Agent teams.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-dsh-runtime-self-evolution-overengineering"],
+      "reason": ""
+    },
+    {
+      "module": "generative-architecture",
+      "source_refs": ["L497-L504"],
+      "summary": "Runtime-generated architecture components as a prediction.",
+      "disposition": "outputs",
+      "outputs": ["o-20260915-generative-architecture-runtime-components"],
+      "reason": ""
+    },
+    {
+      "module": "references",
+      "source_refs": ["L497-L504"],
+      "summary": "Paper, framework, book, and product references.",
+      "disposition": "note_only",
+      "outputs": [],
+      "reason": "Reference metadata remains in the Note."
+    }
+  ],
+  "tombstones": [
+    {
+      "path": "domains/engineering/knowledge/k-20260915-harness-core-boundary.md",
+      "before_hash": "sha256:2fec7368920462f050061315566dea62538a52192196a1e35224d7669caa0b75",
+      "replacement": "o-20260915-harness-core-boundary",
+      "reason": "Storage v3 reclassifies this judgment as an Opinion.",
+      "deleted_at": "2026-09-22T22:00:00+08:00",
+      "updated_at": "2026-09-22T22:00:00+08:00"
+    },
+    {
+      "path": "domains/engineering/knowledge/k-20260915-agent-self-evolution-evaluation-gate.md",
+      "before_hash": "sha256:a6ea91398a451cd21839dbe80deea98cde920a0429473f15b74d9bd78e0bc04d",
+      "replacement": "o-20260915-agent-self-evolution-evaluation-gate",
+      "reason": "Storage v3 reclassifies this judgment as an Opinion.",
+      "deleted_at": "2026-09-22T22:00:00+08:00",
+      "updated_at": "2026-09-22T22:00:00+08:00"
+    }
+  ],
+  "expected": {
+    "notes": 1,
+    "knowledge": 16,
+    "opinions": 9,
+    "pending_opinions": 9,
+    "material_relations": 25,
+    "argument_relations": 29,
+    "coverage_modules": 34,
+    "note_only_modules": 3,
+    "tombstones": 2
+  }
+}
