@@ -299,6 +299,26 @@ $ eg export --plain --output ../evergreen-plain
 `o-*` 写入 `opinions/` 且固定 `validation: pending`，目标与 Note 映射同进一个 journal v1 事务。
 `eg export --plain` 对 vault 只读，只从导出副本剥离机器锚点、candidate 标题属性与围栏边界行。
 
+常规 candidate 使用 `candidate_drafts[]` 渲染出的 H3 边界。标题层级无法表达边界时，Evergreen
+也读取下面这一种精确的 L2 兜底形态：
+
+```markdown
+<!-- eg:cd:1 <base64url(JSON)> -->
+:::: {#cand-cross-section .eg-candidate .opinion}
+### 跨小节的候选主张
+
+#### 观点
+
+候选的确定载荷。
+::::
+```
+
+锚点、开围栏和标题必须是连续三行。开围栏至少三个冒号，属性必须恰含一个 `cand-*` ID、
+`.eg-candidate` 与 `.knowledge` / `.opinion` 二者之一；容器首行必须是非空、无属性的 ATX H3，
+其文本就是 candidate title。闭围栏不得带属性，冒号数不得少于开围栏。L2 不允许嵌套；代码围栏
+优先，容器内的标题、列表、表格及其它 Markdown 都属于 candidate。物化继续使用与 H3 相同的
+H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷。
+
 ### 4. 通过 ChangePlan 写入
 
 原文落盘时正文首行 `L1` 是模板前导空行，因此三行真实正文分别落在 `L2`、`L3`、`L4`。存成

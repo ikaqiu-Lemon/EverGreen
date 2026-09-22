@@ -20,6 +20,9 @@ func PlainExport(raw []byte) ([]byte, error) {
 	}
 	headings := make(map[int][]byte, len(candidates))
 	for _, candidate := range candidates {
+		if candidate.Syntax == CandidateSyntaxFencedDiv {
+			continue
+		}
 		line := raw[candidate.HeadingStart:candidate.HeadingEnd]
 		plain, err := plainCandidateHeading(line)
 		if err != nil {
@@ -115,76 +118,14 @@ func isPlainProtocolAnchor(line []byte) bool {
 }
 
 func plainDivOpen(line []byte) (int, bool, error) {
-	t := bytes.TrimSpace(trimLineEnd(line))
-	n := leadingByteCount(t, ':')
-	reserved := plainDivReserved(line)
-	if n < 3 || n == len(t) || (t[n] != ' ' && t[n] != '\t') {
-		if reserved {
-			return 0, false, fmt.Errorf("plain export malformed reserved L2 candidate opener")
-		}
-		return 0, false, nil
-	}
-	attrs := bytes.TrimSpace(t[n:])
-	if len(attrs) < 2 || attrs[0] != '{' || attrs[len(attrs)-1] != '}' {
-		if reserved {
-			return 0, false, fmt.Errorf("plain export malformed reserved L2 candidate attributes")
-		}
-		return 0, false, nil
-	}
-	fields := bytes.Fields(attrs[1 : len(attrs)-1])
-	if len(fields) != 3 {
-		if reserved {
-			return 0, false, fmt.Errorf("plain export L2 candidate attributes must contain id and two classes")
-		}
-		return 0, false, nil
-	}
-	var key string
-	classes := map[string]int{}
-	for _, field := range fields {
-		switch {
-		case bytes.HasPrefix(field, []byte("#")):
-			if key != "" {
-				return 0, false, fmt.Errorf("plain export L2 candidate has duplicate id")
-			}
-			key = string(field[1:])
-		case bytes.HasPrefix(field, []byte(".")):
-			classes[string(field[1:])]++
-		default:
-			return 0, false, fmt.Errorf("plain export L2 candidate has invalid attribute %q", field)
-		}
-	}
-	if !candidateKeyRE.MatchString(key) || classes["eg-candidate"] != 1 ||
-		len(classes) != 2 ||
-		(classes["knowledge"] != 1 && classes["opinion"] != 1) {
-		if reserved {
-			return 0, false, fmt.Errorf("plain export malformed reserved L2 candidate attributes")
-		}
-		return 0, false, nil
-	}
-	return n, true, nil
+	width, _, _, reserved, err := parseCandidateFenceOpen(line)
+	return width, reserved, err
 }
 
 func plainDivReserved(line []byte) bool {
-	t := bytes.TrimSpace(trimLineEnd(line))
-	if leadingByteCount(t, ':') < 3 {
-		return false
-	}
-	return bytes.Contains(t, []byte(".eg-candidate")) ||
-		bytes.Contains(t, []byte(".knowledge")) ||
-		bytes.Contains(t, []byte(".opinion")) ||
-		bytes.Contains(t, []byte("#cand-"))
+	return candidateFenceReserved(line)
 }
 
 func plainDivClose(line []byte) (int, bool) {
-	t := bytes.TrimSpace(trimLineEnd(line))
-	n := leadingByteCount(t, ':')
-	return n, n >= 3 && n == len(t)
-}
-
-func leadingByteCount(raw []byte, want byte) int {
-	n := 0
-	for n < len(raw) && raw[n] == want {
-		n++
-	}
-	return n
+	return candidateFenceClose(line)
 }

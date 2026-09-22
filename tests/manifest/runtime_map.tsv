@@ -99,6 +99,7 @@ tests/_staged/internal/index/scratch_test.go	internal/index/scratch_test.go	ever
 tests/_staged/internal/index/watermark_test.go	internal/index/watermark_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/assets_test.go	internal/mdfile/assets_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/block_merge_test.go	internal/mdfile/block_merge_test.go	evergreen	unit	go
+tests/_staged/internal/mdfile/candidate_fenced_div_test.go	internal/mdfile/candidate_fenced_div_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/candidate_test.go	internal/mdfile/candidate_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/coverage_matrix_test.go	internal/mdfile/coverage_matrix_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/fuzz_test.go	internal/mdfile/fuzz_test.go	evergreen	unit	go

@@ -145,6 +145,11 @@ eg apply --plan <file|-> [--dry-run] [--json]
 - **Agent 不得调用 `eg materialize`。** 用户确认草稿后显式执行
   `eg materialize --note <n-id> (--candidate <cand-key> | --all) --user-request`。该命令不调用模型，
   只复制确定字节，并把目标与 Note output 映射放进同一个 journal v1 事务。
+- `candidate_drafts[]` 默认写 H3 边界。读取存量 Note 时还支持 L2 兜底：`eg:cd:1` 锚点下一行是
+  `::: {#cand-key .eg-candidate .knowledge}`（或把末项换成 `.opinion`）开围栏，再下一行必须是非空、
+  无属性的 ATX H3 title，H4 模板随后出现，最后以不少于开围栏冒号数的无属性围栏闭合。三行必须
+  相邻，L2 不得嵌套；代码围栏优先，容器内其它标题仍属当前 candidate。L1/L2 共用同一模板映射
+  和物化内核。
 - `eg export --plain --output <dir>` 是只读逃生舱：输出目录必须在 vault 外且为空，导出副本不含
   Evergreen 机器锚点、candidate 标题属性或 L2 围栏行，vault 零写入、零 commit。
 
