@@ -1,0 +1,36 @@
+{
+  "plan_version": 2,
+  "verb": "process",
+  "domain": "demo",
+  "reason": "Fixture input for the one-time Storage v3 migration",
+  "requirement_ids": [],
+  "convergence": [],
+  "base": {},
+  "ops": [
+    {
+      "op": "write_note",
+      "source": "s-20260901-migration",
+      "note_id": "n-20260901-migration",
+      "title": "Storage v3 migration note",
+      "tags": ["migration"],
+      "blocks": [
+        {
+          "role": "source",
+          "heading": "Overview",
+          "body": "First source paragraph.\n\n![Diagram](https://example.invalid/diagram.png)\n\n```text\ncode remains exact\n```\n\n| key | value |\n| --- | --- |\n| a | b |\n\n> Ordinary source quote.\n"
+        },
+        {
+          "role": "agent",
+          "annotation": "supplement",
+          "body": "Existing annotation remains visible."
+        },
+        {
+          "role": "source",
+          "body": "Second source block with a [link](https://example.invalid).\n\nFootnote.[^1]\n\n[^1]: Footnote remains in order.\n"
+        }
+      ],
+      "omissions": [],
+      "extraction_coverage": []
+    }
+  ]
+}

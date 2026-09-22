@@ -5,7 +5,6 @@ tests/_staged/internal/cli/apply_inplan_test.go	internal/cli/apply_inplan_test.g
 tests/_staged/internal/cli/apply_opinion_transaction_test.go	internal/cli/apply_opinion_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/apply_test.go	internal/cli/apply_test.go	evergreen	unit	go
 tests/_staged/internal/cli/bench_test.go	internal/cli/bench_test.go	evergreen	unit	go
-tests/_staged/internal/cli/candidate_sidecar_test.go	internal/cli/candidate_sidecar_test.go	evergreen	unit	go
 tests/_staged/internal/cli/capture_test.go	internal/cli/capture_test.go	evergreen	unit	go
 tests/_staged/internal/cli/capture_transaction_test.go	internal/cli/capture_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/card_test.go	internal/cli/card_test.go	evergreen	unit	go
@@ -30,6 +29,7 @@ tests/_staged/internal/cli/index_after_write_mark_reviewed_test.go	internal/cli/
 tests/_staged/internal/cli/index_after_write_opinion_lifecycle_test.go	internal/cli/index_after_write_opinion_lifecycle_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_proposal_test.go	internal/cli/index_after_write_proposal_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_after_write_undelete_test.go	internal/cli/index_after_write_undelete_test.go	evergreen	unit	go
+tests/_staged/internal/cli/index_candidate_sidecar_test.go	internal/cli/index_candidate_sidecar_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_lock_test.go	internal/cli/index_lock_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_opinion_projection_test.go	internal/cli/index_opinion_projection_test.go	evergreen	unit	go
 tests/_staged/internal/cli/index_opinion_sync_test.go	internal/cli/index_opinion_sync_test.go	evergreen	unit	go
@@ -154,10 +154,10 @@ tests/_staged/internal/query/card_test.go	internal/query/card_test.go	evergreen	
 tests/_staged/internal/query/context_test.go	internal/query/context_test.go	evergreen	unit	go
 tests/_staged/internal/query/degrade_rowlevel_test.go	internal/query/degrade_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/query/diagnostic_placement_test.go	internal/query/diagnostic_placement_test.go	evergreen	unit	go
-tests/_staged/internal/query/draft_candidate_context_test.go	internal/query/draft_candidate_context_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/fuzz_test.go	internal/query/filter/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unreviewed_test.go	evergreen	unit	go
 tests/_staged/internal/query/fuzz_test.go	internal/query/fuzz_test.go	evergreen	unit	go
+tests/_staged/internal/query/index_backed_draft_candidate_context_test.go	internal/query/index_backed_draft_candidate_context_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_ko_readpath_test.go	internal/query/index_backed_ko_readpath_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_opinion_test.go	internal/query/index_backed_opinion_test.go	evergreen	unit	go
 tests/_staged/internal/query/index_backed_replaced_by_test.go	internal/query/index_backed_replaced_by_test.go	evergreen	unit	go
@@ -230,6 +230,7 @@ tests/_staged/internal/txn/opinion_path_test.go	internal/txn/opinion_path_test.g
 tests/_staged/internal/txn/recover_test.go	internal/txn/recover_test.go	evergreen	unit	go
 tests/_staged/internal/txn/safedir_test.go	internal/txn/safedir_test.go	evergreen	unit	go
 tests/_staged/internal/version/version_test.go	internal/version/version_test.go	evergreen	unit	go
+tests/_staged/scripts/migrate-storage-v3/migration_test.go	scripts/migrate-storage-v3/migration_test.go	evergreen	unit	go
 tests/_staged/skill/skill_test.go	skill/skill_test.go	evergreen	unit	go
 tests/_staged/test/e2e/index_symbol_judge_test.go	test/e2e/index_symbol_judge_test.go	evergreen	e2e	go
 tests/_staged/test/e2e/layout_test.go	test/e2e/layout_test.go	evergreen	e2e	go
@@ -322,6 +323,17 @@ tests/fixtures/e2e/ppe/raw-session/vault-snapshot/unprocessed.md	test/e2e/testda
 tests/fixtures/e2e/ppe/seed-k-20260918-scaling-compute.md	test/e2e/testdata/ppe/seed-k-20260918-scaling-compute.md	evergreen	fixtures	data
 tests/fixtures/e2e/ppe/session.md	test/e2e/testdata/ppe/session.md	evergreen	fixtures	data
 tests/fixtures/e2e/search-learning-limits.txt	test/e2e/testdata/search-learning-limits.txt	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/full-copy-manifest.json	test/e2e/testdata/storage-v3-migration/full-copy-manifest.json	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/manifest.json	test/e2e/testdata/storage-v3-migration/manifest.json	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/domains/demo/knowledge/k-20260901-legacy-opinion.md	test/e2e/testdata/storage-v3-migration/vault/domains/demo/knowledge/k-20260901-legacy-opinion.md	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/domains/demo/knowledge/k-20260901-migration-fact.md	test/e2e/testdata/storage-v3-migration/vault/domains/demo/knowledge/k-20260901-migration-fact.md	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/domains/demo/notes/n-20260901-migration.md	test/e2e/testdata/storage-v3-migration/vault/domains/demo/notes/n-20260901-migration.md	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/evergreen.yml	test/e2e/testdata/storage-v3-migration/vault/evergreen.yml	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/knowledge/k-20260901-migration-fact.md	test/e2e/testdata/storage-v3-migration/vault/migration-input/knowledge/k-20260901-migration-fact.md	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/note-template.md	test/e2e/testdata/storage-v3-migration/vault/migration-input/note-template.md	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/opinions/o-20260901-migration-opinion.md	test/e2e/testdata/storage-v3-migration/vault/migration-input/opinions/o-20260901-migration-opinion.md	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/migration-input/review-plan.json	test/e2e/testdata/storage-v3-migration/vault/migration-input/review-plan.json	evergreen	fixtures	data
+tests/fixtures/e2e/storage-v3-migration/vault/sources/s-20260901-migration.md	test/e2e/testdata/storage-v3-migration/vault/sources/s-20260901-migration.md	evergreen	fixtures	data
 tests/fixtures/e2e/verification-key-to-ai.txt	test/e2e/testdata/verification-key-to-ai.txt	evergreen	fixtures	data
 tests/lib/txnctl/commit.go	test/txnctl/commit.go	evergreen	lib	go
 tests/lib/txnctl/main.go	test/txnctl/main.go	evergreen	lib	go

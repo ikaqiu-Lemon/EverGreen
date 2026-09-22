@@ -1358,6 +1358,24 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: e2e.storage-v3-migration.migration
+  layer: e2e
+  capability: storage-v3-migration
+  kind: shell
+  target: tests/e2e/storage-v3-migration/migration.sh
+  source: tests/e2e/storage-v3-migration/migration.sh
+  origin: inventory
+  owner_task: T-evergreen.block_boundary_materialization-158614-008
+  profiles:
+  - core
+  - e2e
+  - full
+  timeout_s: 900
+  min_cases: 9
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: e2e.txn-atomicity.atomic_multifile
   layer: e2e
   capability: txn-atomicity
@@ -1940,6 +1958,26 @@ suites:
   - race
   timeout_s: 1200
   min_cases: 5
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+  exclude_cases: []
+- id: unit.scripts.migrate-storage-v3
+  layer: unit
+  capability: migration
+  kind: go
+  target: ./scripts/migrate-storage-v3
+  source: tests/_staged/scripts/migrate-storage-v3/*_test.go
+  origin: inventory
+  owner_task: T-evergreen.block_boundary_materialization-158614-008
+  profiles:
+  - core
+  - unit
+  - full
+  - race
+  timeout_s: 1200
+  min_cases: 4
   required: true
   platform_required: linux/amd64
   not_run_when: null
