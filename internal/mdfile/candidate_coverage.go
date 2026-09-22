@@ -37,6 +37,17 @@ type CandidateCoverage struct {
 	Reason      string
 }
 
+// CandidateCoverageState is the machine-managed tail following the last
+// candidate. Exactly one of Draft or Final is populated.
+type CandidateCoverageState struct {
+	Draft     []CandidateCoverage
+	Final     []ReviewCoverage
+	Finalized bool
+
+	start int
+	end   int
+}
+
 type candidateCoverageWire struct {
 	Module      string   `json:"module"`
 	SourceRefs  []string `json:"source_refs"`
@@ -244,4 +255,176 @@ func ParseCandidateCoverageMatrix(body []byte) ([]CandidateCoverage, error) {
 		return nil, fmt.Errorf("候选覆盖矩阵可见内容与机器锚点不一致（fail closed）")
 	}
 	return cov, nil
+}
+
+// ParseCandidateCoverageState reads the canonical draft or final coverage
+// block after the last candidate. A single trailing section-framing newline is
+// accepted but is not part of the managed block.
+func ParseCandidateCoverageState(raw []byte) (CandidateCoverageState, error) {
+	start, tail, err := candidateExtractionTail(raw)
+	if err != nil {
+		return CandidateCoverageState{}, err
+	}
+	if draft, rendered, ok, err := parseDraftCoveragePrefix(tail); err != nil {
+		return CandidateCoverageState{}, err
+	} else if ok {
+		return CandidateCoverageState{
+			Draft: draft,
+			start: start,
+			end:   start + len(rendered),
+		}, nil
+	}
+	final, rendered, ok, err := parseFinalCoverageTail(tail)
+	if err != nil {
+		return CandidateCoverageState{}, err
+	}
+	if !ok {
+		return CandidateCoverageState{}, fmt.Errorf(
+			"candidate 后缺 canonical 候选覆盖或最终覆盖")
+	}
+	return CandidateCoverageState{
+		Final:     final,
+		Finalized: true,
+		start:     start,
+		end:       start + len(rendered),
+	}, nil
+}
+
+// FinalizeCandidateExtraction replaces the draft coverage block with a
+// canonical final extraction payload. Repeating the exact final payload is a
+// byte-level no-op; any other finalized tail is treated as drift.
+func FinalizeCandidateExtraction(raw, final []byte) ([]byte, error) {
+	if len(final) == 0 || final[len(final)-1] != '\n' {
+		return nil, ErrPayloadNotLineTerminated
+	}
+	state, err := ParseCandidateCoverageState(raw)
+	if err != nil {
+		return nil, err
+	}
+	current := raw[state.start:state.end]
+	if state.Finalized {
+		if !bytes.Equal(current, final) {
+			return nil, fmt.Errorf("已物化 candidate 的最终提取结果发生漂移")
+		}
+		return append([]byte(nil), raw...), nil
+	}
+	out := make([]byte, 0, len(raw)-(state.end-state.start)+len(final))
+	out = append(out, raw[:state.start]...)
+	out = append(out, final...)
+	out = append(out, raw[state.end:]...)
+	got, err := ParseCandidateCoverageState(out)
+	if err != nil {
+		return nil, fmt.Errorf("candidate 最终提取结果替换后自检失败：%w", err)
+	}
+	if !got.Finalized || !bytes.Equal(out[got.start:got.end], final) {
+		return nil, fmt.Errorf("candidate 最终提取结果替换后字节不一致")
+	}
+	return out, nil
+}
+
+func candidateExtractionTail(raw []byte) (int, []byte, error) {
+	candidates, err := ParseCandidates(raw)
+	if err != nil {
+		return 0, nil, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil, fmt.Errorf("Note 不含 candidate")
+	}
+	doc, err := Parse(raw)
+	if err != nil {
+		return 0, nil, err
+	}
+	extraction, ok := doc.Section(SecExtraction)
+	if !ok {
+		return 0, nil, fmt.Errorf("Note 缺分区「%s」", SecExtraction)
+	}
+	start := candidates[len(candidates)-1].End
+	if start >= extraction.End {
+		return 0, nil, fmt.Errorf("candidate 后缺覆盖状态")
+	}
+	return start, raw[start:extraction.End], nil
+}
+
+func parseDraftCoveragePrefix(tail []byte) ([]CandidateCoverage, []byte, bool, error) {
+	if !bytes.HasPrefix(tail, []byte(candidateCoverageHeading+"\n")) {
+		return nil, nil, false, nil
+	}
+	var items []CandidateCoverage
+	for _, line := range bytes.Split(tail, []byte("\n")) {
+		if !isCandidateCoverageAnchorLine(line) {
+			continue
+		}
+		item, err := decodeCandidateCoverageAnchor(line)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return nil, nil, false, fmt.Errorf(
+			"候选覆盖矩阵缺机器锚点（%s）", candidateCoverageAnchorTag)
+	}
+	rendered, err := RenderCandidateCoverageMatrix(items)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if err := matchManagedTail(tail, rendered); err != nil {
+		return nil, nil, false, err
+	}
+	return items, rendered, true, nil
+}
+
+func parseFinalCoverageTail(tail []byte) ([]ReviewCoverage, []byte, bool, error) {
+	needle := []byte(coverageHeading + "\n")
+	at := -1
+	for from := 0; from < len(tail); {
+		i := bytes.Index(tail[from:], needle)
+		if i < 0 {
+			break
+		}
+		i += from
+		if i == 0 || tail[i-1] == '\n' {
+			at = i
+			break
+		}
+		from = i + 1
+	}
+	if at < 0 {
+		return nil, nil, false, nil
+	}
+	var items []ReviewCoverage
+	for _, line := range bytes.Split(tail[at:], []byte("\n")) {
+		if !isCoverageAnchorLine(line) {
+			continue
+		}
+		item, err := decodeCoverageAnchor(line)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		items = append(items, item)
+	}
+	if len(items) == 0 {
+		return nil, nil, false, fmt.Errorf(
+			"最终覆盖矩阵缺机器锚点（%s）", coverageAnchorTag)
+	}
+	matrix, err := RenderCoverageMatrix(items)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	rendered := append(append([]byte(nil), tail[:at]...), matrix...)
+	if err := matchManagedTail(tail, rendered); err != nil {
+		return nil, nil, false, err
+	}
+	return items, rendered, true, nil
+}
+
+func matchManagedTail(tail, rendered []byte) error {
+	if !bytes.HasPrefix(tail, rendered) {
+		return fmt.Errorf("candidate 覆盖可见内容与机器锚点不一致（fail closed）")
+	}
+	rest := tail[len(rendered):]
+	if len(rest) != 0 && !bytes.Equal(rest, []byte("\n")) {
+		return fmt.Errorf("candidate 覆盖之后含非 canonical 内容")
+	}
+	return nil
 }

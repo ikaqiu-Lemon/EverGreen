@@ -414,6 +414,114 @@ func TestCandidateCoverageFailClosed(t *testing.T) {
 	}
 }
 
+func TestReplaceCandidateOutputsPreservesCandidateAndNoteBytes(t *testing.T) {
+	k := candidateDraft("cand-k", CandidateKindKnowledge, "知识候选")
+	o := candidateDraft("cand-o", CandidateKindOpinion, "观点候选")
+	kb, _ := RenderCandidateDraft(k)
+	ob, _ := RenderCandidateDraft(o)
+	coverage, err := RenderCandidateCoverageMatrix([]CandidateCoverage{{
+		Module: "m-1", SourceRefs: []string{"L1-L4"}, Summary: "候选模块",
+		Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-k", "cand-o"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := candidateNote(kb, ob, coverage)
+	before, err := ParseCandidates(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := ReplaceCandidateOutputs(raw, map[string]string{
+		"cand-k": "k-20260922-knowledge",
+		"cand-o": "o-20260922-opinion",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := ParseCandidates(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 2 || after[0].Anchor.Output != "k-20260922-knowledge" ||
+		after[1].Anchor.Output != "o-20260922-opinion" {
+		t.Fatalf("output 映射未写入：%+v", after)
+	}
+	for i := range before {
+		if !bytes.Equal(before[i].Raw(raw), after[i].Raw(out)) {
+			t.Fatalf("candidate[%d] H3/payload 被改写", i)
+		}
+	}
+	for _, marker := range []string{"原文不动。", "保留。", "用户文字。"} {
+		if bytes.Count(out, []byte(marker)) != 1 {
+			t.Fatalf("Note 非机器管理正文未逐字保留：%s", marker)
+		}
+	}
+	if _, err := ReplaceCandidateOutputs(out,
+		map[string]string{"cand-k": "k-20260923-other"}); err == nil {
+		t.Fatal("已有 output 不得改写成另一 ID")
+	}
+}
+
+func TestCandidateCoverageStateAndFinalization(t *testing.T) {
+	d := candidateDraft("cand-final", CandidateKindKnowledge, "最终候选")
+	d.Output = "k-20260922-final"
+	body, err := RenderCandidateDraft(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draftCoverage := []CandidateCoverage{{
+		Module: "m-1", SourceRefs: []string{"L1-L4"}, Summary: "候选模块",
+		Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-final"},
+	}}
+	matrix, err := RenderCandidateCoverageMatrix(draftCoverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := candidateNote(body, matrix)
+	state, err := ParseCandidateCoverageState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Finalized || len(state.Draft) != 1 {
+		t.Fatalf("应识别为草稿覆盖：%+v", state)
+	}
+
+	finalCoverage := []ReviewCoverage{{
+		Module: "m-1", SourceRefs: []string{"L1-L4"}, Summary: "候选模块",
+		Disposition: CoverageDispOutputs, Outputs: []string{"k-20260922-final"},
+	}}
+	finalMatrix, err := RenderCoverageMatrix(finalCoverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	final := append([]byte("### Knowledge\n\n- k-20260922-final\n\n"), finalMatrix...)
+	out, err := FinalizeCandidateExtraction(raw, final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseCandidateCoverageState(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Finalized || len(got.Final) != 1 ||
+		got.Final[0].Outputs[0] != "k-20260922-final" {
+		t.Fatalf("应识别为最终覆盖：%+v", got)
+	}
+	again, err := FinalizeCandidateExtraction(out, final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(again, out) {
+		t.Fatal("相同最终提取结果重跑必须字节级 no-op")
+	}
+	drifted := bytes.Replace(out, []byte("- k-20260922-final"),
+		[]byte("- k-20260922-other"), 1)
+	if _, err := FinalizeCandidateExtraction(drifted, final); err == nil {
+		t.Fatal("最终 output list 漂移必须 fail closed")
+	}
+}
+
 func FuzzCandidateParser(f *testing.F) {
 	body, err := RenderCandidateDraft(candidateDraft(
 		"cand-fuzz", CandidateKindKnowledge, "Fuzz 候选"))

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
@@ -42,7 +41,7 @@ func parseCandidateDrafts(opIndex int, value interface{}) ([]CandidateDraft, []D
 		draft := CandidateDraft{}
 		draft.Key, _ = asString(m["key"])
 		kind, _ := asString(m["kind"])
-		draft.Kind = mdfile.CandidateKind(kind)
+		draft.Kind = store.CandidateKind(kind)
 		draft.Title, _ = asString(m["title"])
 		draft.Rel, _ = asString(m["rel"])
 		draft.Reason, _ = asString(m["reason"])
@@ -257,7 +256,7 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 				Name: section.Name, Body: lineTerminated(section.Body),
 			}
 		}
-		if _, err := mdfile.RenderCandidateDraft(renderDrafts[i]); err != nil {
+		if _, err := store.CandidateDraftOneBytes(renderDrafts[i]); err != nil {
 			v.add(errorAt(E2, op.Index, path, "candidate draft 不成立：%v", err))
 			ok = false
 		}
@@ -296,7 +295,7 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 			ok = false
 		}
 		switch c.Disposition {
-		case mdfile.CandidateCoverageCandidate:
+		case store.CandidateCoverageCandidate:
 			if len(c.Candidates) == 0 {
 				v.add(errorAt(E2, op.Index, path+".candidates",
 					"disposition=candidate 必须引用至少一个 candidate key"))
@@ -317,7 +316,7 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 					referencedCurrent[key] = true
 				}
 			}
-		case mdfile.CandidateCoverageNoteOnly, mdfile.CandidateCoverageUnresolved:
+		case store.CandidateCoverageNoteOnly, store.CandidateCoverageUnresolved:
 			if len(c.Candidates) != 0 {
 				v.add(errorAt(E2, op.Index, path+".candidates",
 					"disposition=%s 不得带 candidates", c.Disposition))
@@ -375,7 +374,7 @@ func (v *validator) existingCandidateKeys(op *Op) (map[string]bool, map[string]b
 	if !exists {
 		return all, current, true
 	}
-	candidates, err := mdfile.ParseCandidates(raw)
+	candidates, err := store.ParseCandidates(raw)
 	if err != nil {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "note_id"),
 			"目标 Note 的既有 candidate 无法严格读回：%v", err))

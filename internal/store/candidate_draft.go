@@ -11,6 +11,29 @@ import (
 type CandidateDraft = mdfile.CandidateDraft
 type CandidateDraftSection = mdfile.CandidateDraftSection
 type CandidateCoverage = mdfile.CandidateCoverage
+type Candidate = mdfile.Candidate
+type CandidateKind = mdfile.CandidateKind
+type ReviewCoverage = mdfile.ReviewCoverage
+
+const (
+	CandidateKindKnowledge = mdfile.CandidateKindKnowledge
+	CandidateKindOpinion   = mdfile.CandidateKindOpinion
+
+	CandidateCoverageCandidate  = mdfile.CandidateCoverageCandidate
+	CandidateCoverageNoteOnly   = mdfile.CandidateCoverageNoteOnly
+	CandidateCoverageUnresolved = mdfile.CandidateCoverageUnresolved
+)
+
+// CandidateDraftOneBytes forwards the canonical Markdown renderer so plan
+// does not bypass the package dependency boundary.
+func CandidateDraftOneBytes(draft CandidateDraft) ([]byte, error) {
+	return mdfile.RenderCandidateDraft(draft)
+}
+
+// ParseCandidates forwards the candidate parser through store.
+func ParseCandidates(raw []byte) ([]Candidate, error) {
+	return mdfile.ParseCandidates(raw)
+}
 
 // CandidateDraftBytes renders candidate drafts followed by their separate
 // draft coverage matrix. It never emits final output lists or final coverage.
