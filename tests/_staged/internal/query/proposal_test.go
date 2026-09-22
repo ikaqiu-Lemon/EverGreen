@@ -203,7 +203,7 @@ func TestContext_ProposalSummaryOnly(t *testing.T) {
 		t.Fatalf("ProposalSummary 字段 = %v，期望恰 ID / Path / Title / Targets", fields)
 	}
 
-	// ④ 提案不进 Base（不是本次知识加工会改的文件），也不进 Cards / Candidates。
+	// ④ 提案不进 Base（不是本次知识加工会改的文件），也不进 Cards / KnowledgeCandidates。
 	for p := range ctx.Base {
 		if query.IsProposalPath(p) {
 			t.Fatalf("提案不得进 base：%s", p)
@@ -214,7 +214,7 @@ func TestContext_ProposalSummaryOnly(t *testing.T) {
 			t.Fatalf("提案不得进同领域卡列表：%+v", c)
 		}
 	}
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		if strings.HasPrefix(c.ID, "p-") || query.IsProposalPath(c.Path) {
 			t.Fatalf("提案不得进候选相似卡：%+v", c)
 		}
@@ -225,15 +225,10 @@ func TestContext_ProposalSummaryOnly(t *testing.T) {
 	if bctx.Proposals == nil || len(bctx.Proposals) != 0 {
 		t.Fatalf("无 proposals/ 时摘要必须是空数组，实得 %#v", bctx.Proposals)
 	}
-	// 缺提案目录不是「结果不完整」：**不产生任何 Q 系列诊断**。唯一应在的诊断是 D-3 的
-	// candidates 弃用提示 I1（info，query.Context.Diagnostics 无条件产出恰一条）。
-	if got := diagsByCode(bctx, query.CodeI1); len(got) != 1 || got[0].Level != query.DiagLevelInfo {
-		t.Fatalf("无 proposals/ 时应恰有一条 I1 info，实得 %v", diagCodeSeq(bctx))
-	}
-	for _, code := range diagCodeSeq(bctx) {
-		if code != query.CodeI1 {
-			t.Fatalf("无 proposals/ 时除 I1 外不得产生任何诊断（尤其无 Q 系列），实得 %v", diagCodeSeq(bctx))
-		}
+	// 缺提案目录不是「结果不完整」：不产生任何诊断。m8 已同时删除
+	// legacy candidates 与其无条件弃用 I1。
+	if len(bctx.Diagnostics) != 0 {
+		t.Fatalf("无 proposals/ 时不得产生任何诊断，实得 %v", diagCodeSeq(bctx))
 	}
 }
 

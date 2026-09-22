@@ -57,12 +57,10 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 		"source":                  ctx.Source,
 		"notes":                   ctx.Notes,
 		"cards":                   ctx.Cards,
-		// D-3：candidates 兼容字段（≡ knowledge_candidates）与拆分后的双候选字段同时输出。
-		// 三者都恒是数组（query 侧已初始化空切片），调用方读哪个都拿到数组而非 null。
-		"candidates":           ctx.Candidates,
-		"knowledge_candidates": ctx.KnowledgeCandidates,
-		"opinion_candidates":   ctx.OpinionCandidates,
-		"base":                 ctx.Base,
+		"draft_candidates":        ctx.DraftCandidates,
+		"knowledge_candidates":    ctx.KnowledgeCandidates,
+		"opinion_candidates":      ctx.OpinionCandidates,
+		"base":                    ctx.Base,
 		// M3（T-…-033）：提案控制面**只给摘要**——每项仅 id / path / title / targets，
 		// 供 Agent 判断「同一件事是否已有在办提案」以免重复提案；提案正文七分区一律不出，
 		// 提案也不进 cards / candidates / base（提案不是知识数据，见提案合同 §10.3）。
@@ -82,11 +80,8 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 				"只供回读原始提炼，不参与知识收敛、不进候选相似卡（EG-NOTE-04）", domain, len(ctx.Notes)),
 		})
 	}
-	// query 只读诊断（M2 合同 §5）原样透出：Q 系列的「扫不动 / 结果不完整」（warning）
-	// 与 D-3 的 candidates 弃用提示 I1（info）同源于 ctx.Diagnostics。**逐条保留 d.Level**——
-	// 绝不把 info 硬编码成 warning：--json 的 warnings[] 与纯文本输出同源同事实，
-	// 缺失结果绝不能看起来像完整结果，弃用提示也不能被误读成告警。Q 类一律不影响退出码
-	// （context 仍退 0）。I1 由 query 侧无条件产出恰一条，CLI 不再各造一份。
+	// query 只读诊断（M2 合同 §5）原样透出。Q 类一律不影响退出码
+	// （context 仍退 0），但不可解析的 candidate 协议不会被静默忽略。
 	for _, d := range ctx.Diagnostics {
 		res.Warnings = append(res.Warnings, Diagnostic{
 			Code: d.Code, Level: d.Level, Path: d.Path, OpIndex: NonOpDiagnostic,
@@ -94,11 +89,12 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 		})
 	}
 	res.Summary = append(res.Summary, fmt.Sprintf(
-		"context：领域 %s，材料笔记 %d 篇，同领域 active 卡 %d 张，知识候选 %d 张，观点候选 %d 条，base %d 项（只读，零写入零 commit）",
-		ctx.Domain, len(ctx.Notes), len(ctx.Cards),
-		len(ctx.KnowledgeCandidates), len(ctx.OpinionCandidates), len(ctx.Base)))
+		"context：领域 %s，材料笔记 %d 篇，草稿候选 %d 个，同领域 active 卡 %d 张，知识候选 %d 张，观点候选 %d 条，base %d 项（只读，零写入零 commit）",
+		ctx.Domain, len(ctx.Notes), len(ctx.DraftCandidates), len(ctx.Cards),
+		len(ctx.KnowledgeCandidates),
+		len(ctx.OpinionCandidates), len(ctx.Base)))
 	// 知识候选与观点候选两块**分别**逐项渲染，与 --json 的 knowledge_candidates /
-	// opinion_candidates 同源同事实；兼容字段 candidates 不再单独渲染一遍（它 ≡ 知识候选）。
+	// opinion_candidates 同源同事实；草稿候选保持独立，不混入两类已物化候选。
 	res.Summary = append(res.Summary, candidateLines(knowledgeCandidatePrefix, ctx.KnowledgeCandidates)...)
 	res.Summary = append(res.Summary, candidateLines(opinionCandidatePrefix, ctx.OpinionCandidates)...)
 	res.Summary = append(res.Summary, proposalLines(ctx.Proposals)...)

@@ -581,19 +581,14 @@ grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/index/" |
 printf 'W22\nW23\nW24\n' >"${WORK}/want_codes_m5.txt"
 diff -u "${WORK}/want_codes_m5.txt" "${WORK}/codes_m5.txt" ||
   die "internal/index 的 M5 码集合与索引合同 §9 不逐字相等（Q5 属 T-…-067，未落地即不许出现）"
-# M5 第四域：`internal/query` 恰 7 值 —— Q1–Q5（检索诊断，Q5 = 降级读，T-…-067）
-# 与 W25（结果被 --limit 截断，T-…-068 分页合同），外加 base 码 I1（候选去重弃用提示）。
-# ── C2·Phase6E 现态重钉（commit 543dbfc「sink candidates-deprecation I1 into query diagnostics」把
-#    候选弃用信息级码 I1 下沉到 `internal/query/diagnostic.go`；I1 属 base 23 值全集、其 base 侧定义仍在
-#    `internal/plan`（base 组已从 plan 取得，query 被 --exclude-dir 排除故不影响 base 恰 23 值），此处只是
-#    query 域**复用**该 base 码。故按实测把 query 域等号从 6 值扩为 7 值，显式登记 I1；双侧仍精确 ——
-#    多一个码、少一个码都当场红，加严不放宽）──
+# M5 第四域：`internal/query` 在 Storage v3 m8 后恰 6 值 —— Q1–Q5（检索诊断，
+# Q5 = 降级读）与 W25（结果被 --limit 截断）。D-3 的 candidates 弃用 I1 已随字段删除。
 grep -rhoE '"(E|W|I|Q)[0-9]+"' "${REPO_ROOT}/internal/query/" |
   tr -d '"' | sort -u >"${WORK}/codes_m5_query.txt"
-printf 'I1\nQ1\nQ2\nQ3\nQ4\nQ5\nW25\n' | sort -u >"${WORK}/want_codes_m5_query.txt"
+printf 'Q1\nQ2\nQ3\nQ4\nQ5\nW25\n' | sort -u >"${WORK}/want_codes_m5_query.txt"
 diff -u "${WORK}/want_codes_m5_query.txt" "${WORK}/codes_m5_query.txt" ||
-  die "internal/query 的 M5 码集合与检索/分页合同不逐字相等（应恰 Q1–Q5 + W25 + base 复用码 I1）"
-[ "$(wc -l <"${WORK}/codes_m5_query.txt" | tr -d ' ')" = "7" ] || die "internal/query 码不是恰 7 值"
+  die "internal/query 的码集合与检索/分页合同不逐字相等（应恰 Q1–Q5 + W25）"
+[ "$(wc -l <"${WORK}/codes_m5_query.txt" | tr -d ' ')" = "6" ] || die "internal/query 码不是恰 6 值"
 # 反向封闭：W25 只许落在 query 域（reconcile / index / 其余包内恒 0），
 # 且 index 域不得出现任何 Q 码之外的越界（W22–W24 的等号已在上一格锁死）。
 N="$( { grep -rn '"W25"' --exclude-dir=query "${REPO_ROOT}/internal/" || true; } | wc -l | tr -d ' ')"
@@ -614,7 +609,7 @@ printf 'W27\n' >"${WORK}/want_codes_m6_mdfile.txt"
 diff -u "${WORK}/want_codes_m6_mdfile.txt" "${WORK}/codes_m6_mdfile.txt" ||
   die "internal/mdfile 的 M6 码集合与块级合并合同 §7 不逐字相等（应恰 W27）"
 [ "$(wc -l <"${WORK}/codes_m6_mdfile.txt" | tr -d ' ')" = "1" ] || die "internal/mdfile 码不是恰 1 值"
-ok "④-1 码集合八域等号：非 reconcile/index/query/txn/mdfile 且剔除 plan 越界码后恰 23 值（E1–E10 + W1–W12 + I1）/ reconcile 恰 13 值（E11–E14 + W13–W20 + A-62 W29）/ index 恰 3 值（W22–W24）/ query 恰 7 值（Q1–Q5 + W25 + base 复用码 I1，且 W25 域外恒 0）/ txn 恰 4 值（E15/E16/W26/W28）/ mdfile 恰 1 值（W27）/ cli/codes.go 恰 9 值（E17–E25）/ plan 越 base 恰 1 值（W21）"
+ok "④-1 码集合八域等号：非 reconcile/index/query/txn/mdfile 且剔除 plan 越界码后恰 23 值（E1–E10 + W1–W12 + I1）/ reconcile 恰 13 值（E11–E14 + W13–W20 + A-62 W29）/ index 恰 3 值（W22–W24）/ query 恰 6 值（Q1–Q5 + W25，且 W25 域外恒 0）/ txn 恰 4 值（E15/E16/W26/W28）/ mdfile 恰 1 值（W27）/ cli/codes.go 恰 9 值（E17–E25）/ plan 越 base 恰 1 值（W21）"
 
 step "④ grep 组 2：越界编号（reconcile 外 E11+ / W13+ / I2+；reconcile 内 E15+ / W21–W28 / W30+ / I2+）零命中"
 # ── C2a·M6 现态重钉：M6 把 E15/E16 发放给 `internal/txn`（已在上一格由封闭等号逐字锁死为恰 {E15,E16,W26,W28}）。

@@ -79,14 +79,14 @@ func TestOpinionSubcommandsExactlyFour(t *testing.T) {
 	}
 }
 
-// —— ② --help 恰列 23 条，且 opinion 恰一行 ——
+// —— ② 当前 --help 恰列 25 条，且 opinion 恰一行 ——
 
 func TestOpinionAppearsInHelpExactlyOnce(t *testing.T) {
 	r := New()
 	help := r.Usage()
 	block := helpCommandBlock(t, help)
-	if len(block) != 23 {
-		t.Fatalf("--help 命令区 = %d 行，期望 23（22 + opinion）", len(block))
+	if len(block) != 25 {
+		t.Fatalf("--help 命令区 = %d 行，期望 25（23 + Storage v3 两条）", len(block))
 	}
 	n := 0
 	for _, line := range block {
@@ -112,6 +112,7 @@ func TestCommandCountTwentyThree(t *testing.T) {
 		"reconcile", "check", "index", "bench",
 	}
 	added := []string{"opinion"} // T-…-006 批次 B1a：读路径 opinion 命令。
+	laterAdded := []string{"materialize", "export"}
 
 	if len(m5Terminal) != 22 {
 		t.Fatalf("M5 终值清单写错了：%d 条，M5 收口时恰 22 条", len(m5Terminal))
@@ -120,22 +121,22 @@ func TestCommandCountTwentyThree(t *testing.T) {
 		t.Fatalf("加法等式不成立：%d + %d = %d，期望 23（设计 §5.4 命令名册）",
 			len(m5Terminal), len(added), want)
 	}
-	if len(m5Terminal)+len(added) != wantCommandCount {
-		t.Fatalf("M5 终值 %d + B1a 新增 %d 与 wantCommandCount = %d 不一致",
-			len(m5Terminal), len(added), wantCommandCount)
+	if len(m5Terminal)+len(added)+len(laterAdded) != wantCommandCount {
+		t.Fatalf("M5 终值 %d + B1a 新增 %d + Storage v3 新增 %d 与 wantCommandCount = %d 不一致",
+			len(m5Terminal), len(added), len(laterAdded), wantCommandCount)
 	}
 
 	got := New().Commands()
-	if len(got) != 23 {
-		t.Fatalf("注册命令数 = %d，期望 23", len(got))
+	if len(got)-len(laterAdded) != 23 {
+		t.Fatalf("摘掉 Storage v3 后注册命令数 = %d，期望 23", len(got)-len(laterAdded))
 	}
 	for i, w := range m5Terminal {
 		if got[i].Name != w {
 			t.Fatalf("第 %d 条命令 = %q，期望 %q（只准在尾部追加，不准重排既有条目）", i+1, got[i].Name, w)
 		}
 	}
-	if got[len(got)-1].Name != "opinion" {
-		t.Fatalf("注册表尾条 = %q，期望 %q（新命令一律追加在尾部）", got[len(got)-1].Name, "opinion")
+	if got[len(m5Terminal)].Name != "opinion" {
+		t.Fatalf("Storage v3 之前的注册表尾条 = %q，期望 %q", got[len(m5Terminal)].Name, "opinion")
 	}
 	// opinion 已注册且挂上壳处理器（注册面须等于挂载面）；四个子命令均已接通，仅未知子命令兜底 NotWired。
 	cmd := New().Lookup("opinion")

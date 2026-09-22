@@ -104,9 +104,9 @@ grep -Fq '"reasons":[]' "${WORK}/ctx1.json" && die "候选卡的理由不得为�
 grep -Fq '命中卡的 title 字段' "${WORK}/ctx1.json" || die "缺 title 来源的命中理由"
 grep -Fq '命中卡的 tags 字段' "${WORK}/ctx1.json" || die "缺 tags 来源的命中理由"
 grep -Fq 'k-20260901-z' "${WORK}/ctx1.json" &&
-  grep -q '"candidates":\[[^]]*k-20260901-z' "${WORK}/ctx1.json" &&
+  grep -q '"knowledge_candidates":\[[^]]*k-20260901-z' "${WORK}/ctx1.json" &&
   die "零命中的卡不得进候选"
-grep -q '"candidates":\[[^]]*k-20260901-old' "${WORK}/ctx1.json" && die "deprecated 卡不得进候选"
+grep -q '"knowledge_candidates":\[[^]]*k-20260901-old' "${WORK}/ctx1.json" && die "deprecated 卡不得进候选"
 
 eg context --source "${SRC}" >"${WORK}/ctx.txt" 2>"${WORK}/ctx.err"
 grep -Fq '得分 ' "${WORK}/ctx.txt" || { cat "${WORK}/ctx.txt"; die "文本模式必须逐张打印得分"; }

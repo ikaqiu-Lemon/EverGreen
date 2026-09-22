@@ -1,6 +1,6 @@
 # Install Evergreen
 
-This guide installs and exercises Evergreen `eg` version `0.7.0-m7`.
+This guide installs and exercises Evergreen `eg` version `0.8.0-m8`.
 
 ## Requirements
 
@@ -116,11 +116,15 @@ compatibility/validation digest):
 - **Index `schema_version`.** The derived index carries `schema_version = 2`
   and still holds six tables. There is no incremental migration: on a version
   mismatch the whole index is discarded and rebuilt from Markdown.
-- **`eg context` candidates.** The context envelope now returns
-  `knowledge_candidates` and `opinion_candidates`. The legacy `candidates`
-  field stays for 0.7.x compatibility (always equal to `knowledge_candidates`);
-  `eg context` unconditionally emits exactly one `I1` deprecation info for it,
-  and it is **removed in 0.8.0**.
+- **`eg context` candidates.** The context envelope returns
+  `draft_candidates`, `knowledge_candidates`, and `opinion_candidates`.
+  `draft_candidates` projects Note-embedded draft/materialized mappings without
+  mixing them into already-materialized search candidates. Version `0.8.0-m8`
+  removes the legacy `candidates` alias and its deprecation `I1`.
+- **Storage v3 commands.** `eg materialize --note <n-id>
+  (--candidate <cand-key> | --all) --user-request` copies exact candidate bytes
+  into Knowledge/Opinion through journal v1. `eg export --plain --output <dir>`
+  creates a read-only egress copy without Evergreen protocol anchors.
 - **Four learning entities, two domain directories.** Source (`s-*`),
   Note (`n-*`), Knowledge (`k-*` under `domains/<d>/knowledge/`) and Opinion
   (`o-*` under `domains/<d>/opinions/`); `Proposal` (`p-*`) is a control plane,
@@ -198,7 +202,7 @@ transaction journal（事务日志）. `W21` remains unassigned（不分配）.
 
 ## Command roster
 
-Evergreen exposes 23 top-level commands（顶层命令共 23 条）. Run `eg <command> --help`
+Evergreen exposes 25 top-level commands（顶层命令共 25 条）. Run `eg <command> --help`
 for the authoritative flags and exit codes; the table below is the post-install
 roster you can verify against `eg --help`.
 
@@ -207,8 +211,8 @@ roster you can verify against `eg --help`.
 | `eg init` | Initialize a Git-backed vault |
 | `eg config` | Read/write `default_domain` / `domains` |
 | `eg capture` | Record a source and register the inbox |
-| `eg context` | Read-only processing context (`knowledge_candidates` + `opinion_candidates` + legacy `candidates` + base hashes) |
-| `eg apply` | Apply a ChangePlan — the only write channel |
+| `eg context` | Read-only processing context (`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + base hashes) |
+| `eg apply` | Apply a ChangePlan |
 | `eg search` | Ranked, paginated card search |
 | `eg card` | `eg card show <k-id>`: single card view |
 | `eg rel` | Argument relationships (and `--replaced-by` pointers) |
@@ -227,6 +231,8 @@ roster you can verify against `eg --help`.
 | `eg index` | Build/rebuild/status/sync the derived index |
 | `eg bench` | Read-only performance sampling (five metrics) |
 | `eg opinion` | Opinion subsystem: `search`/`show` (read-only) + `validate`/`reject` (user-initiated validation lifecycle, `--user-request` mandatory, single-file `verb=process` commit) |
+| `eg materialize` | User-initiated deterministic Note candidate materialization |
+| `eg export` | `eg export --plain`: plain Markdown egress outside the vault |
 
 ## Runtime directories
 

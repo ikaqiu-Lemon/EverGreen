@@ -92,6 +92,9 @@ var contractUnregisteredFlags = map[string]string{
 	// --reopen，避免再加命令」。本判据只读 M1~M3 的四份冻结合同，观点 schema 设计不在其中，
 	// 故与 include-deleted / include-deprecated / kind 同例具名登记，不整体放宽其余参数的逐字可查判据。
 	"reopen": "观点 schema v2 设计 §6.1 状态机复议边 + §6.2「复用 eg opinion validate --reopen」（M1~M3 冻结合同表未给出参数名）",
+	"all":    "Storage v3 正式合同 D6.1：eg materialize --all",
+	"output": "Storage v3 正式合同 D6.1：eg export --output <dir>",
+	"plain":  "Storage v3 正式合同 D6.1：eg export --plain",
 }
 
 // 命令展示名（S1 九命令按合同 §1 表格行序，之后是 M3 的三条用户显式状态命令，T-…-039）。
@@ -135,6 +138,9 @@ var wantCommands = []string{
 	// 子命令**恰四个** search|show|validate|reject，由 TestOpinionSubcommandsExactlyFour
 	// 正面钉住；本批四条均为未实现骨架，参数面恰 [--json]（无命令私有 flag）。
 	"opinion search|show|validate|reject",
+	// Storage v3 B4：确定性物化与 plain export 两条顶层命令追加在尾部。
+	"materialize",
+	"export",
 }
 
 // wantCommandCount 是注册命令总数：S1 九条 + M3 状态三条（deprecate / restore / replaced-by）
@@ -157,7 +163,8 @@ var wantCommands = []string{
 // + 读路径 opinion 命令一条（opinion，T-…-006 批次 B1a）：22 → 23（设计 §5.4 名册）。
 // 加法等式 22 + 1 = 23 由 TestCommandCountTwentyThree 逐项复算；终值 22 那一格
 // **原样保留**在 TestCommandCountTwentyTwo 里（它改证「摘掉 opinion 后恰 22」，结论不删）。
-const wantCommandCount = 23
+// + Storage v3 B4 两条（materialize / export）：23 → 25。
+const wantCommandCount = 25
 
 // 每个命令的 flag 集合（逐项对齐合同 §1.1–§1.9；全局 flag 另计）。
 var wantFlags = map[string][]string{
@@ -225,7 +232,9 @@ var wantFlags = map[string][]string{
 	// reject 拒全部读 flag + reopen 但**必带**非空 --reason，validate 拒全部读 flag、**接受** --reopen
 	// 但仍必带非空 --reason，绝不静默接受 ——「参数写了却不生效」比报错更坏。--reason 的合同出处与
 	// delete / proposal / capture 同源；--reopen 的合同出处为观点 schema v2 设计 §6.1/§6.2。
-	"opinion": {"domain", "tag", "since", "until", "include-deleted", "include-deprecated", "limit", "offset", "reason", "reopen"},
+	"opinion":     {"domain", "tag", "since", "until", "include-deleted", "include-deprecated", "limit", "offset", "reason", "reopen"},
+	"materialize": {"note", "candidate", "all", "strict"},
+	"export":      {"plain", "output"},
 }
 
 var globalFlagNames = []string{"json", "vault", "help", "h"}
@@ -1079,20 +1088,23 @@ func TestCommandCountNineteen(t *testing.T) {
 	// T-…-006 批次 B1a 追加的命令名：同理摘掉后再复算 19。
 	// **19 这个历史结论一个字不删**，只是「要摘掉的后来者」从三条变成四条。
 	const m5LaterAdded3 = "opinion"
+	const storageV3LaterAdded1 = "materialize"
+	const storageV3LaterAdded2 = "export"
 
 	if len(m3Baseline) != 18 {
 		t.Fatalf("M3 基线清单写错了：%d 条，M3 收口时恰 18 条", len(m3Baseline))
 	}
-	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1; want != wantCommandCount {
-		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）+ 1（006-B1a 的 %s）= %d，"+
+	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1 + 1 + 1; want != wantCommandCount {
+		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）+ 1（006-B1a 的 %s）+ 1（Storage v3 的 %s）+ 1（Storage v3 的 %s）= %d，"+
 			"但 wantCommandCount = %d",
-			len(m3Baseline), m4AddedCount, m4LaterAdded, m5LaterAdded, m5LaterAdded2, m5LaterAdded3, want, wantCommandCount)
+			len(m3Baseline), m4AddedCount, m4LaterAdded, m5LaterAdded, m5LaterAdded2,
+			m5LaterAdded3, storageV3LaterAdded1, storageV3LaterAdded2, want, wantCommandCount)
 	}
 
 	got := New().Commands()
-	if len(got)-4 != 19 {
-		t.Fatalf("摘掉后来新增的 %q / %q / %q / %q 后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
-			m4LaterAdded, m5LaterAdded, m5LaterAdded2, m5LaterAdded3, len(got)-4)
+	if len(got)-6 != 19 {
+		t.Fatalf("摘掉六条后来新增命令后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
+			len(got)-6)
 	}
 
 	// ③ 前 18 条逐字等于 M3 基线（次序与名称都不许动）。
@@ -1109,7 +1121,9 @@ func TestCommandCountNineteen(t *testing.T) {
 	}
 	var added []string
 	for _, c := range got {
-		if base[c.Name] || c.Name == m4LaterAdded || c.Name == m5LaterAdded || c.Name == m5LaterAdded2 || c.Name == m5LaterAdded3 {
+		if base[c.Name] || c.Name == m4LaterAdded || c.Name == m5LaterAdded ||
+			c.Name == m5LaterAdded2 || c.Name == m5LaterAdded3 ||
+			c.Name == storageV3LaterAdded1 || c.Name == storageV3LaterAdded2 {
 			continue
 		}
 		added = append(added, c.Name)
@@ -1164,7 +1178,7 @@ func TestCommandCountTwenty(t *testing.T) {
 	// M5 期新增命令名：本用例只负责 M4 收口那一条等式，摘掉后再复算 20。
 	// T-…-068 追加 `bench`、T-…-006-B1a 追加 `opinion` 后这份清单从一条变三条 ——
 	// **20 这个 M4 收口结论一个字不删**。
-	m5Added := []string{"index", "bench", "opinion"}
+	m5Added := []string{"index", "bench", "opinion", "materialize", "export"}
 
 	want := len(m3Baseline) + len(m4Added)
 	if want != 20 {

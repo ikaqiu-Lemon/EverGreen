@@ -36,7 +36,7 @@ func materializeTxnStamp(t *testing.T, raw string) model.Stamp {
 
 func materializeTxnFixture(t *testing.T) (string, string) {
 	t.Helper()
-	dir, _, _ := initVault(t)
+	dir, _, _ := initVault(t, "--domain", "ai-infra")
 	st := store.New(dir)
 	review, err := store.NoteReviewBytes([]store.NoteBlock{
 		{Role: store.NoteBlockSource, Body: []byte("知识来源。"), SourceRef: "L1-L1"},

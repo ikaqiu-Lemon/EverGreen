@@ -247,6 +247,8 @@ func (r *Root) wireImplemented() {
 	// 「注册面 == 挂载面」成立）。四条子命令本批均为未实现骨架，runOpinion 对任一合法
 	// 子命令一律返回 NotWiredError（退 1、零写入）——不提前实现任何 search/show/状态机行为。
 	_ = r.Wire("opinion", r.runOpinion)
+	_ = r.Wire("materialize", r.runMaterialize)
+	_ = r.Wire("export", r.runExport)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

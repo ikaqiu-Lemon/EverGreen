@@ -114,8 +114,9 @@ gitv -c user.name=eg -c user.email=eg@example.com commit -q -m "seed: m3 提案�
 echo "${PREL}" | grep -Eq '^proposals/p-[0-9]{8}-[0-9]{3}\.md$' ||
   die "提案路径 ${PREL} 不匹配 proposals/p-<yyyymmdd>-<3d>.md"
 [ -f "${VAULT}/${PREL}" ] || die "提案文件不存在"
-[ "$(find "${VAULT}/proposals" -name '*.md' -type f | wc -l)" = "1" ] || die "一项一文件不成立"
-[ "$(find "${VAULT}/domains" -name 'p-*.md' -type f | wc -l)" = "0" ] ||
+[ "$(find "${VAULT}/proposals" -name '*.md' -type f | wc -l | tr -d ' ')" = "1" ] ||
+  die "一项一文件不成立"
+[ "$(find "${VAULT}/domains" -name 'p-*.md' -type f | wc -l | tr -d ' ')" = "0" ] ||
   die "提案不属于任何领域：不得出现在 domains/ 下"
 ok "① 路径与文件名成立：${PREL}（一项一文件、不在 domains/ 下）"
 
@@ -127,7 +128,7 @@ sed -n '2,/^---$/p' "${VAULT}/${PREL}" | sed '$d' | grep -E '^[a-z_]+:' |
 printf '%s\n' id type status created_at targets impact decision execution >"${WORK}/wantkeys.txt"
 diff -u "${WORK}/wantkeys.txt" "${WORK}/topkeys.txt" ||
   die "顶层键集合与合同 §7.2 不逐键相等"
-[ "$(wc -l <"${WORK}/topkeys.txt")" = "8" ] || die "顶层键数不是 8"
+[ "$(wc -l <"${WORK}/topkeys.txt" | tr -d ' ')" = "8" ] || die "顶层键数不是 8"
 for k in exits_default_view cards_losing_support affected_material_rels affected_relations \
   stale_reviews result reason superseded_by attempted_at git_commit; do
   grep -Eq "^  ${k}:" "${VAULT}/${PREL}" || die "缺子键 ${k}"
@@ -146,7 +147,7 @@ grep -E '^## ' "${VAULT}/${PREL}" | sed 's/^## //' >"${WORK}/gotsecs.txt"
 printf '%s\n' 推荐修改 理由与证据 '影响的文件、领域与关系' 执行后状态 不执行的影响 替代方案 可应用内容 \
   >"${WORK}/wantsecs.txt"
 diff -u "${WORK}/wantsecs.txt" "${WORK}/gotsecs.txt" || die "正文分区与合同 §7.3 不逐字相等"
-[ "$(wc -l <"${WORK}/gotsecs.txt")" = "7" ] || die "H2 分区数不是 7"
+[ "$(wc -l <"${WORK}/gotsecs.txt" | tr -d ' ')" = "7" ] || die "H2 分区数不是 7"
 ok "③ 正文 H2 恰 7 个且顺序逐字一致"
 
 # ---------------------------------------------------------------- 5. 只读前置快照
@@ -204,7 +205,7 @@ grep -Fq '"code":"W23"' "${WORK}/out.txt" || die "无索引读路径必须留 W2
 grep -Fq '降级' "${WORK}/out.txt" || die "Q5 / W23 必须如实写明本次读走降级路径"
 grep -o '"warnings":\[[^]]*\]' "${WORK}/out.txt" >"${WORK}/warn_seg.txt" ||
   { cat "${WORK}/out.txt"; die "search --json 缺 warnings 段（无索引时降级留痕必须在场）"; }
-[ "$(wc -l <"${WORK}/warn_seg.txt")" = "1" ] || die "warnings 段不唯一（信封只允许一处 warnings）"
+[ "$(wc -l <"${WORK}/warn_seg.txt" | tr -d ' ')" = "1" ] || die "warnings 段不唯一（信封只允许一处 warnings）"
 NWARN="$( { grep -o '{"code":' "${WORK}/warn_seg.txt" || true; } | wc -l | tr -d ' ')"
 [ "${NWARN}" = "2" ] || { cat "${WORK}/warn_seg.txt"; die "warnings 段内诊断对象 ${NWARN} 个 ≠ 恰 2（应恰 W23 + Q5）"; }
 grep -Fq "${PID}" "${WORK}/warn_seg.txt" && die "降级留痕泄漏了提案 ID"
@@ -243,9 +244,10 @@ grep -Fq -- "${WANT_PSUM}" "${WORK}/ctx.json" ||
 # base 是「本次加工可能被改的文件 → content_hash」：提案不是知识数据，绝不能进 base。
 grep -o '"base":{[^}]*}' "${WORK}/ctx.json" >"${WORK}/base.txt" || die "context 缺 base"
 grep -Fq 'proposals/' "${WORK}/base.txt" && die "base 不得包含 proposals/（提案不是本次加工会改的文件）"
-# 提案也不得混进 cards / candidates（那是知识面）。
+# 提案也不得混进 cards / typed candidates（那是知识面）。
 grep -o '"cards":\[[^]]*\]' "${WORK}/ctx.json" | grep -Fq "${PID}" && die "cards 里出现提案"
-grep -o '"candidates":\[[^]]*\]' "${WORK}/ctx.json" | grep -Fq "${PID}" && die "candidates 里出现提案"
+grep -o '"knowledge_candidates":\[[^]]*\]\|"opinion_candidates":\[[^]]*\]\|"draft_candidates":\[[^]]*\]' \
+  "${WORK}/ctx.json" | grep -Fq "${PID}" && die "typed candidates 里出现提案"
 grep -Fq '"code":"Q' "${WORK}/ctx.json" && die "合法提案不得产生 Q 类诊断"
 grep -Fq '"exit_code":0' "${WORK}/ctx.json" || die "context 必须退 0"
 # 人读模式与 --json 同源同事实：摘要行有 ID / 标题 / targets，正文与分区名一个都没有。

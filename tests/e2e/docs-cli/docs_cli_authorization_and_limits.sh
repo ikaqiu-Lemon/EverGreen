@@ -39,12 +39,12 @@ SPEC_REL_M3="projects/evergreen/s1_main_flow/docs/specs/2026-11-08-m3-release-an
 # ── 阶段化重钉（同上「指针随里程碑走 + 历史值不得为生效值」口径，非放宽）：
 #    本 Epic（knowledge_opinion_split）把版本推进到 `0.7.0-m7`，当期决策指针切到本 Epic §0.0 版本口径出处，
 #    `0.6.0-m6` 并入历史值集合（随即也必须「不得作为生效值残留」）；M2/M3 历史基线只读复算一格不动。
-SPEC_REL="projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
+SPEC_REL="projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md"
 DECISION_DOC="${EG_CONTRACTS}/${SPEC_REL}"
 DECISION_DOC_M2="${EG_CONTRACTS}/${SPEC_REL_M2}"
 DECISION_DOC_M3="${EG_CONTRACTS}/${SPEC_REL_M3}"
-HIST_VERSIONS=("0.2.0-m2" "0.3.0-m3" "0.4.0-m4" "0.5.0-m5" "0.6.0-m6")
-CUR_VERSION="0.7.0-m7"
+HIST_VERSIONS=("0.2.0-m2" "0.3.0-m3" "0.4.0-m4" "0.5.0-m5" "0.6.0-m6" "0.7.0-m7")
+CUR_VERSION="0.8.0-m8"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/eg-m3-docs.XXXXXX")"
 SANDBOX="${WORK}/sandbox"
@@ -58,6 +58,13 @@ CARD='k-20260901-attention'
 CARD2='k-20260901-positional'
 NOTE='n-20260901-attention'
 SEED_SRC='s-20260901-attention'
+
+# Product writes commit through Git; keep the suite hermetic even when the
+# caller deliberately disables global/system Git configuration.
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-eg-e2e}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-eg-e2e@example.com}"
+export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-eg-e2e}"
+export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-eg-e2e@example.com}"
 
 STEP=0
 PASS=0
@@ -341,8 +348,13 @@ ok "README / INSTALL / SKILL.md 的每条命令均按文档标注的退出码执
 # ---------------------------------------------------------------- 9. 退出码 6 的实测语义
 step "实测退出码 6：approved 提案 + 缺 --confirm → 退 6，且权威 Markdown 完全不变"
 egv() { "${EG}" --vault "${VAULT}" "$@" </dev/null; }
-PID2="$(egv proposal new --type logical_delete --target "${CARD2}" --reason '重复卡，保留另一张' --json |
-  grep -oE 'p-[0-9]{8}-[0-9]{3}' | head -1)"
+PROPOSAL_NEW_OUT="${WORK}/proposal-new.json"
+PROPOSAL_NEW_CODE=0
+egv proposal new --type logical_delete --target "${CARD2}" --reason '重复卡，保留另一张' --json \
+  >"${PROPOSAL_NEW_OUT}" 2>&1 || PROPOSAL_NEW_CODE=$?
+[ "${PROPOSAL_NEW_CODE}" = "0" ] ||
+  { cat "${PROPOSAL_NEW_OUT}" >&2; die "proposal new 退出码 ${PROPOSAL_NEW_CODE}，期望 0"; }
+PID2="$(grep -oE 'p-[0-9]{8}-[0-9]{3}' "${PROPOSAL_NEW_OUT}" | head -1)"
 [ -n "${PID2}" ] || die "proposal new 未返回提案 ID"
 egv proposal approve "${PID2}" --confirm --user-request >/dev/null || die "approve 未退 0"
 HASH_BEFORE="$(sha256sum "${VAULT}/${KDIR_REL}/${CARD2}.md" | cut -d' ' -f1)"

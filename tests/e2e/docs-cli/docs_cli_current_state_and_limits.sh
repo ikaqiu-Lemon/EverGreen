@@ -36,7 +36,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 . "${REPO_ROOT}/tests/lib/common.sh"
 # 唯一决策出处 = 本 Epic（knowledge_opinion_split）当期 Schema-v2 决策文档（docs_test.go 的 docsReleaseSpec 指针目标）。
 # 阶段化更新：当期指针随 Epic 推进切到 §0.0「版本号与发布口径」出处；M6 及更早发布文档只读、事实一字未改。
-SPEC_REL="projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md"
+SPEC_REL="projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md"
 DECISION_DOC="${EG_CONTRACTS}/${SPEC_REL}"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/eg-m6-docs.XXXXXX")"
@@ -44,8 +44,8 @@ VAULT="${WORK}/vault"
 EG="${WORK}/eg"
 
 # 当期期望版本号（写死；唯一决策出处见 ${SPEC_REL} §0.0）。knowledge_opinion_split 现态：0.6.0-m6 → 0.7.0-m7。
-WANT_VERSION="0.7.0-m7"
-PREV_VERSION="0.6.0-m6"
+WANT_VERSION="0.8.0-m8"
+PREV_VERSION="0.7.0-m7"
 # M6 收口值：M6 不新增顶层命令，故与 M5 收口清单逐字相同（历史锚点，恒不放宽）。
 WANT_COMMANDS=22
 
@@ -60,8 +60,8 @@ CANON_CMDS=(
 # `eg opinion`。它不属于任何历史里程碑（M4=20 / M5=22 / M6=22 均在它之前收口），因此如实登记为
 # 「后续新增项」并在复算历史结论时**摘掉**：M6 的历史结论「恰 22 条」一个字不放宽，当前真实顶层
 # 命令集合抬为 23（= 22 + opinion）。追加项必须真在 `eg --help` 里（登记了没注册 = 名单造假）。
-POST_M6_ADDED_CMDS=(opinion)
-# 当前真实顶层命令集合（23 条）= M6 收口 22 + 读路径拆分批次追加的 opinion。
+POST_M6_ADDED_CMDS=(opinion materialize export)
+# 当前真实顶层命令集合（25 条）= M6 收口 22 + 后续追加的三条命令。
 CURRENT_CMDS=("${CANON_CMDS[@]}" "${POST_M6_ADDED_CMDS[@]}")
 WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M6_ADDED_CMDS[@]}))
 

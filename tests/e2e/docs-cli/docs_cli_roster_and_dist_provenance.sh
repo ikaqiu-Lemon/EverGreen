@@ -40,7 +40,7 @@ EG="${WORK}/eg"
 # ── 阶段化重钉（同「当期期望值 = WANT_VERSION，本脚本按里程碑更新」的历史口径，非放宽）：
 #    本 Epic（knowledge_opinion_split）按发布口径把版本推进到 0.7.0-m7，故当期期望值由 0.6.0-m6 抬为 0.7.0-m7；
 #    M4_VERSION 反证锚点一字未改（0.7.0-m7 仍严格新于它、且它仍不得出现在任何赋值行）。
-WANT_VERSION="0.7.0-m7"
+WANT_VERSION="0.8.0-m8"
 # M4 收口值：作为**历史锚点 + 反证基线**保留（M4 结论「当期曾是它」不删，但它不得再是当期取值）。
 M4_VERSION="0.4.0-m4"
 WANT_COMMANDS=20
@@ -64,16 +64,16 @@ M5_ADDED_CMDS=(index bench)
 #    观点子系统 `eg opinion` 是 M5 之后新增的顶层命令，同样如实登记为后来者。M4 结论
 #    「恰 20 条」仍由「摘掉 M4 之后所有新增项（index / bench / opinion）」逐条复算，
 #    一个字不放宽、不把当时的 20 篡成 23。
-POST_M5_ADDED_CMDS=(opinion)
+POST_M5_ADDED_CMDS=(opinion materialize export)
 # M4 之后所有新增的顶层命令（M5 期 index/bench + 读路径拆分 opinion）；计数复算时整体摘掉。
 POST_M4_ADDED_CMDS=("${M5_ADDED_CMDS[@]}" "${POST_M5_ADDED_CMDS[@]}")
 WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M4_ADDED_CMDS[@]}))
 
-# 当前真实的 23 条顶层命令**简单名**（= eg --help 命令区首词；用于四份文档现态覆盖检查）。
+# 当前真实的 25 条顶层命令**简单名**（= eg --help 命令区首词；用于四份文档现态覆盖检查）。
 CURRENT_CMDS=(
   init config capture context apply search card rel report
   deprecate restore replaced-by proposal delete undelete mark-reviewed unreviewed edit
-  reconcile check index bench opinion
+  reconcile check index bench opinion materialize export
 )
 
 STEP=0

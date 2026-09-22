@@ -23,6 +23,9 @@ and published versions follow [Semantic Versioning](https://semver.org/).
   `extraction_coverage[]` shape.
 - `eg search --kind knowledge|opinion|all`: search defaults to `--kind
   knowledge`; `opinion` or `all` widen the result set.
+- Storage v3 Note candidates with deterministic Knowledge/Opinion
+  materialization through `eg materialize`, plus read-only plain Markdown
+  egress through `eg export --plain`.
 
 ### Changed
 
@@ -37,9 +40,10 @@ and published versions follow [Semantic Versioning](https://semver.org/).
   remains the source of truth and the index is a rebuildable accelerator. Table
   count stays at six; Knowledge and Opinion share `cards`/`cards_fts` via a
   `kind` column plus opinion `validation`.
-- `eg context` splits its candidate output into `knowledge_candidates` and
-  `opinion_candidates` (an additive interface change); the legacy `candidates`
-  field is retained, so no caller breaks now.
+- **Breaking:** `eg context` now returns `draft_candidates`,
+  `knowledge_candidates`, and `opinion_candidates`; the deprecated legacy
+  `candidates` alias and its unconditional deprecation `I1` are removed in
+  `0.8.0-m8`.
 - The Knowledge template is now three sections (知识内容 / 条件与边界 / 用户补充);
   the legacy v1 sections 解释与依据 / 理解自检 are preserved verbatim as
   compatibility sections, never rewritten. The legacy v1 Note sections
@@ -58,10 +62,9 @@ and published versions follow [Semantic Versioning](https://semver.org/).
 - `create_card` / `append_card` remain accepted as aliases, normalized to
   `create_knowledge` / `append_knowledge` with an `I1`; new plans should use the
   canonical ops.
-- `eg context` returns `knowledge_candidates` and `opinion_candidates`; the
-  legacy `candidates` field is retained for 0.7.x (always equal to
-  `knowledge_candidates`). `eg context` unconditionally emits exactly one `I1`
-  deprecation info for it, and it will be **removed in 0.8.0**.
+- `plan_version: 1` and the `create_card` / `append_card` aliases remain
+  supported as described above; this compatibility does not restore the
+  removed `eg context` `candidates` field.
 
 ### Fixed
 

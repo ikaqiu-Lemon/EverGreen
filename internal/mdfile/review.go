@@ -400,14 +400,15 @@ func requireBlankContent(content [][]byte) error {
 	return nil
 }
 
-// stripTrailingSeparator 只剥掉 writer 自己产生的**恰一个**终止 / 分隔空行——它必是**真正的
-// 空行**（长度为 0：块正文的收尾 '\n' 或块间分隔 '\n' 落在这里）。
+// stripTrailingSeparator 剥掉 writer / 外层 H2 模板产生的尾部终止与分隔空行——它们必须是
+// **真正的空行**（长度为 0）。RenderReviewNote 独立输出有一个，作为 H2 section payload
+// 写入 Note 后还会多一个模板分隔空行。
 //
-// 关键：不能用 TrimSpace 连续裁剪。source/agent 正文里仅含空格 / Tab 的行是有内容的真实行，
-// 若按「空白即空」连裁，会把这类尾部行一并吞掉，破坏 render→parse→render 字节稳定。
+// 关键：不能用 TrimSpace 裁剪。source/agent 正文里仅含空格 / Tab 的行是有内容的真实行，
+// 若按「空白即空」裁剪，会把这类尾部行吞掉，破坏 render→parse→render 字节稳定。
 func stripTrailingSeparator(lines [][]byte) [][]byte {
-	if n := len(lines); n > 0 && len(lines[n-1]) == 0 {
-		return lines[:n-1]
+	for len(lines) > 0 && len(lines[len(lines)-1]) == 0 {
+		lines = lines[:len(lines)-1]
 	}
 	return lines
 }
