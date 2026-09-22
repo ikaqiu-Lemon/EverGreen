@@ -184,6 +184,9 @@ func decodeCandidateCoverageAnchor(line []byte) (CandidateCoverage, error) {
 	if !bytes.HasSuffix(t, []byte(candidateAnchorClose)) {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点缺注释结束符：%q", t)
 	}
+	if len(t) < len(candidateCoverageAnchorOpen)+len(candidateAnchorClose) {
+		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷缺失：%q", t)
+	}
 	enc := t[len(candidateCoverageAnchorOpen) : len(t)-len(candidateAnchorClose)]
 	raw, err := base64.RawURLEncoding.DecodeString(string(enc))
 	if err != nil {
@@ -330,12 +333,11 @@ func candidateExtractionTail(raw []byte) (int, []byte, error) {
 	if len(candidates) == 0 {
 		return 0, nil, fmt.Errorf("Note 不含 candidate")
 	}
-	doc, err := Parse(raw)
+	extraction, root, _, _, err := candidateExtraction(raw)
 	if err != nil {
 		return 0, nil, err
 	}
-	extraction, ok := doc.Section(SecExtraction)
-	if !ok {
+	if root == nil {
 		return 0, nil, fmt.Errorf("Note 缺分区「%s」", SecExtraction)
 	}
 	start := candidates[len(candidates)-1].End

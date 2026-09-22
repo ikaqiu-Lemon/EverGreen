@@ -321,6 +321,28 @@ targets plus the Note mapping in one journal-v1 transaction. `eg export --plain`
 respect to the vault and removes only Evergreen machine anchors, candidate attributes, and fenced-div
 boundary lines from the exported Markdown.
 
+Most candidates use the H3 boundary rendered by `candidate_drafts[]`. When heading structure cannot
+express the boundary, Evergreen also reads this exact L2 fallback:
+
+```markdown
+<!-- eg:cd:1 <base64url(JSON)> -->
+:::: {#cand-cross-section .eg-candidate .opinion}
+### A claim spanning sections
+
+#### 观点
+
+The exact candidate payload.
+::::
+```
+
+The anchor, opener, and title must be three adjacent lines. The opener has at least three colons and
+exactly one `cand-*` ID plus `.eg-candidate` and either `.knowledge` or `.opinion`; the first inner
+line is a non-empty attribute-free ATX H3 title. The closing fence has no attributes and at least as
+many colons as the opener. L2 candidates cannot nest. Code fences take precedence, while headings,
+lists, tables, and other Markdown inside the container remain candidate content. Materialization uses
+the same H4 template mapping as H3 candidates, and plain export removes only the two fence lines while
+retaining the title and payload.
+
 ### 4. Write through a ChangePlan
 
 The captured source persists with a template blank as body line `L1`, so its three real content

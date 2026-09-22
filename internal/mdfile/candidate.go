@@ -11,10 +11,7 @@ import (
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
-	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/text"
 )
 
 const (
@@ -37,7 +34,17 @@ func (k CandidateKind) valid() bool {
 	return k == CandidateKindKnowledge || k == CandidateKindOpinion
 }
 
-// CandidateAnchor is the versioned machine metadata immediately preceding a candidate H3.
+// CandidateSyntax identifies the structural boundary provider. Both forms
+// map to the same Candidate and template payload model.
+type CandidateSyntax string
+
+const (
+	CandidateSyntaxH3        CandidateSyntax = "h3"
+	CandidateSyntaxFencedDiv CandidateSyntax = "fenced_div"
+)
+
+// CandidateAnchor is the versioned machine metadata immediately preceding a
+// candidate boundary (an L1 H3 or an L2 fenced-div opener).
 type CandidateAnchor struct {
 	SourceRefs []string
 	Rel        string
@@ -77,22 +84,27 @@ type CandidateSection struct {
 	Payload      []byte
 }
 
-// Candidate is one parsed H3 candidate and its exact source intervals.
+// Candidate is one parsed L1/L2 candidate and its exact source intervals.
 type Candidate struct {
-	Key          string
-	Kind         CandidateKind
-	Title        string
-	Anchor       CandidateAnchor
-	AnchorStart  int
-	AnchorEnd    int
-	HeadingStart int
-	HeadingEnd   int
-	End          int
-	ContentEnd   int
-	Sections     []CandidateSection
+	Key           string
+	Kind          CandidateKind
+	Syntax        CandidateSyntax
+	Title         string
+	Anchor        CandidateAnchor
+	AnchorStart   int
+	AnchorEnd     int
+	BoundaryStart int
+	BoundaryEnd   int
+	HeadingStart  int
+	HeadingEnd    int
+	End           int
+	ContentEnd    int
+	Sections      []CandidateSection
 }
 
-// Raw returns the candidate's L1 interval, beginning at its H3 heading.
+// Raw returns the visible candidate interval beginning at its H3 title. L2
+// boundary lines are deliberately excluded so both providers expose the same
+// materialization payload.
 func (c Candidate) Raw(raw []byte) []byte {
 	if c.HeadingStart < 0 || c.ContentEnd < c.HeadingStart || c.ContentEnd > len(raw) {
 		return nil
@@ -155,6 +167,9 @@ func decodeCandidateAnchor(line []byte, kind CandidateKind) (CandidateAnchor, er
 	}
 	if !bytes.HasSuffix(t, []byte(candidateAnchorClose)) {
 		return CandidateAnchor{}, fmt.Errorf("candidate 锚点缺注释结束符：%q", t)
+	}
+	if len(t) < len(candidateAnchorOpen)+len(candidateAnchorClose) {
+		return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷缺失：%q", t)
 	}
 	enc := t[len(candidateAnchorOpen) : len(t)-len(candidateAnchorClose)]
 	raw, err := base64.RawURLEncoding.DecodeString(string(enc))
@@ -362,20 +377,16 @@ type sourceLine struct {
 
 // ParseCandidates reads candidates only from the Note's 提取结果 H2.
 func ParseCandidates(raw []byte) ([]Candidate, error) {
-	doc, err := Parse(raw)
+	extraction, root, protected, fences, err := candidateExtraction(raw)
 	if err != nil {
 		return nil, err
 	}
-	extraction, ok := doc.Section(SecExtraction)
-	if !ok {
+	if root == nil {
 		return nil, nil
 	}
 
-	md := goldmark.New(goldmark.WithParserOptions(parser.WithAttribute()))
-	root := md.Parser().Parse(text.NewReader(raw))
-	protected := candidateCodeLines(root, raw)
 	var headings []candidateHeading
-	searchFrom := doc.BodyFrom
+	searchFrom := 0
 	err = ast.Walk(root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -389,14 +400,8 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 			return ast.WalkStop, locErr
 		}
 		searchFrom = end
-		info := candidateHeading{node: h, start: start, end: end, title: title}
-		if start >= extraction.Body && start < extraction.End && h.Level == 3 {
-			info.key, info.kind, info.isCandidate, locErr = parseCandidateHeading(raw[start:end], h)
-			if locErr != nil {
-				return ast.WalkStop, fmt.Errorf("candidate H3 at byte %d: %w", start, locErr)
-			}
-		}
-		headings = append(headings, info)
+		headings = append(headings,
+			candidateHeading{node: h, start: start, end: end, title: title})
 		return ast.WalkContinue, nil
 	})
 	if err != nil {
@@ -418,23 +423,58 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 	usedAnchors := map[int]bool{}
 	seenKeys := map[string]bool{}
 	var out []Candidate
+	appendCandidate := func(candidate Candidate, anchorLine sourceLine) error {
+		anchor, err := decodeCandidateAnchor(
+			raw[anchorLine.start:anchorLine.end], candidate.Kind)
+		if err != nil {
+			return fmt.Errorf("candidate %q：%w", candidate.Key, err)
+		}
+		if seenKeys[candidate.Key] {
+			return fmt.Errorf("同一 Note 内 candidate key 重复：%q", candidate.Key)
+		}
+		seenKeys[candidate.Key] = true
+		usedAnchors[anchorLine.start] = true
+		candidate.Anchor = anchor
+		candidate.AnchorStart = anchorLine.start
+		candidate.AnchorEnd = anchorLine.end
+		out = append(out, candidate)
+		return nil
+	}
+
 	for i, h := range headings {
-		if h.start < extraction.Body || h.start >= extraction.End || !h.isCandidate {
+		if h.start < extraction.Body || h.start >= extraction.End {
+			continue
+		}
+		if fence, inside := candidateFenceContaining(fences, h.start); inside {
+			if h.start != fence.titleStart && h.node.Level == 3 {
+				_, _, nested, nestedErr := parseCandidateHeading(raw[h.start:h.end], h.node)
+				if nestedErr != nil {
+					return nil, fmt.Errorf(
+						"candidate L2 %q 内的 H3 candidate 形态非法：%w",
+						fence.key, nestedErr)
+				}
+				if nested {
+					return nil, fmt.Errorf(
+						"candidate L2 不允许嵌套 H3 candidate：%q", fence.key)
+				}
+			}
+			continue
+		}
+		if h.node.Level != 3 {
+			continue
+		}
+		h.key, h.kind, h.isCandidate, err =
+			parseCandidateHeading(raw[h.start:h.end], h.node)
+		if err != nil {
+			return nil, fmt.Errorf("candidate H3 at byte %d: %w", h.start, err)
+		}
+		if !h.isCandidate {
 			continue
 		}
 		anchorLine, ok := anchors[h.start]
 		if !ok {
 			return nil, fmt.Errorf("candidate %q 缺少逐行相邻的 %s 锚点", h.key, candidateAnchorTag)
 		}
-		anchor, err := decodeCandidateAnchor(raw[anchorLine.start:anchorLine.end], h.kind)
-		if err != nil {
-			return nil, fmt.Errorf("candidate %q：%w", h.key, err)
-		}
-		if seenKeys[h.key] {
-			return nil, fmt.Errorf("同一 Note 内 candidate key 重复：%q", h.key)
-		}
-		seenKeys[h.key] = true
-		usedAnchors[anchorLine.start] = true
 
 		boundary := extraction.End
 		for j := i + 1; j < len(headings); j++ {
@@ -445,8 +485,17 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 			if next.start >= extraction.End {
 				break
 			}
+			if _, inside := candidateFenceContaining(fences, next.start); inside {
+				continue
+			}
 			if next.node.Level <= 3 {
 				boundary = next.start
+				break
+			}
+		}
+		for _, fence := range fences {
+			if fence.openStart > h.start && fence.openStart < boundary {
+				boundary = fence.openStart
 				break
 			}
 		}
@@ -458,26 +507,74 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("candidate %q：%w", h.key, err)
 		}
-		out = append(out, Candidate{
-			Key:          h.key,
-			Kind:         h.kind,
-			Title:        h.title,
-			Anchor:       anchor,
-			AnchorStart:  anchorLine.start,
-			AnchorEnd:    anchorLine.end,
-			HeadingStart: h.start,
-			HeadingEnd:   h.end,
-			End:          boundary,
-			ContentEnd:   contentEnd,
-			Sections:     sections,
-		})
+		if err := appendCandidate(Candidate{
+			Key:           h.key,
+			Kind:          h.kind,
+			Syntax:        CandidateSyntaxH3,
+			Title:         h.title,
+			BoundaryStart: h.start,
+			BoundaryEnd:   boundary,
+			HeadingStart:  h.start,
+			HeadingEnd:    h.end,
+			End:           boundary,
+			ContentEnd:    contentEnd,
+			Sections:      sections,
+		}, anchorLine); err != nil {
+			return nil, err
+		}
+	}
+
+	headingAt := make(map[int]int, len(headings))
+	for i, heading := range headings {
+		headingAt[heading.start] = i
+	}
+	for _, fence := range fences {
+		anchorLine, ok := anchors[fence.openStart]
+		if !ok {
+			return nil, fmt.Errorf(
+				"candidate %q 缺少逐行相邻的 %s 锚点", fence.key, candidateAnchorTag)
+		}
+		titleIndex, ok := headingAt[fence.titleStart]
+		if !ok {
+			return nil, fmt.Errorf(
+				"candidate L2 %q 的 opener 下一行必须是无属性 ATX H3 title", fence.key)
+		}
+		title := headings[titleIndex]
+		if title.node.Level != 3 || len(title.node.Attributes()) != 0 ||
+			strings.TrimSpace(title.title) == "" {
+			return nil, fmt.Errorf(
+				"candidate L2 %q 的 opener 下一行必须是非空、无属性 ATX H3 title",
+				fence.key)
+		}
+		sections, err := parseCandidateSections(
+			raw, headings, titleIndex, fence.kind, title.end, fence.closeStart)
+		if err != nil {
+			return nil, fmt.Errorf("candidate %q：%w", fence.key, err)
+		}
+		end := nextCandidateContent(raw, fence.closeEnd, extraction.End)
+		if err := appendCandidate(Candidate{
+			Key:           fence.key,
+			Kind:          fence.kind,
+			Syntax:        CandidateSyntaxFencedDiv,
+			Title:         title.title,
+			BoundaryStart: fence.openStart,
+			BoundaryEnd:   fence.closeEnd,
+			HeadingStart:  title.start,
+			HeadingEnd:    title.end,
+			End:           end,
+			ContentEnd:    fence.closeStart,
+			Sections:      sections,
+		}, anchorLine); err != nil {
+			return nil, err
+		}
 	}
 	for _, line := range anchors {
 		if !usedAnchors[line.start] {
-			return nil, fmt.Errorf("%s 锚点未与下一行合法 candidate H3 配对（byte %d）",
+			return nil, fmt.Errorf("%s 锚点未与下一行合法 candidate H3/L2 opener 配对（byte %d）",
 				candidateAnchorTag, line.start)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].AnchorStart < out[j].AnchorStart })
 	return out, nil
 }
 
@@ -544,59 +641,9 @@ func parseCandidateHeading(line []byte, h *ast.Heading) (string, CandidateKind, 
 	if attrStart < 0 {
 		return "", "", false, fmt.Errorf("candidate 标题缺属性块")
 	}
-	attrReader := text.NewReader(trimmed[attrStart:])
-	attrs, ok := parser.ParseAttributes(attrReader)
-	if !ok {
-		return "", "", false, fmt.Errorf("candidate 标题属性语法非法")
-	}
-	left, _ := attrReader.PeekLine()
-	if len(bytes.TrimSpace(left)) != 0 {
-		return "", "", false, fmt.Errorf("candidate 标题属性后含多余字节")
-	}
-
-	var key string
-	var classes []string
-	idCount := 0
-	for _, attr := range attrs {
-		switch string(attr.Name) {
-		case "id":
-			idCount++
-			value, ok := attr.Value.([]byte)
-			if !ok {
-				return "", "", false, fmt.Errorf("candidate id 必须是字符串")
-			}
-			key = string(value)
-		case "class":
-			value, ok := attr.Value.([]byte)
-			if !ok {
-				return "", "", false, fmt.Errorf("candidate class 必须是字符串")
-			}
-			for _, class := range bytes.Fields(value) {
-				classes = append(classes, string(class))
-			}
-		default:
-			return "", "", false, fmt.Errorf("candidate 标题含未知属性 %q", attr.Name)
-		}
-	}
-	if idCount != 1 || !candidateKeyRE.MatchString(key) {
-		return "", "", false, fmt.Errorf("candidate id 必须恰一个且匹配 %s：%q", candidateKeyRE, key)
-	}
-	classCount := map[string]int{}
-	for _, class := range classes {
-		classCount[class]++
-	}
-	if len(classes) != 2 || classCount["eg-candidate"] != 1 {
-		return "", "", false, fmt.Errorf(
-			"candidate classes 必须恰含 .eg-candidate 与一个 kind class：%v", classes)
-	}
-	var kind CandidateKind
-	switch {
-	case classCount["knowledge"] == 1 && classCount["opinion"] == 0:
-		kind = CandidateKindKnowledge
-	case classCount["opinion"] == 1 && classCount["knowledge"] == 0:
-		kind = CandidateKindOpinion
-	default:
-		return "", "", false, fmt.Errorf("candidate kind class 必须恰为 .knowledge 或 .opinion：%v", classes)
+	key, kind, err := parseCandidateAttributes(trimmed[attrStart:])
+	if err != nil {
+		return "", "", false, fmt.Errorf("candidate 标题：%w", err)
 	}
 	return key, kind, true, nil
 }

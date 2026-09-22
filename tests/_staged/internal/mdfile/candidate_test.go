@@ -254,6 +254,8 @@ func TestCandidateParserFailClosed(t *testing.T) {
 	cases := map[string][]byte{
 		"unknown anchor version": []byte(strings.Replace(validAnchor+validHeading+validPayload,
 			"eg:cd:1", "eg:cd:2", 1)),
+		"missing anchor payload": []byte(
+			"<!-- eg:cd:1 -->\n" + validHeading + validPayload),
 		"invalid base64": []byte("<!-- eg:cd:1 !!! -->\n" + validHeading + validPayload),
 		"unknown JSON field": []byte(candidateAnchorLineJSON(
 			`{"source_refs":["L1-L4"],"rel":"support","reason":"r","tags":[],"output":"","extra":1}`) +
@@ -398,6 +400,8 @@ func TestCandidateCoverageFailClosed(t *testing.T) {
 		"visible tamper":  bytes.Replace(body, []byte("候选"), []byte("篡改"), 1),
 		"unknown version": bytes.Replace(body, []byte("eg:cc:1"), []byte("eg:cc:2"), 1),
 		"missing anchor":  body[:bytes.Index(body, []byte("<!-- eg:cc:1"))],
+		"missing anchor payload": append(body[:bytes.Index(body, []byte("<!-- eg:cc:1"))],
+			[]byte("<!-- eg:cc:1 -->\n")...),
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -529,6 +533,8 @@ func FuzzCandidateParser(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Add(candidateNote(body))
+	f.Add(candidateNote(renderFencedCandidate(f,
+		candidateDraft("cand-fuzz-l2", CandidateKindKnowledge, "Fuzz L2 候选"), 3)))
 	f.Add([]byte("## 提取结果\n\n<!-- eg:cd:999 x -->\n### x\n"))
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		_, _ = ParseCandidates(raw)

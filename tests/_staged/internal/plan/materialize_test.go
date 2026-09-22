@@ -269,6 +269,72 @@ func TestMaterializeCandidatesCreatesExactTargetsAndFinalizes(t *testing.T) {
 	}
 }
 
+func TestMaterializeCandidatesH3AndL2ProduceIdenticalTargets(t *testing.T) {
+	h3Fixture := newMaterializeFixture(t, false)
+	l2Fixture := newMaterializeFixture(t, false)
+	l2Raw := h3CandidatesAsFencedDivs(t, l2Fixture.noteRaw)
+	if err := os.WriteFile(
+		filepath.Join(l2Fixture.root, filepath.FromSlash(l2Fixture.noteRel)),
+		l2Raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	h3Result, err := MaterializeCandidates(
+		store.New(h3Fixture.root), materializeRequest(t, "2026-09-22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l2Result, err := MaterializeCandidates(
+		store.New(l2Fixture.root), materializeRequest(t, "2026-09-22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{
+		"domains/ai-infra/knowledge/k-20260922-knowledge-candidate.md",
+		"domains/ai-infra/opinions/o-20260922-opinion-candidate.md",
+	} {
+		h3Target := materializeWrite(t, h3Result.WriteSet, rel)
+		l2Target := materializeWrite(t, l2Result.WriteSet, rel)
+		if !bytes.Equal(h3Target, l2Target) {
+			t.Fatalf("H3/L2 物化目标不逐字相等 %s：\n--- H3 ---\n%s\n--- L2 ---\n%s",
+				rel, h3Target, l2Target)
+		}
+	}
+	if !l2Result.Finalized || len(l2Result.Candidates) != 2 {
+		t.Fatalf("L2 物化未闭合：%+v", l2Result)
+	}
+}
+
+func h3CandidatesAsFencedDivs(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	candidates, err := mdfile.ParseCandidates(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := append([]byte(nil), raw...)
+	for i := len(candidates) - 1; i >= 0; i-- {
+		candidate := candidates[i]
+		heading := raw[candidate.HeadingStart:candidate.HeadingEnd]
+		attrAt := bytes.LastIndex(heading, []byte(" {#"))
+		if attrAt < 0 {
+			t.Fatalf("H3 candidate %s 缺属性块：%q", candidate.Key, heading)
+		}
+		replacement := []byte("::: {#" + candidate.Key + " .eg-candidate ." +
+			string(candidate.Kind) + "}\n")
+		replacement = append(replacement, heading[:attrAt]...)
+		replacement = append(replacement, '\n')
+		replacement = append(replacement, raw[candidate.HeadingEnd:candidate.ContentEnd]...)
+		replacement = append(replacement, ":::\n"...)
+		next := make([]byte, 0,
+			len(out)-(candidate.ContentEnd-candidate.HeadingStart)+len(replacement))
+		next = append(next, out[:candidate.HeadingStart]...)
+		next = append(next, replacement...)
+		next = append(next, out[candidate.ContentEnd:]...)
+		out = next
+	}
+	return out
+}
+
 func TestMaterializeCandidatesKeepsDraftCoverageWhileUnresolved(t *testing.T) {
 	fx := newMaterializeFixture(t, true)
 	result, err := MaterializeCandidates(store.New(fx.root),

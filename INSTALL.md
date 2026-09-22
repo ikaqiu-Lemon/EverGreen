@@ -125,6 +125,11 @@ compatibility/validation digest):
   (--candidate <cand-key> | --all) --user-request` copies exact candidate bytes
   into Knowledge/Opinion through journal v1. `eg export --plain --output <dir>`
   creates a read-only egress copy without Evergreen protocol anchors.
+- **Candidate boundaries.** H3 is the default. The L2 fallback is an
+  `eg:cd:1` anchor followed immediately by a fenced-div opener and an
+  attribute-free ATX H3 title. The opener carries exactly one `cand-*` ID,
+  `.eg-candidate`, and one kind class; L2 cannot nest, and its closing fence
+  has no attributes and at least as many colons as the opener.
 - **Four learning entities, two domain directories.** Source (`s-*`),
   Note (`n-*`), Knowledge (`k-*` under `domains/<d>/knowledge/`) and Opinion
   (`o-*` under `domains/<d>/opinions/`); `Proposal` (`p-*`) is a control plane,
