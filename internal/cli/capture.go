@@ -552,14 +552,7 @@ func (r *Root) captureCritical(inv *Invocation, res *Result, in captureInput,
 // 刻意**不**另抄一套同步逻辑：全仓写后同步只此一处，抄第二份就会与 `eg index rebuild`
 // 的口径漂移，而那正是 M5 最不能出问题的地方。
 func (r *Root) syncCaptureIndex(res *Result, inv *Invocation, root string, written []string) {
-	var scratch report.Report
-	r.syncIndexAfterWrite(&scratch, root, indexWriteLabel(inv), written)
-	for _, d := range scratch.Warnings {
-		res.Warnings = append(res.Warnings, Diagnostic{
-			Code: d.Code, Level: d.Level, Path: d.Path,
-			OpIndex: NonOpDiagnostic, Message: d.Message,
-		})
-	}
+	r.syncResultIndex(res, inv, root, written)
 }
 
 // captureSkippedOf 把收件区 B3 跳过映射进 intent 的 skipped[]（审计面，不属原子域）。

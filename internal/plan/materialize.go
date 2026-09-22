@@ -11,11 +11,13 @@ import (
 // MaterializeRequest selects either one candidate or every candidate in a
 // Note. Date and Stamp are injected by the process boundary.
 type MaterializeRequest struct {
-	Note      model.NoteID
-	Candidate string
-	All       bool
-	Date      model.Date
-	Stamp     model.Stamp
+	Note             model.NoteID
+	Candidate        string
+	All              bool
+	Date             model.Date
+	Stamp            model.Stamp
+	ExpectedNotePath string
+	ExpectedNoteHash string
 }
 
 // MaterializedCandidate records the stable candidate-to-artifact mapping.
@@ -71,6 +73,13 @@ func MaterializeCandidates(s *store.Store,
 	if err != nil {
 		return nil, fmt.Errorf("materialize 定位 Note：%w", err)
 	}
+	if req.ExpectedNotePath != "" && req.ExpectedNotePath != noteRel {
+		return nil, &store.SkipError{
+			Path: noteRel, Reason: store.SkipFileChanged,
+			Detail: fmt.Sprintf("自读取以来 Note 路径已变化：期望 %s，磁盘 %s",
+				req.ExpectedNotePath, noteRel),
+		}
+	}
 	domain := store.DomainOf(noteRel)
 	if domain == "" {
 		return nil, fmt.Errorf("materialize Note 不在领域目录：%s", noteRel)
@@ -78,6 +87,13 @@ func MaterializeCandidates(s *store.Store,
 	noteFile, err := s.Read(noteRel)
 	if err != nil {
 		return nil, err
+	}
+	if req.ExpectedNoteHash != "" && req.ExpectedNoteHash != noteFile.Hash {
+		return nil, &store.SkipError{
+			Path: noteRel, Reason: store.SkipFileChanged,
+			Detail: fmt.Sprintf("自读取以来文件已变化：期望 %s，磁盘 %s",
+				req.ExpectedNoteHash, noteFile.Hash),
+		}
 	}
 	note, candidates, coverageState, sourceRefs, err :=
 		store.ParseMaterializationNote(noteFile.Bytes)
