@@ -307,12 +307,15 @@ func idxAssertIndexDirClean(t *testing.T, dir string) {
 	allowed := idxIndexArtifactNames()
 	reserved := idxRuntimeReservedNames()
 	for _, e := range entries {
+		if e.Name() == index.BlocksDirName && e.IsDir() {
+			continue
+		}
 		if allowed[e.Name()] || reserved[e.Name()] {
 			continue
 		}
-		t.Fatalf("%s/ 下出现第三种条目 %q：整库重建不留迁移中间产物"+
-			"（允许集合恰 %v + 运行时保留条目 %v）",
-			index.DirName, e.Name(), index.AllowedFiles(), index.RuntimeReservedEntries())
+		t.Fatalf("%s/ 下出现未知条目 %q：整库重建只保留 SQLite 产物 %v、%s/ 与运行时条目 %v",
+			index.DirName, e.Name(), index.AllowedFiles(), index.BlocksDirName,
+			index.RuntimeReservedEntries())
 	}
 }
 

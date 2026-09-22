@@ -243,7 +243,10 @@ roster you can verify against `eg --help`.
 
 - `.eg/` stores the latest report and is excluded through
   `.git/info/exclude`.
-- `.index/` stores the derived database, `run.lock`, and transaction state.
+- `.index/` stores the derived database, deterministic per-Note candidate
+  sidecars under `blocks/`, `run.lock`, and transaction state. The sidecars
+  contain only Markdown-recomputable identities, spans, mappings, and hashes;
+  unhealthy sidecars make candidate queries fall back to Markdown.
 - Build output under `bin/` and `dist/` is ignored by the source repository.
 
 An index database can be rebuilt. However, **存在未闭合事务时不可删

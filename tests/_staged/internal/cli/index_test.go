@@ -644,8 +644,8 @@ func TestIndexNeverCommitsAndStaysOutOfGit(t *testing.T) {
 	if n := gitLogCount(t, dir); n != commitsBefore {
 		t.Fatalf("commit 数从 %d 变成 %d：eg index 恒 0 次提交", commitsBefore, n)
 	}
-	// `.index/` 里出现的名字恰在「三个索引产物 ∪ 两项 M6 运行时保留条目」之内
-	// （没有临时残留、没有额外产物）。
+	// `.index/` 里出现的名字恰在「三个 SQLite 产物 ∪ blocks/ 派生目录 ∪
+	// 两项 M6 运行时保留条目」之内（没有临时残留、没有额外产物）。
 	//
 	// M6 · T-…-072 B2c1 精确重钉：允许集合从 index.AllowedFiles() 扩到再并上
 	// index.RuntimeReservedEntries()。这**不是**放宽索引这一格 —— 三个 DB 文件的名单
@@ -658,13 +658,18 @@ func TestIndexNeverCommitsAndStaysOutOfGit(t *testing.T) {
 		t.Fatalf("读 %s 失败：%v", index.DirName, err)
 	}
 	allowed := idxIndexArtifactNames()
+	allowed[index.BlocksDirName] = true
 	for name := range idxRuntimeReservedNames() {
 		allowed[name] = true
 	}
 	for _, e := range entries {
 		if !allowed[e.Name()] {
-			t.Fatalf("%s 出现非白名单条目 %q，允许集合恰 索引产物 %v ∪ 运行时保留条目 %v",
-				index.DirName, e.Name(), index.AllowedFiles(), index.RuntimeReservedEntries())
+			t.Fatalf("%s 出现非白名单条目 %q，允许集合恰 SQLite 产物 %v ∪ %s/ ∪ 运行时保留条目 %v",
+				index.DirName, e.Name(), index.AllowedFiles(), index.BlocksDirName,
+				index.RuntimeReservedEntries())
+		}
+		if e.Name() == index.BlocksDirName && !e.IsDir() {
+			t.Fatalf("%s/%s 必须是目录", index.DirName, index.BlocksDirName)
 		}
 	}
 	idxAssertAuthorityUnchanged(t, dir, before)
@@ -1171,12 +1176,13 @@ func TestWriteCommandNeverBuildsOrRepairsIndex(t *testing.T) {
 	}
 }
 
-// TestIndexAfterWriteFiltersNonIndexedPaths：写后同步只把**索引对象面**路径（知识卡与观点，
-// 即 isIndexedRel 认可者）算成受影响行；笔记 / 原文 / 提案等非索引对象面一律不进受影响集或 Removed。
+// TestIndexAfterWriteFiltersNonIndexedPaths：写后同步把 Knowledge/Opinion 放进 SQLite
+// 受影响行，把 Note 单独放进 blocks sidecar；原文 / 提案等不进任一派生对象面。
 //
-// 提案 / 评审 / 原文 / 笔记不在索引的对象面上，若把它们当成「受影响路径」，
+// 提案 / 评审 / 原文不在索引的对象面上，若把它们当成「受影响路径」，
 // 就会因为「现态里查不到这些行」而被误判成删除。这条用例把过滤器钉在形态层面。
 func TestIndexAfterWriteFiltersNonIndexedPaths(t *testing.T) {
+	noteRel := store.NoteRel("ai-infra", applyNoteID)
 	snap := index.Snapshot{
 		Head: "cafebabe",
 		Cards: []index.Card{{
@@ -1184,10 +1190,13 @@ func TestIndexAfterWriteFiltersNonIndexedPaths(t *testing.T) {
 			Kind: index.CardKindKnowledge, Validation: "",
 		}},
 		Files: []index.File{{Path: store.CardRel("ai-infra", applyCardID), ContentHash: "h1"}},
+		Blocks: []index.BlockDocument{{
+			NoteID: applyNoteID, NotePath: noteRel,
+		}},
 	}
 	d := indexDeltaFor(snap, []string{
 		store.CardRel("ai-infra", applyCardID),          // 卡：算受影响
-		store.NoteRel("ai-infra", applyNoteID),          // 笔记：索引里没有它
+		noteRel,                                         // 笔记：只进 blocks sidecar
 		store.SourceRel(applySourceID),                  // 原文：同上
 		"proposals/2026/p-20260901-demo.md",             // 提案：同上
 		store.CardRel("ai-infra", "k-20260901-missing"), // 卡但现态已消失 → Removed
@@ -1201,6 +1210,9 @@ func TestIndexAfterWriteFiltersNonIndexedPaths(t *testing.T) {
 	if len(d.Cards) != 1 {
 		t.Fatalf("受影响卡行 = %d 条，期望 1", len(d.Cards))
 	}
+	if len(d.Blocks) != 1 || d.Blocks[0].NotePath != noteRel {
+		t.Fatalf("受影响 block sidecar = %+v，期望恰该 Note", d.Blocks)
+	}
 	if strings.Join(d.Removed, ",") != store.CardRel("ai-infra", "k-20260901-missing") {
 		t.Fatalf("Removed = %v，期望恰那张已消失的卡（非卡路径一律不进 Removed）", d.Removed)
 	}
@@ -1211,7 +1223,7 @@ func TestIndexAfterWriteFiltersNonIndexedPaths(t *testing.T) {
 		t.Fatal("isIndexedRel 认不出标准观点路径（观点与知识卡同批入索引对象面）")
 	}
 	for _, notCard := range []string{
-		store.NoteRel("ai-infra", applyNoteID), store.SourceRel(applySourceID),
+		noteRel, store.SourceRel(applySourceID),
 		"unprocessed.md", "domains/ai-infra/knowledge/sub/deep.md", "domains/ai-infra/knowledge",
 	} {
 		if isIndexedRel(notCard) {

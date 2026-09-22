@@ -186,33 +186,21 @@ func Build(req Request, hash Hasher) (*Context, error) {
 		ctx.Source = target
 	}
 
-	// ① 材料层：本领域内属于该原文的已有笔记。候选摘要直接从同一份权威
-	// Markdown 解析；协议畸形时按查询域惯例产 Q1 并跳过该 Note 的候选，不猜测。
-	var candidateDiags []Diagnostic
+	// ① 材料层：本领域内属于该原文的已有笔记。候选摘要优先从经过当前
+	// Markdown 投影逐字对账的 sidecar 读取；sidecar 不健康时回落同一投影函数，
+	// 并按查询域惯例留下 W22/W23/W24 + Q5。
+	var relevantNotes []NoteEntry
 	for _, n := range notes {
 		if target != nil && n.Source != target.ID {
 			continue
 		}
+		relevantNotes = append(relevantNotes, n)
 		ctx.Notes = append(ctx.Notes, NoteView{ID: n.ID, Path: n.Path, Source: n.Source})
 		ctx.Base[n.Path] = hash(n.Raw)
-		drafts, err := mdfile.ParseCandidates(n.Raw)
-		if err != nil {
-			candidateDiags = append(candidateDiags,
-				newQ1(n.Path, "Note candidate 协议不可解析，候选已跳过：%v", err))
-			continue
-		}
-		for _, draft := range drafts {
-			status := "draft"
-			if draft.Anchor.Output != "" {
-				status = "materialized"
-			}
-			ctx.DraftCandidates = append(ctx.DraftCandidates, DraftCandidate{
-				Note: string(n.ID), Path: n.Path, Key: draft.Key,
-				Kind: string(draft.Kind), Title: draft.Title, Status: status,
-				Output: draft.Anchor.Output, PayloadHash: hash(draft.Raw(n.Raw)),
-			})
-		}
 	}
+	var candidateDiags, sidecarDiags []Diagnostic
+	ctx.DraftCandidates, candidateDiags, sidecarDiags =
+		projectDraftCandidates(req.Root, relevantNotes, hash)
 
 	// ② 收敛输入：同领域 active 卡。打分输入集合只含 kind='card' 且 status: active，
 	//    上面的笔记集合在这一步之前已被排除（EG-NOTE-04）。
@@ -274,7 +262,8 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	merged := append(dropQ3(scan.Diagnostics), srcDiags...)
 	merged = append(merged, candidateDiags...)
 	merged = append(merged, propDiags...)
-	ctx.Diagnostics = finalizeDiagnostics(merged)
+	ctx.Diagnostics = withIndexDegradedDiagnostics(
+		finalizeDiagnostics(merged), sidecarDiags)
 	return ctx, nil
 }
 

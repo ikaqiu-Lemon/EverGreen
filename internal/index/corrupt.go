@@ -145,8 +145,10 @@ func Inspect(dir string) Diagnosis {
 	}
 	if extra := unexpectedFiles(dir); len(extra) > 0 {
 		return corrupt(ReasonUnexpectedFile,
-			"索引目录混入非法文件 %s（允许集合恰 %s，另加 M6 运行时保留条目 %s）；建议 eg index rebuild",
+			"索引目录混入非法文件 %s（允许集合恰 SQLite 文件 %s、可重建目录 %s，"+
+				"另加 M6 运行时保留条目 %s）；建议 eg index rebuild",
 			strings.Join(extra, ", "), strings.Join(AllowedFiles(), ", "),
+			BlocksDirName,
 			strings.Join(reservedNames(), ", "))
 	}
 	if why, ok := truncated(dbPath, st.Size()); !ok {
@@ -229,6 +231,10 @@ func unexpectedFiles(dir string) []string {
 	for _, name := range AllowedFiles() {
 		allowed[name] = true
 	}
+	// blocks/ is a rebuildable derived sidecar directory. It is deliberately
+	// not part of AllowedFiles (SQLite artifacts) or RuntimeReservedEntries
+	// (run.lock/txn, which rebuild must preserve).
+	allowed[BlocksDirName] = true
 	var extra []string
 	for _, e := range entries {
 		if !allowed[e.Name()] {

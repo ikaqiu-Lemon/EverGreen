@@ -1,4 +1,5 @@
-// [S4] index/ SQLite+FTS5：把权威 Markdown 的全量扫描结果落成**可重建的派生索引**。
+// [S4] index/ SQLite+FTS5 与 Storage v3 candidate sidecar：把权威 Markdown
+// 的扫描结果落成**可重建的派生索引**。
 //
 // 允许依赖：model / mdfile（上限；本包当前实测**零本仓依赖** —— 输入是调用方喂进来的
 // 中性快照 Snapshot，解析权威 Markdown 这件事不在本包内发生）。
@@ -23,7 +24,8 @@
 // # 本包的范围（T-…-065）与明确不做的事
 //
 // 做：固定 Schema（恰 6 张表 / index_meta 恰 6 键 / IndexSchemaVersion）、
-// 全量确定性构建、四类损坏检测、无损重建。
+// 全量确定性构建、四类损坏检测、无损重建；Storage v3 另以
+// `.index/blocks/<n-id>.json` 投影候选，绝不扩张 SQLite schema。
 //
 // 不做（各有归属，早做即越界）：
 //

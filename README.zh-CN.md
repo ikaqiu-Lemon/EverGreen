@@ -121,7 +121,7 @@ Evergreen 有意**不**抓取、也不理解内容。语义由你的 agent 负�
                        │ 可重建                         │ 只读
                        ▼                               ▼
              ┌──────────────────┐        ┌──────────────────────────┐
-             │ .index/ SQLite   │        │ eg search / card show /  │
+             │ SQLite + blocks  │        │ eg search / card show /  │
              │ FTS5 + 事务日志   │ ─────▶ │ rel（索引不健康时自动     │
              └──────────────────┘        │ 降级为扫 Markdown）       │
                                          └──────────────────────────┘
@@ -503,7 +503,7 @@ domains/<domain>/notes/           # n-*  材料笔记（忠于原文）
 domains/<domain>/knowledge/       # k-*  知识（稳定、可复用的论断）
 domains/<domain>/opinions/        # o-*  观点（评价、因果 / 预测判断）
 proposals/                        # p-*  控制面：高风险操作提案（按需创建）
-.index/                           # 派生 SQLite + run.lock + 事务日志（.gitignore）
+.index/                           # 派生 SQLite + blocks/ sidecar + run.lock + 事务日志
 .eg/                              # 最近一次报告状态（.git/info/exclude）
 ```
 
@@ -901,13 +901,19 @@ Evergreen 绝不把你的 YAML 过一遍序列化器。它解析原始字节、�
 
 ## 派生索引
 
-索引是 `.index/` 下的 SQLite/FTS5 数据库（基于 `modernc.org/sqlite`，纯 Go，无需 CGO）。它是
-**纯加速层**：不被任何命令依赖、不是任何命令的前置、在 `.gitignore` 内、不随仓库分发。
+索引由 `.index/` 下的 SQLite/FTS5 数据库（基于 `modernc.org/sqlite`，纯 Go，无需 CGO）和
+`.index/blocks/` 下按 Note 生成的确定性 candidate sidecar 组成。它是**纯加速层**：不被任何命令
+依赖、不是任何命令的前置、在 `.gitignore` 内、不随仓库分发。
 
 它在 `index_meta` 中带 `schema_version = 2`，共六张表 —— `index_meta`、`cards`、`cards_fts`、
 `relations`、`files`、`skipped`。Knowledge 与 Opinion 共用 `cards`/`cards_fts`，由 `kind` 列区分
 （`knowledge` / `opinion`）；观点的 `validation` 也落在同一行。**没有增量 schema 迁移**：当盘上的
 `schema_version` 不匹配时，整个索引被丢弃并从 Markdown 重建。
+
+每个 `.index/blocks/<n-id>.json` 只保存可从 Note 重算的事实：Note 路径/hash，以及 candidate
+的 key、kind、syntax、源字节区间、物化状态/output 和 payload hash；不保存权威正文。
+`eg context` 只有在 sidecar 与当前 Markdown 投影逐字对账一致时才读取它。sidecar 缺失、陈旧、
+损坏或成为孤儿时会留下索引诊断，并回落同一条直接 Markdown 扫描路径。
 
 ```console
 $ eg index build              # 构建

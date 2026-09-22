@@ -19,9 +19,9 @@ package cli
 //     磁盘保留现状：`.index/` 已被 index 包清成「不存在」，权威 Markdown 恒零改动）。
 //     `eg index status` **恒退 0** —— 「索引坏了 / 索引旧了」都是诊断（W22 / W23 / W24），
 //     不是一次失败（合同 §6.1；§8.1 status 行逐字要求「含 stale / unusable 也退 0」）。
-//   - **不越界到下游 task**：本文件不接 `search` / `card` / `rel` 读路径、不产 `Q5`
-//     （属 `067`），没有排序 / 分页 / `bench`（属 `068`），不引入任何 M6 能力
-//     （`run.lock` / 事务日志 / 退出码 `5`）。
+//   - **派生面分离**：SQLite 继续服务 `search` / `card` / `rel`；Storage v3 的
+//     `.index/blocks/` 只加速 `context.draft_candidates`。两者共享维护命令，但不混
+//     schema，也不让任一派生故障改变权威 Markdown。
 //
 // # T-…-066 阶段 B 在本文件的增量（只增不改既有语义）
 //
@@ -81,10 +81,9 @@ const IndexAuthorityNotice = "Markdown 是唯一权威来源，.index/ 只是可
 	"本命令只写 .index/，不改一个字节权威文件、不发 commit；整目录随时可删，删完 eg index build 复原"
 
 // IndexNotDoneNotice 是「本命令这一轮明确没做什么」的诚实交代（未做 ≠ 已做）。
-const IndexNotDoneNotice = "本轮不接检索读路径（降级与 Q5 属 T-…-067）、无排序 / 分页 / 性能采样" +
-	"（属 T-…-068）、不启用退出码 5 与任何 M6 能力：" +
-	"eg index status 只报 fresh / stale(W22) / missing(W23) / corrupt(W24)，" +
-	"陈旧只报不阻断读（读侧降级属 T-…-067）"
+const IndexNotDoneNotice = "SQLite 六表与 index_meta 六键保持不变；.index/blocks/ 是独立可重建派生，" +
+	"只服务 context.draft_candidates。任一派生缺失、陈旧或损坏都只诊断并回落权威 Markdown，" +
+	"不阻断读取、不改变权威写入结果"
 
 // indexCommand 注册 `eg index`（合同 §8.1：写 `.index/` = 是、写权威 Markdown = 否）。
 //
@@ -109,13 +108,13 @@ eg index status [--strict] [--json]
 eg index sync [--json]
 
 子命令（恰四个）：
-  build     索引不存在 → 全量构建；已存在且 healthy → no-op（零写入）；
+  build     索引不存在 → 全量构建 SQLite 与 blocks sidecar；已存在且 healthy → no-op；
             已存在但不可用（W24）→ 可恢复重建（先删 .index/ 再全量建，并留痕 W24）
-  rebuild   无条件先删 .index/ 再全量构建；结果与全新构建**逐字等价**
+  rebuild   保留 run.lock/txn，删除并重建 SQLite 与 blocks sidecar；结果与全新构建逐字等价
   status    只读体检 + 与权威 Markdown 比对：fresh / stale（W22）/ missing（W23）/
             corrupt（W24）+ index_meta 摘要；**恒退 0** —— 索引旧了 / 坏了是诊断，不是失败
-  sync      以权威现态把索引收敛到 fresh：只重建受影响文件对应的行、幂等、
-            与全量重建等价；索引缺失 → 退化全量构建，索引损坏 → 退化整库重建（如实留痕）
+  sync      以权威现态把 SQLite 与 blocks sidecar 收敛到 fresh：只更新受影响项、幂等、
+            与全量重建等价；缺失 → 退化全量构建，损坏 → 退化整库重建（如实留痕）
 
 参数：
   --strict  仅 status：忽略 (size, mtime) 快路径，全量重算 content_hash（只读，零写入）
@@ -215,6 +214,7 @@ func (r *Root) runIndexStatus(inv *Invocation) (*Result, error) {
 		return nil, &UsageError{Msg: fmt.Sprintf("读取权威 Markdown 失败（零写入）：%v", err)}
 	}
 	con := index.Check(dir, cur)
+	blocks := index.CheckBlocks(dir, cur.Blocks, false)
 
 	// 分型计数**现算**（T-005-D）：只从派生表按 `cards.kind` 数，不落 `index_meta` 第七键。
 	// 读不到就整格缺席 —— 见 indexKindCounts 的注释。
@@ -222,11 +222,17 @@ func (r *Root) runIndexStatus(inv *Invocation) (*Result, error) {
 
 	rep := report.New()
 	addConsistencyDiagnosis(&rep, con)
+	if con.Code == "" {
+		addBlockDiagnosis(&rep, blocks)
+	}
 	rep.AddInfo("eg index status", report.NonOp, "%s", IndexAuthorityNotice)
 	rep.AddInfo("eg index status", report.NonOp, "%s", IndexNotDoneNotice)
 
-	res := proposalResult(rep, []string{indexStatusSummary(con, strict, kinds, kindsOK)})
+	res := proposalResult(rep, []string{
+		indexStatusSummary(con, blocks, strict, kinds, kindsOK),
+	})
 	data := indexConsistencyData(con, strict)
+	data["blocks"] = blockStatusData(blocks)
 	addIndexKindCounts(data, kinds, kindsOK)
 	res.Data["index"] = data
 	res.DataOrder = []string{"index", "report"}
@@ -281,7 +287,9 @@ func (r *Root) indexCurrent(root string, strict bool) (index.Current, error) {
 	if err != nil {
 		return index.Current{}, err
 	}
-	return index.Current{Head: snap.Head, Files: snap.Files, Cards: snap.Cards}, nil
+	return index.Current{
+		Head: snap.Head, Files: snap.Files, Cards: snap.Cards, Blocks: snap.Blocks,
+	}, nil
 }
 
 // runIndexBuild 是 `eg index build` 与 `eg index rebuild` 的共同实现。
@@ -299,9 +307,13 @@ func (r *Root) runIndexBuild(inv *Invocation, force bool) (*Result, error) {
 
 	rep := report.New()
 	var (
-		res    *index.Result
-		action index.Action
-		after  index.Diagnosis
+		res         *index.Result
+		action      index.Action
+		after       index.Diagnosis
+		blockBefore index.BlockStatus
+		blockAction string
+		blockCount  int
+		blockAfter  index.BlockStatus
 	)
 	// —— 临界区：进闭包时已持锁、已恢复、保留条目已体检通过 ——
 	if err := r.runIndexCritical(inv, &rep, func() error {
@@ -319,6 +331,7 @@ func (r *Root) runIndexBuild(inv *Invocation, force bool) (*Result, error) {
 		for _, d := range warnings {
 			rep.AddWarning(d)
 		}
+		blockBefore = index.CheckBlocks(dir, snap.Blocks, false)
 
 		if force {
 			res, err = index.Rebuild(dir, snap, index.Options{Now: r.Now})
@@ -343,16 +356,43 @@ func (r *Root) runIndexBuild(inv *Invocation, force bool) (*Result, error) {
 				}},
 			}
 		}
+		if res != nil {
+			blockAction, blockCount = res.BlockAction, res.BlockCount
+		} else {
+			blockResult, blockErr := index.SyncBlocks(dir, snap.Blocks)
+			if blockErr != nil {
+				return &CommitFailedError{
+					Msg: "派生 block sidecar 写盘失败；权威 Markdown 零改动、无 commit",
+					Err: blockErr,
+					Diags: []Diagnostic{{
+						Code: index.CodeIndexCorrupt, Level: LevelError,
+						Path:    index.DirName + "/" + index.BlocksDirName + "/",
+						OpIndex: NonOpDiagnostic, Message: blockErr.Error(),
+					}},
+				}
+			}
+			blockAction, blockCount = blockResult.Action, blockResult.Count
+		}
 
 		// 原本不可用（含 rebuild 时的坏索引）必须留痕：修好了也要说清楚修的是什么。
 		if before.Health == index.HealthCorrupt {
 			addIndexDiagnosis(&rep, before)
+		}
+		if before.Usable() && !blockBefore.Healthy() {
+			addBlockDiagnosis(&rep, blockBefore)
 		}
 		// 建完复检同样留在锁内：出了锁再看，看到的可能是别人写的结果。
 		after = index.Inspect(dir)
 		if !after.Usable() {
 			// 建完还不健康属实现 bug 级事实：如实登记 warning，绝不静默成功。
 			addIndexDiagnosis(&rep, after)
+		}
+		blockAfter = index.CheckBlocks(dir, snap.Blocks, false)
+		if !blockAfter.Healthy() {
+			return &CommitFailedError{
+				Msg: "派生 block sidecar 写后对账失败；权威 Markdown 零改动、无 commit",
+				Err: fmt.Errorf("%s / %s", blockAfter.Health, blockAfter.Message),
+			}
 		}
 		return nil
 	}); err != nil {
@@ -362,8 +402,13 @@ func (r *Root) runIndexBuild(inv *Invocation, force bool) (*Result, error) {
 	rep.AddInfo("eg index "+inv.Sub, report.NonOp, "%s", IndexAuthorityNotice)
 	rep.AddInfo("eg index "+inv.Sub, report.NonOp, "%s", IndexNotDoneNotice)
 
-	out := proposalResult(rep, []string{indexBuildSummary(inv.Sub, action, res, after)})
-	out.Data["index"] = indexBuildData(action, res, after)
+	summary := indexBuildSummary(inv.Sub, action, res, after) +
+		fmt.Sprintf("；block sidecar action=%s / notes=%d", blockAction, blockCount)
+	out := proposalResult(rep, []string{summary})
+	data := indexBuildData(action, res, after)
+	data["blocks_action"] = blockAction
+	data["blocks"] = blockStatusData(blockAfter)
+	out.Data["index"] = data
 	out.DataOrder = []string{"index", "report"}
 	return out, nil
 }
@@ -383,16 +428,15 @@ func (r *Root) indexSnapshot(root string) (index.Snapshot, []report.Diagnostic, 
 //	① 扫描（`query.VaultScan`，只读）；② `content_hash`（`store.ContentHash`，与 B3 同源）；
 //	③ 水位线的 `head`（`internal/git` 只读 API；非 git 仓写空串）。
 //
-// 扫描面 = **知识卡**（`domains/<d>/knowledge/*.md`）：索引的对象面就是卡
-// （`cards` / `cards_fts` / `relations` 三表都以卡为单位），因此 `IncludeNotes` 恒为
-// false —— 把笔记算进水位线会让「改一篇笔记」把索引判成陈旧，而索引里根本没有笔记行。
+// SQLite 扫描面仍只有 Knowledge/Opinion；Notes 只投影到 `.index/blocks/`，不进入
+// files 水位线、表集合或 meta 键集合。两类派生物共享本次只读扫描，但保持独立对账。
 //
 // quick=true 时启用合同 §5.1 的快路径：`(path, size, mtime)` 与索引记录逐格一致的文件
 // 沿用索引里的 `content_hash`（省一次 hash 计算）。**只有默认 `eg index status` 用它**，
 // 且它只影响「省不省一次计算」，不改变任何判定口径 —— 最终结论恒以 `content_hash` 为准。
 func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []report.Diagnostic, error) {
 	var warnings []report.Diagnostic
-	scan, err := query.VaultScan(root, query.ScanOptions{})
+	scan, err := query.VaultScan(root, query.ScanOptions{IncludeNotes: true})
 	if err != nil {
 		return index.Snapshot{}, nil, err
 	}
@@ -413,6 +457,7 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 	}
 
 	snap := index.Snapshot{Head: indexHead(root)}
+	snap.Blocks = query.CandidateBlockDocuments(scan.Notes, store.ContentHash)
 	for _, c := range scan.Cards {
 		size, mtime := fileStat(filepath.Join(root, filepath.FromSlash(c.Path)))
 		// trueHash 是**现态字节**的真 content_hash（store.ContentHash，与 B3 同源）。
@@ -562,6 +607,33 @@ func addConsistencyDiagnosis(rep *report.Report, con index.Consistency) {
 	})
 }
 
+func addBlockDiagnosis(rep *report.Report, status index.BlockStatus) {
+	if status.Code == "" {
+		return
+	}
+	rep.AddWarning(report.Diagnostic{
+		Code: status.Code, Level: report.LevelWarning,
+		Path:    index.DirName + "/" + index.BlocksDirName + "/",
+		OpIndex: report.NonOp, Message: status.Message,
+	})
+}
+
+func blockStatusData(status index.BlockStatus) map[string]interface{} {
+	return map[string]interface{}{
+		"health":            status.Health,
+		"code":              status.Code,
+		"reason":            status.Reason,
+		"message":           status.Message,
+		"usable":            status.Healthy(),
+		"documents":         len(status.Documents),
+		"changed_added":     len(status.Changes.Added),
+		"changed_modified":  len(status.Changes.Modified),
+		"changed_removed":   len(status.Changes.Removed),
+		"changed_unchanged": len(status.Changes.Unchanged),
+		"schema_version":    index.BlockSidecarVersion,
+	}
+}
+
 // indexStatusData 组装 `data.index` 的**公共底座**（体检口径：health / code / reason / …）。
 func indexStatusData(diag index.Diagnosis) map[string]interface{} {
 	data := map[string]interface{}{
@@ -628,6 +700,7 @@ func indexBuildData(action index.Action, res *index.Result, after index.Diagnosi
 	data["relations"] = res.RelationCount
 	data["files"] = res.FileCount
 	data["skipped"] = res.SkippedCount
+	data["block_sidecars"] = res.BlockCount
 	data["dropped_duplicate_cards"] = res.DroppedDuplicateCards
 	data["dropped_duplicate_relations"] = res.DroppedDuplicateRelations
 	return data
@@ -652,7 +725,7 @@ func addIndexMeta(data map[string]interface{}, diag index.Diagnosis) {
 // kinds / kindsOK 是现算的分型计数：读到了就与机器输出**同源同事实**地一并显示
 // （人读一侧少一格，用户就得去翻 JSON 才能知道库里知识卡与观点各有多少）；读不到
 // 则一个字都不提 —— 与 data 侧「整格缺席」的口径一致，不在摘要里拿 0 兜底。
-func indexStatusSummary(con index.Consistency, strict bool,
+func indexStatusSummary(con index.Consistency, blocks index.BlockStatus, strict bool,
 	kinds map[string]int, kindsOK bool) string {
 	diag := con.Diagnosis
 	head := fmt.Sprintf("索引体检：%s / %s", diag.Health, con.Freshness)
@@ -669,6 +742,8 @@ func indexStatusSummary(con index.Consistency, strict bool,
 			index.CardKindKnowledge, kinds[index.CardKindKnowledge],
 			index.CardKindOpinion, kinds[index.CardKindOpinion])
 	}
+	head += fmt.Sprintf("；block sidecar=%s（notes=%d）",
+		blocks.Health, len(blocks.Documents))
 	if strict {
 		head += "；--strict：已忽略 (size, mtime) 快路径，全部文件重算 content_hash"
 	} else {
