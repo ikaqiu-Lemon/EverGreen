@@ -151,11 +151,11 @@ func TestContextWhitelistShape(t *testing.T) {
 	if !reflect.DeepEqual(cardIDs, want) {
 		t.Fatalf("同领域 active 卡 = %v，期望 %v", cardIDs, want)
 	}
-	if len(ctx.Candidates) != 1 || ctx.Candidates[0].ID != "c-20260412-attention" {
-		t.Fatalf("候选相似卡 = %+v，期望恰命中 c-20260412-attention", ctx.Candidates)
+	if len(ctx.KnowledgeCandidates) != 1 || ctx.KnowledgeCandidates[0].ID != "c-20260412-attention" {
+		t.Fatalf("候选相似卡 = %+v，期望恰命中 c-20260412-attention", ctx.KnowledgeCandidates)
 	}
-	if len(ctx.Candidates[0].Reasons) == 0 || ctx.Candidates[0].Score <= 0 {
-		t.Fatalf("候选卡必须带得分与命中理由：%+v", ctx.Candidates[0])
+	if len(ctx.KnowledgeCandidates[0].Reasons) == 0 || ctx.KnowledgeCandidates[0].Score <= 0 {
+		t.Fatalf("候选卡必须带得分与命中理由：%+v", ctx.KnowledgeCandidates[0])
 	}
 }
 
@@ -213,7 +213,7 @@ func TestContextNoteStaysMaterialLayer(t *testing.T) {
 			where = append(where, "cards[]")
 		}
 	}
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		if strings.Contains(c.ID+c.Path+c.Title+strings.Join(c.Reasons, ","), noteID) {
 			where = append(where, "candidates[]")
 		}
@@ -307,7 +307,7 @@ func dump(ctx *query.Context) string {
 	for _, c := range ctx.Cards {
 		b.WriteString("card=" + c.ID + " " + c.Path + " " + c.Title + " " + strings.Join(c.Tags, ",") + "\n")
 	}
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		b.WriteString("cand=" + c.ID + " " + c.Path + " " + c.Title + " " + strings.Join(c.Reasons, ",") + "\n")
 	}
 	for _, c := range ctx.OpinionCandidates {
@@ -424,8 +424,8 @@ func polishContext(t *testing.T, root string) *query.Context {
 // candSig 把候选序列摊成「ID|得分|理由条数」，用于顺序与等价断言（不含 Path，
 // 因为「打乱输入」用例里两个 vault 的文件名不同，Path 本就应当不同）。
 func candSig(ctx *query.Context) []string {
-	out := make([]string, 0, len(ctx.Candidates))
-	for _, c := range ctx.Candidates {
+	out := make([]string, 0, len(ctx.KnowledgeCandidates))
+	for _, c := range ctx.KnowledgeCandidates {
 		out = append(out, c.ID+"|"+itoa(c.Score)+"|"+itoa(len(c.Reasons))+"|"+
 			strings.Join(c.Reasons, "；"))
 	}
@@ -463,20 +463,20 @@ func TestContextCandidateTotalOrder(t *testing.T) {
 		"domains/ai-infra/knowledge/k-20260901-c.md": polishCard("k-20260901-c", "机制入", "注意", "意力", "力机"),
 	})
 	ctx := polishContext(t, root)
-	if len(ctx.Candidates) != 3 {
-		t.Fatalf("三张卡都应命中，实际 %d：%+v", len(ctx.Candidates), ctx.Candidates)
+	if len(ctx.KnowledgeCandidates) != 3 {
+		t.Fatalf("三张卡都应命中，实际 %d：%+v", len(ctx.KnowledgeCandidates), ctx.KnowledgeCandidates)
 	}
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		if c.Score != 12 {
 			t.Fatalf("用例前提被打破：%s 的得分应为 12，实际 %d（%v）", c.ID, c.Score, c.Reasons)
 		}
 	}
 	// 同分：理由条数多者在前（c 有 tags + title 两条）。
-	if ctx.Candidates[0].ID != "k-20260901-c" {
+	if ctx.KnowledgeCandidates[0].ID != "k-20260901-c" {
 		t.Fatalf("同分应按命中理由条数降序，期望 k-20260901-c 在首位，实际 %v", candSig(ctx))
 	}
 	// 同分且同理由条数：按 ID 升序（a 在 b 前），与文件遍历顺序无关。
-	if ctx.Candidates[1].ID != "k-20260901-a" || ctx.Candidates[2].ID != "k-20260901-b" {
+	if ctx.KnowledgeCandidates[1].ID != "k-20260901-a" || ctx.KnowledgeCandidates[2].ID != "k-20260901-b" {
 		t.Fatalf("同分同理由条数应按 ID 升序，实际 %v", candSig(ctx))
 	}
 }
@@ -531,7 +531,7 @@ func TestContextCandidateReasons(t *testing.T) {
 	})
 	ctx := polishContext(t, root)
 	byID := map[string]query.Candidate{}
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		if len(c.Reasons) == 0 {
 			t.Fatalf("被推荐的卡必须给出命中理由：%+v", c)
 		}
@@ -586,7 +586,7 @@ func TestContextDeprecatedNotRecommended(t *testing.T) {
 		"domains/ai-infra/knowledge/k-20260901-far.md": polishCard("k-20260901-far", "磁盘调度"),
 	})
 	ctx := polishContext(t, root)
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		if c.ID == "k-20260901-old" {
 			t.Fatalf("deprecated 卡不得进候选：%+v", c)
 		}
@@ -597,7 +597,7 @@ func TestContextDeprecatedNotRecommended(t *testing.T) {
 			t.Fatalf("候选必须同时有正得分与非空理由：%+v", c)
 		}
 	}
-	if len(ctx.Candidates) != 1 || ctx.Candidates[0].ID != "k-20260901-new" {
+	if len(ctx.KnowledgeCandidates) != 1 || ctx.KnowledgeCandidates[0].ID != "k-20260901-new" {
 		t.Fatalf("只应剩一张 active 且命中的卡，实际 %v", candSig(ctx))
 	}
 	// cards[] 的口径不变：active 卡照常在列，失效卡不在（M1 既有断言的同款事实）。
@@ -610,13 +610,11 @@ func TestContextDeprecatedNotRecommended(t *testing.T) {
 	}
 }
 
-// ================= T-…-006 阶段 6E：context 双候选 + candidates 兼容（D-3） =================
+// ================= Storage v3：context 草稿候选与已物化候选分列 =================
 //
-// 判据来源：schema v2 设计 §5.3 + 决策 D-3、T-…-006 Acceptance「eg context --json 同时输出
-// knowledge_candidates / opinion_candidates；candidates 仍在且等于 knowledge_candidates」。
-// 本组用例只钉 query.Context 侧事实（字段闭集、legacy alias 深等价、Opinion 候选复用同一
+// 本组用例只钉 query.Context 侧事实（字段闭集、Opinion 候选复用同一
 // 确定性评分/排序单点、每类独立 limit、validation 三态正交、他域/失效/删除/零分排除、
-// base 同时注入 k/o 候选路径且 store 重算一致）；I1 / CLI 渲染事实在 internal/cli 侧钉。
+// base 同时注入 k/o 候选路径且 store 重算一致）。
 
 // polishOpinion 造一条可控标题 / 状态 / validation 的观点（schema v2；必填分区「观点」）。
 // 复用打分口径与知识卡同源（同一 candidates()），因此这里只提供 frontmatter 事实，
@@ -653,7 +651,7 @@ func opinionSig(ctx *query.Context) []string {
 	return out
 }
 
-// —— ① 字段键闭集 + 三候选字段都是 [] 而非 null + candidates ≡ knowledge_candidates ——
+// —— ① 字段键闭集 + 三候选字段都是 [] 而非 null + 旧 candidates 已删除 ——
 
 func TestContextCandidateFieldKeysClosedAndAlias(t *testing.T) {
 	root := fixture(t) // 该 vault 命中一张知识卡、零观点：正好覆盖「有 knowledge、无 opinion」
@@ -672,25 +670,19 @@ func TestContextCandidateFieldKeysClosedAndAlias(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"base", "candidates", "cards", "diagnostics", "domain",
+	want := []string{"base", "cards", "diagnostics", "domain", "draft_candidates",
 		"knowledge_candidates", "notes", "opinion_candidates", "proposals", "source", "warnings"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("Context 字段键闭集 = %v，期望 %v", keys, want)
 	}
 	// 三个候选字段即便为空也必须是 []（不是 null）：调用方拿到的恒是数组。
-	for _, k := range []string{"candidates", "knowledge_candidates", "opinion_candidates"} {
+	for _, k := range []string{"draft_candidates", "knowledge_candidates", "opinion_candidates"} {
 		if string(m[k]) == "null" {
 			t.Fatalf("%s 必须序列化成 [] 而非 null，实得 %s", k, m[k])
 		}
 	}
-	// legacy alias 深等价：candidates 内容 / 顺序逐项恒等于 knowledge_candidates。
-	if !reflect.DeepEqual(ctx.Candidates, ctx.KnowledgeCandidates) {
-		t.Fatalf("candidates 必须逐项恒等于 knowledge_candidates：\ncandidates=%+v\nknowledge=%+v",
-			ctx.Candidates, ctx.KnowledgeCandidates)
-	}
-	if string(m["candidates"]) != string(m["knowledge_candidates"]) {
-		t.Fatalf("candidates 与 knowledge_candidates 的 JSON 必须逐字相等：\n%s\n%s",
-			m["candidates"], m["knowledge_candidates"])
+	if _, exists := m["candidates"]; exists {
+		t.Fatalf("0.8.0-m8 必须删除 Context.candidates：%s", raw)
 	}
 	// 该 vault 无观点：opinion_candidates 必须为空数组，且 knowledge 侧仍命中旧语义那张卡。
 	if len(ctx.OpinionCandidates) != 0 {
@@ -820,11 +812,6 @@ func TestContextCandidatePerTypeLimit(t *testing.T) {
 		t.Fatalf("opinion_candidates 应独立截到 CandidateLimit=%d，实得 %d",
 			query.CandidateLimit, len(ctx.OpinionCandidates))
 	}
-	// candidates 兼容字段跟随 knowledge：同样恰 CandidateLimit。
-	if len(ctx.Candidates) != query.CandidateLimit {
-		t.Fatalf("candidates（兼容）应跟随 knowledge_candidates 截到 %d，实得 %d",
-			query.CandidateLimit, len(ctx.Candidates))
-	}
 }
 
 // —— ④ Opinion 候选复用同一确定性排序单点：同分全序（理由条数降序 → ID 升序）——
@@ -855,13 +842,7 @@ func TestContextOpinionCandidateTotalOrder(t *testing.T) {
 	}
 }
 
-// ================= D-3：candidates 弃用提示 I1 由 query.Context.Diagnostics 产出 =================
-//
-// 判据来源：schema v2 设计 §5.3 / 决策 D-3 + T-…-006 Scope「弃用 I1 由 query context 的
-// diagnostics 产出」。要害是：query.Build 的**直接消费者**（不经 CLI）就必须能看到这条 I1，
-// 否则 query 与 CLI 各持一套事实。本组只钉 query 侧结构性事实——码 = I1、level = info、
-// path = candidates、消息明确「candidates 已弃用，改读 knowledge_candidates」，**无条件恰一条**，
-// 且与 Q 系列（warning、汇总扫描不完整）正交：不重复、不被带偏成 warning、绝不触发 Q3。
+// ================= Storage v3 D-3 清理：旧 candidates 与弃用 I1 同批删除 =================
 
 // diagsByCode 收集 ctx.Diagnostics 里某个码的全部条目（保序）。
 func diagsByCode(ctx *query.Context, code string) []query.Diagnostic {
@@ -883,65 +864,49 @@ func diagCodeSeq(ctx *query.Context) []string {
 	return out
 }
 
-// —— ① 干净 vault：query.Build 无条件产出恰一条 I1 info，且**别无它诊断** ——
-
-func TestContextI1EmittedByQueryDiagnostics(t *testing.T) {
-	root := fixture(t) // 无坏文件、无悬空引用：诊断集合里只应有这一条 info
+func TestContextD3LegacyCandidatesAndI1Removed(t *testing.T) {
+	root := fixture(t)
 	ctx := build(t, root, query.Request{Source: "s-20260412-demo"})
-
-	i1 := diagsByCode(ctx, query.CodeI1)
-	if len(i1) != 1 {
-		t.Fatalf("query.Build 必须无条件产出恰一条 I1，实得 %d 条（序列 %v）",
-			len(i1), diagCodeSeq(ctx))
+	raw, err := json.Marshal(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	d := i1[0]
-	if d.Level != query.DiagLevelInfo {
-		t.Fatalf("I1 必须是 info 级，实得 %q", d.Level)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
 	}
-	if d.Level == query.DiagLevel {
-		t.Fatalf("I1 绝不能被降级成 warning（DiagLevel），实得 %q", d.Level)
+	if _, exists := fields["candidates"]; exists {
+		t.Fatalf("0.8.0-m8 不得再序列化 legacy candidates：%s", raw)
 	}
-	if d.Path != "candidates" {
-		t.Fatalf("I1 的 path 应逐字为 candidates，实得 %q", d.Path)
+	for _, d := range ctx.Diagnostics {
+		if d.Code == "I1" || d.Path == "candidates" {
+			t.Fatalf("0.8.0-m8 不得再发 candidates 弃用 I1：%+v", d)
+		}
 	}
-	if !strings.Contains(d.Message, "candidates") || !strings.Contains(d.Message, "已弃用") ||
-		!strings.Contains(d.Message, "knowledge_candidates") {
-		t.Fatalf("I1 消息必须明确「candidates 已弃用，改读 knowledge_candidates」：%q", d.Message)
-	}
-	// 干净语料：整份诊断集合就这一条，一个 Q 都不该有（尤其不能冒出 Q3）。
-	if len(ctx.Diagnostics) != 1 {
-		t.Fatalf("干净 vault 的诊断集合应只含 I1 一条，实得 %v", diagCodeSeq(ctx))
+	if len(ctx.Diagnostics) != 0 {
+		t.Fatalf("干净 vault 不应有查询诊断：%v", diagCodeSeq(ctx))
 	}
 }
 
-// —— ② Q 系列在场：I1 仍恰一条 info，Q3 恒末位，I1 不触发 Q3 ——
-
-func TestContextI1CoexistsWithQSeriesAndQ3StaysLast(t *testing.T) {
+func TestContextD3RemovalKeepsQSeriesOrdering(t *testing.T) {
 	root := polishVault(t, map[string]string{
-		// 一张命中的知识卡（保证候选非空）+ 一张坏卡（带出 Q1 → Q3）。
 		"domains/ai-infra/knowledge/k-20260901-hit.md": polishCard("k-20260901-hit", "注意力机制"),
 		"domains/ai-infra/knowledge/broken.md":         "---\n- 1\n---\n\n# 坏卡\n",
 	})
 	ctx := polishContext(t, root)
-
-	// I1 仍**恰一条** info：不因 Q 系列在场而重复、也不被带偏成 warning。
-	i1 := diagsByCode(ctx, query.CodeI1)
-	if len(i1) != 1 || i1[0].Level != query.DiagLevelInfo {
-		t.Fatalf("Q 系列在场时 I1 仍须恰一条 info，实得 %+v（序列 %v）", i1, diagCodeSeq(ctx))
-	}
-	// 坏卡带出恰一条 Q1 + 恰一条 Q3。
 	if got := len(diagsByCode(ctx, query.CodeQ1)); got != 1 {
 		t.Fatalf("坏卡应带出恰一条 Q1，实得 %d（%v）", got, diagCodeSeq(ctx))
 	}
 	if got := len(diagsByCode(ctx, query.CodeQ3)); got != 1 {
 		t.Fatalf("有 Q1 时应汇总恰一条 Q3，实得 %d（%v）", got, diagCodeSeq(ctx))
 	}
-	// Q3 恒末位；I1 排在诊断序列最前（code "I1" < "Q…"），可见它未被误当作汇总项去触发 Q3。
 	seq := diagCodeSeq(ctx)
 	if seq[len(seq)-1] != query.CodeQ3 {
 		t.Fatalf("Q3 必须恒末位，实际次序 %v", seq)
 	}
-	if seq[0] != query.CodeI1 {
-		t.Fatalf("I1 应排在诊断序列最前（info，不参与 Q 汇总），实际次序 %v", seq)
+	for _, d := range ctx.Diagnostics {
+		if d.Code == "I1" {
+			t.Fatalf("Q 系列在场也不得复活 candidates 弃用 I1：%v", seq)
+		}
 	}
 }

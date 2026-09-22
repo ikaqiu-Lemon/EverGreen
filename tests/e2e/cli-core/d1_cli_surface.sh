@@ -76,11 +76,10 @@ command -v python3 >/dev/null || die "本脚本用 python3 做 --json 信封键�
 # 而不是「工作树必须干净」—— 后者会把「新文件还没提交」误判成越界。
 BEFORE_REPO_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 
-# 顶层命令注册表（M5 基线 22 条 + T-…-006 新增 opinion = 恰 23 条，
-# 见 2027-01-17-m5-release-and-version.md 与读路径 CLI 拆分设计 §5.4）
+# 顶层命令注册表（M5 基线 22 条 + opinion + Storage v3 两条 = 恰 25 条）
 CMDS=(init config capture context apply search card rel report deprecate restore
       replaced-by proposal delete undelete mark-reviewed unreviewed edit reconcile
-      check index bench opinion)
+      check index bench opinion materialize export)
 
 # envelope_keys <json文件>：回显缺失的信封键（空 = 五键齐全）
 envelope_missing() {
@@ -122,7 +121,7 @@ step "构建 eg（CGO_ENABLED=0，与发布口径一致）"
 ok "二进制就绪：$("${EG}" --version </dev/null | head -1)"
 
 # ---------------------------------------------------------------- 1. A 命令注册面
-step "A 命令注册面：顶层 --help 命令区恰 23 条（M5 22 + opinion 1），且逐条 --help 退 0"
+step "A 命令注册面：顶层 --help 命令区恰 25 条，且逐条 --help 退 0"
 eg --help >"${WORK}/help.txt" 2>&1 || die "eg --help 应退 0"
 python3 - "${WORK}/help.txt" >"${WORK}/listed.txt" <<'PY'
 import re, sys
@@ -136,15 +135,15 @@ for l in lines[start + 1:end]:
 PY
 LISTED="$(sort -u "${WORK}/listed.txt")"
 LISTED_N="$(printf '%s\n' "${LISTED}" | grep -c . || true)"
-[ "${LISTED_N}" = "23" ] ||
-  die "顶层 --help 命令区应恰列 23 条命令（M5 22 + opinion 1），实际 ${LISTED_N} 条：$(printf '%s' "${LISTED}" | tr '\n' ' ')"
+[ "${LISTED_N}" = "25" ] ||
+  die "顶层 --help 命令区应恰列 25 条命令，实际 ${LISTED_N} 条：$(printf '%s' "${LISTED}" | tr '\n' ' ')"
 for c in "${CMDS[@]}"; do
   printf '%s\n' "${LISTED}" | grep -qx "${c}" || die "顶层 --help 未列出命令 ${c}"
 done
 for c in "${CMDS[@]}"; do
   [ "$(code "${c}" --help)" = "0" ] || { cat "${WORK}/out.txt"; die "eg ${c} --help 应退 0"; }
 done
-ok "命令区恰 23 条且与注册表逐一对应；23 个 <cmd> --help 全部退 0"
+ok "命令区恰 25 条且与注册表逐一对应；25 个 <cmd> --help 全部退 0"
 
 # ---------------------------------------------------------------- 2. seed vault
 step "seed：走真实主链路 init → config → capture → context → apply（不手工造盘面）"

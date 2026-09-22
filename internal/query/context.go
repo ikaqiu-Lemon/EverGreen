@@ -100,6 +100,21 @@ type Candidate struct {
 	Reasons []string `json:"reasons"`
 }
 
+// DraftCandidate is the read-only projection of one candidate embedded in an
+// authoritative Note. It intentionally omits the candidate body; callers get
+// only identity, materialization state, stable output mapping, and a hash of
+// the exact H3 payload interval.
+type DraftCandidate struct {
+	Note        string `json:"note"`
+	Path        string `json:"path"`
+	Key         string `json:"key"`
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Status      string `json:"status"`
+	Output      string `json:"output"`
+	PayloadHash string `json:"payload_hash"`
+}
+
 // Context 是 eg context 的输出载荷。
 //
 // 不含 reviews 字段（S2 的综述面尚未落地），也不含任何显著标记字段（渲染面在
@@ -113,10 +128,10 @@ type Context struct {
 	Source *SourceView `json:"source"`
 	Notes  []NoteView  `json:"notes"`
 	Cards  []CardView  `json:"cards"`
-	// Candidates 是 D-3 的**过渡兼容字段**：内容 / 顺序逐项恒等于 KnowledgeCandidates
-	// （同一底层切片，JSON 逐字相等）。0.7.x 起弃用，调用方应改读 knowledge_candidates；
-	// 弃用提示（I1，info）由本包在 Diagnostics 里无条件产出恰一条，CLI 只原样透出、不另造。
-	Candidates []Candidate `json:"candidates"`
+	// DraftCandidates comes only from candidate-bearing Notes. These entries
+	// never join the already-materialized Knowledge/Opinion recommendation
+	// sets below.
+	DraftCandidates []DraftCandidate `json:"draft_candidates"`
 	// KnowledgeCandidates 是**知识卡**候选：保持旧实现逐字语义（同一 candidates() 单点、
 	// 同一三级全序、同一 CandidateLimit），不引入默认集合 / 打分 / base 行为回归。
 	KnowledgeCandidates []Candidate `json:"knowledge_candidates"`
@@ -146,7 +161,7 @@ func Build(req Request, hash Hasher) (*Context, error) {
 		Domain:              req.Domain,
 		Notes:               []NoteView{},
 		Cards:               []CardView{},
-		Candidates:          []Candidate{},
+		DraftCandidates:     []DraftCandidate{},
 		KnowledgeCandidates: []Candidate{},
 		OpinionCandidates:   []Candidate{},
 		Proposals:           []ProposalSummary{},
@@ -171,13 +186,32 @@ func Build(req Request, hash Hasher) (*Context, error) {
 		ctx.Source = target
 	}
 
-	// ① 材料层：本领域内属于该原文的已有笔记。
+	// ① 材料层：本领域内属于该原文的已有笔记。候选摘要直接从同一份权威
+	// Markdown 解析；协议畸形时按查询域惯例产 Q1 并跳过该 Note 的候选，不猜测。
+	var candidateDiags []Diagnostic
 	for _, n := range notes {
 		if target != nil && n.Source != target.ID {
 			continue
 		}
 		ctx.Notes = append(ctx.Notes, NoteView{ID: n.ID, Path: n.Path, Source: n.Source})
 		ctx.Base[n.Path] = hash(n.Raw)
+		drafts, err := mdfile.ParseCandidates(n.Raw)
+		if err != nil {
+			candidateDiags = append(candidateDiags,
+				newQ1(n.Path, "Note candidate 协议不可解析，候选已跳过：%v", err))
+			continue
+		}
+		for _, draft := range drafts {
+			status := "draft"
+			if draft.Anchor.Output != "" {
+				status = "materialized"
+			}
+			ctx.DraftCandidates = append(ctx.DraftCandidates, DraftCandidate{
+				Note: string(n.ID), Path: n.Path, Key: draft.Key,
+				Kind: string(draft.Kind), Title: draft.Title, Status: status,
+				Output: draft.Anchor.Output, PayloadHash: hash(draft.Raw(n.Raw)),
+			})
+		}
 	}
 
 	// ② 收敛输入：同领域 active 卡。打分输入集合只含 kind='card' 且 status: active，
@@ -197,9 +231,6 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	//    不复制算法（观点先经 opinionAsCandidate 投影成同构候选集，再与知识卡同款打分 /
 	//    三级全序 / CandidateLimit 截断）。两类各自独立截断，互不串味。
 	ctx.KnowledgeCandidates = candidates(targetTitle(ctx), cards)
-	// candidates 兼容字段（D-3）：指向同一底层切片，因此内容 / 顺序逐项恒等于
-	// knowledge_candidates，JSON 也逐字相等；调用方读哪个都拿到同一份知识候选。
-	ctx.Candidates = ctx.KnowledgeCandidates
 	ctx.OpinionCandidates = candidates(targetTitle(ctx), opinionCandidates(scan.Opinions))
 
 	// 被选中的知识 / 观点候选路径都进 base（B3 并发保护），content_hash 唯一注入
@@ -240,12 +271,9 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	// ⑥ 诚实诊断：扫描期的 Q1、定位原文期的 Q1、提案摘要期的 Q1 汇总后重排
 	//    （必要时补 Q3 汇总项）。Q 类一律 warning，**不影响退出码**——
 	//    eg context 仍退 0（合同 §5、§6）。
-	//    另外无条件追加 D-3 的 candidates 弃用提示 I1（info）：它是查询域事实，query.Build
-	//    的直接消费者与 CLI 由此看到同一套诊断（CLI 不再各造一份）。I1 是 info、不进 Q3
-	//    汇总统计（finalize 只数 Q1/Q2），排序后因 code "I1" < "Q…" 落在最前，Q3 恒末位不变。
 	merged := append(dropQ3(scan.Diagnostics), srcDiags...)
+	merged = append(merged, candidateDiags...)
 	merged = append(merged, propDiags...)
-	merged = append(merged, newI1CandidatesDeprecated())
 	ctx.Diagnostics = finalizeDiagnostics(merged)
 	return ctx, nil
 }

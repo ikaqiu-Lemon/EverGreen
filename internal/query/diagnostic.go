@@ -50,29 +50,12 @@ const (
 	CodeQ5 = "Q5"
 )
 
-// CodeI1 是 D-3 的**兼容弃用提示**码：`candidates` 字段已弃用，改读 `knowledge_candidates`
-// （schema v2 设计 §5.3 / 决策 D-3、T-…-006 Scope）。它是**查询域的事实**，由本包在组装
-// context 时无条件产出恰一条，让 query.Build 的直接消费者与 CLI 看到**同一套**诊断——
-// 不再由命令层各造一份。语义与 report §4.5.1 的 info 编号 I1 同码，但**查询层不 import
-// report**（§13 依赖方向不允许 query 依赖上层命令域的 report 包），两处各自持有同一字面量。
-//
-// 与 Q 系列正交：Q 系列是「扫不动 / 结果不完整」的 warning，I1 是「读法迁移」的 info；
-// 它**不被降级成 warning、不重复、绝不触发 Q3**（Q3 只汇总 Q1/Q2 的「结果不完整」）。
-const CodeI1 = "I1"
-
 // diagSummaryPath 是汇总类诊断（Q3 / Q4 / Q5 与降级原因码）的 path 逐字取值：
 // 它们不属于某一个文件，路径位因此恒为「(汇总)」而不是空串——诊断必须有 path。
 const diagSummaryPath = "(汇总)"
 
-// candidatesDeprecatedPath 是 I1 的 path 逐字取值：它指向被弃用的 `candidates` 字段本身。
-const candidatesDeprecatedPath = "candidates"
-
 // DiagLevel 是 Q 系列的分级：合同定死**一律 warning**，不存在第二个取值。
 const DiagLevel = "warning"
-
-// DiagLevelInfo 是 info 级诊断的分级取值。当前唯一持有者是 I1（读法迁移提示）——
-// 它与 Q 系列的 warning 是**两个**取值，CLI 透出时必须原样保留各条的 level，不得一刀切。
-const DiagLevelInfo = "info"
 
 // Diagnostic 是一条只读诊断（结构与 CLI 合同 §5 的诊断载荷同构：
 // code / level / path / message；op_index 由 CLI 层统一填 -1，查询层不产生 op 概念）。
@@ -99,14 +82,6 @@ func newQ1(path, format string, args ...interface{}) Diagnostic {
 func newQ2(path, format string, args ...interface{}) Diagnostic {
 	return Diagnostic{Code: CodeQ2, Level: DiagLevel, Path: path,
 		Message: fmt.Sprintf(format, args...)}
-}
-
-// newI1CandidatesDeprecated 记 D-3 的 `candidates` 弃用提示（**info** 级、path 逐字
-// `candidates`）。消息只说一件事：该字段已弃用、改读 `knowledge_candidates`。
-// 它由 context 组装无条件产出恰一条，绝不进 finalize 的 Q3 汇总统计。
-func newI1CandidatesDeprecated() Diagnostic {
-	return Diagnostic{Code: CodeI1, Level: DiagLevelInfo, Path: candidatesDeprecatedPath,
-		Message: "`candidates` 已弃用，改读 `knowledge_candidates`"}
 }
 
 // finalizeDiagnostics 给诊断集合排序并按需追加**恰一条** Q3 汇总项。

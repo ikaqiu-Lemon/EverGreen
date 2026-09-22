@@ -62,6 +62,10 @@ func commands() []*Command {
 		// 该壳对任一合法子命令一律返回 NotWiredError（退 1、零写入）。
 		// 子命令按 `eg config get|set` / `eg proposal …` 的既有惯例**不单独计数**。
 		opinionCommand(),
+		// Storage v3 H3 闭环：用户显式确定性物化与只读 plain export。
+		// 注册表总量随之 23 → 25；两条都追加在既有名册尾部。
+		materializeCommand(),
+		exportCommand(),
 	}
 }
 

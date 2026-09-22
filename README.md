@@ -154,7 +154,7 @@ Two properties fall out of this shape:
 Binaries for Linux and macOS are attached to each [release](https://github.com/ikaqiu-Lemon/EverGreen/releases).
 
 ```console
-$ VER=v0.7.0-m7
+$ VER=v0.8.0-m8
 $ OS=$(uname -s | tr '[:upper:]' '[:lower:]')            # linux | darwin
 $ ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
@@ -168,7 +168,7 @@ eg_linux_amd64: OK
 $ chmod +x "eg_${OS}_${ARCH}"
 $ sudo mv "eg_${OS}_${ARCH}" /usr/local/bin/eg
 $ eg --version
-eg 0.7.0-m7 (commit …, built …)
+eg 0.8.0-m8 (commit …, built …)
 ```
 
 Each release also ships `PROVENANCE.txt`, which binds the release version and source commit to the
@@ -187,7 +187,7 @@ $ git clone https://github.com/ikaqiu-Lemon/EverGreen.git
 $ cd EverGreen
 $ make build          # native bin/eg + cross-compiled dist/
 $ ./bin/eg --version
-eg 0.7.0-m7 (commit …, built …)
+eg 0.8.0-m8 (commit …, built …)
 ```
 
 **Requirements:** Go 1.25+, Git, GNU Make. Python 3 with PyYAML is needed only to run the
@@ -266,12 +266,11 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 ```
 
 This read-only call returns the source body, similar existing entities, and — most importantly —
-`base`, a map of file → `content_hash`. Candidates come in two typed lists: `knowledge_candidates`
-(existing Knowledge `k-*` to reuse or extend) and `opinion_candidates` (existing Opinion `o-*`). The
-legacy `candidates` field is still emitted for 0.7.x compatibility and is **identically equal to
-`knowledge_candidates`**; `eg context` **unconditionally emits exactly one `I1` deprecation info** for
-it (independent of whether a caller reads the field), and it will be **removed in 0.8.0**. Both typed
-lists feed the plan's `base`:
+`base`, a map of file → `content_hash`. `draft_candidates` reports candidate summaries embedded in
+Notes, including their draft/materialized state, persistent output ID, and exact payload hash.
+Already-materialized entities remain separate in `knowledge_candidates` (Knowledge `k-*`) and
+`opinion_candidates` (Opinion `o-*`). Version 0.8.0-m8 removes the legacy `candidates` alias and its
+deprecation `I1`. The two materialized candidate lists feed the plan's `base`:
 
 ```json
 {
@@ -280,7 +279,7 @@ lists feed the plan's `base`:
     "base": {
       "unprocessed.md": "sha256:49d70d685f07d2b18acfaa97893565bd6e7c252a6a0deb43ec1c94a35ae656f5"
     },
-    "candidates": [],
+    "draft_candidates": [],
     "knowledge_candidates": [],
     "opinion_candidates": [],
     "cards": [],
@@ -307,6 +306,21 @@ lists feed the plan's `base`:
 Those hashes are an **optimistic-concurrency token**: copy them verbatim into your ChangePlan. If a
 file changed underneath you, Evergreen skips that file instead of clobbering it.
 
+Storage v3 plans save Knowledge/Opinion drafts inside the Note with
+`write_note.candidate_drafts[]` and the separate `candidate_coverage[]` matrix. The agent may save
+and revise those drafts, but it must not materialize them. Step 4 shows the explicit user
+materialization after the candidate plan has been applied. A plain export is available independently:
+
+```console
+$ eg export --plain --output ../evergreen-plain
+```
+
+`eg materialize` performs no model or network call. It validates and copies exact candidate bytes,
+writes `k-*` under `knowledge/` and `o-*` under `opinions/` (`validation: pending`), and commits the
+targets plus the Note mapping in one journal-v1 transaction. `eg export --plain` is read-only with
+respect to the vault and removes only Evergreen machine anchors, candidate attributes, and fenced-div
+boundary lines from the exported Markdown.
+
 ### 4. Write through a ChangePlan
 
 The captured source persists with a template blank as body line `L1`, so its three real content
@@ -317,7 +331,7 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
   "plan_version": 2,
   "verb": "process",
   "domain": "ai-infra",
-  "reason": "distill The Bitter Lesson into reusable knowledge and one opinion",
+  "reason": "save The Bitter Lesson as a review Note with one knowledge and one opinion candidate",
   "requirement_ids": ["EG-KNW-04"],
   "convergence": [],
   "base": { "unprocessed.md": "sha256:879b6ef5…" },
@@ -334,44 +348,39 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
         { "role": "agent",  "annotation": "summary", "body": "The definition and its scope are stable knowledge; the economic bet is a value judgement, so it becomes an opinion." }
       ],
       "omissions": [],
-      "extraction_coverage": [
-        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "Claim and its historical grounds become one reusable card.", "disposition": "outputs", "outputs": ["k-20260915-bitter-lesson"] },
-        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "The long-run bet is a value judgement, tracked as an opinion.",  "disposition": "outputs", "outputs": ["o-20260915-scale-bet"] }
+      "candidate_drafts": [
+        {
+          "key": "cand-general-methods",
+          "kind": "knowledge",
+          "title": "General methods scale with compute",
+          "source_refs": ["L2-L2", "L3-L3"],
+          "rel": "support",
+          "reason": "the article grounds the claim in four domains of history",
+          "tags": ["ai", "method"],
+          "sections": [
+            { "name": "知识内容", "body": "Methods built on search and learning can turn growing compute into capability.\n" },
+            { "name": "条件与边界", "body": "The task must admit large-scale search or learning, and available compute must keep growing.\n" }
+          ]
+        },
+        {
+          "key": "cand-scale-bet",
+          "kind": "opinion",
+          "title": "Encoding human knowledge is a losing long-run bet",
+          "source_refs": ["L4-L4"],
+          "rel": "support",
+          "reason": "the article's closing bet",
+          "tags": ["ai", "research-direction"],
+          "sections": [
+            { "name": "观点", "body": "Investing in scalable search and learning beats investing in hand-coded domain knowledge.\n" },
+            { "name": "论据与推理", "body": "Compute keeps getting cheaper, so scalable methods raise their ceiling over time.\n" },
+            { "name": "待验证", "body": "Does this hold for tasks with scarce data or weak evaluation signals?\n" }
+          ]
+        }
       ],
-      "output_cards": [
-        { "card": "k-20260915-bitter-lesson", "mode": "新建" },
-        { "card": "o-20260915-scale-bet", "mode": "新建" }
+      "candidate_coverage": [
+        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "Claim and its historical grounds become one reusable candidate.", "disposition": "candidate", "candidates": ["cand-general-methods"] },
+        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "The long-run bet is a value judgement, tracked as an opinion candidate.", "disposition": "candidate", "candidates": ["cand-scale-bet"] }
       ]
-    },
-    {
-      "op": "create_knowledge",
-      "card_id": "k-20260915-bitter-lesson",
-      "title": "General methods that scale with compute beat hand-coded knowledge",
-      "tags": ["ai", "method"],
-      "sources": [
-        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "the article grounds the claim in four domains of history" }
-      ],
-      "sections": {
-        "知识内容": "Methods built on search and learning that scale with compute outperform methods that encode human domain knowledge directly.\n",
-        "条件与边界": "Assumes compute keeps growing and the task admits large-scale search or learning.\n"
-      }
-    },
-    {
-      "op": "create_opinion",
-      "opinion_id": "o-20260915-scale-bet",
-      "title": "Encoding human knowledge is a losing long-run bet",
-      "sources": [
-        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "the article's closing bet" }
-      ],
-      "sections": {
-        "观点": "Investing in scalable search and learning beats investing in hand-coded domain knowledge.\n",
-        "论据与推理": "Compute keeps getting cheaper, so scalable methods raise their ceiling over time.\n"
-      }
-    },
-    {
-      "op": "add_open_question",
-      "note": "n-20260915-bitter-lesson",
-      "question": "Does this hold for tasks with scarce data or weak evaluation signals?"
     }
   ]
 }
@@ -379,10 +388,10 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
 
 `write_note` is the v2 canonical shape: `blocks[]` reproduce the source lines in order (each `source`
 block cites the physical range it came from via `source_ref`), `omissions[]` records — explicitly,
-even when empty — the lines you deliberately dropped, and `extraction_coverage[]` closes the loop by
-dispositioning every source range as `outputs`, `note_only`, or `missing`. Knowledge lands through
-`create_knowledge` (three sections), value judgements through `create_opinion` (five sections,
-`validation` defaults to `pending` — the agent path may never set `validated`/`rejected`).
+even when empty — the lines you deliberately dropped. `candidate_drafts[]` stores complete
+Knowledge/Opinion template payloads, while `candidate_coverage[]` classifies every source range as
+`candidate`, `note_only`, or `unresolved`. The candidate path omits `output_cards` and final
+`extraction_coverage`; it never predicts a `k-*` or `o-*` ID.
 
 Always dry-run first — it runs full validation with **zero writes**:
 
@@ -393,9 +402,9 @@ $ eg apply --plan plan.json --dry-run
 ```console
 状态：completed（exit_code=0，ok=true）
 --dry-run：零写入、零 commit，以下是将写入的清单
-知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
+知识卡：新建 0 张，复用 0 张，补充 0 张
 关系：材料 0 条，论证 0 条
-写入文件 3 个：domains/ai-infra/notes/n-….md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
+写入文件 2 个：domains/ai-infra/notes/n-….md、unprocessed.md
 commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
 ```
 
@@ -408,13 +417,21 @@ $ eg apply --plan plan.json
 ```console
 状态：completed（exit_code=0，ok=true）
 材料笔记：n-20260915-bitter-lesson（领域 ai-infra，domains/ai-infra/notes/n-….md，重新加工 false）
-知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
-关系：材料 2 条，论证 0 条
-未决问题：n-20260915-bitter-lesson ← Does this hold for tasks with scarce data…?
-写入文件 4 个：domains/ai-infra/notes/n-….md、unprocessed.md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
+知识卡：新建 0 张，复用 0 张，补充 0 张
+关系：材料 0 条，论证 0 条
+写入文件 2 个：domains/ai-infra/notes/n-….md、unprocessed.md
 commit：842c8ddb03a2bbe2eab7c5a99f4495fe1979ba17
-显著变更：new_core_card（k-20260915-bitter-lesson）新建知识卡：承载本次加工的新核心含义
 ```
+
+After reviewing or editing the candidate payloads, the user materializes them explicitly:
+
+```console
+$ eg materialize --note n-20260915-bitter-lesson --all --user-request
+```
+
+That transaction creates one `k-*` and one `o-*` (`validation: pending`) and records their persistent
+mapping in the Note. Repeating the command on a later date is a no-op when the mappings and payloads
+still match.
 
 ### 5. Read it back
 
@@ -693,7 +710,7 @@ content to fill it.
 
 ## Command reference
 
-The CLI exposes 23 top-level commands（顶层命令共 23 个）. Run `eg <command> --help` for the
+The CLI exposes 25 top-level commands（顶层命令共 25 个）. Run `eg <command> --help` for the
 authoritative argument list — every help page documents its own exit codes.
 
 **Setup**
@@ -708,8 +725,10 @@ authoritative argument list — every help page documents its own exit codes.
 | Command | Purpose |
 | --- | --- |
 | `eg capture` | Store source material and add it to the inbox |
-| `eg context` | Read-only: `knowledge_candidates` + `opinion_candidates` (+ legacy `candidates`) + `base` content hashes |
-| `eg apply --plan <file\|->` | Validate and apply a ChangePlan — the only write channel |
+| `eg context` | Read-only: `draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hashes |
+| `eg apply --plan <file\|->` | Validate and apply a ChangePlan |
+| `eg materialize` | User-initiated deterministic Note candidate materialization |
+| `eg export --plain` | Export data Markdown without Evergreen-specific protocol syntax |
 | `eg report --last` | Read-only replay of the last report-producing write (`eg apply` or `eg capture`) |
 
 **Reading**
@@ -1070,7 +1089,7 @@ from two machines at once — the lock is local-only.
 
 ## Project information
 
-- **Version:** `0.7.0-m7` · **Module:** `github.com/ikaqiu-Lemon/EverGreen`
+- **Version:** `0.8.0-m8` · **Module:** `github.com/ikaqiu-Lemon/EverGreen`
 - **Security:** private vulnerability reporting in [SECURITY.md](SECURITY.md)
 - **Privacy:** local-only data-handling model in [PRIVACY.md](PRIVACY.md)
 - **Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

@@ -4,7 +4,7 @@ package cli
 //
 // 与 docs_test.go 的分工：docs_test.go 守 M2–M6 的历史判据（脚手架措辞、退出码表、命令登记、
 // 版本三处同源）；本文件**只守 Schema v2 用户合同的当前态**——两份 README 的 quick-start
-// JSON（ChangePlan / context）、四实体与模板、主链路 op、search/index，以及 README.zh-CN.md 与
+// JSON（ChangePlan / context）、四实体与模板、Storage v3 候选主链路、search/index，以及 README.zh-CN.md 与
 // CHANGELOG.md 的 Unreleased 登记。
 //
 // 关键设计（T8-2 两轮复审后加固）：
@@ -25,9 +25,8 @@ package cli
 //     append_opinion/add_material_rel/add_relation/add_open_question）、OpAliases{create_card→
 //     create_knowledge, append_card→append_knowledge}；write_note 字段表含 blocks/omissions/
 //     extraction_coverage。
-//   internal/query/context.go：candidates == knowledge_candidates（同一底层切片），另有
-//     opinion_candidates；query.Build 在 diagnostics 中**无条件**追加恰一条 candidates 弃用 I1
-//     （与调用方是否读取字段无关），两类候选都进 base。
+//   internal/query/context.go：draft_candidates / knowledge_candidates /
+//     opinion_candidates 三集合严格分离；m8 删除 legacy candidates 与其弃用 I1。
 //   internal/cli/search.go：--kind 默认 knowledge，可选 opinion|all。
 //   internal/index/schema.go：IndexSchemaVersion=2、cards/cards_fts 带 kind + validation、共 6 表、
 //     版本不符整库重建（无增量迁移）。
@@ -69,10 +68,9 @@ type readmeAnchors struct {
 	readStart, readEnd             string // 读路径（search --kind 匹配分说明）
 	indexStart, indexEnd           string // 派生索引（index schema）
 
-	// context 兼容口径逐字短语（钉在 ctx 小节内）。
-	ctxEqualPhrase string // candidates ≡ knowledge_candidates
-	ctxI1Phrase    string // eg context 无条件发出恰一条 I1
-	ctxBasePhrase  string // 两类候选都进 base
+	// context 口径逐字短语（钉在 ctx 小节内）。
+	ctxRemovedPhrase string // legacy candidates 与其 I1 已删除
+	ctxBasePhrase    string // 两类已物化候选都进 base
 
 	// ChangePlan 逐字短语（钉在 changePlan 小节内）。
 	eightKeysPhrase          string
@@ -119,9 +117,8 @@ func readmeAnchorTable() []readmeAnchors {
 			indexStart:      "## The derived index",
 			indexEnd:        "## Performance",
 
-			ctxEqualPhrase:           "identically equal to\n`knowledge_candidates`",
-			ctxI1Phrase:              "unconditionally emits exactly one `I1` deprecation info",
-			ctxBasePhrase:            "Both typed\nlists feed the plan's `base`",
+			ctxRemovedPhrase:         "removes the legacy `candidates` alias and its\ndeprecation `I1`",
+			ctxBasePhrase:            "The two materialized candidate lists feed the plan's `base`",
 			eightKeysPhrase:          "exactly eight top-level keys",
 			planVersionCurrentPhrase: "`2` for current plans",
 			searchDefaultPhrase:      "defaults to `--kind knowledge`",
@@ -155,8 +152,7 @@ func readmeAnchorTable() []readmeAnchors {
 			indexStart:      "## 派生索引",
 			indexEnd:        "## 性能",
 
-			ctxEqualPhrase:           "恒等于 `knowledge_candidates`",
-			ctxI1Phrase:              "无条件发出恰一条 `I1` 弃用提示",
+			ctxRemovedPhrase:         "已删除旧 `candidates` 别名及其弃用 `I1`",
 			ctxBasePhrase:            "分别进入 plan 的 `base`",
 			eightKeysPhrase:          "顶层恰 8 个键",
 			planVersionCurrentPhrase: "当前 plan 为 `2`",
@@ -424,21 +420,32 @@ func TestDocsV2_PlanVersionIsTwo(t *testing.T) {
 	}
 }
 
-// TestDocsV2_WriteNoteCanonicalShape：quick-start 的 write_note 必须是 v2 canonical 形态——
-// 含 blocks[] / omissions[] / extraction_coverage[]，不得再用 sections{} 或 coverage_gaps；
+// TestDocsV2_WriteNoteCanonicalShape：quick-start 的 write_note 必须是 Storage v3 candidate 形态——
+// 含 blocks[] / omissions[] / candidate_drafts[] / candidate_coverage[]，不得带最终产物字段；
 // 并调用共享 validator vWriteNoteFidelity，结构化断言三条来源块 body 与 capture 原文逐字相等。
 func TestDocsV2_WriteNoteCanonicalShape(t *testing.T) {
 	for _, p := range docsREADMEs() {
 		block := planJSONBlock(t, p)
-		region := writeNoteRegion(t, block)
-		for _, must := range []string{`"blocks"`, `"omissions"`, `"extraction_coverage"`} {
-			if !strings.Contains(region, must) {
-				t.Fatalf("%s 的 write_note 缺 v2 canonical 字段 %s", p, must)
+		var doc struct {
+			Ops []map[string]interface{} `json:"ops"`
+		}
+		if err := json.Unmarshal([]byte(block), &doc); err != nil {
+			t.Fatalf("%s 的 quick-start plan JSON 不可解析：%v", p, err)
+		}
+		if len(doc.Ops) != 1 || doc.Ops[0]["op"] != "write_note" {
+			t.Fatalf("%s 的 candidate quick-start 必须只含一个 write_note op", p)
+		}
+		op := doc.Ops[0]
+		for _, must := range []string{"blocks", "omissions", "candidate_drafts", "candidate_coverage"} {
+			if _, ok := op[must]; !ok {
+				t.Fatalf("%s 的 write_note 缺 Storage v3 canonical 字段 %q", p, must)
 			}
 		}
-		for _, banned := range []string{`"sections"`, `"coverage_gaps"`} {
-			if strings.Contains(region, banned) {
-				t.Fatalf("%s 的 write_note 仍含 v1 字段 %s（v2 write_note 用 blocks[]，禁用它）", p, banned)
+		for _, banned := range []string{
+			"coverage_gaps", "output_cards", "extraction_coverage",
+		} {
+			if _, ok := op[banned]; ok {
+				t.Fatalf("%s 的 candidate write_note 不得含最终/兼容字段 %q", p, banned)
 			}
 		}
 		if err := vWriteNoteFidelity(block, captureBodyLines(t, p)); err != nil {
@@ -447,66 +454,67 @@ func TestDocsV2_WriteNoteCanonicalShape(t *testing.T) {
 	}
 }
 
-// TestDocsV2_QuickStartUsesDualEntities：quick-start plan 必须同时示范 create_knowledge 与
-// create_opinion（各至少一个 k-* 与一个 o-*），且不得再用 create_card / append_card（兼容别名）。
+// TestDocsV2_QuickStartUsesDualEntities：quick-start plan 必须同时示范 Knowledge 与 Opinion
+// candidate，且 Agent apply 阶段不得直接创建/追加最终实体。
 func TestDocsV2_QuickStartUsesDualEntities(t *testing.T) {
 	for _, p := range docsREADMEs() {
 		block := planJSONBlock(t, p)
-		for _, must := range []string{`"create_knowledge"`, `"create_opinion"`} {
+		for _, must := range []string{
+			`"candidate_drafts"`, `"candidate_coverage"`,
+			`"kind": "knowledge"`, `"kind": "opinion"`,
+		} {
 			if !strings.Contains(block, must) {
-				t.Fatalf("%s 的 quick-start plan 未示范 %s（v2 双入口）", p, must)
+				t.Fatalf("%s 的 quick-start plan 未示范 %s", p, must)
 			}
 		}
-		for _, banned := range []string{`"create_card"`, `"append_card"`} {
+		for _, banned := range []string{
+			`"create_card"`, `"append_card"`, `"create_knowledge"`, `"append_knowledge"`,
+			`"create_opinion"`, `"append_opinion"`, `"output_cards"`, `"extraction_coverage"`,
+		} {
 			if strings.Contains(block, banned) {
-				t.Fatalf("%s 的 quick-start plan 仍用兼容别名 %s（新 plan 禁用，改用 create_knowledge/append_knowledge）", p, banned)
+				t.Fatalf("%s 的 Storage v3 quick-start plan 不得含直接产物片段 %s", p, banned)
 			}
 		}
-		if !regexp.MustCompile(`\bk-`).MatchString(block) {
-			t.Fatalf("%s 的 quick-start plan 缺 Knowledge 产物 id（k-*）", p)
+		if !regexp.MustCompile(`\bcand-[a-z0-9-]+`).MatchString(block) {
+			t.Fatalf("%s 的 quick-start plan 缺 candidate key", p)
 		}
-		if !regexp.MustCompile(`\bo-`).MatchString(block) {
-			t.Fatalf("%s 的 quick-start plan 缺 Opinion 产物 id（o-*）", p)
+		if regexp.MustCompile(`"(?:card_id|opinion_id|card|output)"\s*:\s*"[ko]-`).MatchString(block) {
+			t.Fatalf("%s 的 quick-start plan 提前伪造 k-* / o-* output", p)
+		}
+		planSec := sectionBetween(t, readDocs(t, p),
+			anchorsFor(t, p).planStart, anchorsFor(t, p).planEnd)
+		if !strings.Contains(planSec, "eg materialize --note n-20260915-bitter-lesson --all --user-request") {
+			t.Fatalf("%s 的 quick-start 缺用户显式 materialize 步骤", p)
 		}
 	}
 }
 
-// TestDocsV2_ContextDualCandidates：quick-start 的 eg context 示例块必须同时含 candidates、
-// knowledge_candidates、opinion_candidates 三字段（后者走共享 validator）；且**同一小节的兼容正文**须
-// 逐字写明：candidates ≡ knowledge_candidates、I1 由 eg context 无条件发出、0.7.x 保留 / 0.8.0 删除、
-// 两类候选都进 base。断言全部钉在 step-3 小节内。
+// TestDocsV2_ContextCandidateSets：quick-start 的 eg context 示例块必须同时含
+// draft_candidates / knowledge_candidates / opinion_candidates，且不得再含 legacy candidates。
 func TestDocsV2_ContextDualCandidates(t *testing.T) {
 	for _, p := range docsREADMEs() {
 		a := anchorsFor(t, p)
 		block := contextJSONBlock(t, p)
-		for _, must := range []string{`"candidates"`, `"knowledge_candidates"`} {
+		for _, must := range []string{`"draft_candidates"`, `"knowledge_candidates"`} {
 			if !strings.Contains(block, must) {
-				t.Fatalf("%s 的 eg context 示例缺字段 %s（v2 三字段并存）", p, must)
+				t.Fatalf("%s 的 eg context 示例缺字段 %s（Storage v3 三集合分列）", p, must)
 			}
+		}
+		if regexp.MustCompile(`(?m)^\s*"candidates"\s*:`).MatchString(block) {
+			t.Fatalf("%s 的 eg context 示例仍含 m8 已删除的 legacy candidates", p)
 		}
 		if err := vOpinionCandidates(block); err != nil {
 			t.Fatalf("%s 的 eg context 示例：%v", p, err)
 		}
 		ctx := sectionBetween(t, readDocs(t, p), a.ctxStart, a.ctxEnd)
 		checks := []struct{ what, phrase string }{
-			{"candidates ≡ knowledge_candidates", a.ctxEqualPhrase},
-			{"eg context 无条件发出恰一条 I1", a.ctxI1Phrase},
+			{"legacy candidates 与弃用 I1 已删除", a.ctxRemovedPhrase},
 			{"两类候选都进 base", a.ctxBasePhrase},
-			{"0.7.x 兼容保留", "0.7"},
-			{"0.8.0 删除", "0.8.0"},
+			{"0.8.0-m8 版本", "0.8.0-m8"},
 		}
 		for _, c := range checks {
 			if !strings.Contains(ctx, c.phrase) {
 				t.Fatalf("%s 的 eg context 小节未写明「%s」，缺短语 %q", p, c.what, c.phrase)
-			}
-		}
-		// 反证事实错误：不得把 I1 说成「读取 candidates 才触发」。
-		for _, wrong := range []string{
-			"reading it raises an", "reading `candidates` raises",
-			"读取 candidates 才", "读取该字段才", "读取字段触发",
-		} {
-			if strings.Contains(ctx, wrong) {
-				t.Fatalf("%s 的 eg context 小节仍把 I1 归因于调用方读取字段（%q）——I1 由 eg context 无条件发出", p, wrong)
 			}
 		}
 	}
@@ -693,17 +701,14 @@ func topLevelBullets(section string) []string {
 // TestDocsV2_ChangelogUnreleased：CHANGELOG.md 的 Unreleased 段落如实登记 Schema v2；并**修正分类**：
 //   - plan_version 2 不得标 Breaking——按**整条 bullet**判断（不是同一行），且该 bullet 须写成
 //     additive/compatibility；
-//   - context 三字段并存/弃用是接口变更但**不立即断裂**；
+//   - context 在 m8 删除 legacy candidates 与弃用 I1，并增加 draft_candidates；
 //   - index schema2 仅可标「派生存储 schema」breaking，且明确无权威数据迁移；
-//   - candidates I1 由 eg context 无条件发出。
-//
-// 且不得新增 0.7.0-m7 发布标题（版本推进留 T8-4）。
 func TestDocsV2_ChangelogUnreleased(t *testing.T) {
 	doc := readDocs(t, docsCHANGELOG)
 	section := unreleasedSection(t, doc)
 	// 关键项登记：opinion/kind/knowledge 用**一条精确字面量**覆盖，避免散词重复。
 	for _, must := range []string{
-		"plan_version", "schema_version", "candidates", "0.8.0",
+		"plan_version", "schema_version", "draft_candidates", "0.8.0-m8",
 		"`eg search --kind knowledge|opinion|all`",
 	} {
 		if !strings.Contains(section, must) {
@@ -741,35 +746,30 @@ func TestDocsV2_ChangelogUnreleased(t *testing.T) {
 	if !strings.Contains(section, "No authoritative data migration") {
 		t.Fatal("CHANGELOG Unreleased 未写明 index schema2 无权威数据迁移")
 	}
-	// context：接口变更但不立即断裂 + I1 由 eg context 无条件发出。
-	if !strings.Contains(section, "no caller breaks now") {
-		t.Fatal("CHANGELOG Unreleased 未写明 context 三字段并存不立即断裂（no caller breaks now）")
-	}
-	if !strings.Contains(section, "unconditionally emits exactly one `I1`") {
-		t.Fatal("CHANGELOG Unreleased 未写明 candidates I1 由 eg context 无条件发出")
-	}
-	// 版本推进（0.7.0-m7 发布标题）不属本批。
-	if regexp.MustCompile(`(?m)^##\s+0\.7\.0-m7\b`).MatchString(doc) {
-		t.Fatal("CHANGELOG 出现 0.7.0-m7 发布标题（版本推进留 T8-4，本批仅登记 Unreleased）")
+	if !strings.Contains(section, "legacy") || !strings.Contains(section, "removed") ||
+		!strings.Contains(section, "deprecation `I1`") {
+		t.Fatal("CHANGELOG Unreleased 未写明 legacy candidates 与其弃用 I1 已删除")
 	}
 }
 
 // TestDocsV2_InstallSchemaSummary：INSTALL.md 的「Schema v2 summary」小节内简洁登记安装后需要知道的
-// Schema v2 兼容 / 验证摘要——当前/兼容 plan 版本、index schema v2、context 双候选 + legacy、四实体/两目录、
-// canonical op / 别名迁移、search 默认，以及 candidates I1 由 eg context 无条件发出。
+// Schema v2 / Storage v3 摘要——当前/兼容 plan 版本、index schema v2、三类 context 候选集合、
+// 四实体/两目录、canonical op / 别名迁移与 search 默认。
 func TestDocsV2_InstallSchemaSummary(t *testing.T) {
 	doc := readDocs(t, docsINSTALL)
 	sec := sectionBetween(t, doc, "## Schema v2 summary", "## Review and logical deletion")
 	for _, must := range []string{
-		"plan_version", "{1, 2}", "schema_version", "knowledge_candidates", "opinion_candidates",
+		"plan_version", "{1, 2}", "schema_version", "draft_candidates",
+		"knowledge_candidates", "opinion_candidates",
 		"opinions/", "create_knowledge", "create_opinion", "--kind knowledge",
 	} {
 		if !strings.Contains(sec, must) {
 			t.Fatalf("INSTALL.md 的 Schema v2 summary 小节缺摘要项 %q", must)
 		}
 	}
-	if !strings.Contains(sec, "unconditionally emits exactly one `I1`") {
-		t.Fatal("INSTALL.md 的 Schema v2 summary 未写明 candidates I1 由 eg context 无条件发出")
+	if !strings.Contains(sec, "removes the legacy `candidates` alias") ||
+		!strings.Contains(sec, "deprecation `I1`") {
+		t.Fatal("INSTALL.md 的 Schema v2 summary 未写明 legacy candidates 与弃用 I1 已删除")
 	}
 }
 

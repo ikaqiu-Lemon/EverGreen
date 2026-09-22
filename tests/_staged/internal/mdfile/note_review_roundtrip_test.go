@@ -144,6 +144,30 @@ func TestReviewRoundTripMatrix(t *testing.T) {
 	}
 }
 
+// TestReviewParserAcceptsOuterSectionSeparator verifies the exact shape used
+// when RenderReviewNote output is embedded as an H2 payload. The Note template
+// contributes one additional blank line after the renderer's terminal newline;
+// a final agent block must not mistake that structural separator for a
+// truncated blockquote continuation.
+func TestReviewParserAcceptsOuterSectionSeparator(t *testing.T) {
+	blocks := []ReviewBlock{
+		rtSrc("", "L1-L1", "来源。"),
+		rtAgent("", "reflection", "", "最后一条批注。"),
+	}
+	rendered, err := RenderReviewNote(blocks, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := append(append([]byte(nil), rendered...), '\n')
+	got, err := ParseReviewNote(embedded)
+	if err != nil {
+		t.Fatalf("外层 H2 分隔空行不应被当成 agent 续行：%v\n%s", err, embedded)
+	}
+	if len(got.Blocks) != 2 || string(got.Blocks[1].Body) != "最后一条批注。" {
+		t.Fatalf("解析结果不等价：%+v", got.Blocks)
+	}
+}
+
 // TestReviewRoundTripAllBuiltinAnnotations —— 七类内置批注逐类 round-trip，
 // 且渲染出的可见标签就是契约固定中文。
 func TestReviewRoundTripAllBuiltinAnnotations(t *testing.T) {

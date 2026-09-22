@@ -76,6 +76,7 @@ tests/_staged/internal/cli/reviewed_test.go	internal/cli/reviewed_test.go	evergr
 tests/_staged/internal/cli/root_help_contract_test.go	internal/cli/root_help_contract_test.go	evergreen	unit	go
 tests/_staged/internal/cli/search_test.go	internal/cli/search_test.go	evergreen	unit	go
 tests/_staged/internal/cli/skill_test.go	internal/cli/skill_test.go	evergreen	unit	go
+tests/_staged/internal/cli/storage_v3_cli_test.go	internal/cli/storage_v3_cli_test.go	evergreen	unit	go
 tests/_staged/internal/cli/t061_final_review_test.go	internal/cli/t061_final_review_test.go	evergreen	unit	go
 tests/_staged/internal/cli/undelete_test.go	internal/cli/undelete_test.go	evergreen	unit	go
 tests/_staged/internal/cli/undelete_transaction_test.go	internal/cli/undelete_transaction_test.go	evergreen	unit	go
@@ -104,6 +105,7 @@ tests/_staged/internal/mdfile/fuzz_test.go	internal/mdfile/fuzz_test.go	evergree
 tests/_staged/internal/mdfile/mdfile_test.go	internal/mdfile/mdfile_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/note_review_roundtrip_test.go	internal/mdfile/note_review_roundtrip_test.go	evergreen	unit	go
 tests/_staged/internal/mdfile/opinion_sections_test.go	internal/mdfile/opinion_sections_test.go	evergreen	unit	go
+tests/_staged/internal/mdfile/plain_export_test.go	internal/mdfile/plain_export_test.go	evergreen	unit	go
 tests/_staged/internal/model/frontmatter_test.go	internal/model/frontmatter_test.go	evergreen	unit	go
 tests/_staged/internal/model/model_test.go	internal/model/model_test.go	evergreen	unit	go
 tests/_staged/internal/model/opinion_frontmatter_test.go	internal/model/opinion_frontmatter_test.go	evergreen	unit	go
@@ -149,6 +151,7 @@ tests/_staged/internal/query/card_test.go	internal/query/card_test.go	evergreen	
 tests/_staged/internal/query/context_test.go	internal/query/context_test.go	evergreen	unit	go
 tests/_staged/internal/query/degrade_rowlevel_test.go	internal/query/degrade_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/query/diagnostic_placement_test.go	internal/query/diagnostic_placement_test.go	evergreen	unit	go
+tests/_staged/internal/query/draft_candidate_context_test.go	internal/query/draft_candidate_context_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/fuzz_test.go	internal/query/filter/fuzz_test.go	evergreen	unit	go
 tests/_staged/internal/query/filter/unreviewed_test.go	internal/query/filter/unreviewed_test.go	evergreen	unit	go
 tests/_staged/internal/query/fuzz_test.go	internal/query/fuzz_test.go	evergreen	unit	go
@@ -240,6 +243,7 @@ tests/_staged/test/e2e/m4_r7_support_test.go	test/e2e/m4_r7_support_test.go	ever
 tests/_staged/test/e2e/m4_report_reconcile_test.go	test/e2e/m4_report_reconcile_test.go	evergreen	integration	go
 tests/_staged/test/e2e/ppe_test.go	test/e2e/ppe_test.go	evergreen	integration	go
 tests/_staged/test/txnctl/main_test.go	test/txnctl/main_test.go	evergreen	integration	go
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	teamwork/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	staging	contract-snapshot	data
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md	teamwork/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md	staging	contract-snapshot	data
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md	teamwork/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md	staging	contract-snapshot	data
 tests/fixtures/contracts/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md	teamwork/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md	staging	contract-snapshot	data

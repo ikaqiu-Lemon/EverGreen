@@ -143,7 +143,7 @@ Evergreen 有意**不**抓取、也不理解内容。语义由你的 agent 负�
 每个 [release](https://github.com/ikaqiu-Lemon/EverGreen/releases) 都附带 Linux 与 macOS 二进制。
 
 ```console
-$ VER=v0.7.0-m7
+$ VER=v0.8.0-m8
 $ OS=$(uname -s | tr '[:upper:]' '[:lower:]')          # linux | darwin
 $ ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
@@ -249,10 +249,9 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 ```
 
 这是只读调用，返回原文正文、同领域相似的候选实体，以及最关键的 `base`（文件 → `content_hash`
-映射）。候选分两类：`knowledge_candidates`（可复用 / 扩展的已有知识 `k-*`）与 `opinion_candidates`
-（已有观点 `o-*`）。旧字段 `candidates` 仍为 0.7.x 兼容保留，且**恒等于 `knowledge_candidates`**；
-`eg context` **无条件发出恰一条 `I1` 弃用提示**（与调用方是否读取该字段无关），并将在 **0.8.0 删除**。
-知识与观点候选分别进入 plan 的 `base`：
+映射）。`draft_candidates` 返回 Note 内候选的摘要、草稿/已物化状态、持久 output 与精确 payload
+hash；已物化实体仍分列为 `knowledge_candidates`（知识 `k-*`）与 `opinion_candidates`（观点 `o-*`）。
+`0.8.0-m8` 已删除旧 `candidates` 别名及其弃用 `I1`。知识与观点候选分别进入 plan 的 `base`：
 
 ```json
 {
@@ -261,7 +260,7 @@ $ eg context --source s-20260915-the-bitter-lesson --json
     "base": {
       "unprocessed.md": "sha256:ed58e18b227f787c87257d9d6356997aae9eb9bb238858ba158d7da6bcdb9584"
     },
-    "candidates": [],
+    "draft_candidates": [],
     "knowledge_candidates": [],
     "opinion_candidates": [],
     "cards": [],
@@ -288,6 +287,18 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 这些 hash 是**乐观并发令牌**：必须逐字原样填进 ChangePlan 的 `base`，不得省略、不得自己算。
 若文件在你身后被改动，Evergreen 会跳过该文件而不是覆盖它。
 
+Storage v3 通过 `write_note.candidate_drafts[]` 与独立的 `candidate_coverage[]` 把 Knowledge/Opinion
+草稿保存在 Note 内。Agent 可以保存、编辑草稿，但不得代替用户物化。第 4 步会在候选 plan
+落盘后展示用户显式物化；plain export 可独立执行：
+
+```console
+$ eg export --plain --output ../evergreen-plain
+```
+
+`eg materialize` 不调用模型、不访问网络，只校验并复制候选原始字节；`k-*` 写入 `knowledge/`，
+`o-*` 写入 `opinions/` 且固定 `validation: pending`，目标与 Note 映射同进一个 journal v1 事务。
+`eg export --plain` 对 vault 只读，只从导出副本剥离机器锚点、candidate 标题属性与围栏边界行。
+
 ### 4. 通过 ChangePlan 写入
 
 原文落盘时正文首行 `L1` 是模板前导空行，因此三行真实正文分别落在 `L2`、`L3`、`L4`。存成
@@ -298,7 +309,7 @@ $ eg context --source s-20260915-the-bitter-lesson --json
   "plan_version": 2,
   "verb": "process",
   "domain": "ai-infra",
-  "reason": "把 The Bitter Lesson 沉淀成一条可复用知识和一条观点",
+  "reason": "把 The Bitter Lesson 保存成审阅式 Note，并生成一条知识候选和一条观点候选",
   "requirement_ids": ["EG-KNW-04"],
   "convergence": [],
   "base": { "unprocessed.md": "sha256:ed58e18b…" },
@@ -315,44 +326,39 @@ $ eg context --source s-20260915-the-bitter-lesson --json
         { "role": "agent",  "annotation": "summary", "body": "定义及其适用面是稳定知识；对经济押注的判断是价值评价，落成观点。" }
       ],
       "omissions": [],
-      "extraction_coverage": [
-        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "主张与其历史依据沉淀为一条可复用知识。", "disposition": "outputs", "outputs": ["k-20260915-bitter-lesson"] },
-        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "对长期押注的判断作为观点跟踪。",             "disposition": "outputs", "outputs": ["o-20260915-scale-bet"] }
+      "candidate_drafts": [
+        {
+          "key": "cand-general-methods",
+          "kind": "knowledge",
+          "title": "通用方法能随算力扩展",
+          "source_refs": ["L2-L2", "L3-L3"],
+          "rel": "support",
+          "reason": "原文用四个领域的历史给出该结论的直接依据",
+          "tags": ["ai", "method"],
+          "sections": [
+            { "name": "知识内容", "body": "依赖搜索与学习的通用方法能够把增长的算力转化为能力。\n" },
+            { "name": "条件与边界", "body": "前提是算力可持续增长、任务具备可大规模搜索或学习的结构。\n" }
+          ]
+        },
+        {
+          "key": "cand-scale-bet",
+          "kind": "opinion",
+          "title": "把人类知识编码进系统是一个长期上会输的押注",
+          "source_refs": ["L4-L4"],
+          "rel": "support",
+          "reason": "原文的收尾押注",
+          "tags": ["ai", "research-direction"],
+          "sections": [
+            { "name": "观点", "body": "投资可扩展的搜索与学习，长期上胜过投资人工编码的领域知识。\n" },
+            { "name": "论据与推理", "body": "算力持续变便宜，可扩展方法的上限会随时间抬升。\n" },
+            { "name": "待验证", "body": "在数据或评估信号受限的任务上，这个结论是否仍然成立？\n" }
+          ]
+        }
       ],
-      "output_cards": [
-        { "card": "k-20260915-bitter-lesson", "mode": "新建" },
-        { "card": "o-20260915-scale-bet", "mode": "新建" }
+      "candidate_coverage": [
+        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "主张与其历史依据成为一条可复用候选。", "disposition": "candidate", "candidates": ["cand-general-methods"] },
+        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "对长期押注的判断作为观点候选跟踪。",   "disposition": "candidate", "candidates": ["cand-scale-bet"] }
       ]
-    },
-    {
-      "op": "create_knowledge",
-      "card_id": "k-20260915-bitter-lesson",
-      "title": "能利用算力的通用方法长期胜过人工注入知识",
-      "tags": ["ai", "method"],
-      "sources": [
-        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "原文用四个领域的历史给出该结论的直接依据" }
-      ],
-      "sections": {
-        "知识内容": "依赖搜索与学习、能随算力扩展的通用方法，长期表现优于把人类领域知识直接写进系统的方法。\n",
-        "条件与边界": "前提是算力可持续增长、任务具备可大规模搜索或学习的结构。\n"
-      }
-    },
-    {
-      "op": "create_opinion",
-      "opinion_id": "o-20260915-scale-bet",
-      "title": "把人类知识编码进系统是一个长期上会输的押注",
-      "sources": [
-        { "source": "s-20260915-the-bitter-lesson", "note": "n-20260915-bitter-lesson", "rel": "support", "reason": "原文的收尾押注" }
-      ],
-      "sections": {
-        "观点": "投资可扩展的搜索与学习，长期上胜过投资人工编码的领域知识。\n",
-        "论据与推理": "算力持续变便宜，可扩展方法的上限会随时间抬升。\n"
-      }
-    },
-    {
-      "op": "add_open_question",
-      "note": "n-20260915-bitter-lesson",
-      "question": "在数据或评估信号受限的任务上，这个结论是否仍然成立？"
     }
   ]
 }
@@ -360,9 +366,9 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 
 `write_note` 是 v2 canonical 形态：`blocks[]` 按顺序复现原文各行（每个 `source` 块用 `source_ref` 回指
 它来自的物理行区间），`omissions[]` **显式**登记你有意丢弃的行（即便为空也要写空数组），
-`extraction_coverage[]` 则把每个来源区间闭合到 `outputs` / `note_only` / `missing` 上。知识经
-`create_knowledge` 落地（三分区），价值判断经 `create_opinion` 落地（五分区，`validation` 默认
-`pending` —— agent 路径永远不得设 `validated`/`rejected`）。
+`candidate_drafts[]` 保存完整的 Knowledge/Opinion 模板载荷，`candidate_coverage[]` 则把每个来源
+区间闭合到 `candidate` / `note_only` / `unresolved`。候选路径省略 `output_cards` 与最终
+`extraction_coverage`，也不会预先猜测 `k-*` / `o-*`。
 
 务必先 dry-run —— 它完整跑校验，**零写入**：
 
@@ -373,9 +379,9 @@ $ eg apply --plan plan.json --dry-run
 ```console
 状态：completed（exit_code=0，ok=true）
 --dry-run：零写入、零 commit，以下是将写入的清单
-知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
+知识卡：新建 0 张，复用 0 张，补充 0 张
 关系：材料 0 条，论证 0 条
-写入文件 3 个：domains/ai-infra/notes/n-….md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
+写入文件 2 个：domains/ai-infra/notes/n-….md、unprocessed.md
 commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
 ```
 
@@ -388,13 +394,20 @@ $ eg apply --plan plan.json
 ```console
 状态：completed（exit_code=0，ok=true）
 材料笔记：n-20260915-bitter-lesson（领域 ai-infra，domains/ai-infra/notes/n-….md，重新加工 false）
-知识卡：新建 1 张（k-20260915-bitter-lesson），复用 0 张，补充 0 张
-关系：材料 2 条，论证 0 条
-未决问题：n-20260915-bitter-lesson ← 在数据或评估信号受限的任务上，这个结论是否仍然成立？
-写入文件 4 个：domains/ai-infra/notes/n-….md、unprocessed.md、domains/ai-infra/knowledge/k-….md、domains/ai-infra/opinions/o-….md
+知识卡：新建 0 张，复用 0 张，补充 0 张
+关系：材料 0 条，论证 0 条
+写入文件 2 个：domains/ai-infra/notes/n-….md、unprocessed.md
 commit：842c8ddb03a2bbe2eab7c5a99f4495fe1979ba17
-显著变更：new_core_card（k-20260915-bitter-lesson）新建知识卡：承载本次加工的新核心含义
 ```
+
+用户审阅或编辑候选载荷后，再显式物化：
+
+```console
+$ eg materialize --note n-20260915-bitter-lesson --all --user-request
+```
+
+该事务创建一份 `k-*` 与一份 `o-*`（`validation: pending`），并把持久映射写回 Note。跨日重复执行时，
+只要映射与 payload 仍一致，就会幂等 no-op。
 
 ### 5. 读回来
 
@@ -659,7 +672,7 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 
 ## 命令参考
 
-顶层命令共 23 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
+顶层命令共 25 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
 
 **初始化**
 
@@ -673,8 +686,10 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 | 命令 | 用途 |
 | --- | --- |
 | `eg capture` | 收录原文并登记收件区 |
-| `eg context` | 只读：`knowledge_candidates` + `opinion_candidates`（+ 兼容 `candidates`）+ `base` content hash |
-| `eg apply --plan <file\|->` | 校验并应用 ChangePlan —— 唯一写入通道 |
+| `eg context` | 只读：`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hash |
+| `eg apply --plan <file\|->` | 校验并应用 ChangePlan |
+| `eg materialize` | 用户显式触发的 Note candidate 确定性物化 |
+| `eg export --plain` | 导出不含 Evergreen 专有协议的纯 Markdown |
 | `eg report --last` | 只读复现最近一次产出报告体的写命令（`eg apply` 或 `eg capture`） |
 
 **读路径**
@@ -987,7 +1002,7 @@ make lint         # gofmt + vet + 写路径守卫 + 依赖方向 + 公开仓卫�
 
 ## 项目信息
 
-- **版本：** `0.7.0-m7` · **模块：** `github.com/ikaqiu-Lemon/EverGreen`
+- **版本：** `0.8.0-m8` · **模块：** `github.com/ikaqiu-Lemon/EverGreen`
 - **安全：** 漏洞私下报告流程见 [SECURITY.md](SECURITY.md)
 - **隐私：** 纯本地数据处理模型见 [PRIVACY.md](PRIVACY.md)
 - **行为准则：** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)

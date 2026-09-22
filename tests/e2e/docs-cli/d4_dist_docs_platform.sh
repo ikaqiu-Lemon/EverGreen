@@ -83,7 +83,7 @@ VAULT="${WORK}/notes/evergreen"
 
 # 当期期望版本号（唯一决策出处见 teamwork 的 knowledge_opinion_split Schema-v2 决策文档 §0.0）。
 # 写死而非从 version.go 反推，否则一致性判据退化成自证。
-WANT_VERSION="0.7.0-m7"
+WANT_VERSION="0.8.0-m8"
 
 STEP=0
 PASS=0

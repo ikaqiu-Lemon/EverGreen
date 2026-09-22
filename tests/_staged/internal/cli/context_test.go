@@ -66,8 +66,8 @@ func TestContextDataKeysAndReadOnly(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("eg context 退出码 = %d，期望 0：%s", code, errOut)
 	}
-	want := []string{"base", "candidates", "cards", "default_domain",
-		"default_domain_fallback", "domain", "knowledge_candidates", "notes",
+	want := []string{"base", "cards", "default_domain",
+		"default_domain_fallback", "domain", "draft_candidates", "knowledge_candidates", "notes",
 		"opinion_candidates", "proposals", "source"}
 	var got []string
 	for k := range env.Data {
@@ -332,12 +332,12 @@ func contextCandidateVault(t *testing.T) (string, string) {
 	return dir, id
 }
 
-// candidateIDsFromJSON 取 --json 的 data.candidates[].id（保持数组原序）。
+// candidateIDsFromJSON 取 --json 的 data.knowledge_candidates[].id（保持数组原序）。
 func candidateIDsFromJSON(t *testing.T, env Envelope) []string {
 	t.Helper()
-	raw, err := json.Marshal(env.Data["candidates"])
+	raw, err := json.Marshal(env.Data["knowledge_candidates"])
 	if err != nil {
-		t.Fatalf("candidates 不可序列化：%v", err)
+		t.Fatalf("knowledge_candidates 不可序列化：%v", err)
 	}
 	var cands []struct {
 		ID      string   `json:"id"`
@@ -345,7 +345,7 @@ func candidateIDsFromJSON(t *testing.T, env Envelope) []string {
 		Reasons []string `json:"reasons"`
 	}
 	if err := json.Unmarshal(raw, &cands); err != nil {
-		t.Fatalf("candidates 不可解析：%v\n%s", err, raw)
+		t.Fatalf("knowledge_candidates 不可解析：%v\n%s", err, raw)
 	}
 	out := []string{}
 	for _, c := range cands {
@@ -357,7 +357,7 @@ func candidateIDsFromJSON(t *testing.T, env Envelope) []string {
 	return out
 }
 
-// TestContextRenderSameFacts —— 文本模式的**知识候选**卡行数 == --json 的 candidates 长度，
+// TestContextRenderSameFacts —— 文本模式的**知识候选**卡行数 == --json 的 knowledge_candidates 长度，
 // 逐行 ID 顺序相同；文本里出现「得分」与理由前缀；且文本不引入 JSON 里没有的候选 ID。
 // （contextCandidateVault 只含知识卡、无观点，故此处只钉知识候选块；观点候选块另有专门用例。）
 func TestContextRenderSameFacts(t *testing.T) {
@@ -424,13 +424,7 @@ func itoaCLI(n int) string {
 	return strconv.Itoa(n)
 }
 
-// ================= T-…-006 阶段 6E：CLI 侧双候选 + candidates 兼容（D-3）+ I1 =================
-//
-// 判据来源：schema v2 设计 §5.3 + 决策 D-3、T-…-006 Acceptance「eg context --json 同时输出
-// candidates / knowledge_candidates / opinion_candidates；candidates ≡ knowledge_candidates；
-// 恰一条 I1 info 提示 candidates 已弃用」。本组用例只钉 CLI 出口事实：三候选字段并存且都是
-// 数组、legacy alias 逐字等价、文本区分 Knowledge/Opinion 候选且与 JSON 同源同事实、恰一条
-// I1 info（码 / 级别 / path / 消息 / 文本透出）、四种索引状态业务输出等价且对 .index 零副作用。
+// ================= Storage v3：草稿候选与已物化候选严格分列 =================
 
 // writeContextOpinion 往 ai-infra 领域写一条可控标题 / 状态 / validation 的观点（schema v2）。
 func writeContextOpinion(t *testing.T, dir, id, title, status, validation string) {
@@ -477,7 +471,7 @@ func candListJSON(t *testing.T, env Envelope, key string) []struct {
 	return out
 }
 
-// —— ① --json 三候选字段并存、都是数组（非 null）、candidates ≡ knowledge_candidates ——
+// —— ① --json 三候选字段并存、都是数组（非 null），旧 candidates 已删除 ——
 
 func TestContextDualCandidatesJSON(t *testing.T) {
 	dir, id := contextDualVault(t)
@@ -486,22 +480,13 @@ func TestContextDualCandidatesJSON(t *testing.T) {
 		t.Fatalf("eg context 退出码 = %d：%s", code, errOut)
 	}
 	// 三个键都在，且都是数组（空也必须是 []，不是 null / 缺键）。
-	for _, k := range []string{"candidates", "knowledge_candidates", "opinion_candidates"} {
+	for _, k := range []string{"draft_candidates", "knowledge_candidates", "opinion_candidates"} {
 		if _, ok := env.Data[k].([]interface{}); !ok {
 			t.Fatalf("data.%s 必须是数组，实得 %#v", k, env.Data[k])
 		}
 	}
-	// legacy alias 逐字等价：candidates 的 JSON 必须与 knowledge_candidates 逐字相等。
-	cj, err := json.Marshal(env.Data["candidates"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	kj, err := json.Marshal(env.Data["knowledge_candidates"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(cj) != string(kj) {
-		t.Fatalf("candidates 必须逐字等于 knowledge_candidates：\ncandidates=%s\nknowledge=%s", cj, kj)
+	if _, exists := env.Data["candidates"]; exists {
+		t.Fatalf("0.8.0-m8 必须删除 data.candidates：%+v", env.Data)
 	}
 	// 知识候选保持旧语义：命中 k-a / k-b（得分降序），零命中的 k-z 不在。
 	var kIDs []string
@@ -524,46 +509,7 @@ func TestContextDualCandidatesJSON(t *testing.T) {
 	}
 }
 
-// —— ② 恰一条 I1 info：码 / 级别 / path / 消息 + 文本透出，且不因 Q1/默认领域回退而重复 ——
-
-func TestContextCandidatesDeprecationI1(t *testing.T) {
-	dir, id := contextDualVault(t)
-	// 补一张坏卡制造 Q1 + Q3，反证 I1 与 Q 系列独立、恰一条、不被带偏成 warning。
-	writeVaultFile(t, dir, "domains/ai-infra/knowledge/broken.md", "---\n- 1\n---\n\n# 坏卡\n")
-
-	code, env, errOut := runContextCLI(t, dir, "--source", id)
-	if code != ExitOK {
-		t.Fatalf("I1/Q 类诊断不得改变退出码，实际 %d：%s", code, errOut)
-	}
-	var i1 []Diagnostic
-	for _, w := range env.Warnings {
-		if w.Code == "I1" {
-			i1 = append(i1, w)
-		}
-	}
-	if len(i1) != 1 {
-		t.Fatalf("必须恰一条 I1，实得 %d 条：%+v", len(i1), env.Warnings)
-	}
-	d := i1[0]
-	if d.Level != LevelInfo {
-		t.Fatalf("I1 必须是 info 级，实得 %s", d.Level)
-	}
-	if d.Path != "candidates" {
-		t.Fatalf("I1 的 path 应为 candidates，实得 %q", d.Path)
-	}
-	if !strings.Contains(d.Message, "candidates") || !strings.Contains(d.Message, "已弃用") ||
-		!strings.Contains(d.Message, "knowledge_candidates") {
-		t.Fatalf("I1 消息必须明确「candidates 已弃用，改读 knowledge_candidates」：%q", d.Message)
-	}
-	// 同源同事实：纯文本输出里也必须透出这条 I1（码 + 消息关键词）。
-	_, text, stderr := runCLI(t, newTestRoot(t, dir), "context", "--vault", dir, "--source", id)
-	whole := text + stderr
-	if !strings.Contains(whole, "I1") || !strings.Contains(whole, "已弃用") {
-		t.Fatalf("纯文本未透出 I1（同源同事实）：\n%s", whole)
-	}
-}
-
-// —— ②′ CLI 反证：I1 与全部 query 诊断都**来自 ctx.Diagnostics**，CLI 只原样透出、保留 level ——
+// —— ② CLI 反证：全部 query 诊断都来自 ctx.Diagnostics，CLI 只原样透出、保留 level ——
 //
 // 判据来源：T-…-006 Scope「弃用 I1 由 query context 的 diagnostics 产出」+「CLI 遍历
 // ctx.Diagnostics 时必须保留 d.Level，不能把所有诊断硬编码为 warning」。做法：以
@@ -604,8 +550,8 @@ func queryDiagSigs(t *testing.T, dir, domain, source string) []string {
 }
 
 func TestContextDiagnosticsAreQueryPassThrough(t *testing.T) {
-	// 两个场景：干净 vault（只应有 I1 info）与坏卡 vault（I1 info + Q1/Q3 warning）。
-	// 两者都必须与 query.Build 的 ctx.Diagnostics 逐字相等，且各自恰一条 I1（info）。
+	// 两个场景：干净 vault（无诊断）与坏卡 vault（Q1/Q3 warning）。
+	// 两者都必须与 query.Build 的 ctx.Diagnostics 逐字相等，且没有已移除的 D-3 I1。
 	scenarios := []struct {
 		name  string
 		setup func(t *testing.T) (string, string)
@@ -625,23 +571,16 @@ func TestContextDiagnosticsAreQueryPassThrough(t *testing.T) {
 			if code != ExitOK {
 				t.Fatalf("退出码 = %d：%s", code, errOut)
 			}
-			// CLI 带码诊断序列必须与 query.Build 的 ctx.Diagnostics 逐字相等
-			//（同码、同 level、同 path、同 message、同顺序）。
+			// CLI 带码诊断序列必须与 query.Build 的 ctx.Diagnostics 逐字相等。
 			want := queryDiagSigs(t, dir, "ai-infra", id)
 			got := codedWarningSigs(env)
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
-				t.Fatalf("CLI 诊断未原样透出 query.Diagnostics（可能另造 I1 或改写 level）：\nCLI  %v\nquery %v", got, want)
+				t.Fatalf("CLI 诊断未原样透出 query.Diagnostics：\nCLI  %v\nquery %v", got, want)
 			}
-			// 反向锁死 level 保留：oracle 里的 I1 必须是 info，且恰一条——若 CLI 硬编码
-			// 成 warning，上面的逐字比对已红；这里再单独钉「恰一条 info I1」。
-			var i1Info int
 			for _, sig := range want {
-				if strings.HasPrefix(sig, "I1|"+LevelInfo+"|") {
-					i1Info++
+				if strings.HasPrefix(sig, "I1|") {
+					t.Fatalf("%s：0.8.0-m8 不得再产生 candidates 弃用 I1：%v", s.name, want)
 				}
-			}
-			if i1Info != 1 {
-				t.Fatalf("%s：query 事实源里应恰一条 info 级 I1，实得 %d（%v）", s.name, i1Info, want)
 			}
 		})
 	}

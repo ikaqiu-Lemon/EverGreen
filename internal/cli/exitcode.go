@@ -105,7 +105,8 @@ func ExitCode5Enabled() bool { return true }
 // 当前白名单共 16 条，opinion 是 post-I-012 的新增项。本 addendum 只同步 help 分类，不改 ExitCodeFor 映射。
 var precheckOrLockHelpCommands = []string{
 	"apply", "capture", "config", "delete", "deprecate", "edit", "index", "init",
-	"mark-reviewed", "opinion", "proposal", "reconcile", "rel", "replaced-by", "restore", "undelete",
+	"mark-reviewed", "materialize", "opinion", "proposal", "reconcile", "rel",
+	"replaced-by", "restore", "undelete",
 }
 
 // PrecheckOrLockHelpCommands 返回必须在 `--help` 里声明退出码 5 的顶层命令白名单（升序副本）。

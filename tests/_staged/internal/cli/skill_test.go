@@ -13,7 +13,7 @@ package cli
 //  ⑤  base / content_hash 规则与 W6 后果明文可定位；
 //  ⑥  退出码 2/3/4 各有处置指引；
 //  ⑦  不出现 S2+ 能力承诺（命中处必须带「S1 不可用」标注）；
-//  ⑧  两份样例存在，① 带非空 coverage_gaps、② 不带该字段；
+//  ⑧  两份样例存在，且 Storage v3 主路径只保存 candidate 草稿，不直接创建/追加产物；
 //  ⑨  内嵌副本 == 源文件字节（`eg init` 的落盘同源，见 TestInitWritesSkillMD）。
 //
 // 合同路径是**只读**引用（teamwork 仓），断言两边集合相等即可反证「文档照抄早期草稿」。
@@ -604,20 +604,18 @@ func TestSkillCommandsExecutable(t *testing.T) {
 	}
 }
 
-// TestSkillSamplesAreValidPlans：两份样例是 v2 审阅式 Note plan，可被解析与校验
+// TestSkillSamplesAreValidPlans：两份样例是 Storage v3 候选草稿 plan，可被解析与校验
 // （e2e 另跑真实 `eg apply`，见 test/e2e/m1_test.go）。
 //
-// **Schema v2 · T-…-008（T8-3）重钉**：契约 §4.1/§4.2 把 few-shot 主路径从 v1
-// （`plan_version: 1` + `write_note.sections{}` + `coverage_gaps` + `create_card`/`append_card`）
-// 迁移到 v2（`plan_version: 2` + `write_note.blocks[]` + `omissions[]` +
-// `extraction_coverage[]` + `output_cards` + canonical `create_knowledge`/`append_knowledge`/
-// `create_opinion`）。判据没放宽，反而更强：逐条钉住 v2 结构合同，并硬禁新 plan 残留 v1 口径。
+// Storage v3 D1/D2 把新主路径改为 `write_note.candidate_drafts[]` +
+// `candidate_coverage[]`。草稿保存必须与最终物化分开：tagged few-shot 不得伪造 output，
+// 不得写最终 coverage，也不得在 Agent apply 阶段直接创建或追加 Knowledge/Opinion。
 func TestSkillSamplesAreValidPlans(t *testing.T) {
 	samples := SkillSamples(t)
 	if len(samples) != 2 {
 		t.Fatalf("SKILL.md 应含恰 2 份 ChangePlan 样例，实际 %d 份", len(samples))
 	}
-	var withOpinion, withAppendKnowledge int
+	var knowledgeDrafts, opinionDrafts int
 	for i, raw := range samples {
 		var m struct {
 			PlanVersion int                      `json:"plan_version"`
@@ -640,20 +638,13 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 		if _, err := plan.Parse([]byte(raw)); err != nil {
 			t.Fatalf("样例 %d 无法被 plan.Parse 接受：%v", i+1, err)
 		}
+		if len(m.Ops) != 1 {
+			t.Fatalf("样例 %d 必须只含一个 write_note op，实际 %d 个", i+1, len(m.Ops))
+		}
 		for _, op := range m.Ops {
 			name, _ := op["op"].(string)
-			// ② 新 plan 禁用兼容别名——few-shot 是教学样板，绝不能示范弃用写法。
-			if name == "create_card" || name == "append_card" {
-				t.Fatalf("样例 %d 使用兼容别名 %q：v2 few-shot 必须直接写 create_knowledge / append_knowledge（契约 §4.4）", i+1, name)
-			}
-			switch name {
-			case "append_knowledge":
-				withAppendKnowledge++
-			case "create_opinion":
-				withOpinion++
-			}
 			if name != "write_note" {
-				continue
+				t.Fatalf("样例 %d 含直接产物 op %q：Storage v3 主路径只允许 write_note 保存草稿", i+1, name)
 			}
 			// ③ write_note 必须是 v2 blocks[] 形态，不得残留 v1 sections{} / coverage_gaps。
 			if _, ok := op["sections"]; ok {
@@ -698,75 +689,125 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 			if _, ok := op["omissions"]; !ok {
 				t.Fatalf("样例 %d：write_note 必须显式给出 omissions[]（无删除时传空数组，契约 §4.2 规则 5）", i+1)
 			}
-			// ⑥ 覆盖矩阵非空、无 missing、与 output_cards 双向一致（契约 §4.2.3）。
-			cov, ok := op["extraction_coverage"].([]interface{})
-			if !ok || len(cov) == 0 {
-				t.Fatalf("样例 %d：write_note 必须给非空 extraction_coverage[] 覆盖矩阵", i+1)
+			// ⑥ 草稿与最终状态必须分开。
+			for _, forbidden := range []string{"output_cards", "extraction_coverage"} {
+				if value, exists := op[forbidden]; exists {
+					if list, ok := value.([]interface{}); !ok || len(list) != 0 {
+						t.Fatalf("样例 %d：candidate 主路径的 %s 必须省略或为空", i+1, forbidden)
+					}
+				}
 			}
-			outputSet := map[string]bool{}
+			drafts, ok := op["candidate_drafts"].([]interface{})
+			if !ok || len(drafts) == 0 {
+				t.Fatalf("样例 %d：write_note 必须给非空 candidate_drafts[]", i+1)
+			}
+			draftKeys := map[string]bool{}
+			for j, item := range drafts {
+				d, _ := item.(map[string]interface{})
+				key, _ := d["key"].(string)
+				kind, _ := d["kind"].(string)
+				if key == "" || draftKeys[key] {
+					t.Fatalf("样例 %d：candidate_drafts[%d].key 为空或重复：%q", i+1, j, key)
+				}
+				draftKeys[key] = true
+				sections, _ := d["sections"].([]interface{})
+				if len(sections) == 0 {
+					t.Fatalf("样例 %d：candidate %s 缺模板 sections", i+1, key)
+				}
+				names := make([]string, 0, len(sections))
+				for _, sectionItem := range sections {
+					section, _ := sectionItem.(map[string]interface{})
+					name, _ := section["name"].(string)
+					body, _ := section["body"].(string)
+					if name == "" || body == "" {
+						t.Fatalf("样例 %d：candidate %s 有空分区名或空 payload", i+1, key)
+					}
+					if name == "用户补充" {
+						t.Fatalf("样例 %d：candidate %s 不得携带用户补充", i+1, key)
+					}
+					names = append(names, name)
+				}
+				switch kind {
+				case "knowledge":
+					knowledgeDrafts++
+					if names[0] != "知识内容" {
+						t.Fatalf("样例 %d：Knowledge candidate %s 首分区应为知识内容，实际 %v", i+1, key, names)
+					}
+				case "opinion":
+					opinionDrafts++
+					if names[0] != "观点" {
+						t.Fatalf("样例 %d：Opinion candidate %s 首分区应为观点，实际 %v", i+1, key, names)
+					}
+				default:
+					t.Fatalf("样例 %d：candidate %s kind=%q 越界", i+1, key, kind)
+				}
+			}
+
+			cov, ok := op["candidate_coverage"].([]interface{})
+			if !ok || len(cov) == 0 {
+				t.Fatalf("样例 %d：write_note 必须给非空 candidate_coverage[]", i+1)
+			}
+			referenced := map[string]bool{}
 			for _, ci := range cov {
 				c, _ := ci.(map[string]interface{})
 				disp, _ := c["disposition"].(string)
 				switch disp {
-				case "outputs":
-					outs, _ := c["outputs"].([]interface{})
-					if len(outs) == 0 {
-						t.Fatalf("样例 %d：disposition=outputs 的模块缺 outputs[]", i+1)
+				case "candidate":
+					keys, _ := c["candidates"].([]interface{})
+					if len(keys) == 0 {
+						t.Fatalf("样例 %d：disposition=candidate 的模块缺 candidates[]", i+1)
 					}
-					for _, o := range outs {
-						outputSet[o.(string)] = true
+					for _, value := range keys {
+						key, _ := value.(string)
+						if !draftKeys[key] {
+							t.Fatalf("样例 %d：candidate_coverage 引用未声明 key %q", i+1, key)
+						}
+						referenced[key] = true
 					}
-				case "note_only":
+					if reason, _ := c["reason"].(string); reason != "" {
+						t.Fatalf("样例 %d：disposition=candidate 不得带 reason", i+1)
+					}
+				case "note_only", "unresolved":
 					if _, ok := c["reason"]; !ok {
-						t.Fatalf("样例 %d：disposition=note_only 的模块缺 reason", i+1)
+						t.Fatalf("样例 %d：disposition=%s 的模块缺 reason", i+1, disp)
 					}
 				case "missing":
-					t.Fatalf("样例 %d：可执行 few-shot 不得出现 disposition=missing（缺漏必须为 0，契约 §4.2.3 规则 6）", i+1)
+					t.Fatalf("样例 %d：草稿未完成项必须用 unresolved，不得滥用 missing", i+1)
 				default:
-					t.Fatalf("样例 %d：disposition 只能是 outputs|note_only|missing，实际 %q", i+1, disp)
+					t.Fatalf("样例 %d：草稿 disposition 只能是 candidate|note_only|unresolved，实际 %q", i+1, disp)
 				}
 			}
-			ocSet := map[string]bool{}
-			oc, _ := op["output_cards"].([]interface{})
-			for _, o := range oc {
-				mm, _ := o.(map[string]interface{})
-				id, _ := mm["card"].(string)
-				ocSet[id] = true
-			}
-			for id := range outputSet {
-				if !ocSet[id] {
-					t.Fatalf("样例 %d：extraction_coverage.outputs 里的 %s 未出现在 output_cards（双向一致被破坏）", i+1, id)
-				}
-			}
-			for id := range ocSet {
-				if !outputSet[id] {
-					t.Fatalf("样例 %d：output_cards 里的 %s 未出现在任何模块 outputs（双向一致被破坏）", i+1, id)
+			for key := range draftKeys {
+				if !referenced[key] {
+					t.Fatalf("样例 %d：candidate %s 未被 candidate_coverage 引用", i+1, key)
 				}
 			}
 		}
 	}
-	// ⑦ 两份样例覆盖 v2 两条主路径：一份新建 Knowledge+Opinion 双入口，一份 append_knowledge 复用。
-	if withOpinion < 1 {
-		t.Fatal("两份样例应至少一份含 create_opinion：Knowledge/Opinion 分流是 v2 的核心，few-shot 必须示范")
-	}
-	if withAppendKnowledge < 1 {
-		t.Fatal("两份样例应至少一份含 append_knowledge：复用已有卡是 §3.2 的主路径之一")
+	// ⑦ 两份样例合计覆盖 Knowledge/Opinion 两种候选模板。
+	if knowledgeDrafts < 1 || opinionDrafts < 1 {
+		t.Fatalf("两份样例必须同时示范 Knowledge 与 Opinion candidate：knowledge=%d opinion=%d",
+			knowledgeDrafts, opinionDrafts)
 	}
 	joined := strings.Join(samples, "\n")
 	for _, must := range []string{
-		`"op": "write_note"`, `"op": "create_knowledge"`, `"op": "create_opinion"`,
-		`"op": "append_knowledge"`, `"op": "add_material_rel"`,
-		`"role": "source"`, `"role": "agent"`, `"extraction_coverage"`, `"output_cards"`,
-		`"relation": "non_core_supplement"`,
+		`"op": "write_note"`, `"role": "source"`, `"role": "agent"`,
+		`"candidate_drafts"`, `"candidate_coverage"`, `"kind": "knowledge"`,
+		`"kind": "opinion"`, `"disposition": "candidate"`,
 	} {
 		if !strings.Contains(joined, must) {
 			t.Fatalf("两份样例合计缺 %s", must)
 		}
 	}
-	// ⑧ v2 few-shot 不得残留 v1 口径关键片段。
-	for _, banned := range []string{`"op": "create_card"`, `"op": "append_card"`, `"coverage_gaps"`} {
+	// ⑧ tagged few-shot 不得残留 v1 或“apply 直接产物”口径。
+	for _, banned := range []string{
+		`"op": "create_card"`, `"op": "append_card"`, `"coverage_gaps"`,
+		`"op": "create_knowledge"`, `"op": "append_knowledge"`,
+		`"op": "create_opinion"`, `"op": "append_opinion"`,
+		`"op": "add_material_rel"`, `"output_cards"`, `"extraction_coverage"`,
+	} {
 		if strings.Contains(joined, banned) {
-			t.Fatalf("v2 few-shot 不得残留 v1 片段 %s", banned)
+			t.Fatalf("Storage v3 candidate few-shot 不得残留片段 %s", banned)
 		}
 	}
 }
@@ -992,12 +1033,11 @@ func TestSkillNoteContractV2(t *testing.T) {
 		"直接设成 `validated` / `rejected`")
 }
 
-// TestSkillSamplesHaveTargetRender：设计 §8 要求每个 few-shot **同时引用目标 Note 与对应覆盖矩阵**。
+// TestSkillSamplesHaveTargetRender：每个 few-shot 同时引用目标 Note、候选 H3 与草稿覆盖矩阵。
 //
-// 这里不做「全局 contains」——那样只要文档任意处出现一次「覆盖矩阵」就过，无法反证「只有一份样例
-// 配了目标渲染、另一份漏了」。本判据按样例逐个定位：从每份 tagged JSON 样例里取出 write_note 的
-// note_id，要求文档里存在一个**目标渲染片段**同时满足：① 就是该 note_id 的渲染；② 片段内含
-// 「## 提取结果」清单；③ 片段内含四列覆盖矩阵表头。任一样例缺目标 Note 或覆盖矩阵即红。
+// 本判据按样例逐个定位，防止一份渲染片段替另一份“代打”。每个 candidate key 都必须以
+// `{#cand-* .eg-candidate .knowledge|.opinion}` 出现在对应片段，并进入候选覆盖；最终
+// Knowledge/Opinion 清单与最终覆盖矩阵在 materialize 前都不得出现。
 func TestSkillSamplesHaveTargetRender(t *testing.T) {
 	doc := skillText(t)
 	samples := SkillSamples(t)
@@ -1034,21 +1074,30 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 		t.Fatalf("应恰有 2 个「目标渲染片段」（每份样例一个），实际 %d", len(frags))
 	}
 
-	const matrixHeader = "| 模块 | 来源范围 | 语义模块 | 处置 |"
+	const matrixHeader = "| 模块 | 来源范围 | 语义模块 | 草稿处置 |"
 	for i, s := range samples {
 		var m struct {
 			Ops []struct {
-				Op     string `json:"op"`
-				NoteID string `json:"note_id"`
+				Op              string `json:"op"`
+				NoteID          string `json:"note_id"`
+				CandidateDrafts []struct {
+					Key  string `json:"key"`
+					Kind string `json:"kind"`
+				} `json:"candidate_drafts"`
 			} `json:"ops"`
 		}
 		if err := json.Unmarshal([]byte(s), &m); err != nil {
 			t.Fatalf("样例 %d 不是合法 JSON：%v", i+1, err)
 		}
 		noteID := ""
+		var drafts []struct {
+			Key  string `json:"key"`
+			Kind string `json:"kind"`
+		}
 		for _, op := range m.Ops {
 			if op.Op == "write_note" {
 				noteID = op.NoteID
+				drafts = op.CandidateDrafts
 				break
 			}
 		}
@@ -1068,10 +1117,24 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 			t.Fatalf("样例 %d（note %s）应恰有 1 个目标渲染片段引用它，实际 %d", i+1, noteID, hits)
 		}
 		if !strings.Contains(hit, "## 提取结果") {
-			t.Fatalf("样例 %d（note %s）的目标渲染片段缺「## 提取结果」产物清单", i+1, noteID)
+			t.Fatalf("样例 %d（note %s）的目标渲染片段缺「## 提取结果」", i+1, noteID)
 		}
-		if !strings.Contains(hit, "### 覆盖矩阵") || !strings.Contains(hit, matrixHeader) {
-			t.Fatalf("样例 %d（note %s）的目标渲染片段缺四列覆盖矩阵（表头 %q）", i+1, noteID, matrixHeader)
+		if !strings.Contains(hit, "### 候选覆盖") || !strings.Contains(hit, matrixHeader) {
+			t.Fatalf("样例 %d（note %s）的目标渲染片段缺四列候选覆盖矩阵（表头 %q）", i+1, noteID, matrixHeader)
+		}
+		for _, draft := range drafts {
+			marker := "{#" + draft.Key + " .eg-candidate ." + draft.Kind + "}"
+			if !strings.Contains(hit, marker) {
+				t.Fatalf("样例 %d（note %s）的目标渲染片段缺 candidate 标题属性 %q", i+1, noteID, marker)
+			}
+			if strings.Count(hit, draft.Key) < 2 {
+				t.Fatalf("样例 %d（note %s）的 candidate %s 未同时出现在标题与候选覆盖", i+1, noteID, draft.Key)
+			}
+		}
+		for _, forbidden := range []string{"### Knowledge", "### Opinion", "### 覆盖矩阵"} {
+			if strings.Contains(hit, forbidden) {
+				t.Fatalf("样例 %d（note %s）的草稿渲染提前出现最终分区 %q", i+1, noteID, forbidden)
+			}
 		}
 	}
 }

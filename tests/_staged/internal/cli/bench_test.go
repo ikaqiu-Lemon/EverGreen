@@ -400,7 +400,7 @@ func TestCommandCountTwentyTwo(t *testing.T) {
 	added := []string{"bench"}
 	// T-…-006-B1a 更晚新增（`opinion`）：本用例只负责 068 那一条「M5 终值 22」等式，
 	// 摘掉后再复算 22。**22 这个 M5 终值结论一个字不删**，只是多了一条要摘掉的后来者。
-	laterAdded := []string{"opinion"}
+	laterAdded := []string{"opinion", "materialize", "export"}
 
 	if len(m5Baseline) != 21 {
 		t.Fatalf("M5 过程基线写错了：%d 条，T-…-065 收口时恰 21 条", len(m5Baseline))

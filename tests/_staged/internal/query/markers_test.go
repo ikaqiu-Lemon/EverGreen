@@ -250,7 +250,7 @@ func hasMarker(markers []string, want string) bool {
 // contextExposure 报告某张卡是否进「收敛输入」与「综述取材候选」两个集合。
 //
 // 两者都取自 eg context 的产物：Cards 是收敛输入（同领域可参与判断的卡），
-// Candidates 是取材 / 去重候选。已删除与失效两类都不该出现在其中任何一个里。
+// KnowledgeCandidates 是取材 / 去重候选。已删除与失效两类都不该出现在其中任何一个里。
 func contextExposure(t *testing.T, root string, id string) (bool, bool) {
 	t.Helper()
 	writeFile(t, root, "sources/s-20260901-x/index.md",
@@ -272,7 +272,7 @@ func contextExposure(t *testing.T, root string, id string) (bool, bool) {
 		}
 	}
 	inDigest := false
-	for _, c := range ctx.Candidates {
+	for _, c := range ctx.KnowledgeCandidates {
 		if c.ID == id {
 			inDigest = true
 		}

@@ -325,8 +325,162 @@ ok "v1 apply 退 0、正文与 v1 golden（末补模板固定空行）逐字节�
 if grep -q 'eg:nr:1\|eg:nc:1' "${NOTE_V1}"; then die "v1 兼容不得出现 eg:nr/eg:nc 锚点"; fi
 ok "v1 兼容正文不含 eg:nr / eg:nc（旧口径未引入新锚点）"
 
-# ---------------------------------------------------------------- 4. 洁净性
-step "D 洁净性：REPO_ROOT 工作树 git status 逐字不变"
+# ---------------------------------------------------------------- 4. Storage v3 H3 真闭环
+step "D Storage v3：保存双候选 → 用户编辑 → materialize → 查询 → plain export"
+read -r V SRC BASE < <(new_vault storagev3)
+cat >"${WORK}/plan_storage_v3.json" <<PLAN
+{ "plan_version": 2, "verb": "process", "domain": "tech", "reason": "Storage v3 H3 真实闭环",
+  "requirement_ids": ["EG-STORAGE-V3"],
+  "base": { "unprocessed.md": "${BASE}" },
+  "ops": [
+    { "op": "write_note", "source": "${SRC}", "note_id": "n-20260922-storage-v3",
+      "title": "Storage v3 完整候选",
+      "blocks": [
+        {"role":"source","source_ref":"L2-L2","heading":"定义","body":"缩放因子是 1/sqrt(d_k)。"},
+        {"role":"agent","annotation":"supplement","body":"补充：保留原始定义。"},
+        {"role":"source","source_ref":"L3-L3","heading":"条件","body":"仅在点积注意力下成立。"},
+        {"role":"source","source_ref":"L4-L4","heading":"反例","body":"短序列下不显著。"},
+        {"role":"source","source_ref":"L5-L5","heading":"观点","body":"长序列不经济。"},
+        {"role":"source","source_ref":"L6-L6","heading":"争议","body":"是否可扩展存疑。"}
+      ],
+      "omissions": [
+        {"source_ref":"L7-L7","reason":"重复页脚导航，非正文内容"}
+      ],
+      "candidate_drafts": [
+        {"key":"cand-scaling","kind":"knowledge","title":"Storage Scaling Rule",
+         "source_refs":["L2-L2","L3-L3"],"rel":"support","reason":"原文给出定义与条件","tags":["storage-v3"],
+         "sections":[
+           {"name":"知识内容","body":"缩放因子是 1/sqrt(d_k)。"},
+           {"name":"条件与边界","body":"仅在点积注意力下成立。"}
+         ]},
+        {"key":"cand-economics","kind":"opinion","title":"Storage Long Sequence Cost",
+         "source_refs":["L4-L4","L5-L5"],"rel":"context","reason":"原文给出反例与评价","tags":["storage-v3"],
+         "sections":[
+           {"name":"观点","body":"长序列下该机制不经济。"},
+           {"name":"条件与反例","body":"短序列下差异不显著。"},
+           {"name":"待验证","body":"需要补充复杂度测量。"}
+         ]}
+      ],
+      "candidate_coverage": [
+        {"module":"m-k","source_refs":["L2-L2","L3-L3"],"summary":"缩放定义与边界",
+         "disposition":"candidate","candidates":["cand-scaling"],"reason":""},
+        {"module":"m-o","source_refs":["L4-L4","L5-L5"],"summary":"长序列成本观点",
+         "disposition":"candidate","candidates":["cand-economics"],"reason":""},
+        {"module":"m-note","source_refs":["L6-L6"],"summary":"待验证争议",
+         "disposition":"note_only","candidates":[],"reason":"证据尚不足，保留在 Note"}
+      ] }
+  ] }
+PLAN
+"${EG}" --vault "${V}" apply --plan "${WORK}/plan_storage_v3.json" --json </dev/null \
+  >"${WORK}/storage_apply.json" 2>&1 || { cat "${WORK}/storage_apply.json"; die "Storage v3 草稿 apply 失败"; }
+NOTE_V3="${V}/domains/tech/notes/n-20260922-storage-v3.md"
+[ -f "${NOTE_V3}" ] || die "Storage v3 Note 未落盘"
+
+"${EG}" --vault "${V}" context --note n-20260922-storage-v3 --json </dev/null \
+  >"${WORK}/storage_context_before.json" 2>&1 || die "Storage v3 context 失败"
+[ "$(jenv "${WORK}/storage_context_before.json" 'len(o["data"]["draft_candidates"])')" = "2" ] ||
+  die "draft_candidates 应恰有 Knowledge/Opinion 两项"
+[ "$(jenv "${WORK}/storage_context_before.json" '"candidates" in o["data"]')" = "False" ] ||
+  die "m8 context 不得含 legacy candidates"
+[ "$(jenv "${WORK}/storage_context_before.json" 'sum(1 for w in o["warnings"] if w.get("code")=="I1")')" = "0" ] ||
+  die "m8 context 不得再发 candidates 弃用 I1"
+
+"${EG}" --vault "${V}" edit --target n-20260922-storage-v3 --candidate cand-scaling \
+  --section 知识内容 --content '用户确认后的缩放知识正文。' --user-request --json </dev/null \
+  >"${WORK}/storage_edit.json" 2>&1 || { cat "${WORK}/storage_edit.json"; die "candidate edit 失败"; }
+grep -qF '用户确认后的缩放知识正文。' "${NOTE_V3}" || die "candidate edit 未写入指定 H4"
+
+python3 - "${NOTE_V3}" "${WORK}/storage_before.json" <<'PY'
+import hashlib, json, sys
+raw = open(sys.argv[1], "rb").read()
+def cut(a, b):
+    start = raw.index(a)
+    end = raw.index(b, start) if b else len(raw)
+    return hashlib.sha256(raw[start:end]).hexdigest()
+def visible_candidates(a, b):
+    start = raw.index(a)
+    end = raw.index(b, start)
+    payload = b"\n".join(
+        line for line in raw[start:end].split(b"\n")
+        if not line.startswith(b"<!-- eg:cd:")
+    )
+    return hashlib.sha256(payload).hexdigest()
+obj = {
+    "body": cut(b"## \xe6\x95\xb4\xe7\x90\x86\xe6\xad\xa3\xe6\x96\x87\n", b"## \xe6\x8f\x90\xe5\x8f\x96\xe7\xbb\x93\xe6\x9e\x9c\n"),
+    "candidates": visible_candidates(b"### Storage Scaling Rule ", b"### \xe5\x80\x99\xe9\x80\x89\xe8\xa6\x86\xe7\x9b\x96\n"),
+    "tail": cut(b"## \xe5\xad\x98\xe7\x96\x91\xe4\xb8\x8e\xe5\xbe\x85\xe9\xaa\x8c\xe8\xaf\x81\n", None),
+}
+json.dump(obj, open(sys.argv[2], "w"))
+PY
+
+"${EG}" --vault "${V}" materialize --note n-20260922-storage-v3 --all --user-request --json </dev/null \
+  >"${WORK}/storage_materialize.json" 2>&1 || { cat "${WORK}/storage_materialize.json"; die "materialize 失败"; }
+KID="$(jenv "${WORK}/storage_materialize.json" '[x["output"] for x in o["data"]["materialized_candidates"] if x["kind"]=="knowledge"][0]')"
+OID="$(jenv "${WORK}/storage_materialize.json" '[x["output"] for x in o["data"]["materialized_candidates"] if x["kind"]=="opinion"][0]')"
+[ -f "${V}/domains/tech/knowledge/${KID}.md" ] || die "Knowledge 目标未落盘"
+[ -f "${V}/domains/tech/opinions/${OID}.md" ] || die "Opinion 目标未落盘"
+grep -qF '用户确认后的缩放知识正文。' "${V}/domains/tech/knowledge/${KID}.md" ||
+  die "Knowledge 未逐字承接用户编辑后的 candidate payload"
+grep -qE "^validation: '?pending'?$" "${V}/domains/tech/opinions/${OID}.md" ||
+  die "新 Opinion 必须 validation: pending"
+
+python3 - "${NOTE_V3}" "${WORK}/storage_before.json" <<'PY'
+import hashlib, json, sys
+raw = open(sys.argv[1], "rb").read()
+before = json.load(open(sys.argv[2]))
+def cut(a, b):
+    start = raw.index(a)
+    end = raw.index(b, start) if b else len(raw)
+    return hashlib.sha256(raw[start:end]).hexdigest()
+def visible_candidates(a, b):
+    start = raw.index(a)
+    end = raw.index(b, start)
+    payload = b"\n".join(
+        line for line in raw[start:end].split(b"\n")
+        if not line.startswith(b"<!-- eg:cd:")
+    )
+    return hashlib.sha256(payload).hexdigest()
+after = {
+    "body": cut(b"## \xe6\x95\xb4\xe7\x90\x86\xe6\xad\xa3\xe6\x96\x87\n", b"## \xe6\x8f\x90\xe5\x8f\x96\xe7\xbb\x93\xe6\x9e\x9c\n"),
+    "candidates": visible_candidates(b"### Storage Scaling Rule ", b"### Knowledge\n"),
+    "tail": cut(b"## \xe5\xad\x98\xe7\x96\x91\xe4\xb8\x8e\xe5\xbe\x85\xe9\xaa\x8c\xe8\xaf\x81\n", None),
+}
+if before != after:
+    raise SystemExit(f"Note 非目标区间发生变化: before={before} after={after}")
+PY
+ok "materialize 生成 k-* / o-* pending，Note 来源/批注/候选 payload/用户区逐字不变"
+
+"${EG}" --vault "${V}" context --note n-20260922-storage-v3 --json </dev/null \
+  >"${WORK}/storage_context_after.json" 2>&1 || die "物化后 context 失败"
+[ "$(jenv "${WORK}/storage_context_after.json" 'sorted(x["status"] for x in o["data"]["draft_candidates"])')" = "['materialized', 'materialized']" ] ||
+  die "物化后 draft_candidates 状态未闭合"
+
+"${EG}" --vault "${V}" search Storage --kind all --json </dev/null \
+  >"${WORK}/storage_search.json" 2>&1 || { cat "${WORK}/storage_search.json"; die "物化后 search 失败"; }
+[ "$(jenv "${WORK}/storage_search.json" 'o["data"]["total"]')" = "2" ] ||
+  die "物化后 search --kind all 应恰命中 Knowledge/Opinion 两项"
+[ "$(jenv "${WORK}/storage_search.json" 'sorted(x["id"] for x in o["data"]["hits"])')" = "['${KID}', '${OID}']" ] ||
+  die "search hits 未同时返回 materialize 生成的 Knowledge/Opinion"
+
+PLAIN="${WORK}/plain-export"
+"${EG}" --vault "${V}" export --plain --output "${PLAIN}" --json </dev/null \
+  >"${WORK}/storage_export.json" 2>&1 || { cat "${WORK}/storage_export.json"; die "plain export 失败"; }
+PLAIN_NOTE="${PLAIN}/domains/tech/notes/n-20260922-storage-v3.md"
+[ -f "${PLAIN_NOTE}" ] || die "plain export 缺 Note"
+grep -qE 'eg:(nr|cd|cc|nc):|\.eg-candidate|#cand-' "${PLAIN_NOTE}" &&
+  die "plain export 仍含 Evergreen 专有协议"
+for visible in '缩放因子是 1/sqrt(d_k)。' '[Agent 补充]' '用户确认后的缩放知识正文。' '长序列下该机制不经济。'; do
+  grep -qF "${visible}" "${PLAIN_NOTE}" || die "plain export 丢失可见内容：${visible}"
+done
+HEAD_BEFORE="$(git -C "${V}" rev-parse HEAD)"
+"${EG}" --vault "${V}" materialize --note n-20260922-storage-v3 --all --user-request --json </dev/null \
+  >"${WORK}/storage_replay.json" 2>&1 || die "materialize 幂等重跑失败"
+[ "$(jenv "${WORK}/storage_replay.json" 'o["data"]["txn_id"]')" = "" ] || die "幂等重跑不得开 txn"
+[ "$(git -C "${V}" rev-parse HEAD)" = "${HEAD_BEFORE}" ] || die "幂等重跑不得产生空 commit"
+ok "context、search --kind all、plain export 与幂等重跑闭环通过"
+
+# ---------------------------------------------------------------- 5. 洁净性
+step "E 洁净性：REPO_ROOT 工作树 git status 逐字不变"
 AFTER_REPO_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 [ "${BEFORE_REPO_STATUS}" = "${AFTER_REPO_STATUS}" ] || die "本 suite 改动了 REPO_ROOT 工作树（应只写 mktemp 内）"
 ok "REPO_ROOT 工作树未被本 suite 改动"

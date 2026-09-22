@@ -184,9 +184,8 @@ func TestS1NineCommandsAreImplemented(t *testing.T) {
 	// wantCommandCount = 23 与 opinion_cmd_test.go 的 TestCommandCountTwentyThree）。M5 收口值 22
 	// 那一格原样保留在 TestCommandCountTwentyTwo（它改证「摘掉 opinion 后恰 22」）。数字变了是
 	// **事实变了**（`eg opinion` 已真实注册），「全部非占位 + 全部已挂载」两条判据依旧一格未放宽。
-	if len(cmds) != 23 {
-		t.Fatalf("命令数应为 23（S1 九命令 + M3 状态三命令 + S2 proposal + M3 delete / undelete + "+
-			"mark-reviewed / unreviewed + edit + M4 reconcile / check + M5 index / bench + opinion），实际 %d", len(cmds))
+	if len(cmds) != 25 {
+		t.Fatalf("命令数应为 25（既有 23 条 + Storage v3 materialize / export），实际 %d", len(cmds))
 	}
 	for _, c := range cmds {
 		if c.Placeholder {
