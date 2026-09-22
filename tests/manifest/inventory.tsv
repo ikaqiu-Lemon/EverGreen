@@ -39,6 +39,7 @@ tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
+tests/_staged/internal/cli/materialize_transaction_test.go	unit	go	cli-core	unit.internal.cli	4	11311
 tests/_staged/internal/cli/opinion_auth_prelock_test.go	unit	go	cli-core	unit.internal.cli	1	5104
 tests/_staged/internal/cli/opinion_cmd_test.go	unit	go	cli-core	unit.internal.cli	9	16355
 tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	unit	go	cli-core	unit.internal.cli	7	19276
@@ -218,6 +219,7 @@ tests/_staged/internal/txn/journal_strict_test.go	unit	go	txn-atomicity	unit.int
 tests/_staged/internal/txn/journal_test.go	unit	go	txn-atomicity	unit.internal.txn	14	17076
 tests/_staged/internal/txn/lock_test.go	unit	go	txn-atomicity	unit.internal.txn	11	11771
 tests/_staged/internal/txn/marker_strict_test.go	unit	go	txn-atomicity	unit.internal.txn	5	8555
+tests/_staged/internal/txn/materialize_recovery_test.go	unit	go	txn-atomicity	unit.internal.txn	6	8688
 tests/_staged/internal/txn/opinion_path_test.go	unit	go	txn-atomicity	unit.internal.txn	4	15773
 tests/_staged/internal/txn/recover_test.go	unit	go	txn-atomicity	unit.internal.txn	16	27823
 tests/_staged/internal/txn/safedir_test.go	unit	go	txn-atomicity	unit.internal.txn	2	6427

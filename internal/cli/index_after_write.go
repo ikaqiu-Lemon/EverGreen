@@ -109,6 +109,19 @@ func (r *Root) syncIndexAfterWrite(rep *report.Report, root, cmd string, written
 		len(sres.Changes.Removed), len(sres.Changes.Unchanged), sres.Before, sres.After)
 }
 
+// syncResultIndex adapts the shared report-based index synchronizer for
+// direct commands whose diagnostics live on Result.
+func (r *Root) syncResultIndex(res *Result, inv *Invocation, root string, written []string) {
+	var scratch report.Report
+	r.syncIndexAfterWrite(&scratch, root, indexWriteLabel(inv), written)
+	for _, d := range scratch.Warnings {
+		res.Warnings = append(res.Warnings, Diagnostic{
+			Code: d.Code, Level: d.Level, Path: d.Path,
+			OpIndex: NonOpDiagnostic, Message: d.Message,
+		})
+	}
+}
+
 // noteIndexNotSynced 把「本次没同步上」统一降级成一条 W22 提示。
 //
 // 用 W22（index_stale）而不是造新码：从用户视角，「索引没跟上权威」就是陈旧这件事，

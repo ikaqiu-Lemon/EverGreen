@@ -39,6 +39,7 @@ tests/_staged/internal/cli/index_v2_rebuild_status_test.go	internal/cli/index_v2
 tests/_staged/internal/cli/initconfig_test.go	internal/cli/initconfig_test.go	evergreen	unit	go
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	internal/cli/mark_reviewed_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/markers_test.go	internal/cli/markers_test.go	evergreen	unit	go
+tests/_staged/internal/cli/materialize_transaction_test.go	internal/cli/materialize_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_auth_prelock_test.go	internal/cli/opinion_auth_prelock_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_cmd_test.go	internal/cli/opinion_cmd_test.go	evergreen	unit	go
 tests/_staged/internal/cli/opinion_lifecycle_skeleton_test.go	internal/cli/opinion_lifecycle_skeleton_test.go	evergreen	unit	go
@@ -218,6 +219,7 @@ tests/_staged/internal/txn/journal_strict_test.go	internal/txn/journal_strict_te
 tests/_staged/internal/txn/journal_test.go	internal/txn/journal_test.go	evergreen	unit	go
 tests/_staged/internal/txn/lock_test.go	internal/txn/lock_test.go	evergreen	unit	go
 tests/_staged/internal/txn/marker_strict_test.go	internal/txn/marker_strict_test.go	evergreen	unit	go
+tests/_staged/internal/txn/materialize_recovery_test.go	internal/txn/materialize_recovery_test.go	evergreen	unit	go
 tests/_staged/internal/txn/opinion_path_test.go	internal/txn/opinion_path_test.go	evergreen	unit	go
 tests/_staged/internal/txn/recover_test.go	internal/txn/recover_test.go	evergreen	unit	go
 tests/_staged/internal/txn/safedir_test.go	internal/txn/safedir_test.go	evergreen	unit	go

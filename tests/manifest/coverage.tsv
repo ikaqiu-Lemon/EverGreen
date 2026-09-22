@@ -3,7 +3,7 @@ arch-boundary	0	2	2	16	0	20
 authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
 card-query	26	0	4	0	0	30
-cli-core	81	0	6	0	0	87
+cli-core	82	0	6	0	0	88
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2
@@ -18,4 +18,4 @@ queryset	1	0	0	0	0	1
 reconcile-takeover	12	4	6	0	0	22
 relation	0	1	5	0	0	6
 storage-markdown	39	0	0	0	0	39
-txn-atomicity	11	1	11	0	0	23
+txn-atomicity	12	1	11	0	0	24
