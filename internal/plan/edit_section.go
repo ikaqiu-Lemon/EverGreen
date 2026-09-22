@@ -29,7 +29,6 @@ package plan
 import (
 	"fmt"
 
-	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
@@ -173,13 +172,13 @@ func (v *validator) editCandidateSection(op *Op) {
 			"candidate 模式无法读取目标 Note：%s", rel))
 		return
 	}
-	candidates, err := mdfile.ParseCandidates(raw)
+	candidates, err := store.ParseCandidates(raw)
 	if err != nil {
 		v.add(errorAt(E4, op.Index, opPath(op.Index, "candidate"),
 			"目标 Note 的 candidate 协议无法严格读回：%v", err))
 		return
 	}
-	var found *mdfile.Candidate
+	var found *store.Candidate
 	for i := range candidates {
 		if candidates[i].Key == op.Candidate {
 			found = &candidates[i]

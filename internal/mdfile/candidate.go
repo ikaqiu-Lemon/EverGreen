@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
@@ -721,6 +722,92 @@ func validateParsedSections(kind CandidateKind, sections []CandidateSection) err
 		return fmt.Errorf("%s candidate 缺必需 H4 分区 %q", kind, required)
 	}
 	return nil
+}
+
+// ReplaceCandidateOutputs updates only candidate anchor output fields. Candidate
+// headings and H4 payloads are re-parsed and compared byte-for-byte before the
+// result is returned.
+func ReplaceCandidateOutputs(raw []byte, outputs map[string]string) ([]byte, error) {
+	if len(outputs) == 0 {
+		return append([]byte(nil), raw...), nil
+	}
+	candidates, err := ParseCandidates(raw)
+	if err != nil {
+		return nil, err
+	}
+	type replacement struct {
+		start int
+		end   int
+		body  []byte
+	}
+	var replacements []replacement
+	found := make(map[string]bool, len(outputs))
+	before := make(map[string][]byte, len(candidates))
+	for _, candidate := range candidates {
+		before[candidate.Key] = append([]byte(nil), candidate.Raw(raw)...)
+		output, selected := outputs[candidate.Key]
+		if !selected {
+			continue
+		}
+		found[candidate.Key] = true
+		if output == "" {
+			return nil, fmt.Errorf("candidate %s 的 materialize output 为空", candidate.Key)
+		}
+		if candidate.Anchor.Output != "" && candidate.Anchor.Output != output {
+			return nil, fmt.Errorf("candidate %s 已物化为 %s，不得改写为 %s",
+				candidate.Key, candidate.Anchor.Output, output)
+		}
+		anchor := candidate.Anchor
+		anchor.Output = output
+		if err := validateCandidateAnchor(anchor, candidate.Kind); err != nil {
+			return nil, fmt.Errorf("candidate %s 的 materialize output 非法：%w",
+				candidate.Key, err)
+		}
+		line := append([]byte(encodeCandidateAnchor(anchor)), '\n')
+		if bytes.Equal(raw[candidate.AnchorStart:candidate.AnchorEnd], line) {
+			continue
+		}
+		replacements = append(replacements, replacement{
+			start: candidate.AnchorStart,
+			end:   candidate.AnchorEnd,
+			body:  line,
+		})
+	}
+	if len(found) != len(outputs) {
+		var unknown []string
+		for key := range outputs {
+			if !found[key] {
+				unknown = append(unknown, key)
+			}
+		}
+		sort.Strings(unknown)
+		return nil, fmt.Errorf("materialize candidate 不存在：%s", strings.Join(unknown, ", "))
+	}
+
+	out := append([]byte(nil), raw...)
+	for i := len(replacements) - 1; i >= 0; i-- {
+		r := replacements[i]
+		next := make([]byte, 0, len(out)-(r.end-r.start)+len(r.body))
+		next = append(next, out[:r.start]...)
+		next = append(next, r.body...)
+		next = append(next, out[r.end:]...)
+		out = next
+	}
+	after, err := ParseCandidates(out)
+	if err != nil {
+		return nil, fmt.Errorf("candidate output 更新后自检失败：%w", err)
+	}
+	if len(after) != len(candidates) {
+		return nil, fmt.Errorf("candidate output 更新后数量变化：%d -> %d",
+			len(candidates), len(after))
+	}
+	for _, candidate := range after {
+		if !bytes.Equal(before[candidate.Key], candidate.Raw(out)) {
+			return nil, fmt.Errorf("candidate %s 的 H3/payload 在 output 更新时发生变化",
+				candidate.Key)
+		}
+	}
+	return out, nil
 }
 
 // ReplaceCandidateSection replaces one candidate H4 payload and leaves every
