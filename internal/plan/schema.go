@@ -179,6 +179,13 @@ type Op struct {
 	OmissionsGiven          bool
 	ExtractionCoverage      []ExtractionCoverage
 	ExtractionCoverageGiven bool
+	// CandidateDrafts / CandidateCoverage are draft-time extraction facts.
+	// They are intentionally disjoint from OutputCards / ExtractionCoverage,
+	// which only describe already materialized outputs.
+	CandidateDrafts        []CandidateDraft
+	CandidateDraftsGiven   bool
+	CandidateCoverage      []CandidateCoverage
+	CandidateCoverageGiven bool
 
 	// create_opinion / append_opinion
 	//
@@ -227,6 +234,7 @@ type Op struct {
 	// Section / Block / BaseBlockHash 属 replace_block 与 edit_section；
 	// BlockGiven 区分「缺 block」与「空块」。
 	Section       string
+	Candidate     string
 	Block         []byte
 	BlockGiven    bool
 	BaseBlockHash string
@@ -384,7 +392,7 @@ func opKnownKeys(name string) []string {
 		// 审阅式提炼的两组清单会静默丢失。
 		return []string{"op", "source", "note_id", "title", "domain", "tags",
 			"sections", "blocks", "output_cards", "coverage_gaps", "reprocess",
-			"omissions", "extraction_coverage"}
+			"omissions", "extraction_coverage", "candidate_drafts", "candidate_coverage"}
 	case OpCreateKnowledge, OpCreateCard:
 		return []string{"op", "title", "card_id", "domain", "tags", "sources", "sections"}
 	case OpAppendKnowledge, OpAppendCard:
@@ -500,6 +508,18 @@ func parseOp(index int, item interface{}) (*Op, []Diagnostic) {
 		op.ExtractionCoverageGiven = true
 		cov, cd := parseExtractionCoverage(index, v)
 		op.ExtractionCoverage = cov
+		diags = append(diags, cd...)
+	}
+	if v, ok := m["candidate_drafts"]; ok {
+		op.CandidateDraftsGiven = true
+		drafts, dd := parseCandidateDrafts(index, v)
+		op.CandidateDrafts = drafts
+		diags = append(diags, dd...)
+	}
+	if v, ok := m["candidate_coverage"]; ok {
+		op.CandidateCoverageGiven = true
+		coverage, cd := parseCandidateCoverage(index, v)
+		op.CandidateCoverage = coverage
 		diags = append(diags, cd...)
 	}
 	if v, ok := m["output_cards"]; ok {

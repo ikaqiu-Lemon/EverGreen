@@ -68,11 +68,12 @@ func editCommand() *Command {
 		Display: "edit",
 		Summary: "用户显式修改知识内容等核心分区（整段替换；commit verb=process）",
 		Owner:   "T-evergreen.s1_main_flow-158614-045",
-		Usage: `eg edit --target <k-id> --section <分区> --content <text|file> --user-request [--strict] [--json]
+		Usage: `eg edit --target <k-id|n-id> [--candidate <cand-key>] --section <分区> --content <text|file> --user-request [--strict] [--json]
 
 参数：
-  --target <k-id>          是；要修改的知识卡 ID
-  --section <分区>          是；被替换的分区，取值恰为可编辑白名单（见下）
+  --target <k-id|n-id>     是；普通模式为知识卡 ID，candidate 模式为 Note ID
+  --candidate <cand-key>   否；给出时只替换该未物化 candidate 的一个 H4 模板分区
+  --section <分区>         是；普通模式取可编辑白名单，candidate 模式取该候选已有 H4
   --content <text|file>    是；新的分区正文。值是既存文件路径时按文件字节读入，
                            否则按字面文本处理（两种口径都会在报告里如实说明）
   --user-request           是；用户显式发起的命令行佐证。缺它 → 退 2、零写入
@@ -84,13 +85,15 @@ func editCommand() *Command {
 --user-request 无关。--section 理解自检 → 退 2：历史记录块只追加、永不改写。
 整段替换：被点名分区的正文按 --content 逐字生效；其它分区、frontmatter 的
 status / deleted_at / deleted_reason / reviewed_at 与未知字段逐字不动。
+candidate 模式还要求锚点 output 为空；候选 H3、其它 H4、机器锚点与 Note 其它字节不动。
 写前逐文件比对 content_hash：不一致即跳过该文件并退 3（授权不放宽 B3）。
 不需二次确认，也不产生退出码 6。
 退出码：0 | 1 参数非法（零写入） | 2 校验失败（零写入） | 3 写入被跳过 | 4 Git 提交失败 |
         5 写前强校验失败（E15）/ run.lock 不可用（E16），两者均零写入
 `,
 		Flags: func(fs *flagSet) {
-			fs.String("target", "", "要修改的知识卡 ID")
+			fs.String("target", "", "要修改的知识卡或 Note ID")
+			fs.String("candidate", "", "要修改的 candidate key")
 			fs.String("section", "", "被替换的分区名")
 			fs.String("content", "", "新的分区正文（字面文本或文件路径）")
 			registerStrictFlag(fs)
@@ -111,7 +114,10 @@ func requireEditArgs(inv *Invocation) error {
 		return err
 	}
 	if strings.TrimSpace(inv.String("target")) == "" {
-		return &UsageError{Msg: "eg edit 缺必填参数 --target <k-id>：修改内容必须点名目标卡"}
+		return &UsageError{Msg: "eg edit 缺必填参数 --target <k-id|n-id>：修改内容必须点名目标"}
+	}
+	if inv.Set("candidate") && strings.TrimSpace(inv.String("candidate")) == "" {
+		return &UsageError{Msg: "eg edit 的 --candidate 不得为空"}
 	}
 	if strings.TrimSpace(inv.String("section")) == "" {
 		return &UsageError{Msg: fmt.Sprintf(
@@ -128,6 +134,7 @@ func requireEditArgs(inv *Invocation) error {
 // runEdit 实现 eg edit：取正文字节 → 合成单条 op 的内存 plan → runPlan。
 func (r *Root) runEdit(inv *Invocation) (*Result, error) {
 	target := strings.TrimSpace(inv.String("target"))
+	candidate := strings.TrimSpace(inv.String("candidate"))
 	section := strings.TrimSpace(inv.String("section"))
 
 	content, origin, err := editContent(inv.String("content"))
@@ -135,18 +142,25 @@ func (r *Root) runEdit(inv *Invocation) (*Result, error) {
 		return nil, err
 	}
 
-	p, perr := r.buildEditPlan(inv, target, section, content)
+	p, perr := r.buildEditPlan(inv, target, candidate, section, content)
 	if perr != nil {
 		return nil, perr
 	}
 
 	res, runErr := runPlan(r, inv, p)
 	if res != nil {
+		detail := fmt.Sprintf("目标 %s 的分区「%s」整段替换", target, section)
+		notice := EditNoStateChangeNotice
+		if candidate != "" {
+			detail = fmt.Sprintf("目标 %s 的 candidate %s / H4「%s」正文替换",
+				target, candidate, section)
+			notice = "candidate 编辑只替换被点名 H4 payload；候选标题、锚点、其它分区与 frontmatter 均未变"
+		}
 		res.Summary = append([]string{
-			fmt.Sprintf("edit：目标 %s 的分区「%s」整段替换（%s；单条 %s op，"+
+			fmt.Sprintf("edit：%s（%s；单条 %s op，"+
 				"initiator=user + 命令行 --user-request=%t，走 ChangePlan → plan → store → 一次 commit）",
-				target, section, origin, plan.OpEditSection, inv.UserRequest),
-			EditNoStateChangeNotice,
+				detail, origin, plan.OpEditSection, inv.UserRequest),
+			notice,
 		}, res.Summary...)
 	}
 	return res, runErr
@@ -161,7 +175,7 @@ func (r *Root) runEdit(inv *Invocation) (*Result, error) {
 //
 // base 由 CLI 自己算（`store.ContentHash` 唯一口径，见 apply.go 的 planBase）：
 // B3 不因此放宽——写前重算不一致仍然跳过该文件并进 `skipped[]`（退 3）。
-func (r *Root) buildEditPlan(inv *Invocation, target, section string, content []byte) (
+func (r *Root) buildEditPlan(inv *Invocation, target, candidate, section string, content []byte) (
 	*plan.ChangePlan, error) {
 	base, paths, err := planBase(inv.VaultRoot, []string{target})
 	if err != nil {
@@ -177,6 +191,7 @@ func (r *Root) buildEditPlan(inv *Invocation, target, section string, content []
 		Index:          0,
 		Name:           plan.OpEditSection,
 		Target:         target,
+		Candidate:      candidate,
 		Section:        section,
 		Content:        content,
 		ContentGiven:   true,
@@ -192,7 +207,7 @@ func (r *Root) buildEditPlan(inv *Invocation, target, section string, content []
 		VerbGiven:      true,
 		Domain:         domain,
 		DomainGiven:    true,
-		Reason:         editReason(section),
+		Reason:         editReason(candidate, section),
 		RequirementIDs: []string{},
 		Base:           base,
 		Ops:            []*plan.Op{op},
@@ -202,7 +217,10 @@ func (r *Root) buildEditPlan(inv *Invocation, target, section string, content []
 
 // editReason 是 commit 与报告里的理由：只陈述事实（用户显式发起 + 改了哪个分区），
 // 不做评价、不编造动机。
-func editReason(section string) string {
+func editReason(candidate, section string) string {
+	if candidate != "" {
+		return fmt.Sprintf("用户显式修改 candidate %s 的 H4「%s」（eg edit）", candidate, section)
+	}
 	return fmt.Sprintf("用户显式修改分区「%s」（eg edit，授权合同 A-13 的唯一命令载体）", section)
 }
 

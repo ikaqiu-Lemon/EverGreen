@@ -579,7 +579,7 @@ func exportedNames(t *testing.T) []string {
 // **重钉理由（事实变了，不是放宽）**：黑名单原话就是「替换 / 删除属 **S2 起的用户显式命令**」——
 // M3 正是那个 S2 阶段：`remove_relation`（owner 裁决 A-24 定死为物理移除）与
 // `replace_block`（换「理解自检」当前有效块）两条形态**必须**有落盘入口。
-// 因此本用例从「一个都不许有」重钉为「**恰这四个**，多一个少一个都失败」：
+// 因此本用例从「一个都不许有」重钉为封闭白名单，多一个少一个都失败：
 // 方法名仍以 Apply 开头（走既有守卫入口 mutateGuarded），B1 对 Agent 自动路径的
 // 「只追加」约束一字不改（自动路径仍只有 CreateFile / AppendToSection / WriteGuarded 三形态，
 // 见 TestB1WriteFormsAreExactlyThree）。
@@ -592,7 +592,8 @@ var m3DestructiveExports = map[string]bool{
 	// 唯一命令载体（授权合同 §9 A-13 + §2 矩阵 #12 的 P-U ✅），整段替换必须有落盘入口。
 	// 它同样只经 mutateGuarded（B3 逐文件 hash + B2 用户分区逐字保留），
 	// 且 Agent 自动路径拿不到它（矩阵 #12 的 P-A 仍是 🔴），B1 一字不改。
-	"ReplaceSectionSpec": true, // edit_section 的输入（仅 P-U 可达）
+	"ReplaceSectionSpec":          true, // edit_section 的 H2 输入（仅 P-U 可达）
+	"ReplaceCandidateSectionSpec": true, // edit_section 的 candidate H4 输入（仅 P-U 可达）
 }
 
 func TestB1NoDestructiveExports(t *testing.T) {

@@ -29,6 +29,8 @@ package plan
 import (
 	"fmt"
 
+	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
@@ -42,6 +44,9 @@ const ActEditSection ActionKind = "edit_section_write" // M3 / S2
 type SectionEdit struct {
 	// Section 是被替换的分区名（逐字，取自 EditableSections 白名单）。
 	Section string
+	// Candidate is empty for the legacy artifact-H2 mode. A non-empty key
+	// selects one unmaterialized Note candidate H4 payload.
+	Candidate string
 	// Payload 是新的分区正文字节，逐字落盘，必须以 \n 结束。
 	Payload []byte
 }
@@ -53,7 +58,9 @@ func EditOpNames() []string { return []string{OpEditSection} }
 func IsEditOp(name string) bool { return inList(EditOpNames(), name) }
 
 // EditOpFields 是 `edit_section` 的字段名集合（`op` 自身不计）。
-func EditOpFields() []string { return []string{"target", "section", "content", "initiator"} }
+func EditOpFields() []string {
+	return []string{"target", "candidate", "section", "content", "initiator"}
+}
 
 // editOpKnownKeys 是 `edit_section` 的顶层键集合；集合外的键落进 Extra + I1（前向兼容）。
 func editOpKnownKeys(name string) []string {
@@ -81,6 +88,7 @@ func EditableSections() []string {
 // 与 S1 / M3 字段同一条只读路径：只做类型断言，不做任何规范化——用户正文一律以 []byte
 // 交给写入侧（ContentGiven 区分「缺 content」与「给了空串」，两者的诊断成因不同）。
 func parseEditFields(op *Op, m map[string]interface{}) {
+	op.Candidate, _ = asString(m["candidate"])
 	if v, ok := m["content"]; ok {
 		op.ContentGiven = true
 		s, _ := asString(v)
@@ -100,6 +108,10 @@ func parseEditFields(op *Op, m map[string]interface{}) {
 //  4. `content` 必须给出、非空、以换行结束（E5：本工具不生成、不补写用户内容）；
 //  5. B3：`baseCheck` 写入 ExpectedHash，base 未覆盖该文件 → W6 + 跳过（退 3）。
 func (v *validator) editSection(op *Op) {
+	if op.Candidate != "" {
+		v.editCandidateSection(op)
+		return
+	}
 	rel, ok := v.cardTarget(op, "target", op.Target)
 	if !ok {
 		return
@@ -127,6 +139,94 @@ func (v *validator) editSection(op *Op) {
 		Domain: store.DomainOf(rel), Edit: &edit}
 	v.baseCheck(op, op.Target, rel, &act)
 	v.res.Actions = append(v.res.Actions, act)
+}
+
+func (v *validator) editCandidateSection(op *Op) {
+	if _, err := model.ParseNoteID(op.Target); err != nil {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "target"),
+			"candidate 模式的 target 必须是合法 Note ID：%v", err))
+		return
+	}
+	rel, ok := v.resolve(op.Target)
+	if !ok {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "target"),
+			"candidate 模式的 Note %s 不存在于全库", op.Target))
+		return
+	}
+	v.requireInitiator(op)
+	if !v.candidateEditGate(op) {
+		return
+	}
+	if !op.ContentGiven || len(op.Content) == 0 {
+		v.add(errorAt(E5, op.Index, opPath(op.Index, "content"),
+			"edit_section candidate 模式缺 content"))
+		return
+	}
+	if op.Content[len(op.Content)-1] != '\n' {
+		v.add(errorAt(E5, op.Index, opPath(op.Index, "content"),
+			"content 必须以换行结束：写入是字节级区间替换"))
+		return
+	}
+	raw, readable := v.readExisting(rel)
+	if !readable {
+		v.add(errorAt(E4, op.Index, opPath(op.Index, "target"),
+			"candidate 模式无法读取目标 Note：%s", rel))
+		return
+	}
+	candidates, err := mdfile.ParseCandidates(raw)
+	if err != nil {
+		v.add(errorAt(E4, op.Index, opPath(op.Index, "candidate"),
+			"目标 Note 的 candidate 协议无法严格读回：%v", err))
+		return
+	}
+	var found *mdfile.Candidate
+	for i := range candidates {
+		if candidates[i].Key == op.Candidate {
+			found = &candidates[i]
+			break
+		}
+	}
+	if found == nil {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate"),
+			"目标 Note 不含 candidate %q", op.Candidate))
+		return
+	}
+	if found.Anchor.Output != "" {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate"),
+			"candidate %s 已物化为 %s，不得再通过命令式路径编辑",
+			op.Candidate, found.Anchor.Output))
+		return
+	}
+	sectionFound := false
+	for _, section := range found.Sections {
+		if section.Name == op.Section {
+			sectionFound = true
+			break
+		}
+	}
+	if !sectionFound {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "section"),
+			"candidate %s 不含 H4 分区 %q", op.Candidate, op.Section))
+		return
+	}
+	edit := SectionEdit{Candidate: op.Candidate, Section: op.Section, Payload: op.Content}
+	act := Action{Kind: ActEditSection, OpIndex: op.Index, Op: op, ID: op.Target, Path: rel,
+		Domain: store.DomainOf(rel), Edit: &edit}
+	v.baseCheck(op, op.Target, rel, &act)
+	v.res.Actions = append(v.res.Actions, act)
+}
+
+func (v *validator) candidateEditGate(op *Op) bool {
+	if v.pathOf(op) == PathUser {
+		return true
+	}
+	why := fmt.Sprintf("%s candidate 模式只允许用户显式路径（%s）", op.Name, PathUser)
+	if Forged(op, v.auth()) {
+		why = fmt.Sprintf("%s 的授权佐证不成立：%s", op.Name, ForgeryNotice)
+	}
+	v.add(v.gateDiag(op, E6, "candidate",
+		why+"；整条 op 不执行，目标 Note 字节不变"))
+	return false
 }
 
 // editableSection 报告分区是否在 `eg edit` 的白名单内。
