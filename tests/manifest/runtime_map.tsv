@@ -5,6 +5,7 @@ tests/_staged/internal/cli/apply_inplan_test.go	internal/cli/apply_inplan_test.g
 tests/_staged/internal/cli/apply_opinion_transaction_test.go	internal/cli/apply_opinion_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/apply_test.go	internal/cli/apply_test.go	evergreen	unit	go
 tests/_staged/internal/cli/bench_test.go	internal/cli/bench_test.go	evergreen	unit	go
+tests/_staged/internal/cli/candidate_sidecar_test.go	internal/cli/candidate_sidecar_test.go	evergreen	unit	go
 tests/_staged/internal/cli/capture_test.go	internal/cli/capture_test.go	evergreen	unit	go
 tests/_staged/internal/cli/capture_transaction_test.go	internal/cli/capture_transaction_test.go	evergreen	unit	go
 tests/_staged/internal/cli/card_test.go	internal/cli/card_test.go	evergreen	unit	go
@@ -85,6 +86,7 @@ tests/_staged/internal/cli/visibility_matrix_test.go	internal/cli/visibility_mat
 tests/_staged/internal/git/exitcode_test.go	internal/git/exitcode_test.go	evergreen	unit	go
 tests/_staged/internal/git/git_test.go	internal/git/git_test.go	evergreen	unit	go
 tests/_staged/internal/git/log_test.go	internal/git/log_test.go	evergreen	unit	go
+tests/_staged/internal/index/blocks_test.go	internal/index/blocks_test.go	evergreen	unit	go
 tests/_staged/internal/index/build_test.go	internal/index/build_test.go	evergreen	unit	go
 tests/_staged/internal/index/consistency_rowlevel_test.go	internal/index/consistency_rowlevel_test.go	evergreen	unit	go
 tests/_staged/internal/index/consistency_test.go	internal/index/consistency_test.go	evergreen	unit	go

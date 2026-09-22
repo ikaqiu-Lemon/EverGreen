@@ -5,6 +5,7 @@ tests/_staged/internal/cli/apply_inplan_test.go	unit	go	cli-core	unit.internal.c
 tests/_staged/internal/cli/apply_opinion_transaction_test.go	unit	go	cli-core	unit.internal.cli	1	7252
 tests/_staged/internal/cli/apply_test.go	unit	go	cli-core	unit.internal.cli	13	29913
 tests/_staged/internal/cli/bench_test.go	unit	go	cli-core	unit.internal.cli	8	15971
+tests/_staged/internal/cli/candidate_sidecar_test.go	unit	go	cli-core	unit.internal.cli	2	4881
 tests/_staged/internal/cli/capture_test.go	unit	go	cli-core	unit.internal.cli	12	13626
 tests/_staged/internal/cli/capture_transaction_test.go	unit	go	cli-core	unit.internal.cli	9	24737
 tests/_staged/internal/cli/card_test.go	unit	go	cli-core	unit.internal.cli	11	23378
@@ -34,8 +35,8 @@ tests/_staged/internal/cli/index_opinion_projection_test.go	unit	go	cli-core	uni
 tests/_staged/internal/cli/index_opinion_sync_test.go	unit	go	cli-core	unit.internal.cli	1	33789
 tests/_staged/internal/cli/index_reserved_read_test.go	unit	go	cli-core	unit.internal.cli	2	19706
 tests/_staged/internal/cli/index_rowlevel_test.go	unit	go	cli-core	unit.internal.cli	2	12817
-tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	54753
-tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit.internal.cli	4	30095
+tests/_staged/internal/cli/index_test.go	unit	go	cli-core	unit.internal.cli	16	55163
+tests/_staged/internal/cli/index_v2_rebuild_status_test.go	unit	go	cli-core	unit.internal.cli	4	30156
 tests/_staged/internal/cli/initconfig_test.go	unit	go	cli-core	unit.internal.cli	11	14024
 tests/_staged/internal/cli/mark_reviewed_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	19143
 tests/_staged/internal/cli/markers_test.go	unit	go	cli-core	unit.internal.cli	2	9509
@@ -85,7 +86,8 @@ tests/_staged/internal/cli/visibility_matrix_test.go	unit	go	cli-core	unit.inter
 tests/_staged/internal/git/exitcode_test.go	unit	go	git-integrity	unit.internal.git	1	1048
 tests/_staged/internal/git/git_test.go	unit	go	git-integrity	unit.internal.git	12	12460
 tests/_staged/internal/git/log_test.go	unit	go	git-integrity	unit.internal.git	4	6849
-tests/_staged/internal/index/build_test.go	unit	go	index-search	unit.internal.index	10	15589
+tests/_staged/internal/index/blocks_test.go	unit	go	index-search	unit.internal.index	3	6628
+tests/_staged/internal/index/build_test.go	unit	go	index-search	unit.internal.index	10	15709
 tests/_staged/internal/index/consistency_rowlevel_test.go	unit	go	index-search	unit.internal.index	4	15156
 tests/_staged/internal/index/consistency_test.go	unit	go	index-search	unit.internal.index	8	9627
 tests/_staged/internal/index/corrupt_test.go	unit	go	index-search	unit.internal.index	11	14600
@@ -152,7 +154,7 @@ tests/_staged/internal/query/card_test.go	unit	go	card-query	unit.internal.query
 tests/_staged/internal/query/context_test.go	unit	go	card-query	unit.internal.query	17	34709
 tests/_staged/internal/query/degrade_rowlevel_test.go	unit	go	card-query	unit.internal.query	2	6619
 tests/_staged/internal/query/diagnostic_placement_test.go	unit	go	card-query	unit.internal.query	1	3363
-tests/_staged/internal/query/draft_candidate_context_test.go	unit	go	card-query	unit.internal.query	1	2742
+tests/_staged/internal/query/draft_candidate_context_test.go	unit	go	card-query	unit.internal.query	3	8211
 tests/_staged/internal/query/filter/fuzz_test.go	unit	go	card-query	unit.internal.query.filter	2	4350
 tests/_staged/internal/query/filter/unreviewed_test.go	unit	go	card-query	unit.internal.query.filter	3	4972
 tests/_staged/internal/query/fuzz_test.go	unit	go	card-query	unit.internal.query	2	3912
@@ -340,7 +342,7 @@ tests/e2e/txn-atomicity/precheck_exit5.sh	e2e	shell	txn-atomicity	e2e.txn-atomic
 tests/e2e/txn-atomicity/run_lock.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.run_lock	40	11850
 tests/e2e/txn-atomicity/txn_journal.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.txn_journal	31	9452
 tests/fixtures/contracts/SHA256SUMS	fixtures	data	-	-	0	5075
-tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	fixtures	data	-	-	0	18621
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	fixtures	data	-	-	0	20751
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md	fixtures	data	-	-	0	58361
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md	fixtures	data	-	-	0	26810
 tests/fixtures/contracts/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md	fixtures	data	-	-	0	38372

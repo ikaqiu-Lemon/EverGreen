@@ -131,7 +131,7 @@ Evergreen owns the disk.
                         │ rebuildable                     │ read-only
                         ▼                                 ▼
               ┌──────────────────┐          ┌──────────────────────────┐
-              │ .index/ SQLite   │          │ eg search / card show /  │
+              │ SQLite + blocks  │          │ eg search / card show /  │
               │ FTS5 + txn log   │ ───────▶ │ rel  (falls back to      │
               └──────────────────┘          │ Markdown if unhealthy)   │
                                             └──────────────────────────┘
@@ -530,7 +530,7 @@ domains/<domain>/notes/           # n-*  material notes (faithful to the source)
 domains/<domain>/knowledge/       # k-*  knowledge cards (stable, reusable claims)
 domains/<domain>/opinions/        # o-*  opinions (evaluations, causal/predictive judgements)
 proposals/                        # p-*  control-plane: risky-operation proposals (on demand)
-.index/                           # derived SQLite + run.lock + txn journal  (via .gitignore)
+.index/                           # derived SQLite + blocks/ sidecars + run.lock + txn journal
 .eg/                              # last-report state    (via .git/info/exclude)
 ```
 
@@ -973,15 +973,22 @@ stale/missing/corrupt · `W25` pagination truncated · `W26` crash recovery · `
 
 ## The derived index
 
-The index is a SQLite/FTS5 database (via `modernc.org/sqlite`, pure Go — no CGO) under `.index/`. It
-is a 可重建派生物 — a **pure accelerator**: not required by any command, never a prerequisite,
-gitignored, and never distributed with the repository.
+The index contains a SQLite/FTS5 database (via `modernc.org/sqlite`, pure Go — no CGO) and
+deterministic per-Note candidate sidecars under `.index/blocks/`. It is a 可重建派生物 — a
+**pure accelerator**: not required by any command, never a prerequisite, gitignored, and never
+distributed with the repository.
 
 It carries `schema_version = 2` in `index_meta` and holds six tables — `index_meta`, `cards`,
 `cards_fts`, `relations`, `files`, `skipped`. Knowledge and Opinion share `cards`/`cards_fts`,
 distinguished by a `kind` column (`knowledge` / `opinion`); an opinion's `validation` rides the same
 row. There is **no incremental schema migration**: when the on-disk `schema_version` does not match,
 the whole index is discarded and rebuilt from Markdown.
+
+Each `.index/blocks/<n-id>.json` stores only facts reproducible from its Note: Note path/hash and
+candidate key, kind, syntax, source spans, materialization status/output, and payload hash. It does
+not store authoritative Markdown. `eg context` uses a sidecar only after comparing it with the
+current Note projection; missing, stale, corrupt, or orphaned sidecars produce an index diagnostic
+and fall back to the same direct Markdown scan.
 
 ```console
 $ eg index build              # build it

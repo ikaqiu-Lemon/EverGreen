@@ -1,6 +1,6 @@
 metric	high_water	initial	source	note
-inventory_cases	6431	5697	tests/manifest/inventory.tsv	首次冻结（defect_zeroing 批次1）
-inventory_rows	444	375	tests/manifest/inventory.tsv	首次冻结（defect_zeroing 批次1）
+inventory_cases	6438	5697	tests/manifest/inventory.tsv	首次冻结（defect_zeroing 批次1）
+inventory_rows	446	375	tests/manifest/inventory.tsv	首次冻结（defect_zeroing 批次1）
 legacy_gate_assets	21	21	tests/manifest/legacy_gates.tsv	首次冻结（defect_zeroing 批次1）
 migration_rows	289	289	tests/manifest/migration.tsv	首次冻结（defect_zeroing 批次1）
 requirements_kind_command	25	22	tests/manifest/traceability.tsv	首次冻结（defect_zeroing 批次1）

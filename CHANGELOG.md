@@ -26,6 +26,8 @@ and published versions follow [Semantic Versioning](https://semver.org/).
 - Storage v3 Note candidates with deterministic Knowledge/Opinion
   materialization through `eg materialize`, plus read-only plain Markdown
   egress through `eg export --plain`.
+- Rebuildable `.index/blocks/<n-id>.json` candidate sidecars with deterministic
+  build/sync, strict Markdown reconciliation, and scan fallback for `eg context`.
 
 ### Changed
 

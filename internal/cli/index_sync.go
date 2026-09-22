@@ -55,8 +55,10 @@ func (r *Root) runIndexSync(inv *Invocation) (*Result, error) {
 
 	rep := report.New()
 	var (
-		sres  *index.SyncResult
-		after index.Diagnosis
+		sres        *index.SyncResult
+		after       index.Diagnosis
+		blockBefore index.BlockStatus
+		blockAfter  index.BlockStatus
 	)
 	// —— 临界区：进闭包时已持锁、已恢复、保留条目已体检通过 ——
 	if err := r.runIndexCritical(inv, &rep, func() error {
@@ -72,6 +74,7 @@ func (r *Root) runIndexSync(inv *Invocation) (*Result, error) {
 		for _, d := range warnings {
 			rep.AddWarning(d)
 		}
+		blockBefore = index.CheckBlocks(dir, snap.Blocks, false)
 
 		sres, err = index.Sync(dir, snap, index.Options{Now: r.Now})
 		if err != nil {
@@ -90,11 +93,21 @@ func (r *Root) runIndexSync(inv *Invocation) (*Result, error) {
 		if sres.Degraded {
 			addIndexDiagnosis(&rep, before)
 		}
+		if before.Usable() && !blockBefore.Healthy() {
+			addBlockDiagnosis(&rep, blockBefore)
+		}
 		// 收敛后复检同样留在锁内：出了锁再看，看到的可能是别人写的结果。
 		after = index.Inspect(dir)
 		if !after.Usable() {
 			// 收敛完还不健康属实现 bug 级事实：如实登记 warning，绝不静默成功。
 			addIndexDiagnosis(&rep, after)
+		}
+		blockAfter = index.CheckBlocks(dir, snap.Blocks, false)
+		if !blockAfter.Healthy() {
+			return &CommitFailedError{
+				Msg: "派生 block sidecar 同步后对账失败；权威 Markdown 零改动、无 commit",
+				Err: fmt.Errorf("%s / %s", blockAfter.Health, blockAfter.Message),
+			}
 		}
 		return nil
 	}); err != nil {
@@ -104,8 +117,12 @@ func (r *Root) runIndexSync(inv *Invocation) (*Result, error) {
 	rep.AddInfo("eg index sync", report.NonOp, "%s", IndexAuthorityNotice)
 	rep.AddInfo("eg index sync", report.NonOp, "%s", IndexNotDoneNotice)
 
-	out := proposalResult(rep, []string{indexSyncSummary(sres, after)})
-	out.Data["index"] = indexSyncData(sres, after)
+	out := proposalResult(rep, []string{indexSyncSummary(sres, after) +
+		fmt.Sprintf("；block sidecar action=%s / notes=%d",
+			sres.BlockAction, sres.BlockCount)})
+	data := indexSyncData(sres, after)
+	data["blocks"] = blockStatusData(blockAfter)
+	out.Data["index"] = data
 	out.DataOrder = []string{"index", "report"}
 	return out, nil
 }
@@ -126,6 +143,12 @@ func indexSyncData(sres *index.SyncResult, after index.Diagnosis) map[string]int
 	data["relations"] = sres.RelationCount
 	data["files"] = sres.FileCount
 	data["skipped"] = sres.SkippedCount
+	data["blocks_action"] = sres.BlockAction
+	data["block_sidecars"] = sres.BlockCount
+	data["blocks_changed_added"] = len(sres.BlockChanges.Added)
+	data["blocks_changed_modified"] = len(sres.BlockChanges.Modified)
+	data["blocks_changed_removed"] = len(sres.BlockChanges.Removed)
+	data["blocks_changed_unchanged"] = len(sres.BlockChanges.Unchanged)
 	data["dropped_duplicate_cards"] = sres.DroppedDuplicateCards
 	data["dropped_duplicate_relations"] = sres.DroppedDuplicateRelations
 	addChangeCounts(data, sres.Changes)

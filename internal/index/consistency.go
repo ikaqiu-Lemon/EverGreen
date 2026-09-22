@@ -85,6 +85,10 @@ func StaleReasons() []string {
 type Current struct {
 	Head  string
 	Files []File
+	// Blocks is the complete authoritative Note sidecar projection. SQLite
+	// consistency ignores it; command/query callers compare it through
+	// CheckBlocks so the six-table contract remains unchanged.
+	Blocks []BlockDocument
 	// Cards 是调用方**已经解析好**的权威 Markdown 卡投影（与 build 快照同口径的中性 DTO：
 	// id/path/domain/title/status/deprecated/deleted/replaced_by/content_hash 逐列，外加喂 FTS
 	// 的 Body）。它是 `Check` 做**行级**权威一致性核对（I-…-024）的唯一输入来源 ——

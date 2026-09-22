@@ -342,6 +342,54 @@ sidecar 位于 `.index/blocks/`，是按 Note 生成的确定性 JSON；删除�
 它不保存任何 Markdown 中不存在的身份、映射或正文。`eg index rebuild` 保留 `run.lock/txn`
 的现有规则，同时重建 sidecar；sidecar 失败只产派生层诊断，不改变 Markdown 成功结论。
 
+每个可解析 Note 对应 `.index/blocks/<note-id>.json`，v1 canonical JSON 字段固定为：
+
+```json
+{
+  "schema_version": 1,
+  "note_id": "n-20260922-example",
+  "note_path": "domains/example/notes/n-20260922-example.md",
+  "note_hash": "sha256:<64hex>",
+  "candidates": [
+    {
+      "key": "cand-example",
+      "kind": "knowledge",
+      "syntax": "h3",
+      "title": "Example",
+      "status": "draft",
+      "output": "",
+      "payload_hash": "sha256:<64hex>",
+      "span": {
+        "anchor_start": 0,
+        "anchor_end": 10,
+        "boundary_start": 10,
+        "boundary_end": 100,
+        "heading_start": 10,
+        "heading_end": 30,
+        "content_end": 90
+      }
+    }
+  ],
+  "diagnostics": []
+}
+```
+
+- `schema_version` 独立于 SQLite `schema_version=2`；sidecar 不新增表、列或 `index_meta` 键。
+- 每个可解析 Note 都生成一份文件；无 candidate 时 `candidates` 为 `[]`。candidate 协议
+  解析失败时 `candidates` 为 `[]`，`diagnostics` 保存可重算的 Q1，不伪造部分结果。
+- `status` 只由 `output` 是否为空确定；`payload_hash` 覆盖与 H3/L2 共用的可见 candidate
+  区间，sidecar 不保存 payload 正文。
+- JSON 字段、数组与缩进编码均 canonical；未知字段、非法枚举、路径逃逸、文件名与
+  `note_id` 不一致、重复 Note/candidate、非 canonical 字节均视为损坏。
+- `build` / `rebuild` 全量生成；`sync` 和健康索引的写后同步按 Note 增量更新。
+  `.index/blocks/` 是可清扫派生目录，不加入必须跨重建保留的 `run.lock/txn` 名册。
+- `status` 对 sidecar 缺失、陈旧/孤儿、损坏分别映射 `W23`、`W22`、`W24`。
+  `eg context` 只读取与当前 Markdown 投影逐字一致的 sidecar；任一不健康状态都给出对应
+  W 码与 `Q5`，然后使用同一投影函数的直接扫描结果，集合、顺序、状态、output、hash
+  与健康 sidecar 路径逐项相同。
+- sidecar 的任何同步失败都发生在权威 Markdown 提交之后，只追加派生层 warning；
+  不回滚已提交 Markdown，不改变原命令退出码。
+
 L2 只增加 Span provider，不复制模板、物化、事务、查询或导出逻辑。
 
 ### D6.5 0.8.0-m8 与 D-3

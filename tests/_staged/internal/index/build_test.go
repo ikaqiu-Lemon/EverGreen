@@ -252,8 +252,8 @@ func TestBuildRejectsUnknownSkippedKind(t *testing.T) {
 	}
 }
 
-// TestBuildOnlyAllowedFiles 反证 `.index/` 只出现允许集合内的文件（恰 3 个之内）：
-// 派生目录的整洁性是「整目录 gitignore + 可随时 rm -rf」的前提。
+// TestBuildOnlyAllowedFiles 反证 `.index/` 只出现 SQLite 三文件与可重建 blocks/：
+// blocks/ 不进入 AllowedFiles，也不进入必须跨重建保留的 runtime reserved 集合。
 func TestBuildOnlyAllowedFiles(t *testing.T) {
 	dir := buildFixture(t, sampleSnapshot())
 	entries, err := os.ReadDir(dir)
@@ -265,8 +265,14 @@ func TestBuildOnlyAllowedFiles(t *testing.T) {
 		allowed[name] = true
 	}
 	for _, e := range entries {
+		if e.Name() == index.BlocksDirName {
+			if !e.IsDir() {
+				t.Fatalf(".index/%s 必须是目录", index.BlocksDirName)
+			}
+			continue
+		}
 		if e.IsDir() {
-			t.Fatalf(".index/ 下出现子目录 %s（布局只允许 3 个文件）", e.Name())
+			t.Fatalf(".index/ 下出现未知子目录 %s", e.Name())
 		}
 		if !allowed[e.Name()] {
 			t.Fatalf(".index/ 下出现非法文件 %s（允许集合 = %v）", e.Name(), index.AllowedFiles())

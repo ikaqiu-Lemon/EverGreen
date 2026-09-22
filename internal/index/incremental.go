@@ -83,6 +83,9 @@ type Delta struct {
 	Skipped   []SkippedFile
 	// Removed 是已不存在的 vault 内相对路径（删除、或重命名的旧路径）。
 	Removed []string
+	// Blocks is the complete current Note sidecar projection. It stays outside
+	// the SQLite transaction and is independently rebuildable.
+	Blocks []BlockDocument
 }
 
 // Empty 报告 Delta 是否不含任何受影响路径（此时 Apply 只可能推进 head，或直接 no-op）。
@@ -135,6 +138,9 @@ type SyncResult struct {
 	RelationCount int
 	FileCount     int
 	SkippedCount  int
+	BlockCount    int
+	BlockAction   string
+	BlockChanges  BlockChanges
 	// 与 Result 同型的如实交代：按主键只收一份时被丢弃的重复行条数。
 	DroppedDuplicateCards     int
 	DroppedDuplicateRelations int
@@ -161,7 +167,11 @@ func Apply(dir string, d Delta, opt Options) (*SyncResult, error) {
 			Changes: ChangeSet{Added: pathsOfNames(d.Files), Removed: sortedCopy(d.Removed)},
 		}, nil
 	}
-	return applyDelta(dir, d, diag, opt)
+	res, err := applyDelta(dir, d, diag, opt)
+	if err != nil {
+		return nil, err
+	}
+	return applyResultBlocks(dir, d.Blocks, res)
 }
 
 // Sync 以**全量现态快照**把索引收敛到 fresh（`eg index sync` 的语义底座，合同 §5.3）。
@@ -193,9 +203,14 @@ func Sync(dir string, snap Snapshot, opt Options) (*SyncResult, error) {
 	before := WatermarkOf(diag.Meta)
 	after := WatermarkFrom(snap.Head, snap.Files)
 	if cs.Empty() && before.Equal(after) {
-		return noopResult(diag, cs, before, len(indexedFiles)), nil
+		return syncResultBlocks(
+			dir, snap.Blocks, noopResult(diag, cs, before, len(indexedFiles)))
 	}
-	return applyDelta(dir, deltaFromSnapshot(snap, cs), diag, opt)
+	res, err := applyDelta(dir, deltaFromSnapshot(snap, cs), diag, opt)
+	if err != nil {
+		return nil, err
+	}
+	return syncResultBlocks(dir, snap.Blocks, res)
 }
 
 // deltaFromSnapshot 从全量现态快照里切出「只含受影响路径」的 Delta（Sync 的中间形态）。
@@ -207,7 +222,10 @@ func deltaFromSnapshot(snap Snapshot, cs ChangeSet) Delta {
 	for _, p := range cs.Affected() {
 		affected[p] = true
 	}
-	d := Delta{Head: snap.Head, Removed: append([]string(nil), cs.Removed...)}
+	d := Delta{
+		Head: snap.Head, Removed: append([]string(nil), cs.Removed...),
+		Blocks: append([]BlockDocument(nil), snap.Blocks...),
+	}
 	for _, c := range snap.Cards {
 		if affected[c.Path] {
 			d.Cards = append(d.Cards, c)
@@ -583,10 +601,43 @@ func degradedResult(action SyncAction, diag Diagnosis, res *Result,
 		After:     WatermarkOf(res.Meta),
 		CardCount: res.CardCount, RelationCount: res.RelationCount,
 		FileCount: res.FileCount, SkippedCount: res.SkippedCount,
+		BlockCount: res.BlockCount, BlockAction: res.BlockAction,
 
 		DroppedDuplicateCards:     res.DroppedDuplicateCards,
 		DroppedDuplicateRelations: res.DroppedDuplicateRelations,
 	}, nil
+}
+
+func syncResultBlocks(dir string, blocks []BlockDocument,
+	res *SyncResult,
+) (*SyncResult, error) {
+	synced, err := SyncBlocks(dir, blocks)
+	if err != nil {
+		return nil, err
+	}
+	res.BlockCount = synced.Count
+	res.BlockAction = synced.Action
+	res.BlockChanges = synced.Changes
+	if res.Action == ActionSyncNoop && synced.Action != BlockActionNoop {
+		res.Action = ActionSynced
+	}
+	return res, nil
+}
+
+func applyResultBlocks(dir string, blocks []BlockDocument,
+	res *SyncResult,
+) (*SyncResult, error) {
+	synced, err := ApplyBlockDocuments(dir, blocks)
+	if err != nil {
+		return nil, err
+	}
+	res.BlockCount = synced.Count
+	res.BlockAction = synced.Action
+	res.BlockChanges = synced.Changes
+	if res.Action == ActionSyncNoop && synced.Action != BlockActionNoop {
+		res.Action = ActionSynced
+	}
+	return res, nil
 }
 
 // pathsOfNames 取一批文件的路径（升序）。

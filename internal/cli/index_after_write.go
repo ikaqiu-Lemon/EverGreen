@@ -156,6 +156,17 @@ func indexDeltaFor(snap index.Snapshot, written []string) index.Delta {
 		}
 	}
 	d := index.Delta{Head: snap.Head}
+	affectedBlocks := map[string]bool{}
+	for _, rel := range written {
+		if isNoteRel(rel) {
+			affectedBlocks[rel] = true
+		}
+	}
+	for _, block := range snap.Blocks {
+		if affectedBlocks[block.NotePath] {
+			d.Blocks = append(d.Blocks, block)
+		}
+	}
 	present := map[string]bool{}
 	for _, f := range snap.Files {
 		if affected[f.Path] {
@@ -193,6 +204,12 @@ func isIndexedRel(rel string) bool {
 		return false
 	}
 	return parts[2] == store.DirKnowledge || parts[2] == store.DirOpinions
+}
+
+func isNoteRel(rel string) bool {
+	parts := strings.Split(strings.TrimPrefix(rel, "./"), "/")
+	return len(parts) == 4 && parts[0] == store.DirDomains &&
+		parts[2] == store.DirNotes && strings.HasSuffix(parts[3], ".md")
 }
 
 // indexWriteLabel 是诊断文案里的命令名（`eg edit`、`eg rel add`…）。

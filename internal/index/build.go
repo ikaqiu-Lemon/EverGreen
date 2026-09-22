@@ -6,8 +6,9 @@ package index
 // 算好每文件 content_hash（与 M1 store 的 B3 同源同算法）之后喂进来。
 // 本包因此既不解析 Markdown、也不碰权威文件读写口（§13 禁令第一条）。
 //
-// 输出是 `.index/eg.db` 一个文件：全部表 + 水位线**同一个事务**提交（合同 §3.1 —— 水位线
-// 与索引内容分处两个文件会引入「两文件不同步」这一新的自相矛盾态，那属 M6 才处理的原子性）。
+// SQLite 输出是 `.index/eg.db`：全部表 + 水位线**同一个事务**提交。Storage v3 的
+// per-Note candidate 投影另写 `.index/blocks/`；它不进入数据库 schema，并独立做
+// 权威对账与降级。
 //
 // 确定性（`TestBuildTwiceByteIdentical` / `TestBuildFullDeterministic`）：
 //   - 一切插入按确定序：cards 按 id 升序、relations 按 (src_id, verb, dst_id) 升序、
@@ -102,6 +103,9 @@ type Snapshot struct {
 	Relations []Relation
 	Files     []File
 	Skipped   []SkippedFile
+	// Blocks is the complete per-Note candidate projection. It is persisted
+	// under .index/blocks and never enters the SQLite schema.
+	Blocks []BlockDocument
 }
 
 // Options 是构建的可注入项：Now 让 `built_at_unix` 在测试里完全确定。
@@ -134,6 +138,8 @@ type Result struct {
 	RelationCount int
 	FileCount     int
 	SkippedCount  int
+	BlockCount    int
+	BlockAction   string
 	// DroppedDuplicateCards / DroppedDuplicateRelations 是**如实交代**：
 	// 库里本来就可能存在重复 ID 与重复关系边（`eg check` 的 duplicate_id /
 	// relation_duplicate 两个 finding 就是它们），索引层按主键只收一份，
@@ -148,6 +154,11 @@ type Result struct {
 // 构建失败时**不留半成品**：删掉、且**只**删掉本次调用亲手造出来的那几个路径
 // （见 cleanupBuildAttempt），让下一次 build 从同一个起点重来。
 func Build(dir string, snap Snapshot, opt Options) (*Result, error) {
+	// Validate every sidecar before creating either derived representation.
+	// An invalid neutral snapshot is a caller error and must stay zero-write.
+	if _, err := canonicalBlockMap(snap.Blocks); err != nil {
+		return nil, err
+	}
 	dbPath := filepath.Join(dir, DBFileName)
 	if _, err := os.Stat(dbPath); err == nil {
 		// 早退：本次调用一个字节都没写，因此也一个条目都不许删。
@@ -175,6 +186,13 @@ func Build(dir string, snap Snapshot, opt Options) (*Result, error) {
 		_ = cleanupBuildAttempt(dir, indexDirExistedBefore, createdPaths)
 		return nil, err
 	}
+	blocks, err := SyncBlocks(dir, snap.Blocks)
+	if err != nil {
+		_ = cleanupBuildAttempt(dir, indexDirExistedBefore, createdPaths)
+		return nil, fmt.Errorf("写 block sidecar 失败：%w", err)
+	}
+	res.BlockCount = blocks.Count
+	res.BlockAction = blocks.Action
 	return res, nil
 }
 

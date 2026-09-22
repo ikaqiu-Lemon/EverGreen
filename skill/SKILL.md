@@ -1377,6 +1377,11 @@ eg index sync    [--json]
 - **`eg index sync`** 把索引**收敛**到与权威 Markdown 一致：只重算受影响文件对应的行，
   与整库重建的结果**等价**，且**幂等**（第二次跑恒 `action=noop`、零写入）。
   索引缺失 → 退化为全量构建、索引不可用 → 退化为整库重建，**退化一律如实留痕**（不静默）。
+- **Storage v3 candidate sidecar** 位于 `.index/blocks/<n-id>.json`，按 Note 确定性投影
+  candidate key/kind/syntax/span/status/output/payload hash 与 Note path/hash；它不保存正文，
+  不改变 SQLite 六表或 `index_meta` 六键。`build` / `rebuild` / `sync` 纳管该目录；
+  `eg context` 只读取与当前 Markdown 投影逐字一致的 sidecar，缺失、陈旧、损坏或孤儿均留下
+  `W22` / `W23` / `W24` + `Q5` 后回落直接扫描，结果集合与顺序不变。
 - **写命令写后自动同步**：`eg apply` / `eg edit` / `eg delete` / `eg undelete` /
   `eg mark-reviewed` / `eg reconcile`（以及同走 `apply` 写口的 `deprecate` / `restore` /
   `replaced-by` / `rel add|remove`）在 **Markdown 落盘且 commit 成功之后**自动把索引带到 fresh。
