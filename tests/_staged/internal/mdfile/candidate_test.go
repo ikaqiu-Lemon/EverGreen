@@ -348,6 +348,72 @@ func TestCandidateRendererRejectsInvalidDrafts(t *testing.T) {
 	}
 }
 
+func TestCandidateCoverageRoundTrip(t *testing.T) {
+	in := []CandidateCoverage{
+		{Module: "m-002", SourceRefs: []string{"L3-L4", "L1-L2"}, Summary: "候选模块",
+			Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-b", "cand-a"}},
+		{Module: "m-003", SourceRefs: []string{"L5-L6"}, Summary: "留在 Note",
+			Disposition: CandidateCoverageNoteOnly, Reason: "没有独立复用价值"},
+		{Module: "m-004", SourceRefs: []string{"L7-L8"}, Summary: "尚待处理",
+			Disposition: CandidateCoverageUnresolved, Reason: "缺少反例分析"},
+	}
+	body, err := RenderCandidateCoverageMatrix(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseCandidateCoverageMatrix(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(in) {
+		t.Fatalf("候选覆盖条目数 %d != %d", len(got), len(in))
+	}
+	for i := range in {
+		if got[i].Module != in[i].Module || got[i].Summary != in[i].Summary ||
+			got[i].Disposition != in[i].Disposition || got[i].Reason != in[i].Reason ||
+			!eqStrs(got[i].SourceRefs, in[i].SourceRefs) ||
+			!eqStrs(got[i].Candidates, in[i].Candidates) {
+			t.Fatalf("candidate coverage[%d] 未逐字段保序读回：got=%+v want=%+v", i, got[i], in[i])
+		}
+	}
+	body2, err := RenderCandidateCoverageMatrix(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, body2) {
+		t.Fatalf("candidate coverage render→parse→render 不稳定：\n%s\n---\n%s", body, body2)
+	}
+}
+
+func TestCandidateCoverageFailClosed(t *testing.T) {
+	in := []CandidateCoverage{{
+		Module: "m-1", SourceRefs: []string{"L1-L2"}, Summary: "候选",
+		Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-a"},
+	}}
+	body, err := RenderCandidateCoverageMatrix(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string][]byte{
+		"visible tamper":  bytes.Replace(body, []byte("候选"), []byte("篡改"), 1),
+		"unknown version": bytes.Replace(body, []byte("eg:cc:1"), []byte("eg:cc:2"), 1),
+		"missing anchor":  body[:bytes.Index(body, []byte("<!-- eg:cc:1"))],
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseCandidateCoverageMatrix(raw); err == nil {
+				t.Fatalf("畸形 candidate coverage 应拒绝：\n%s", raw)
+			}
+		})
+	}
+
+	bad := in
+	bad[0].Disposition = CandidateCoverageNoteOnly
+	if _, err := RenderCandidateCoverageMatrix(bad); err == nil {
+		t.Fatal("note_only 带 candidates 应拒绝")
+	}
+}
+
 func FuzzCandidateParser(f *testing.F) {
 	body, err := RenderCandidateDraft(candidateDraft(
 		"cand-fuzz", CandidateKindKnowledge, "Fuzz 候选"))

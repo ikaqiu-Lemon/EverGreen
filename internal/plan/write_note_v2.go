@@ -72,6 +72,11 @@ func v1LegacyNoteOrder() []string {
 // 返回的 ok 为 false 表示已登记 error、整条 op 不执行（零写入）。
 func (v *validator) noteWrites(op *Op) ([]SectionWrite, bool) {
 	hasSections := len(op.Sections) > 0
+	if (op.CandidateDraftsGiven || op.CandidateCoverageGiven) && !op.BlocksGiven {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate_drafts"),
+			"candidate_drafts/candidate_coverage 必须与 v2 blocks[] 正文一起保存"))
+		return nil, false
+	}
 	switch {
 	case op.BlocksGiven && hasSections:
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"),
@@ -209,7 +214,14 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		if !v.noteFidelity(op, cov) {
 			return nil, false
 		}
-		if !v.noteCoverageValidate(op) {
+		var draftBody []byte
+		if op.CandidateDraftsGiven || op.CandidateCoverageGiven {
+			var draftOK bool
+			draftBody, draftOK = v.noteCandidateDraftBytes(op)
+			if !draftOK {
+				return nil, false
+			}
+		} else if !v.noteCoverageValidate(op) {
 			return nil, false
 		}
 		body, err := store.NoteReviewBytes(op.Blocks, op.Omissions)
@@ -218,7 +230,11 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 			return nil, false
 		}
 		v.coverageDiagnosisRaw(op, sourceBlocks, cov.snap.raw)
-		return []SectionWrite{{Section: store.SecNoteBody, Payload: body}}, true
+		writes := []SectionWrite{{Section: store.SecNoteBody, Payload: body}}
+		if len(draftBody) > 0 {
+			writes = append(writes, SectionWrite{Section: store.SecExtraction, Payload: draftBody})
+		}
+		return writes, true
 	}
 	// 兼容期（v1 plan 用 blocks[]）：旧落盘形态逐字保留（不写机器锚点、agent 块统一「补充」）。
 	body, err := store.NoteBlockBytes(op.Blocks)
@@ -299,6 +315,9 @@ func CoverageThreshold(anchors int) int {
 // Opinion 独有的 frontmatter 键（§3.4），给知识卡也盖一个标记等于把「论证进度」
 // 扩散到不持有它的实体上。
 func (v *validator) noteExtraction(op *Op) *NoteExtraction {
+	if op.CandidateDraftsGiven || op.CandidateCoverageGiven {
+		return nil
+	}
 	var knowledge, opinions []string
 	for i, c := range op.OutputCards {
 		if c.Card == "" {
