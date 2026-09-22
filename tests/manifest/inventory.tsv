@@ -113,7 +113,7 @@ tests/_staged/internal/model/frontmatter_test.go	unit	go	storage-markdown	unit.i
 tests/_staged/internal/model/model_test.go	unit	go	storage-markdown	unit.internal.model	20	18363
 tests/_staged/internal/model/opinion_frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	4	5158
 tests/_staged/internal/model/opinion_test.go	unit	go	storage-markdown	unit.internal.model	8	5690
-tests/_staged/internal/model/stale_test.go	unit	go	storage-markdown	unit.internal.model	3	8034
+tests/_staged/internal/model/stale_test.go	unit	go	storage-markdown	unit.internal.model	3	8344
 tests/_staged/internal/model/status_values_test.go	unit	go	storage-markdown	unit.internal.model	1	1229
 tests/_staged/internal/model/validation_transition_test.go	unit	go	storage-markdown	unit.internal.model	4	5832
 tests/_staged/internal/plan/atomic_finalizer_test.go	unit	go	proposal	unit.internal.plan	3	7712

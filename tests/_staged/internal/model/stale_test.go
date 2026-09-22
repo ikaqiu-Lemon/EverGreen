@@ -87,9 +87,13 @@ func TestParseStaleReason_RejectsFourthValue(t *testing.T) {
 // 把后者写成 `Freshness(model.FMKeyStale)`，那是**跨领域假共享**（耦合，不是复用）：
 // 任何一侧改名都会静默污染另一侧。owner 裁决解除该耦合，两侧各自独立声明。
 //
-// 因此本判据从「单一所有者恰 1 次」重钉为「**封闭的两个具名所有者，逐个恰 1 次**」：
+// Storage v3 sidecar 又增加第三个独立语义：`BlockHealthStale` 表示 candidate sidecar
+// 与权威 Note 投影不一致。它既不是 frontmatter 键，也不是 SQLite freshness；三者必须
+// 各自持有字面量，禁止跨域借常量。
 //
-//	① 每个字面量在 internal/ 非测试代码里的**总出现次数**恰等于其所有者条数（`stale` = 2、`stale_reason` = 1）；
+// 因此本判据从「单一所有者恰 1 次」重钉为「**封闭的三个具名所有者，逐个恰 1 次**」：
+//
+//	① 每个字面量在 internal/ 非测试代码里的**总出现次数**恰等于其所有者条数（`stale` = 3、`stale_reason` = 1）；
 //	② 逐个所有者文件**各自恰 1 次**（不允许某个所有者写 2 次而另一个写 0 次来凑总数）；
 //	③ 所有者名单**之外**的任何文件里出现即判红（这一格与原判据完全等强）；
 //	④ 每个所有者那一行必须是**该具名常量的声明**（`FMKeyStale` / `FreshnessStale` 在场），
@@ -104,6 +108,7 @@ func TestStaleKeyLiteralsAppearOnce(t *testing.T) {
 		staleLit: {
 			"model/frontmatter.go": "FMKeyStale",     // frontmatter 键名语义
 			"index/consistency.go": "FreshnessStale", // 索引新鲜度令牌语义
+			"index/blocks.go":      "BlockHealthStale",
 		},
 		reasonLit: {
 			"model/frontmatter.go": "FMKeyStaleReason",
