@@ -414,6 +414,11 @@ Storage v3 的用户接口进入 `0.8.0-m8` 时，必须在同一批移除：
   以独立封闭合同修改。
 - SQLite 仍恰 6 表、`index_meta` 仍恰 6 键；sidecar 不进 SQLite schema。
 - 真实 Vault 迁移只执行一次：先完成工具、fixture 和副本演练，最终固定 SHA 聚合回归全绿后执行。
+- 迁移输入若含与权威产物同 ID 的 golden Markdown，只能在迁移期间作为 ignored 输入存在；
+  apply 与幂等重跑验收后，必须先完整备份到 Vault 外并移出 Vault，再恢复依赖全库 ID
+  解析的常规写命令。该边界来自 T-008 完整副本实测：`Store.ScanIDs` 按“文件可移动”的 F2
+  合同扫描 Vault 内 Markdown，不能同时把同 ID golden 猜成非权威副本；移出输入后
+  `eg materialize --all` 对 25 个既有映射返回 finalized no-op。
 
 ## 8. 机械验收
 

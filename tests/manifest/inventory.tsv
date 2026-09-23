@@ -343,8 +343,12 @@ tests/e2e/txn-atomicity/d3_txn_lock_index.sh	e2e	shell	txn-atomicity	e2e.txn-ato
 tests/e2e/txn-atomicity/precheck_exit5.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.precheck_exit5	34	11372
 tests/e2e/txn-atomicity/run_lock.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.run_lock	40	11850
 tests/e2e/txn-atomicity/txn_journal.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity.txn_journal	31	9452
-tests/fixtures/contracts/SHA256SUMS	fixtures	data	-	-	0	5075
-tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	fixtures	data	-	-	0	20751
+tests/fixtures/contracts/SHA256SUMS	fixtures	data	-	-	0	5750
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-21-structural-boundary-materialization-plan.md	fixtures	data	-	-	0	10452
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-migration-carryover.md	fixtures	data	-	-	0	3512
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	fixtures	data	-	-	0	21276
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-development-plan.md	fixtures	data	-	-	0	7712
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-t008-baseline-receipt.md	fixtures	data	-	-	0	2624
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md	fixtures	data	-	-	0	58361
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md	fixtures	data	-	-	0	26810
 tests/fixtures/contracts/projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md	fixtures	data	-	-	0	38372
