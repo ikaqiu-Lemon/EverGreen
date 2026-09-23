@@ -295,10 +295,10 @@ tests/e2e/edit/block_merge.sh	e2e	shell	edit	e2e.edit.block_merge	39	14988
 tests/e2e/edit/edit.sh	e2e	shell	edit	e2e.edit.edit	66	16290
 tests/e2e/index-search/degrade_fallback.sh	e2e	shell	index-search	e2e.index-search.degrade_fallback	48	16035
 tests/e2e/index-search/index_build.sh	e2e	shell	index-search	e2e.index-search.index_build	110	30191
-tests/e2e/index-search/index_consistency.sh	e2e	shell	index-search	e2e.index-search.index_consistency	101	28765
-tests/e2e/index-search/index_corrupt_rebuild.sh	e2e	shell	index-search	e2e.index-search.index_corrupt_rebuild	112	28492
-tests/e2e/index-search/index_incremental.sh	e2e	shell	index-search	e2e.index-search.index_incremental	64	19474
-tests/e2e/index-search/read_path_index.sh	e2e	shell	index-search	e2e.index-search.read_path_index	50	18704
+tests/e2e/index-search/index_consistency.sh	e2e	shell	index-search	e2e.index-search.index_consistency	101	28836
+tests/e2e/index-search/index_corrupt_rebuild.sh	e2e	shell	index-search	e2e.index-search.index_corrupt_rebuild	112	28347
+tests/e2e/index-search/index_incremental.sh	e2e	shell	index-search	e2e.index-search.index_incremental	64	19533
+tests/e2e/index-search/read_path_index.sh	e2e	shell	index-search	e2e.index-search.read_path_index	50	18669
 tests/e2e/index-search/rel_index_equivalence.sh	e2e	shell	index-search	e2e.index-search.rel_index_equivalence	15	8022
 tests/e2e/index-search/replaced_by_reverse.sh	e2e	shell	index-search	e2e.index-search.replaced_by_reverse	64	16045
 tests/e2e/index-search/sort_page.sh	e2e	shell	index-search	e2e.index-search.sort_page	65	17563

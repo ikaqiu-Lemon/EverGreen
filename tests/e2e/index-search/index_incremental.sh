@@ -70,13 +70,23 @@ gitv() { git -C "${VAULT}" -c user.email=eg@example.com -c user.name=eg "$@"; }
 commits() { gitv log --oneline | wc -l | tr -d ' '; }
 porcelain() { gitv status --porcelain | sort; }
 
-# 取值一律**先切 data.index 再取键**：报告体里也有同名的 cards / relations。
-idx_obj() {
-  grep -o '"data":{"index":{[^}]*}' "$1" | head -1 ||
-    { cat "$1"; die "取不到 data.index（data 首键必须是 index）"; }
+# 取值一律经结构化解析进入 data.index：该对象含嵌套 blocks 状态，不能按首个 `}` 截断。
+jvalue() {
+  python3 - "$1" "$2" <<'PY' ||
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)["data"]["index"][sys.argv[2]]
+if isinstance(value, bool):
+    print(str(value).lower())
+else:
+    print(value)
+PY
+  { cat "$1"; die "取不到 data.index.$2"; }
 }
-jnum() { idx_obj "$1" | grep -o "\"$2\":-\?[0-9][0-9]*" | head -1 | sed "s/\"$2\"://"; }
-jstr() { idx_obj "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | sed "s/\"$2\":\"//; s/\"$//"; }
+jnum() { jvalue "$1" "$2"; }
+jstr() { jvalue "$1" "$2"; }
 
 # keys4 <信封文件> <head 键> <files_hash 键>：把「等价」压成一行可 diff 的四键指纹。
 keys4() {

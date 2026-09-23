@@ -74,13 +74,22 @@ gitv() { git -C "${VAULT}" -c user.email=eg@example.com -c user.name=eg "$@"; }
 commits() { gitv log --oneline | wc -l | tr -d ' '; }
 porcelain() { gitv status --porcelain | sort; }
 
-# idx_obj <信封文件>：`data.index` 那一整格的紧凑原文（前缀顺带断言 data 首键就是 index）。
-idx_obj() {
-  grep -o '"data":{"index":{[^}]*}' "$1" | head -1 ||
-    { cat "$1"; die "取不到 data.index（data 首键必须是 index）"; }
+jvalue() {
+  python3 - "$1" "$2" <<'PY' ||
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)["data"]["index"][sys.argv[2]]
+if isinstance(value, bool):
+    print(str(value).lower())
+else:
+    print(value)
+PY
+  { cat "$1"; die "取不到 data.index.$2"; }
 }
-jstr() { idx_obj "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | sed "s/\"$2\":\"//; s/\"$//"; }
-jnum() { idx_obj "$1" | grep -o "\"$2\":-\?[0-9][0-9]*" | head -1 | sed "s/\"$2\"://"; }
+jstr() { jvalue "$1" "$2"; }
+jnum() { jvalue "$1" "$2"; }
 authority_sha() {
   ( cd "${VAULT}" && { find domains sources proposals -type f 2>/dev/null || true; } | sort |
     xargs -r sha256sum )
@@ -96,12 +105,12 @@ assert_index_family() {
   local what="$1" f db_family=""
   for f in $(idx_files | tr ',' ' '); do
     case "${f}" in
-      run.lock|txn) ;;  # M6 runtime-reserved（§16.3）：锁文件 / 事务日志目录，非派生物
+      run.lock|txn|blocks) ;;
       *) db_family="${db_family:+${db_family},}${f}" ;;
     esac
   done
   [ "${db_family}" = "${ALLOWED}" ] ||
-    die "${what}：派生 DB 家族 = ${db_family:-（空）}，期望恰 ${ALLOWED}（另允许 M6 runtime-reserved run.lock/txn）"
+    die "${what}：派生 DB 家族 = ${db_family:-（空）}，期望恰 ${ALLOWED}（另允许 blocks 与 M6 runtime-reserved run.lock/txn）"
 }
 # no_stale_codes <文件> <说明>：`eg index` 自己的输出里恒无 W22 / Q5。
 # W22 是陈旧码（本脚本造的全是 corrupt / missing，不是陈旧）；Q5 属**查询域**（只有读路径

@@ -131,17 +131,18 @@ idx_files() { ( cd "${IDX_ABS}" && ls -A | sort | paste -sd, - ); }
 #   保留历史事实 + 新增现态双侧锁，非放宽）。历史事实一格不放宽：**派生 DB 家族**恒恰 ${ALLOWED}
 #   三值（case 的 * 分支原样比对）。M6 现态：`.index/` 变为「派生物 + 运行时证据」混居目录，写命令
 #   锁层按 A-53 于其下并存 runtime-reserved 的 run.lock（普通文件）/ txn（目录）；二者不进 DB 家族
-#   比对，但额外条目**必须**恰是这两项而非任意杂项（case 显式枚举 = 双侧锁）。
+#   Storage v3 的 blocks/ 是可重建 sidecar，和两项 runtime-reserved 一样不进入 SQLite DB
+#   家族比对；其它额外条目仍当场判红。
 assert_index_family() {
   local what="$1" f db_family=""
   for f in $(idx_files | tr ',' ' '); do
     case "${f}" in
-      run.lock|txn) ;;  # M6 runtime-reserved（§16.3）：锁文件 / 事务日志目录，非派生物
+      run.lock|txn|blocks) ;;
       *) db_family="${db_family:+${db_family},}${f}" ;;
     esac
   done
   [ "${db_family}" = "${ALLOWED}" ] ||
-    die "${what}：派生 DB 家族 = ${db_family:-（空）}，期望恰 ${ALLOWED}（另允许 M6 runtime-reserved run.lock/txn）"
+    die "${what}：派生 DB 家族 = ${db_family:-（空）}，期望恰 ${ALLOWED}（另允许 blocks 与 M6 runtime-reserved run.lock/txn）"
 }
 idx_snapshot() {
   ( cd "${VAULT}" && find .index \( -type f -o -type d \) | sort
@@ -201,7 +202,7 @@ grep -Fq '"freshness":"fresh"' "${WORK}/status.json" ||
   { cat "${WORK}/status.json"; die "status.freshness 应为 fresh（坏文件不算陈旧）"; }
 assert_index_family ".index/ 派生 DB 家族校验"
 idx_snapshot >"${WORK}/idx.before.txt"
-ok "索引 healthy + fresh；.index/ 派生 DB 家族恰在白名单三值内（另允许 M6 runtime-reserved run.lock/txn）"
+ok "索引 healthy + fresh；SQLite DB 家族恰三值，另有 blocks 与 M6 runtime-reserved run.lock/txn"
 
 # ---------------------------------------------------------------- 3. 三条读路径全退 0 且零降级痕迹
 step "健康索引下 search / card show / rel 全退 0，且零 W22 / W23 / W24 / Q5（⇒ 走索引后端）"
@@ -289,7 +290,7 @@ step "skipped[].kind 仍恰 2 值：两处封闭取值域的单一真源逐字�
 KIND_SRC="${REPO_ROOT}/internal/index/schema.go"
 [ "$(grep -c 'return \[\]string{"file_changed", "user_block_unsafe"}' "${KIND_SRC}")" = "1" ] ||
   die "internal/index/schema.go 的 SkippedKinds 取值域漂移（必须恰 2 值且恰一处）"
-[ "$(grep -rc 'user_block_unsafe' "${REPO_ROOT}/internal/store/receipt.go")" -ge 1 ] ||
+[ "$(grep -c 'user_block_unsafe' "${REPO_ROOT}/internal/store/receipt.go")" -ge 1 ] ||
   die "internal/store/receipt.go 的回执 kind 单源缺失"
 [ "$(grep -rn 'os.Exit(5)' "${REPO_ROOT}/internal" | wc -l | tr -d ' ')" = "0" ] ||
   die "退出码面扩张：M5 不得出现 os.Exit(5)（属 M6）"

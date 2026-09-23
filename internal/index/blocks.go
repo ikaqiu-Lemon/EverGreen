@@ -194,8 +194,8 @@ func validateBlockDocument(doc BlockDocument) error {
 }
 
 func validateBlockNotePath(notePath string) error {
-	if notePath == "" || strings.Contains(notePath, `\`) || path.IsAbs(notePath) ||
-		path.Clean(notePath) != notePath || strings.HasPrefix(notePath, "../") ||
+	if notePath == "" || strings.Contains(notePath, `\`) ||
+		!filepath.IsLocal(filepath.FromSlash(notePath)) || path.Clean(notePath) != notePath ||
 		!strings.HasSuffix(notePath, ".md") {
 		return fmt.Errorf("block sidecar note_path 非法：%q", notePath)
 	}

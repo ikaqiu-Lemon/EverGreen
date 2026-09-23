@@ -81,12 +81,22 @@ commits() { gitv log --oneline | wc -l | tr -d ' '; }
 porcelain() { gitv status --porcelain | sort; }
 head_sha() { gitv rev-parse HEAD; }
 
-idx_obj() {
-  grep -o '"data":{"index":{[^}]*}' "$1" | head -1 ||
-    { cat "$1"; die "取不到 data.index"; }
+jvalue() {
+  python3 - "$1" "$2" <<'PY' ||
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)["data"]["index"][sys.argv[2]]
+if isinstance(value, bool):
+    print(str(value).lower())
+else:
+    print(value)
+PY
+  { cat "$1"; die "取不到 data.index.$2"; }
 }
-jnum() { idx_obj "$1" | grep -o "\"$2\":-\?[0-9][0-9]*" | head -1 | sed "s/\"$2\"://"; }
-jstr() { idx_obj "$1" | grep -o "\"$2\":\"[^\"]*\"" | head -1 | sed "s/\"$2\":\"//; s/\"$//"; }
+jnum() { jvalue "$1" "$2"; }
+jstr() { jvalue "$1" "$2"; }
 # data_first_key <信封文件>：`data` 的首键名（键面零漂移的判据）。
 data_first_key() { grep -o '"data":{"[a-z_]*"' "$1" | head -1 | sed 's/.*{"//; s/"$//'; }
 
