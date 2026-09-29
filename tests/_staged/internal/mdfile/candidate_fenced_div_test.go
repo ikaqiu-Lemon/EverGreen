@@ -30,6 +30,8 @@ func renderFencedCandidate(t testing.TB, draft CandidateDraft, width int) []byte
 	out = append(out, '}', '\n')
 	out = append(out, "### "...)
 	out = append(out, draft.Title...)
+	out = append(out, '\n')
+	out = append(out, candidateLabel(draft.Kind)...)
 	out = append(out, '\n', '\n')
 	for _, section := range draft.Sections {
 		out = append(out, "#### "...)
@@ -87,6 +89,16 @@ func TestCandidateFencedDivEquivalentToH3Provider(t *testing.T) {
 			t.Fatalf("H3/L2 section[%d] 不等：\nH3=%q\nL2=%q",
 				i, h3[0].Sections[i].Payload, l2[0].Sections[i].Payload)
 		}
+	}
+
+	legacyRaw := bytes.Replace(
+		l2Raw, []byte(candidateOpinionLabel+"\n"), nil, 1)
+	legacy, err := ParseCandidates(legacyRaw)
+	if err != nil {
+		t.Fatalf("无可见标签的历史 L2 candidate 应继续可读：%v", err)
+	}
+	if len(legacy) != 1 || legacy[0].LabelStart != 0 || legacy[0].LabelEnd != 0 {
+		t.Fatalf("历史 L2 candidate 不应伪造标签 span：%+v", legacy)
 	}
 }
 
@@ -256,6 +268,15 @@ func TestCandidateFencedDivFailClosed(t *testing.T) {
 		"title has attributes": bytes.Replace(
 			valid, []byte("### L2 边界\n"),
 			[]byte("### L2 边界 {#other}\n"), 1),
+		"label kind mismatch": bytes.Replace(
+			valid, []byte(candidateKnowledgeLabel),
+			[]byte(candidateOpinionLabel), 1),
+		"malformed label": bytes.Replace(
+			valid, []byte(candidateKnowledgeLabel),
+			[]byte("> [Knowledge Candidate]"), 1),
+		"label not adjacent": bytes.Replace(
+			valid, []byte(candidateKnowledgeLabel),
+			[]byte("\n"+candidateKnowledgeLabel), 1),
 		"unclosed": valid[:closeStart],
 		"short close": bytes.Replace(
 			valid, []byte("\n::::\n"), []byte("\n:::\n"), 1),

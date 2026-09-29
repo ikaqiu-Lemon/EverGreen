@@ -38,6 +38,7 @@ H3 候选只允许位于 Note 的 `## 提取结果` 分区。`## 整理正文`�
 ```markdown
 <!-- eg:cd:1 eyJzIjpbIkwxNC1MMjgiXSwiciI6InN1cHBvcnQiLCJ3IjoiLi4uIiwidCI6W119 -->
 ### ReAct Loop 的执行流程 {#cand-react-loop .eg-candidate .knowledge}
+> **[Knowledge Candidate]**
 
 #### 知识内容
 
@@ -57,6 +58,10 @@ ReAct 在一次循环中交替生成推理轨迹与动作，并把环境观察�
 - classes 必须包含 `.eg-candidate`，并且恰含 `.knowledge` 或 `.opinion` 之一。
 - 除 `id` 和 classes 外，标题属性不承载可变状态。物化映射不塞进标题行，避免每次状态变化
   改写用户可见标题。
+- 新 renderer 必须在标题下一行输出 `> **[Knowledge Candidate]**` 或
+  `> **[Opinion Candidate]**`，并与 kind class 一致。parser 兼容无标签的历史候选；一旦出现
+  标签语义，格式畸形、未紧邻标题或与 kind 错配均 fail closed。标签只服务审阅，不属于 H4
+  物化 payload。
 
 候选前一行必须是版本化机器锚点：
 
@@ -93,6 +98,7 @@ H3 首期只实现 L1。L2 在 H3 闭环集成后实现，采用 Pandoc fenced d
 <!-- eg:cd:1 <base64url(JSON)> -->
 ::: {#cand-cross-section .eg-candidate .opinion}
 ### 跨小节的候选主张
+> **[Opinion Candidate]**
 
 #### 观点
 
@@ -102,8 +108,9 @@ H3 首期只实现 L1。L2 在 H3 闭环集成后实现，采用 Pandoc fenced d
 
 开围栏必须为独立行、至少三个冒号、属性合同与 H3 相同；闭围栏使用不少于开围栏数量的
 冒号且不得带属性；`eg:cd:1` 锚点必须逐行紧邻开围栏。开围栏下一行必须是无属性的 ATX H3，
-其可见文本是 candidate title；后续 H4 仍按 D3 模板解释。这样 plain export 删除开闭围栏后，
-保留下来的 H3/H4 与 L1 可见结构相同，而 title 不需要进入机器锚点或新增属性。
+其可见文本是 candidate title；新 renderer 再逐行紧邻输出与 kind 一致的可见类型标签，后续
+H4 仍按 D3 模板解释。这样 plain export 删除开闭围栏和类型标签后，保留下来的 H3/H4 与 L1
+可见结构相同，而 title 不需要进入机器锚点或新增属性。
 
 不允许嵌套；代码围栏优先，代码围栏内的冒号不生效。容器内 H2/H3/H4/H5、列表、表格、
 代码块和多段正文都属于该容器，只有与开围栏匹配的闭围栏结束 candidate；其中紧邻 opener
@@ -331,6 +338,7 @@ plain export 保留全部可见正文和顺序，只剥离 EverGreen 专有协�
 
 - 删除 `eg:nr:*`、`eg:cd:*` 和覆盖矩阵机器锚点；
 - 从候选 H3 删除 `.eg-candidate`、kind class 和 `#cand-*` 属性；
+- 删除 candidate 标题下的 canonical 可见类型标签；
 - 删除 L2 的开闭围栏行；
 - 保留 H3/H4 标题、候选 payload、来源正文、可见 Agent blockquote、用户补充和普通 Markdown。
 

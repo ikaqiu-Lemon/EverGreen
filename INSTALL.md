@@ -134,7 +134,10 @@ compatibility/validation digest):
   `eg:cd:1` anchor followed immediately by a fenced-div opener and an
   attribute-free ATX H3 title. The opener carries exactly one `cand-*` ID,
   `.eg-candidate`, one kind class, and an optional `data-slug`; L2 cannot nest,
-  and its closing fence has no attributes and at least as many colons as the opener.
+  and its closing fence has no attributes and at least as many colons as the
+  opener. New candidates show `> **[Knowledge Candidate]**` or
+  `> **[Opinion Candidate]**` directly below the title. Legacy unlabeled
+  candidates remain readable; malformed or kind-mismatched labels fail closed.
 - **Four learning entities, two domain directories.** Source (`s-*`),
   Note (`n-*`), Knowledge (`k-*` under `domains/<d>/knowledge/`) and Opinion
   (`o-*` under `domains/<d>/opinions/`); `Proposal` (`p-*`) is a control plane,

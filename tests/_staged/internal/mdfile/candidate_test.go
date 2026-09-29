@@ -68,6 +68,14 @@ func TestCandidateRenderParseRoundTripAndScope(t *testing.T) {
 	if got[1].Key != o.Key || got[1].Kind != o.Kind || got[1].Title != o.Title {
 		t.Fatalf("Opinion candidate 元数据不一致：%+v", got[1])
 	}
+	if label := raw[got[0].LabelStart:got[0].LabelEnd]; !bytes.Equal(
+		label, []byte(candidateKnowledgeLabel+"\n")) {
+		t.Fatalf("Knowledge candidate 可见标签不一致：%q", label)
+	}
+	if label := raw[got[1].LabelStart:got[1].LabelEnd]; !bytes.Equal(
+		label, []byte(candidateOpinionLabel+"\n")) {
+		t.Fatalf("Opinion candidate 可见标签不一致：%q", label)
+	}
 	if !bytes.Equal(got[0].Sections[0].Payload, []byte("\n第一段。\n\n")) {
 		t.Fatalf("H4 payload 必须包含标题后的原始字节区间：%q", got[0].Sections[0].Payload)
 	}
@@ -86,6 +94,71 @@ func TestCandidateRenderParseRoundTripAndScope(t *testing.T) {
 			t.Fatalf("candidate[%d] 锚点必须与 H3 逐行相邻：anchor_end=%d heading_start=%d",
 				i, c.AnchorEnd, c.HeadingStart)
 		}
+	}
+}
+
+func TestCandidateVisibleLabelCompatibilityAndFailClosed(t *testing.T) {
+	draft := candidateDraft(
+		"cand-visible-label", CandidateKindKnowledge, "Visible Label")
+	rendered, err := RenderCandidateDraft(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(rendered, []byte(
+		"### Visible Label {#cand-visible-label .eg-candidate .knowledge}\n"+
+			candidateKnowledgeLabel+"\n\n")) {
+		t.Fatalf("canonical renderer 未把可见类型标签放在标题下一行：\n%s", rendered)
+	}
+
+	legacy := bytes.Replace(
+		rendered, []byte(candidateKnowledgeLabel+"\n"), nil, 1)
+	parsed, err := ParseCandidates(candidateNote(legacy))
+	if err != nil {
+		t.Fatalf("无可见标签的历史 candidate 应继续可读：%v", err)
+	}
+	if len(parsed) != 1 || parsed[0].LabelStart != 0 || parsed[0].LabelEnd != 0 {
+		t.Fatalf("历史 candidate 不应伪造标签 span：%+v", parsed)
+	}
+	projected, err := CandidateDraftFromParsed(parsed[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized, err := RenderCandidateDraft(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(normalized, []byte(candidateKnowledgeLabel+"\n")) {
+		t.Fatalf("历史 candidate 经 review renderer 重写后应升级为 canonical 标签：\n%s", normalized)
+	}
+
+	cases := map[string][]byte{
+		"kind mismatch": bytes.Replace(
+			rendered,
+			[]byte(candidateKnowledgeLabel),
+			[]byte(candidateOpinionLabel),
+			1),
+		"malformed marker": bytes.Replace(
+			rendered,
+			[]byte(candidateKnowledgeLabel),
+			[]byte("> [Knowledge Candidate]"),
+			1),
+		"marker not adjacent": bytes.Replace(
+			rendered,
+			[]byte(candidateKnowledgeLabel),
+			[]byte("\n"+candidateKnowledgeLabel),
+			1),
+		"duplicate marker": bytes.Replace(
+			rendered,
+			[]byte(candidateKnowledgeLabel),
+			[]byte(candidateKnowledgeLabel+"\n"+candidateKnowledgeLabel),
+			1),
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseCandidates(candidateNote(body)); err == nil {
+				t.Fatalf("畸形或错配的可见类型标签必须 fail closed：\n%s", body)
+			}
+		})
 	}
 }
 

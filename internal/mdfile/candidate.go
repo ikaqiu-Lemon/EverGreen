@@ -20,6 +20,9 @@ const (
 	candidateAnchorTag     = candidateAnchorFamily + candidateAnchorVersion
 	candidateAnchorOpen    = "<!-- " + candidateAnchorTag + " "
 	candidateAnchorClose   = " -->"
+
+	candidateKnowledgeLabel = "> **[Knowledge Candidate]**"
+	candidateOpinionLabel   = "> **[Opinion Candidate]**"
 )
 
 // CandidateKind is the closed candidate type set encoded by the H3 classes.
@@ -99,6 +102,8 @@ type Candidate struct {
 	BoundaryEnd   int
 	HeadingStart  int
 	HeadingEnd    int
+	LabelStart    int
+	LabelEnd      int
 	End           int
 	ContentEnd    int
 	Sections      []CandidateSection
@@ -287,6 +292,8 @@ func RenderCandidateDraft(d CandidateDraft) ([]byte, error) {
 		out = append(out, d.LogicalSlug...)
 	}
 	out = append(out, '}', '\n')
+	out = append(out, candidateLabel(d.Kind)...)
+	out = append(out, '\n')
 	for i, section := range d.Sections {
 		if i == 0 {
 			out = append(out, '\n')
@@ -519,6 +526,11 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("candidate %q：%w", h.key, err)
 		}
+		labelStart, labelEnd, err := parseCandidateLabel(
+			raw, h.end, sections[0].HeadingStart, h.kind)
+		if err != nil {
+			return nil, fmt.Errorf("candidate %q：%w", h.key, err)
+		}
 		if err := appendCandidate(Candidate{
 			Key:           h.key,
 			Kind:          h.kind,
@@ -529,6 +541,8 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 			BoundaryEnd:   boundary,
 			HeadingStart:  h.start,
 			HeadingEnd:    h.end,
+			LabelStart:    labelStart,
+			LabelEnd:      labelEnd,
 			End:           boundary,
 			ContentEnd:    contentEnd,
 			Sections:      sections,
@@ -564,6 +578,11 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("candidate %q：%w", fence.key, err)
 		}
+		labelStart, labelEnd, err := parseCandidateLabel(
+			raw, title.end, sections[0].HeadingStart, fence.kind)
+		if err != nil {
+			return nil, fmt.Errorf("candidate %q：%w", fence.key, err)
+		}
 		end := nextCandidateContent(raw, fence.closeEnd, extraction.End)
 		if err := appendCandidate(Candidate{
 			Key:           fence.key,
@@ -575,6 +594,8 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 			BoundaryEnd:   fence.closeEnd,
 			HeadingStart:  title.start,
 			HeadingEnd:    title.end,
+			LabelStart:    labelStart,
+			LabelEnd:      labelEnd,
 			End:           end,
 			ContentEnd:    fence.closeStart,
 			Sections:      sections,
@@ -590,6 +611,59 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].AnchorStart < out[j].AnchorStart })
 	return out, nil
+}
+
+func candidateLabel(kind CandidateKind) string {
+	switch kind {
+	case CandidateKindKnowledge:
+		return candidateKnowledgeLabel
+	case CandidateKindOpinion:
+		return candidateOpinionLabel
+	default:
+		return ""
+	}
+}
+
+func parseCandidateLabel(
+	raw []byte,
+	from, to int,
+	kind CandidateKind,
+) (int, int, error) {
+	expected := candidateLabel(kind)
+	labelStart := 0
+	labelEnd := 0
+	for at := from; at < to; {
+		end := lineEnd(raw, at)
+		if end > to {
+			end = to
+		}
+		line := trimLineEnd(raw[at:end])
+		switch string(line) {
+		case expected:
+			if at != from {
+				return 0, 0, fmt.Errorf(
+					"可见类型标签必须逐行紧随 candidate H3 标题")
+			}
+			labelStart = at
+			labelEnd = end
+		case candidateKnowledgeLabel, candidateOpinionLabel:
+			return 0, 0, fmt.Errorf(
+				"可见类型标签 %q 与 kind %q 不一致", line, kind)
+		default:
+			if candidateLabelReserved(line) {
+				return 0, 0, fmt.Errorf(
+					"可见类型标签格式非法：期望 %q，实际 %q", expected, line)
+			}
+		}
+		at = end
+	}
+	return labelStart, labelEnd, nil
+}
+
+func candidateLabelReserved(line []byte) bool {
+	lower := strings.ToLower(string(bytes.TrimSpace(line)))
+	return strings.Contains(lower, "knowledge candidate") ||
+		strings.Contains(lower, "opinion candidate")
 }
 
 func candidateHeadingSpan(raw []byte, h *ast.Heading, searchFrom int,

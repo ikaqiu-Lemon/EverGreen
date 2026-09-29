@@ -36,6 +36,7 @@ func TestPlainExportPreservesVisibleCandidateBytes(t *testing.T) {
 		[]byte("<!-- eg:nr:"), []byte("<!-- eg:cd:"),
 		[]byte("<!-- eg:cc:"), []byte("#cand-plain .eg-candidate"),
 		[]byte("data-slug"),
+		[]byte("[Knowledge Candidate]"), []byte("[Opinion Candidate]"),
 	} {
 		if bytes.Contains(plain, forbidden) {
 			t.Fatalf("plain export 残留专有协议 %q：\n%s", forbidden, plain)
@@ -57,13 +58,15 @@ func TestPlainExportPreservesVisibleCandidateBytes(t *testing.T) {
 func TestPlainExportStripsL2FencesButKeepsPayload(t *testing.T) {
 	raw := []byte("before\n\n<!-- eg:cd:1 opaque -->\n" +
 		":::: {#cand-l2 .eg-candidate .opinion}\n" +
-		"### 可见标题\n\n正文逐字保留。\n" +
+		"### 可见标题\n" + candidateOpinionLabel + "\n\n正文逐字保留。\n\n" +
+		candidateOpinionLabel + "\n" +
 		":::::\n\nafter\n")
 	plain, err := PlainExport(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []byte("before\n\n### 可见标题\n\n正文逐字保留。\n\nafter\n")
+	want := []byte("before\n\n### 可见标题\n\n正文逐字保留。\n\n" +
+		candidateOpinionLabel + "\n\nafter\n")
 	if !bytes.Equal(plain, want) {
 		t.Fatalf("L2 plain export 字节不一致：\nwant=%q\n got=%q", want, plain)
 	}

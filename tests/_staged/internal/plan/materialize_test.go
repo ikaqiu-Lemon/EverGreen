@@ -525,6 +525,9 @@ func TestMaterializeCandidatesRejectsDuplicateOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw = bytes.Replace(raw, []byte(".opinion}"), []byte(".knowledge}"), 1)
+	raw = bytes.Replace(raw,
+		[]byte("> **[Opinion Candidate]**"),
+		[]byte("> **[Knowledge Candidate]**"), 1)
 	raw = bytes.Replace(raw, []byte("#### 观点"), []byte("#### 知识内容"), 1)
 	raw = bytes.Replace(raw, []byte("#### 论据与推理\n\n论据 A。\n\n"), nil, 1)
 	raw = bytes.Replace(raw, []byte("#### 条件与反例\n\n反例 B。\n\n"), nil, 1)

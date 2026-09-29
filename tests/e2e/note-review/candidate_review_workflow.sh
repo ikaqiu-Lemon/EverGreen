@@ -88,7 +88,11 @@ PLAN
   >"${WORK}/apply.json" 2>&1 || { cat "${WORK}/apply.json"; die "草稿 apply 失败"; }
 [ -f "${NOTE}" ] || die "Note 未落盘"
 [ "$(artifact_count)" = "0" ] || die "首次处理不得创建 Knowledge/Opinion"
-ok "首次处理只创建 Note candidate，Knowledge/Opinion 为 0"
+grep -qF '> **[Knowledge Candidate]**' "${NOTE}" ||
+  die "Knowledge candidate 缺可见类型标签"
+grep -qF '> **[Opinion Candidate]**' "${NOTE}" ||
+  die "Opinion candidate 缺可见类型标签"
+ok "首次处理只创建带可见类型标签的 Note candidate，Knowledge/Opinion 为 0"
 
 step "show 导出完整 spec；未授权和 stale spec 均零写入"
 "${EG}" --vault "${VAULT}" candidate show --note "${NOTE_ID}" --json </dev/null \
@@ -174,6 +178,10 @@ grep -q 'data-slug=agent-development-boundaries' "${NOTE}" ||
 grep -q '#cand-retyped .eg-candidate .knowledge' "${NOTE}" ||
   die "rename/retype 未生效"
 grep -q '#cand-added .eg-candidate .opinion' "${NOTE}" || die "add 未生效"
+grep -qF '> **[Knowledge Candidate]**' "${NOTE}" ||
+  die "retype 后 Knowledge candidate 缺可见类型标签"
+grep -qF '> **[Opinion Candidate]**' "${NOTE}" ||
+  die "新增 Opinion candidate 缺可见类型标签"
 ! grep -q '#cand-fact ' "${NOTE}" || die "delete 未生效"
 [ "$(artifact_count)" = "0" ] || die "candidate apply 不得提前物化"
 ok "完整 review spec 在一个 journal-v1/commit 内原子生效，区外字节不变"
@@ -225,6 +233,10 @@ grep -qF '用户确认后的完整知识。' "${VAULT}/domains/tech/knowledge/${
   die "Knowledge 未逐字复制 review payload"
 grep -qF '用户新增的可反驳主张。' "${VAULT}/domains/tech/opinions/${OID}.md" ||
   die "Opinion 未逐字复制 review payload"
+! grep -qF '[Knowledge Candidate]' "${VAULT}/domains/tech/knowledge/${KID}.md" ||
+  die "可见 candidate 标签不得进入 Knowledge payload"
+! grep -qF '[Opinion Candidate]' "${VAULT}/domains/tech/opinions/${OID}.md" ||
+  die "可见 candidate 标签不得进入 Opinion payload"
 [ "$(outside_fingerprint)" = "${OUTSIDE_BEFORE}" ] || die "materialize 改写了候选区外字节"
 ok "最终 K/O 使用用户 logical_slug，payload 逐字复制且 Note 区外字节不变"
 
