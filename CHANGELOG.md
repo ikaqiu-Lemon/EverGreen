@@ -34,6 +34,10 @@ and published versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Newly rendered Note candidates include a visible
+  `[Knowledge Candidate]` or `[Opinion Candidate]` label below their title.
+  Legacy unlabeled candidates remain readable; malformed or kind-mismatched
+  labels fail closed and plain export removes canonical labels.
 - ChangePlan `plan_version` is now `2` for current plans; the supported set is
   `{1, 2}`. This is an **additive schema change with compatibility**, not a
   break: a `plan_version: 1` plan is still accepted and flagged with a single

@@ -101,14 +101,14 @@ tests/_staged/internal/index/scratch_test.go	unit	go	index-search	unit.internal.
 tests/_staged/internal/index/watermark_test.go	unit	go	index-search	unit.internal.index	6	6875
 tests/_staged/internal/mdfile/assets_test.go	unit	go	storage-markdown	unit.internal.mdfile	42	22388
 tests/_staged/internal/mdfile/block_merge_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	5329
-tests/_staged/internal/mdfile/candidate_fenced_div_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	10061
-tests/_staged/internal/mdfile/candidate_test.go	unit	go	storage-markdown	unit.internal.mdfile	16	23739
+tests/_staged/internal/mdfile/candidate_fenced_div_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	10883
+tests/_staged/internal/mdfile/candidate_test.go	unit	go	storage-markdown	unit.internal.mdfile	17	26166
 tests/_staged/internal/mdfile/coverage_matrix_test.go	unit	go	storage-markdown	unit.internal.mdfile	36	24685
 tests/_staged/internal/mdfile/fuzz_test.go	unit	go	storage-markdown	unit.internal.mdfile	2	3911
 tests/_staged/internal/mdfile/mdfile_test.go	unit	go	storage-markdown	unit.internal.mdfile	12	18113
 tests/_staged/internal/mdfile/note_review_roundtrip_test.go	unit	go	storage-markdown	unit.internal.mdfile	8	23255
 tests/_staged/internal/mdfile/opinion_sections_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	13194
-tests/_staged/internal/mdfile/plain_export_test.go	unit	go	storage-markdown	unit.internal.mdfile	4	2784
+tests/_staged/internal/mdfile/plain_export_test.go	unit	go	storage-markdown	unit.internal.mdfile	4	2951
 tests/_staged/internal/model/frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	1	4202
 tests/_staged/internal/model/model_test.go	unit	go	storage-markdown	unit.internal.model	20	18363
 tests/_staged/internal/model/opinion_frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	4	5158
@@ -124,7 +124,7 @@ tests/_staged/internal/plan/executor_note_v2_test.go	unit	go	proposal	unit.inter
 tests/_staged/internal/plan/knowledge_opinion_v2_test.go	unit	go	proposal	unit.internal.plan	10	29722
 tests/_staged/internal/plan/m3_test.go	unit	go	proposal	unit.internal.plan	20	60072
 tests/_staged/internal/plan/mark_reviewed_w7_test.go	unit	go	proposal	unit.internal.plan	1	3611
-tests/_staged/internal/plan/materialize_test.go	unit	go	proposal	unit.internal.plan	7	18572
+tests/_staged/internal/plan/materialize_test.go	unit	go	proposal	unit.internal.plan	7	18681
 tests/_staged/internal/plan/matrix_contract_test.go	unit	go	proposal	unit.internal.plan	1	2765
 tests/_staged/internal/plan/matrix_test.go	unit	go	proposal	unit.internal.plan	1	11184
 tests/_staged/internal/plan/note_annotation_test.go	unit	go	proposal	unit.internal.plan	13	14381
@@ -310,7 +310,7 @@ tests/e2e/lifecycle/recap_stale.sh	e2e	shell	lifecycle	e2e.lifecycle.recap_stale
 tests/e2e/lifecycle/reviewed.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed	90	21574
 tests/e2e/lifecycle/reviewed_backfill.sh	e2e	shell	lifecycle	e2e.lifecycle.reviewed_backfill	115	37192
 tests/e2e/lifecycle/superseded.sh	e2e	shell	lifecycle	e2e.lifecycle.superseded	48	19888
-tests/e2e/note-review/candidate_review_workflow.sh	e2e	shell	note-review	e2e.note-review.candidate_review_workflow	40	11700
+tests/e2e/note-review/candidate_review_workflow.sh	e2e	shell	note-review	e2e.note-review.candidate_review_workflow	46	12425
 tests/e2e/note-review/note_review_contract.sh	e2e	shell	note-review	e2e.note-review.note_review_contract	78	31772
 tests/e2e/ops-diagnostics/cmd_check.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.cmd_check	69	31742
 tests/e2e/ops-diagnostics/execution_failed.sh	e2e	shell	ops-diagnostics	e2e.ops-diagnostics.execution_failed	52	23114
@@ -347,7 +347,7 @@ tests/e2e/txn-atomicity/txn_journal.sh	e2e	shell	txn-atomicity	e2e.txn-atomicity
 tests/fixtures/contracts/SHA256SUMS	fixtures	data	-	-	0	5750
 tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-21-structural-boundary-materialization-plan.md	fixtures	data	-	-	0	10452
 tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-migration-carryover.md	fixtures	data	-	-	0	3512
-tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	fixtures	data	-	-	0	21276
+tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-contract-decisions.md	fixtures	data	-	-	0	21813
 tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-storage-v3-development-plan.md	fixtures	data	-	-	0	7712
 tests/fixtures/contracts/projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-t008-baseline-receipt.md	fixtures	data	-	-	0	2624
 tests/fixtures/contracts/projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md	fixtures	data	-	-	0	58361

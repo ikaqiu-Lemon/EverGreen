@@ -9,17 +9,21 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// PlainExport removes Evergreen's machine-only Markdown protocol while
-// preserving every visible byte and its order. Candidate payloads remain in
-// place; only anchors, candidate heading attributes, and L2 fence lines are
-// removed.
+// PlainExport removes Evergreen's Markdown protocol while preserving
+// user-authored visible bytes and their order. Candidate payloads remain in
+// place; only anchors, visible candidate type labels, candidate heading
+// attributes, and L2 fence lines are removed.
 func PlainExport(raw []byte) ([]byte, error) {
 	candidates, err := ParseCandidates(raw)
 	if err != nil {
 		return nil, fmt.Errorf("plain export candidate parse: %w", err)
 	}
 	headings := make(map[int][]byte, len(candidates))
+	labels := make(map[int]bool, len(candidates))
 	for _, candidate := range candidates {
+		if candidate.LabelEnd > candidate.LabelStart {
+			labels[candidate.LabelStart] = true
+		}
 		if candidate.Syntax == CandidateSyntaxFencedDiv {
 			continue
 		}
@@ -37,11 +41,18 @@ func PlainExport(raw []byte) ([]byte, error) {
 
 	var out bytes.Buffer
 	openDivColons := 0
+	openDivExpectTitle := false
+	openDivExpectLabel := false
 	for at := 0; at < len(raw); {
 		end := lineEnd(raw, at)
 		line := raw[at:end]
 		if replacement, ok := headings[at]; ok {
 			out.Write(replacement)
+			at = end
+			continue
+		}
+		if labels[at] {
+			openDivExpectLabel = false
 			at = end
 			continue
 		}
@@ -55,6 +66,17 @@ func PlainExport(raw []byte) ([]byte, error) {
 			continue
 		}
 		if openDivColons > 0 {
+			if openDivExpectLabel && isCanonicalCandidateLabel(line) {
+				openDivExpectLabel = false
+				at = end
+				continue
+			}
+			if openDivExpectTitle {
+				openDivExpectTitle = false
+				openDivExpectLabel = atxHeadingLevel(line) == 3
+			} else {
+				openDivExpectLabel = false
+			}
 			if n, ok := plainDivClose(line); ok {
 				if n < openDivColons {
 					return nil, fmt.Errorf(
@@ -62,6 +84,8 @@ func PlainExport(raw []byte) ([]byte, error) {
 						n, openDivColons)
 				}
 				openDivColons = 0
+				openDivExpectTitle = false
+				openDivExpectLabel = false
 				at = end
 				continue
 			}
@@ -72,6 +96,7 @@ func PlainExport(raw []byte) ([]byte, error) {
 			return nil, err
 		} else if reserved {
 			openDivColons = n
+			openDivExpectTitle = true
 			at = end
 			continue
 		}
@@ -115,6 +140,15 @@ func isPlainProtocolAnchor(line []byte) bool {
 		}
 	}
 	return false
+}
+
+func isCanonicalCandidateLabel(line []byte) bool {
+	switch string(trimLineEnd(line)) {
+	case candidateKnowledgeLabel, candidateOpinionLabel:
+		return true
+	default:
+		return false
+	}
 }
 
 func plainDivOpen(line []byte) (int, bool, error) {
