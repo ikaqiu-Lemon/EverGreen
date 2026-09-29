@@ -7,6 +7,7 @@ import (
 
 func TestPlainExportPreservesVisibleCandidateBytes(t *testing.T) {
 	draft := candidateDraft("cand-plain", CandidateKindKnowledge, "Plain candidate")
+	draft.LogicalSlug = "plain-logical-slug"
 	draft.Sections = []CandidateDraftSection{
 		{Name: SecKnowledge, Body: []byte("第一段。\n\n- 列表\n")},
 		{Name: SecBoundary, Body: []byte("边界正文。\n")},
@@ -34,6 +35,7 @@ func TestPlainExportPreservesVisibleCandidateBytes(t *testing.T) {
 	for _, forbidden := range [][]byte{
 		[]byte("<!-- eg:nr:"), []byte("<!-- eg:cd:"),
 		[]byte("<!-- eg:cc:"), []byte("#cand-plain .eg-candidate"),
+		[]byte("data-slug"),
 	} {
 		if bytes.Contains(plain, forbidden) {
 			t.Fatalf("plain export 残留专有协议 %q：\n%s", forbidden, plain)

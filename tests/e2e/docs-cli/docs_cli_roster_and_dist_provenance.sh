@@ -64,16 +64,16 @@ M5_ADDED_CMDS=(index bench)
 #    观点子系统 `eg opinion` 是 M5 之后新增的顶层命令，同样如实登记为后来者。M4 结论
 #    「恰 20 条」仍由「摘掉 M4 之后所有新增项（index / bench / opinion）」逐条复算，
 #    一个字不放宽、不把当时的 20 篡成 23。
-POST_M5_ADDED_CMDS=(opinion materialize export)
+POST_M5_ADDED_CMDS=(opinion materialize export candidate)
 # M4 之后所有新增的顶层命令（M5 期 index/bench + 读路径拆分 opinion）；计数复算时整体摘掉。
 POST_M4_ADDED_CMDS=("${M5_ADDED_CMDS[@]}" "${POST_M5_ADDED_CMDS[@]}")
 WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M4_ADDED_CMDS[@]}))
 
-# 当前真实的 25 条顶层命令**简单名**（= eg --help 命令区首词；用于四份文档现态覆盖检查）。
+# 当前真实的 26 条顶层命令**简单名**（= eg --help 命令区首词；用于四份文档现态覆盖检查）。
 CURRENT_CMDS=(
   init config capture context apply search card rel report
   deprecate restore replaced-by proposal delete undelete mark-reviewed unreviewed edit
-  reconcile check index bench opinion materialize export
+  reconcile check index bench opinion materialize export candidate
 )
 
 STEP=0

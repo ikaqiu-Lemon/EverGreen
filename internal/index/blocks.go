@@ -20,7 +20,7 @@ const (
 	BlocksDirName = "blocks"
 
 	// BlockSidecarVersion is independent from the SQLite schema version.
-	BlockSidecarVersion = 1
+	BlockSidecarVersion = 2
 )
 
 const (
@@ -50,6 +50,7 @@ const (
 var (
 	blockNoteIDRE = regexp.MustCompile(`^n-[a-z0-9][a-z0-9-]*$`)
 	blockKeyRE    = regexp.MustCompile(`^cand-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
+	blockSlugRE   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
 	blockHashRE   = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
@@ -70,6 +71,7 @@ type BlockSpan struct {
 type BlockCandidate struct {
 	Key         string    `json:"key"`
 	Kind        string    `json:"kind"`
+	LogicalSlug string    `json:"logical_slug"`
 	Syntax      string    `json:"syntax"`
 	Title       string    `json:"title"`
 	Status      string    `json:"status"`
@@ -208,6 +210,9 @@ func validateBlockCandidate(candidate BlockCandidate) error {
 	}
 	if candidate.Kind != CardKindKnowledge && candidate.Kind != CardKindOpinion {
 		return fmt.Errorf("kind 非法：%q", candidate.Kind)
+	}
+	if candidate.LogicalSlug != "" && !blockSlugRE.MatchString(candidate.LogicalSlug) {
+		return fmt.Errorf("logical_slug 非法：%q", candidate.LogicalSlug)
 	}
 	if candidate.Syntax != "h3" && candidate.Syntax != "fenced_div" {
 		return fmt.Errorf("syntax 非法：%q", candidate.Syntax)

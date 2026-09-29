@@ -118,7 +118,7 @@ func isPlainProtocolAnchor(line []byte) bool {
 }
 
 func plainDivOpen(line []byte) (int, bool, error) {
-	width, _, _, reserved, err := parseCandidateFenceOpen(line)
+	width, _, _, _, reserved, err := parseCandidateFenceOpen(line)
 	return width, reserved, err
 }
 

@@ -16,9 +16,10 @@ func draftSection(name, body string) string {
 
 func draftCandidate(key, kind, title string, refs, sections []string) string {
 	return fmt.Sprintf(
-		`{"key":%q,"kind":%q,"title":%q,"source_refs":%s,"rel":"support",`+
+		`{"key":%q,"kind":%q,"logical_slug":%q,"title":%q,"source_refs":%s,"rel":"support",`+
 			`"reason":"原文直接支持","tags":["draft"],"sections":[%s]}`,
-		key, kind, title, ncJSONArr(refs), strings.Join(sections, ","))
+		key, kind, strings.TrimPrefix(key, "cand-"), title,
+		ncJSONArr(refs), strings.Join(sections, ","))
 }
 
 func draftCoverage(module string, refs []string, disposition string,
@@ -74,6 +75,9 @@ func TestParseCandidateDraftFieldsInOrder(t *testing.T) {
 	if len(op.CandidateDrafts) != 2 || op.CandidateDrafts[0].Key != "cand-knowledge" ||
 		op.CandidateDrafts[1].Key != "cand-opinion" {
 		t.Fatalf("candidate_drafts 顺序未保留：%+v", op.CandidateDrafts)
+	}
+	if op.CandidateDrafts[0].LogicalSlug != "knowledge" {
+		t.Fatalf("candidate logical_slug 未解析：%+v", op.CandidateDrafts[0])
 	}
 	if got := string(op.CandidateDrafts[0].Sections[1].Body); got != "知识边界。" {
 		t.Fatalf("candidate section body 未逐字承载：%q", got)

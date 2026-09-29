@@ -23,6 +23,10 @@ func renderFencedCandidate(t testing.TB, draft CandidateDraft, width int) []byte
 	out = append(out, draft.Key...)
 	out = append(out, " .eg-candidate ."...)
 	out = append(out, string(draft.Kind)...)
+	if draft.LogicalSlug != "" {
+		out = append(out, " data-slug="...)
+		out = append(out, draft.LogicalSlug...)
+	}
 	out = append(out, '}', '\n')
 	out = append(out, "### "...)
 	out = append(out, draft.Title...)

@@ -63,9 +63,10 @@ func commands() []*Command {
 		// 子命令按 `eg config get|set` / `eg proposal …` 的既有惯例**不单独计数**。
 		opinionCommand(),
 		// Storage v3 H3 闭环：用户显式确定性物化与只读 plain export。
-		// 注册表总量随之 23 → 25；两条都追加在既有名册尾部。
+		// Candidate review 在其后追加完整状态导出/应用入口，注册表总量 25 → 26。
 		materializeCommand(),
 		exportCommand(),
+		candidateCommand(),
 	}
 }
 

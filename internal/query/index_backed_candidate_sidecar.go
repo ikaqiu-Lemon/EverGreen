@@ -39,7 +39,8 @@ func CandidateBlockDocuments(notes []NoteEntry, hash Hasher) []index.BlockDocume
 			}
 			doc.Candidates = append(doc.Candidates, index.BlockCandidate{
 				Key: candidate.Key, Kind: string(candidate.Kind),
-				Syntax: string(candidate.Syntax), Title: candidate.Title,
+				LogicalSlug: candidate.LogicalSlug,
+				Syntax:      string(candidate.Syntax), Title: candidate.Title,
 				Status: status, Output: candidate.Anchor.Output,
 				PayloadHash: hash(candidate.Raw(note.Raw)),
 				Span: index.BlockSpan{
@@ -94,7 +95,8 @@ func projectDraftCandidates(root string, notes []NoteEntry,
 		for _, candidate := range doc.Candidates {
 			drafts = append(drafts, DraftCandidate{
 				Note: doc.NoteID, Path: doc.NotePath, Key: candidate.Key,
-				Kind: candidate.Kind, Title: candidate.Title, Status: candidate.Status,
+				Kind: candidate.Kind, LogicalSlug: candidate.LogicalSlug,
+				Title: candidate.Title, Status: candidate.Status,
 				Output: candidate.Output, PayloadHash: candidate.PayloadHash,
 			})
 		}

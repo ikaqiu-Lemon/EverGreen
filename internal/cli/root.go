@@ -249,6 +249,7 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("opinion", r.runOpinion)
 	_ = r.Wire("materialize", r.runMaterialize)
 	_ = r.Wire("export", r.runExport)
+	_ = r.Wire("candidate", r.runCandidate)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。

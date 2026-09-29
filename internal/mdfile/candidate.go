@@ -62,15 +62,16 @@ type CandidateDraftSection struct {
 
 // CandidateDraft is the deterministic input used to render one H3 candidate.
 type CandidateDraft struct {
-	Key        string
-	Kind       CandidateKind
-	Title      string
-	SourceRefs []string
-	Rel        string
-	Reason     string
-	Tags       []string
-	Output     string
-	Sections   []CandidateDraftSection
+	Key         string
+	Kind        CandidateKind
+	LogicalSlug string
+	Title       string
+	SourceRefs  []string
+	Rel         string
+	Reason      string
+	Tags        []string
+	Output      string
+	Sections    []CandidateDraftSection
 }
 
 // CandidateSection identifies one direct H4 payload. Payload is the exact
@@ -88,6 +89,7 @@ type CandidateSection struct {
 type Candidate struct {
 	Key           string
 	Kind          CandidateKind
+	LogicalSlug   string
 	Syntax        CandidateSyntax
 	Title         string
 	Anchor        CandidateAnchor
@@ -122,6 +124,8 @@ type candidateAnchorWire struct {
 
 var candidateKeyRE = regexp.MustCompile(
 	`^cand-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
+var candidateLogicalSlugRE = regexp.MustCompile(
+	`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
 
 func candidateAnchorFromDraft(d CandidateDraft) CandidateAnchor {
 	tags := d.Tags
@@ -278,6 +282,10 @@ func RenderCandidateDraft(d CandidateDraft) ([]byte, error) {
 	out = append(out, d.Key...)
 	out = append(out, " .eg-candidate ."...)
 	out = append(out, string(d.Kind)...)
+	if d.LogicalSlug != "" {
+		out = append(out, " data-slug="...)
+		out = append(out, d.LogicalSlug...)
+	}
 	out = append(out, '}', '\n')
 	for i, section := range d.Sections {
 		if i == 0 {
@@ -298,6 +306,9 @@ func validateCandidateDraft(d CandidateDraft) error {
 	}
 	if !d.Kind.valid() {
 		return fmt.Errorf("candidate kind 越界：%q", d.Kind)
+	}
+	if d.LogicalSlug != "" && !candidateLogicalSlugRE.MatchString(d.LogicalSlug) {
+		return fmt.Errorf("candidate logical_slug 非法：%q", d.LogicalSlug)
 	}
 	if strings.TrimSpace(d.Title) == "" || d.Title != strings.TrimSpace(d.Title) ||
 		strings.ContainsAny(d.Title, "\r\n") {
@@ -367,6 +378,7 @@ type candidateHeading struct {
 	title       string
 	key         string
 	kind        CandidateKind
+	logicalSlug string
 	isCandidate bool
 }
 
@@ -447,7 +459,7 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		}
 		if fence, inside := candidateFenceContaining(fences, h.start); inside {
 			if h.start != fence.titleStart && h.node.Level == 3 {
-				_, _, nested, nestedErr := parseCandidateHeading(raw[h.start:h.end], h.node)
+				_, _, _, nested, nestedErr := parseCandidateHeading(raw[h.start:h.end], h.node)
 				if nestedErr != nil {
 					return nil, fmt.Errorf(
 						"candidate L2 %q 内的 H3 candidate 形态非法：%w",
@@ -463,7 +475,7 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		if h.node.Level != 3 {
 			continue
 		}
-		h.key, h.kind, h.isCandidate, err =
+		h.key, h.kind, h.logicalSlug, h.isCandidate, err =
 			parseCandidateHeading(raw[h.start:h.end], h.node)
 		if err != nil {
 			return nil, fmt.Errorf("candidate H3 at byte %d: %w", h.start, err)
@@ -510,6 +522,7 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		if err := appendCandidate(Candidate{
 			Key:           h.key,
 			Kind:          h.kind,
+			LogicalSlug:   h.logicalSlug,
 			Syntax:        CandidateSyntaxH3,
 			Title:         h.title,
 			BoundaryStart: h.start,
@@ -555,6 +568,7 @@ func ParseCandidates(raw []byte) ([]Candidate, error) {
 		if err := appendCandidate(Candidate{
 			Key:           fence.key,
 			Kind:          fence.kind,
+			LogicalSlug:   fence.logicalSlug,
 			Syntax:        CandidateSyntaxFencedDiv,
 			Title:         title.title,
 			BoundaryStart: fence.openStart,
@@ -602,7 +616,10 @@ func candidateHeadingSpan(raw []byte, h *ast.Heading, searchFrom int,
 	return start, end, title, nil
 }
 
-func parseCandidateHeading(line []byte, h *ast.Heading) (string, CandidateKind, bool, error) {
+func parseCandidateHeading(
+	line []byte,
+	h *ast.Heading,
+) (string, CandidateKind, string, bool, error) {
 	trimmed := trimLineEnd(line)
 	attrStart := bytes.LastIndexByte(trimmed, '{')
 	rawReserved := false
@@ -611,7 +628,8 @@ func parseCandidateHeading(line []byte, h *ast.Heading) (string, CandidateKind, 
 		rawReserved = bytes.Contains(tail, []byte(".eg-candidate")) ||
 			bytes.Contains(tail, []byte(".knowledge")) ||
 			bytes.Contains(tail, []byte(".opinion")) ||
-			bytes.Contains(tail, []byte("#cand-"))
+			bytes.Contains(tail, []byte("#cand-")) ||
+			bytes.Contains(tail, []byte("data-slug"))
 	}
 	astReserved := false
 	for _, attr := range h.Attributes() {
@@ -633,19 +651,19 @@ func parseCandidateHeading(line []byte, h *ast.Heading) (string, CandidateKind, 
 		}
 	}
 	if !rawReserved && !astReserved {
-		return "", "", false, nil
+		return "", "", "", false, nil
 	}
 	if !isATXHeadingLevel(trimmed, 3) {
-		return "", "", false, fmt.Errorf("candidate 标题必须是 ATX H3")
+		return "", "", "", false, fmt.Errorf("candidate 标题必须是 ATX H3")
 	}
 	if attrStart < 0 {
-		return "", "", false, fmt.Errorf("candidate 标题缺属性块")
+		return "", "", "", false, fmt.Errorf("candidate 标题缺属性块")
 	}
-	key, kind, err := parseCandidateAttributes(trimmed[attrStart:])
+	key, kind, logicalSlug, err := parseCandidateAttributes(trimmed[attrStart:])
 	if err != nil {
-		return "", "", false, fmt.Errorf("candidate 标题：%w", err)
+		return "", "", "", false, fmt.Errorf("candidate 标题：%w", err)
 	}
-	return key, kind, true, nil
+	return key, kind, logicalSlug, true, nil
 }
 
 func isATXHeadingLevel(line []byte, level int) bool {

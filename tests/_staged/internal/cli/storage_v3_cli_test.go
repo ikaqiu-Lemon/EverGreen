@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 func runStorageV3CLI(t *testing.T, r *Root, args ...string) (int, Envelope, string) {
@@ -171,5 +172,239 @@ func TestExportPlainRejectsUnsafeOutputs(t *testing.T) {
 		if code != ExitUsage {
 			t.Fatalf("不安全输出 %s 应退 1，实得 %d", output, code)
 		}
+	}
+}
+
+func TestCandidateShowApplyCRUDAndMaterializeLogicalSlug(t *testing.T) {
+	dir, noteRel := materializeTxnFixture(t)
+	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
+	before := mustRead(t, notePath)
+	beforeDoc, err := mdfile.Parse(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeBody, _ := beforeDoc.Section(mdfile.SecNoteBody)
+	beforeOpen, _ := beforeDoc.Section(mdfile.SecOpenQuest)
+	beforeUser, _ := beforeDoc.Section(mdfile.SecUserAppend)
+	commitsBefore := strings.TrimSpace(gitOut(t, dir, "rev-list", "--count", "HEAD"))
+
+	root := newTestRoot(t, dir)
+	root.Now = func() time.Time {
+		return time.Date(2026, 9, 29, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	code, shown, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json",
+		"--note", "n-20260922-txn-materialize")
+	if code != ExitOK {
+		t.Fatalf("candidate show 退出码=%d：%s %+v", code, errOut, shown)
+	}
+	if shown.Data["schema_version"] != float64(1) && shown.Data["schema_version"] != 1 {
+		t.Fatalf("candidate show schema_version 错误：%+v", shown.Data)
+	}
+	if got := strings.TrimSpace(gitOut(t, dir, "rev-list", "--count", "HEAD")); got != commitsBefore {
+		t.Fatal("candidate show 不得产生 commit")
+	}
+
+	shownRaw, err := json.Marshal(shown.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec candidateReviewSpec
+	if err := json.Unmarshal(shownRaw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	spec.Candidates = []candidateReviewCandidate{
+		{
+			Key: "cand-renamed", Kind: store.CandidateKindKnowledge,
+			LogicalSlug: "agent-development-boundaries", Title: "用户校准后的边界",
+			SourceRefs: []string{"L1-L1", "L2-L2"}, Rel: "support",
+			Reason: "用户扩大了来源范围", Tags: []string{"reviewed"},
+			Sections: []candidateReviewSection{
+				{Name: mdfile.SecKnowledge, Body: "用户确认后的完整知识。\n"},
+				{Name: mdfile.SecBoundary, Body: "仅适用于已审阅范围。\n"},
+			},
+		},
+		{
+			Key: "cand-added", Kind: store.CandidateKindOpinion,
+			LogicalSlug: "reviewed-claim", Title: "新增观点",
+			SourceRefs: []string{"L2-L2"}, Rel: "context",
+			Reason: "用户新增判断", Tags: []string{},
+			Sections: []candidateReviewSection{
+				{Name: mdfile.SecOpinionClaim, Body: "用户新增的可反驳主张。\n"},
+				{Name: mdfile.SecToVerify, Body: "需要后续验证。\n"},
+			},
+		},
+	}
+	spec.Coverage = []candidateReviewCoverage{
+		{
+			Module: "m-reviewed", SourceRefs: []string{"L1-L1", "L2-L2"},
+			Summary: "用户确认后的完整覆盖", Disposition: store.CandidateCoverageCandidate,
+			Candidates: []string{"cand-renamed", "cand-added"}, Reason: "",
+		},
+	}
+	reviewPath := filepath.Join(t.TempDir(), "review.json")
+	raw, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reviewPath, append(raw, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, applied, errOut := runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitOK {
+		t.Fatalf("candidate apply 退出码=%d：%s %+v", code, errOut, applied)
+	}
+	if applied.Data["txn_id"] == "" || applied.Data["commit"] == nil {
+		t.Fatalf("candidate apply 缺事务或 commit 回执：%+v", applied.Data)
+	}
+	after := mustRead(t, notePath)
+	candidates, err := mdfile.ParseCandidates(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].Key != "cand-renamed" ||
+		candidates[0].Kind != mdfile.CandidateKindKnowledge ||
+		candidates[0].LogicalSlug != "agent-development-boundaries" ||
+		candidates[1].Key != "cand-added" {
+		t.Fatalf("candidate CRUD 结果错误：%+v", candidates)
+	}
+	afterDoc, err := mdfile.Parse(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterBody, _ := afterDoc.Section(mdfile.SecNoteBody)
+	afterOpen, _ := afterDoc.Section(mdfile.SecOpenQuest)
+	afterUser, _ := afterDoc.Section(mdfile.SecUserAppend)
+	for _, pair := range [][2][]byte{
+		{before[beforeBody.Start:beforeBody.End], after[afterBody.Start:afterBody.End]},
+		{before[beforeOpen.Start:beforeOpen.End], after[afterOpen.Start:afterOpen.End]},
+		{before[beforeUser.Start:beforeUser.End], after[afterUser.Start:afterUser.End]},
+	} {
+		if !bytes.Equal(pair[0], pair[1]) {
+			t.Fatal("candidate apply 改写了提取结果以外的 Note 分区")
+		}
+	}
+	index, err := store.New(dir).ScanIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id := range index.ByID {
+		if strings.HasPrefix(id, "k-") || strings.HasPrefix(id, "o-") {
+			t.Fatalf("candidate apply 不得提前物化产物：%s", id)
+		}
+	}
+
+	code, fresh, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json", "--note", spec.Note)
+	if code != ExitOK {
+		t.Fatalf("第二次 candidate show 失败：%d %s", code, errOut)
+	}
+	freshRaw, _ := json.Marshal(fresh.Data)
+	if err := os.WriteFile(reviewPath, freshRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commitsBeforeNoop := gitOut(t, dir, "rev-list", "--count", "HEAD")
+	code, noop, errOut := runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitOK || noop.Data["txn_id"] != "" || noop.Data["commit"] != nil {
+		t.Fatalf("相同 review spec 应 no-op：code=%d err=%s data=%+v", code, errOut, noop.Data)
+	}
+	if got := gitOut(t, dir, "rev-list", "--count", "HEAD"); got != commitsBeforeNoop {
+		t.Fatal("candidate apply no-op 产生了空 commit")
+	}
+
+	code, materialized, errOut := runStorageV3CLI(t, root,
+		"materialize", "--vault", dir, "--json", "--note", spec.Note,
+		"--all", "--user-request")
+	if code != ExitOK {
+		t.Fatalf("审阅后 materialize 失败：%d %s %+v", code, errOut, materialized)
+	}
+	items := materialized.Data["materialized_candidates"].([]interface{})
+	first := items[0].(map[string]interface{})
+	if first["output"] != "k-20260929-agent-development-boundaries" {
+		t.Fatalf("materialize 未使用 logical_slug：%+v", first)
+	}
+
+	materializedNote := mustRead(t, notePath)
+	spec.NoteHash = store.ContentHash(materializedNote)
+	raw, _ = json.Marshal(spec)
+	if err := os.WriteFile(reviewPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitValidation || !bytes.Equal(materializedNote, mustRead(t, notePath)) {
+		t.Fatalf("已物化 candidate 应拒绝 review apply 且零写入，实际 code=%d", code)
+	}
+}
+
+func TestCandidateApplyRejectsAuthorizationStaleAndInvalidSpec(t *testing.T) {
+	dir, noteRel := materializeTxnFixture(t)
+	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
+	root := newTestRoot(t, dir)
+	code, shown, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json",
+		"--note", "n-20260922-txn-materialize")
+	if code != ExitOK {
+		t.Fatalf("candidate show 失败：%d %s", code, errOut)
+	}
+	raw, _ := json.Marshal(shown.Data)
+	var spec candidateReviewSpec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	reviewPath := filepath.Join(t.TempDir(), "review.json")
+	if err := os.WriteFile(reviewPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := mustRead(t, notePath)
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath)
+	if code != ExitValidation || !bytes.Equal(before, mustRead(t, notePath)) {
+		t.Fatalf("缺 --user-request 应退 2 且零写入，实际 code=%d", code)
+	}
+
+	stale := append(append([]byte(nil), before...), []byte("\n")...)
+	if err := os.WriteFile(notePath, stale, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitValidation || !bytes.Equal(stale, mustRead(t, notePath)) {
+		t.Fatalf("stale note_hash 应退 2 且零写入，实际 code=%d", code)
+	}
+
+	if err := os.WriteFile(notePath, before, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec.Candidates[0].LogicalSlug = "Bad_Slug"
+	invalidRaw, _ := json.Marshal(spec)
+	if err := os.WriteFile(reviewPath, invalidRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitValidation || !bytes.Equal(before, mustRead(t, notePath)) {
+		t.Fatalf("非法 logical_slug 应退 2 且零写入，实际 code=%d", code)
+	}
+
+	spec.Candidates[0].LogicalSlug = "valid-slug"
+	spec.Coverage = spec.Coverage[:1]
+	invalidRaw, _ = json.Marshal(spec)
+	if err := os.WriteFile(reviewPath, invalidRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitValidation || !bytes.Equal(before, mustRead(t, notePath)) {
+		t.Fatalf("coverage 缺口应退 2 且零写入，实际 code=%d", code)
 	}
 }

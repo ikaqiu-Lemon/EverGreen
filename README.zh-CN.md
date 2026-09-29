@@ -288,8 +288,18 @@ hash；已物化实体仍分列为 `knowledge_candidates`（知识 `k-*`）与 `
 若文件在你身后被改动，Evergreen 会跳过该文件而不是覆盖它。
 
 Storage v3 通过 `write_note.candidate_drafts[]` 与独立的 `candidate_coverage[]` 把 Knowledge/Opinion
-草稿保存在 Note 内。Agent 可以保存、编辑草稿，但不得代替用户物化。第 4 步会在候选 plan
-落盘后展示用户显式物化；plain export 可独立执行：
+草稿保存在 Note 内。Agent 可以保存草稿，但不得代替用户确认或物化。每个新草稿还带用户可编辑的
+`logical_slug`，它独立于显示标题决定最终带日期文件名。plan 落盘后，先导出完整审阅状态，编辑后
+原子回投：
+
+```console
+$ eg candidate show --note n-20260915-bitter-lesson --json | jq '.data' > review.json
+$ eg candidate apply --note n-20260915-bitter-lesson --file review.json --user-request
+```
+
+一份 review spec 可同时新增、删除、改 key、重排、改类型，并修改来源范围、payload、slug 和 coverage。
+`candidate apply` 要求 `show` 返回的 `note_path` 与 `note_hash` 仍精确匹配，拒绝已物化候选，并保持
+`## 提取结果` 候选管理区之外的每个字节不变。第 4 步再展示用户显式物化；plain export 可独立执行：
 
 ```console
 $ eg export --plain --output ../evergreen-plain
@@ -304,7 +314,7 @@ $ eg export --plain --output ../evergreen-plain
 
 ```markdown
 <!-- eg:cd:1 <base64url(JSON)> -->
-:::: {#cand-cross-section .eg-candidate .opinion}
+:::: {#cand-cross-section .eg-candidate .opinion data-slug=cross-section-claim}
 ### 跨小节的候选主张
 
 #### 观点
@@ -314,7 +324,7 @@ $ eg export --plain --output ../evergreen-plain
 ```
 
 锚点、开围栏和标题必须是连续三行。开围栏至少三个冒号，属性必须恰含一个 `cand-*` ID、
-`.eg-candidate` 与 `.knowledge` / `.opinion` 二者之一；容器首行必须是非空、无属性的 ATX H3，
+`.eg-candidate`、`.knowledge` / `.opinion` 二者之一，以及可选的 `data-slug`；容器首行必须是非空、无属性的 ATX H3，
 其文本就是 candidate title。闭围栏不得带属性，冒号数不得少于开围栏。L2 不允许嵌套；代码围栏
 优先，容器内的标题、列表、表格及其它 Markdown 都属于 candidate。物化继续使用与 H3 相同的
 H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷。
@@ -350,6 +360,7 @@ H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷�
         {
           "key": "cand-general-methods",
           "kind": "knowledge",
+          "logical_slug": "general-methods-scale-with-compute",
           "title": "通用方法能随算力扩展",
           "source_refs": ["L2-L2", "L3-L3"],
           "rel": "support",
@@ -363,6 +374,7 @@ H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷�
         {
           "key": "cand-scale-bet",
           "kind": "opinion",
+          "logical_slug": "encoding-human-knowledge-long-run-bet",
           "title": "把人类知识编码进系统是一个长期上会输的押注",
           "source_refs": ["L4-L4"],
           "rel": "support",
@@ -420,14 +432,15 @@ $ eg apply --plan plan.json
 commit：842c8ddb03a2bbe2eab7c5a99f4495fe1979ba17
 ```
 
-用户审阅或编辑候选载荷后，再显式物化：
+用户审阅并原子回投完整候选状态后，再显式物化：
 
 ```console
 $ eg materialize --note n-20260915-bitter-lesson --all --user-request
 ```
 
 该事务创建一份 `k-*` 与一份 `o-*`（`validation: pending`），并把持久映射写回 Note。跨日重复执行时，
-只要映射与 payload 仍一致，就会幂等 no-op。
+只要映射与 payload 仍一致，就会幂等 no-op。`--all` 会拒绝仍含 `unresolved` 的 coverage；
+显式的 `--candidate` 定向物化仍可用于部分流程。
 
 ### 5. 读回来
 
@@ -692,7 +705,7 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 
 ## 命令参考
 
-顶层命令共 25 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
+顶层命令共 26 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
 
 **初始化**
 
@@ -708,6 +721,7 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 | `eg capture` | 收录原文并登记收件区 |
 | `eg context` | 只读：`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hash |
 | `eg apply --plan <file\|->` | 校验并应用 ChangePlan |
+| `eg candidate show\|apply` | 导出或原子应用完整 candidate review spec |
 | `eg materialize` | 用户显式触发的 Note candidate 确定性物化 |
 | `eg export --plain` | 导出不含 Evergreen 专有协议的纯 Markdown |
 | `eg report --last` | 只读复现最近一次产出报告体的写命令（`eg apply` 或 `eg capture`） |
@@ -910,8 +924,9 @@ Evergreen 绝不把你的 YAML 过一遍序列化器。它解析原始字节、�
 （`knowledge` / `opinion`）；观点的 `validation` 也落在同一行。**没有增量 schema 迁移**：当盘上的
 `schema_version` 不匹配时，整个索引被丢弃并从 Markdown 重建。
 
-每个 `.index/blocks/<n-id>.json` 只保存可从 Note 重算的事实：Note 路径/hash，以及 candidate
-的 key、kind、syntax、源字节区间、物化状态/output 和 payload hash；不保存权威正文。
+每个 schema v2 的 `.index/blocks/<n-id>.json` 只保存可从 Note 重算的事实：Note 路径/hash，以及
+candidate 的 key、kind、logical slug、syntax、源字节区间、物化状态/output 和 payload hash；
+不保存权威正文。
 `eg context` 只有在 sidecar 与当前 Markdown 投影逐字对账一致时才读取它。sidecar 缺失、陈旧、
 损坏或成为孤儿时会留下索引诊断，并回落同一条直接 Markdown 扫描路径。
 
