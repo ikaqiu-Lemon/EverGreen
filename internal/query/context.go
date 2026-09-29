@@ -109,6 +109,7 @@ type DraftCandidate struct {
 	Path        string `json:"path"`
 	Key         string `json:"key"`
 	Kind        string `json:"kind"`
+	LogicalSlug string `json:"logical_slug"`
 	Title       string `json:"title"`
 	Status      string `json:"status"`
 	Output      string `json:"output"`

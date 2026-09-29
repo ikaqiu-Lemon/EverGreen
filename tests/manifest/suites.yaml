@@ -999,6 +999,23 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: e2e.note-review.candidate_review_workflow
+  layer: e2e
+  capability: note-review
+  kind: shell
+  target: tests/e2e/note-review/candidate_review_workflow.sh
+  source: tests/e2e/note-review/candidate_review_workflow.sh
+  origin: inventory
+  owner_task: T-evergreen.candidate_review_workflow-158614-002
+  profiles:
+  - e2e
+  - full
+  timeout_s: 900
+  min_cases: 6
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: e2e.note-review.note_review_contract
   layer: e2e
   capability: note-review
@@ -1666,7 +1683,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 503
+  min_cases: 505
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1725,7 +1742,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 134
+  min_cases: 136
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1764,7 +1781,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 215
+  min_cases: 216
   required: true
   platform_required: linux/amd64
   not_run_when: null

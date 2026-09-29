@@ -125,11 +125,16 @@ compatibility/validation digest):
   (--candidate <cand-key> | --all) --user-request` copies exact candidate bytes
   into Knowledge/Opinion through journal v1. `eg export --plain --output <dir>`
   creates a read-only egress copy without Evergreen protocol anchors.
+- **Candidate review.** `eg candidate show --note <n-id> --json` exports the
+  complete editable draft state. Apply the edited `.data` object with
+  `eg candidate apply --note <n-id> --file <review.json> --user-request`.
+  The note path/hash is an optimistic-concurrency token; apply replaces only
+  the candidate-managed extraction region in one journal-v1 transaction.
 - **Candidate boundaries.** H3 is the default. The L2 fallback is an
   `eg:cd:1` anchor followed immediately by a fenced-div opener and an
   attribute-free ATX H3 title. The opener carries exactly one `cand-*` ID,
-  `.eg-candidate`, and one kind class; L2 cannot nest, and its closing fence
-  has no attributes and at least as many colons as the opener.
+  `.eg-candidate`, one kind class, and an optional `data-slug`; L2 cannot nest,
+  and its closing fence has no attributes and at least as many colons as the opener.
 - **Four learning entities, two domain directories.** Source (`s-*`),
   Note (`n-*`), Knowledge (`k-*` under `domains/<d>/knowledge/`) and Opinion
   (`o-*` under `domains/<d>/opinions/`); `Proposal` (`p-*`) is a control plane,
@@ -207,7 +212,7 @@ transaction journal（事务日志）. `W21` remains unassigned（不分配）.
 
 ## Command roster
 
-Evergreen exposes 25 top-level commands（顶层命令共 25 条）. Run `eg <command> --help`
+Evergreen exposes 26 top-level commands（顶层命令共 26 条）. Run `eg <command> --help`
 for the authoritative flags and exit codes; the table below is the post-install
 roster you can verify against `eg --help`.
 
@@ -218,6 +223,7 @@ roster you can verify against `eg --help`.
 | `eg capture` | Record a source and register the inbox |
 | `eg context` | Read-only processing context (`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + base hashes) |
 | `eg apply` | Apply a ChangePlan |
+| `eg candidate` | `show`/`apply` the complete user-reviewable candidate state |
 | `eg search` | Ranked, paginated card search |
 | `eg card` | `eg card show <k-id>`: single card view |
 | `eg rel` | Argument relationships (and `--replaced-by` pointers) |
@@ -243,9 +249,10 @@ roster you can verify against `eg --help`.
 
 - `.eg/` stores the latest report and is excluded through
   `.git/info/exclude`.
-- `.index/` stores the derived database, deterministic per-Note candidate
-  sidecars under `blocks/`, `run.lock`, and transaction state. The sidecars
-  contain only Markdown-recomputable identities, spans, mappings, and hashes;
+- `.index/` stores the derived database, deterministic schema-v2 per-Note
+  candidate sidecars under `blocks/`, `run.lock`, and transaction state. The
+  sidecars contain only Markdown-recomputable identities, logical slugs, spans,
+  mappings, and hashes;
   unhealthy sidecars make candidate queries fall back to Markdown.
 - Build output under `bin/` and `dist/` is ignored by the source repository.
 

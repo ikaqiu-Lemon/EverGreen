@@ -11,13 +11,14 @@ import (
 )
 
 type candidateFence struct {
-	openStart  int
-	openEnd    int
-	closeStart int
-	closeEnd   int
-	titleStart int
-	key        string
-	kind       CandidateKind
+	openStart   int
+	openEnd     int
+	closeStart  int
+	closeEnd    int
+	titleStart  int
+	key         string
+	kind        CandidateKind
+	logicalSlug string
 }
 
 func candidateExtraction(raw []byte) (Span, ast.Node, map[int]bool, []candidateFence, error) {
@@ -53,7 +54,7 @@ func scanCandidateFences(raw []byte, from int,
 		if atxHeadingLevel(raw[at:end]) == 2 {
 			return fences, at, nil
 		}
-		width, key, kind, reserved, err := parseCandidateFenceOpen(raw[at:end])
+		width, key, kind, logicalSlug, reserved, err := parseCandidateFenceOpen(raw[at:end])
 		if err != nil {
 			return nil, 0, fmt.Errorf("candidate L2 opener at byte %d: %w", at, err)
 		}
@@ -67,6 +68,7 @@ func scanCandidateFences(raw []byte, from int,
 
 		fence := candidateFence{
 			openStart: at, openEnd: end, titleStart: end, key: key, kind: kind,
+			logicalSlug: logicalSlug,
 		}
 		cursor := end
 		closed := false
@@ -89,7 +91,7 @@ func scanCandidateFences(raw []byte, from int,
 				closed = true
 				break
 			}
-			_, nestedKey, _, nested, nestedErr :=
+			_, nestedKey, _, _, nested, nestedErr :=
 				parseCandidateFenceOpen(raw[cursor:lineEndAt])
 			if nestedErr != nil {
 				return nil, 0, fmt.Errorf(
@@ -120,93 +122,107 @@ func candidateFenceOpenShape(line []byte) bool {
 
 func parseCandidateFenceOpen(
 	line []byte,
-) (int, string, CandidateKind, bool, error) {
+) (int, string, CandidateKind, string, bool, error) {
 	t := bytes.TrimSpace(trimLineEnd(line))
 	width := leadingByteCount(t, ':')
 	reserved := candidateFenceReserved(line)
 	if width < 3 || width == len(t) {
 		if reserved {
-			return 0, "", "", false, fmt.Errorf("candidate L2 opener 形态非法")
+			return 0, "", "", "", false, fmt.Errorf("candidate L2 opener 形态非法")
 		}
-		return 0, "", "", false, nil
+		return 0, "", "", "", false, nil
 	}
 	if t[width] != ' ' && t[width] != '\t' {
 		if reserved {
-			return 0, "", "", false, fmt.Errorf("candidate L2 opener 的属性前必须有空白")
+			return 0, "", "", "", false, fmt.Errorf("candidate L2 opener 的属性前必须有空白")
 		}
-		return 0, "", "", false, nil
+		return 0, "", "", "", false, nil
 	}
 	attrs := bytes.TrimSpace(t[width:])
 	if len(attrs) < 2 || attrs[0] != '{' || attrs[len(attrs)-1] != '}' {
 		if reserved {
-			return 0, "", "", false, fmt.Errorf("candidate L2 opener 缺合法属性块")
+			return 0, "", "", "", false, fmt.Errorf("candidate L2 opener 缺合法属性块")
 		}
-		return 0, "", "", false, nil
+		return 0, "", "", "", false, nil
 	}
 	if !reserved {
-		return 0, "", "", false, nil
+		return 0, "", "", "", false, nil
 	}
-	key, kind, err := parseCandidateAttributes(attrs)
+	key, kind, logicalSlug, err := parseCandidateAttributes(attrs)
 	if err != nil {
-		return 0, "", "", false, err
+		return 0, "", "", "", false, err
 	}
-	return width, key, kind, true, nil
+	return width, key, kind, logicalSlug, true, nil
 }
 
-func parseCandidateAttributes(attrs []byte) (string, CandidateKind, error) {
+func parseCandidateAttributes(attrs []byte) (string, CandidateKind, string, error) {
 	attrReader := text.NewReader(attrs)
 	parsed, ok := parser.ParseAttributes(attrReader)
 	if !ok {
-		return "", "", fmt.Errorf("candidate 属性语法非法")
+		return "", "", "", fmt.Errorf("candidate 属性语法非法")
 	}
 	left, _ := attrReader.PeekLine()
 	if len(bytes.TrimSpace(left)) != 0 {
-		return "", "", fmt.Errorf("candidate 属性后含多余字节")
+		return "", "", "", fmt.Errorf("candidate 属性后含多余字节")
 	}
 
 	var key string
+	var logicalSlug string
 	var classes []string
 	idCount := 0
+	slugCount := 0
 	for _, attr := range parsed {
 		switch string(attr.Name) {
 		case "id":
 			idCount++
 			value, ok := attr.Value.([]byte)
 			if !ok {
-				return "", "", fmt.Errorf("candidate id 必须是字符串")
+				return "", "", "", fmt.Errorf("candidate id 必须是字符串")
 			}
 			key = string(value)
 		case "class":
 			value, ok := attr.Value.([]byte)
 			if !ok {
-				return "", "", fmt.Errorf("candidate class 必须是字符串")
+				return "", "", "", fmt.Errorf("candidate class 必须是字符串")
 			}
 			for _, class := range bytes.Fields(value) {
 				classes = append(classes, string(class))
 			}
+		case "data-slug":
+			slugCount++
+			value, ok := attr.Value.([]byte)
+			if !ok {
+				return "", "", "", fmt.Errorf("candidate data-slug 必须是字符串")
+			}
+			logicalSlug = string(value)
 		default:
-			return "", "", fmt.Errorf("candidate 含未知属性 %q", attr.Name)
+			return "", "", "", fmt.Errorf("candidate 含未知属性 %q", attr.Name)
 		}
 	}
 	if idCount != 1 || !candidateKeyRE.MatchString(key) {
-		return "", "", fmt.Errorf(
+		return "", "", "", fmt.Errorf(
 			"candidate id 必须恰一个且匹配 %s：%q", candidateKeyRE, key)
+	}
+	if slugCount > 1 || slugCount == 1 && !candidateLogicalSlugRE.MatchString(logicalSlug) {
+		return "", "", "", fmt.Errorf(
+			"candidate data-slug 必须至多一个且匹配 %s：%q",
+			candidateLogicalSlugRE, logicalSlug)
 	}
 	classCount := map[string]int{}
 	for _, class := range classes {
 		classCount[class]++
 	}
 	if len(classes) != 2 || classCount["eg-candidate"] != 1 {
-		return "", "", fmt.Errorf(
+		return "", "", "", fmt.Errorf(
 			"candidate classes 必须恰含 .eg-candidate 与一个 kind class：%v", classes)
 	}
 	switch {
 	case classCount["knowledge"] == 1 && classCount["opinion"] == 0:
-		return key, CandidateKindKnowledge, nil
+		return key, CandidateKindKnowledge, logicalSlug, nil
 	case classCount["opinion"] == 1 && classCount["knowledge"] == 0:
-		return key, CandidateKindOpinion, nil
+		return key, CandidateKindOpinion, logicalSlug, nil
 	default:
-		return "", "", fmt.Errorf(
+		return "", "", "", fmt.Errorf(
 			"candidate kind class 必须恰为 .knowledge 或 .opinion：%v", classes)
 	}
 }
@@ -219,7 +235,8 @@ func candidateFenceReserved(line []byte) bool {
 	return bytes.Contains(t, []byte(".eg-candidate")) ||
 		bytes.Contains(t, []byte(".knowledge")) ||
 		bytes.Contains(t, []byte(".opinion")) ||
-		bytes.Contains(t, []byte("#cand-"))
+		bytes.Contains(t, []byte("#cand-")) ||
+		bytes.Contains(t, []byte("data-slug"))
 }
 
 func candidateFenceClose(line []byte) (int, bool) {

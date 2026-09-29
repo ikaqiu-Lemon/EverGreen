@@ -706,8 +706,14 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 				d, _ := item.(map[string]interface{})
 				key, _ := d["key"].(string)
 				kind, _ := d["kind"].(string)
+				logicalSlug, _ := d["logical_slug"].(string)
 				if key == "" || draftKeys[key] {
 					t.Fatalf("样例 %d：candidate_drafts[%d].key 为空或重复：%q", i+1, j, key)
+				}
+				if !regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`).
+					MatchString(logicalSlug) {
+					t.Fatalf("样例 %d：candidate %s logical_slug 非法：%q",
+						i+1, key, logicalSlug)
 				}
 				draftKeys[key] = true
 				sections, _ := d["sections"].([]interface{})
@@ -1081,8 +1087,9 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 				Op              string `json:"op"`
 				NoteID          string `json:"note_id"`
 				CandidateDrafts []struct {
-					Key  string `json:"key"`
-					Kind string `json:"kind"`
+					Key         string `json:"key"`
+					Kind        string `json:"kind"`
+					LogicalSlug string `json:"logical_slug"`
 				} `json:"candidate_drafts"`
 			} `json:"ops"`
 		}
@@ -1091,8 +1098,9 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 		}
 		noteID := ""
 		var drafts []struct {
-			Key  string `json:"key"`
-			Kind string `json:"kind"`
+			Key         string `json:"key"`
+			Kind        string `json:"kind"`
+			LogicalSlug string `json:"logical_slug"`
 		}
 		for _, op := range m.Ops {
 			if op.Op == "write_note" {
@@ -1123,7 +1131,12 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 			t.Fatalf("样例 %d（note %s）的目标渲染片段缺四列候选覆盖矩阵（表头 %q）", i+1, noteID, matrixHeader)
 		}
 		for _, draft := range drafts {
-			marker := "{#" + draft.Key + " .eg-candidate ." + draft.Kind + "}"
+			if draft.LogicalSlug == "" {
+				t.Fatalf("样例 %d（note %s）的 candidate %s 缺 logical_slug",
+					i+1, noteID, draft.Key)
+			}
+			marker := "{#" + draft.Key + " .eg-candidate ." + draft.Kind +
+				" data-slug=" + draft.LogicalSlug + "}"
 			if !strings.Contains(hit, marker) {
 				t.Fatalf("样例 %d（note %s）的目标渲染片段缺 candidate 标题属性 %q", i+1, noteID, marker)
 			}

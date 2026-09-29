@@ -79,14 +79,14 @@ func TestOpinionSubcommandsExactlyFour(t *testing.T) {
 	}
 }
 
-// —— ② 当前 --help 恰列 25 条，且 opinion 恰一行 ——
+// —— ② 当前 --help 恰列 26 条，且 opinion 恰一行 ——
 
 func TestOpinionAppearsInHelpExactlyOnce(t *testing.T) {
 	r := New()
 	help := r.Usage()
 	block := helpCommandBlock(t, help)
-	if len(block) != 25 {
-		t.Fatalf("--help 命令区 = %d 行，期望 25（23 + Storage v3 两条）", len(block))
+	if len(block) != 26 {
+		t.Fatalf("--help 命令区 = %d 行，期望 26（25 + candidate review 一条）", len(block))
 	}
 	n := 0
 	for _, line := range block {
@@ -112,7 +112,7 @@ func TestCommandCountTwentyThree(t *testing.T) {
 		"reconcile", "check", "index", "bench",
 	}
 	added := []string{"opinion"} // T-…-006 批次 B1a：读路径 opinion 命令。
-	laterAdded := []string{"materialize", "export"}
+	laterAdded := []string{"materialize", "export", "candidate"}
 
 	if len(m5Terminal) != 22 {
 		t.Fatalf("M5 终值清单写错了：%d 条，M5 收口时恰 22 条", len(m5Terminal))

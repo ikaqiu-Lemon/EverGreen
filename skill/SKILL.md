@@ -135,16 +135,22 @@ eg apply --plan <file|-> [--dry-run] [--json]
 
 新主路径只在 `write_note` 中保存候选草稿，不直接伪造最终 output：
 
-- `candidate_drafts[]` 中每项固定给 `key`、`kind`、`title`、`source_refs`、`rel`、`reason`、
-  `tags` 与有序 `sections[]`；Knowledge 使用 `知识内容` / 可选 `条件与边界`，Opinion 使用
+- `candidate_drafts[]` 中每项固定给 `key`、`kind`、`logical_slug`、`title`、`source_refs`、
+  `rel`、`reason`、`tags` 与有序 `sections[]`；`logical_slug` 使用无日期的小写 ASCII
+  kebab-case，并独立于显示标题决定最终文件名。Knowledge 使用 `知识内容` / 可选 `条件与边界`，Opinion 使用
   `观点` / 可选 `论据与推理`、`条件与反例`、`待验证`。
 - `candidate_coverage[]` 与最终 `extraction_coverage[]` 分开；草稿只用
   `candidate` / `note_only` / `unresolved`，不得把预计的 `k-*` / `o-*` 写进 outputs。
-- 用户可用 `eg edit --target <n-id> --candidate <cand-key> --section <H4> --content <text|file>
-  --user-request` 精确修改一个未物化候选分区。
+- 用户先用 `eg candidate show --note <n-id> --json` 导出完整审阅状态（将信封的 `.data`
+  保存为 review JSON），再用 `eg candidate apply --note <n-id> --file <review.json>
+  --user-request` 原子回投。一次 apply 可新增、删除、改 key、重排、改类型，并修改
+  logical slug、来源范围、payload 和 coverage；`note_path` / `note_hash` 不匹配或已有候选物化时零写入拒绝。
+- `eg edit --target <n-id> --candidate <cand-key> --section <H4> --content <text|file>
+  --user-request` 仍可用于只改一个未物化候选分区。
 - **Agent 不得调用 `eg materialize`。** 用户确认草稿后显式执行
   `eg materialize --note <n-id> (--candidate <cand-key> | --all) --user-request`。该命令不调用模型，
-  只复制确定字节，并把目标与 Note output 映射放进同一个 journal v1 事务。
+  只复制确定字节，并把目标与 Note output 映射放进同一个 journal v1 事务；`--all` 遇到
+  `unresolved` coverage 必须拒绝，定向 `--candidate` 仍可用于显式部分物化。
 - `candidate_drafts[]` 默认写 H3 边界。读取存量 Note 时还支持 L2 兜底：`eg:cd:1` 锚点下一行是
   `::: {#cand-key .eg-candidate .knowledge}`（或把末项换成 `.opinion`）开围栏，再下一行必须是非空、
   无属性的 ATX H3 title，H4 模板随后出现，最后以不少于开围栏冒号数的无属性围栏闭合。三行必须
@@ -654,6 +660,7 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         {
           "key": "cand-search-learning",
           "kind": "knowledge",
+          "logical_slug": "search-and-learning-general-methods",
           "title": "搜索与学习是两类能利用大规模计算的通用方法",
           "source_refs": [
             "L41-L56",
@@ -681,6 +688,7 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         {
           "key": "cand-long-term",
           "kind": "opinion",
+          "logical_slug": "general-methods-win-long-term",
           "title": "长期看，随算力扩展的通用方法优于把人类知识写进系统",
           "source_refs": [
             "L7-L27",
@@ -718,6 +726,7 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         {
           "key": "cand-meta-method",
           "kind": "opinion",
+          "logical_slug": "build-meta-methods",
           "title": "AI 研究应转向能自行发现的元方法",
           "source_refs": [
             "L105-L117"
@@ -796,7 +805,7 @@ This is a big lesson. As a field, we still have not thoroughly learned it……
 
 ## 提取结果
 
-### 搜索与学习是两类能利用大规模计算的通用方法 {#cand-search-learning .eg-candidate .knowledge}
+### 搜索与学习是两类能利用大规模计算的通用方法 {#cand-search-learning .eg-candidate .knowledge data-slug=search-and-learning-general-methods}
 
 #### 知识内容
 
@@ -806,7 +815,7 @@ This is a big lesson. As a field, we still have not thoroughly learned it……
 
 原文只说它们「似乎能随算力任意扩展」，本候选不声称仅此两类。
 
-### 长期看，随算力扩展的通用方法优于把人类知识写进系统 {#cand-long-term .eg-candidate .opinion}
+### 长期看，随算力扩展的通用方法优于把人类知识写进系统 {#cand-long-term .eg-candidate .opinion data-slug=general-methods-win-long-term}
 
 #### 观点
 
@@ -816,7 +825,7 @@ This is a big lesson. As a field, we still have not thoroughly learned it……
 
 国际象棋、围棋、语音识别和计算机视觉重复出现了同一模式。
 
-### AI 研究应转向能自行发现的元方法 {#cand-meta-method .eg-candidate .opinion}
+### AI 研究应转向能自行发现的元方法 {#cand-meta-method .eg-candidate .opinion data-slug=build-meta-methods}
 
 #### 观点
 
@@ -1001,6 +1010,7 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
         {
           "key": "cand-scaling-preconditions",
           "kind": "knowledge",
+          "logical_slug": "scaling-preconditions",
           "title": "搜索与学习把算力转成能力的两项前提",
           "source_refs": [
             "L6-L12",
@@ -1066,7 +1076,7 @@ The first precondition is that computation actually keeps growing for the proble
 
 ## 提取结果
 
-### 搜索与学习把算力转成能力的两项前提 {#cand-scaling-preconditions .eg-candidate .knowledge}
+### 搜索与学习把算力转成能力的两项前提 {#cand-scaling-preconditions .eg-candidate .knowledge data-slug=scaling-preconditions}
 
 #### 知识内容
 
@@ -1120,12 +1130,13 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 本节的 S2 / M3 口径一字不变。）
 
 **Storage v3 起是 25 个顶层命令**：在 23 条基础上追加 `eg materialize` 与 `eg export`。
+**Candidate review workflow 起是 26 个顶层命令**：再追加 `eg candidate`。
 
-**当前 25 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
+**当前 26 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
 `eg init`、`eg config`、`eg capture`、`eg context`、`eg apply`、`eg search`、`eg card show`、
 `eg rel`、`eg report --last`、`eg deprecate`、`eg restore`、`eg replaced-by`、`eg proposal`、
 `eg delete`、`eg undelete`、`eg mark-reviewed`、`eg unreviewed`、`eg edit`、`eg reconcile`、`eg check`、
-`eg index`、`eg bench`、`eg opinion`、`eg materialize`、`eg export`。
+`eg index`、`eg bench`、`eg opinion`、`eg materialize`、`eg export`、`eg candidate`。
 
 ### 8.1 三个正交维度：改一个绝不碰另两个
 
@@ -1377,13 +1388,13 @@ eg index sync    [--json]
 - **`eg index sync`** 把索引**收敛**到与权威 Markdown 一致：只重算受影响文件对应的行，
   与整库重建的结果**等价**，且**幂等**（第二次跑恒 `action=noop`、零写入）。
   索引缺失 → 退化为全量构建、索引不可用 → 退化为整库重建，**退化一律如实留痕**（不静默）。
-- **Storage v3 candidate sidecar** 位于 `.index/blocks/<n-id>.json`，按 Note 确定性投影
-  candidate key/kind/syntax/span/status/output/payload hash 与 Note path/hash；它不保存正文，
+- **Candidate sidecar schema v2** 位于 `.index/blocks/<n-id>.json`，按 Note 确定性投影
+  candidate key/kind/logical_slug/syntax/span/status/output/payload hash 与 Note path/hash；它不保存正文，
   不改变 SQLite 六表或 `index_meta` 六键。`build` / `rebuild` / `sync` 纳管该目录；
   `eg context` 只读取与当前 Markdown 投影逐字一致的 sidecar，缺失、陈旧、损坏或孤儿均留下
   `W22` / `W23` / `W24` + `Q5` 后回落直接扫描，结果集合与顺序不变。
-- **写命令写后自动同步**：`eg apply` / `eg edit` / `eg delete` / `eg undelete` /
-  `eg mark-reviewed` / `eg reconcile`（以及同走 `apply` 写口的 `deprecate` / `restore` /
+- **写命令写后自动同步**：`eg apply` / `eg edit` / `eg candidate apply` / `eg materialize` /
+  `eg delete` / `eg undelete` / `eg mark-reviewed` / `eg reconcile`（以及同走 `apply` 写口的 `deprecate` / `restore` /
   `replaced-by` / `rel add|remove`）在 **Markdown 落盘且 commit 成功之后**自动把索引带到 fresh。
   三条硬边界：① 索引**未建**时静默跳过 —— 写命令**不替你建索引**；② 索引不可用时如实报
   `W24` 并跳过，**不自动修**（修复走 `eg index rebuild`）；③ 索引同步失败**绝不回滚**已落盘的
@@ -1534,8 +1545,9 @@ M6（S5）**不新增任何顶层命令**（M6 收口时命令总量为 **22**�
 `.index/` 是派生物」这条根边界。
 
 > **post-M6 / current truth（现态，勿被历史断言误判）**：读路径拆分批次新增了顶层命令 `eg opinion`，
-> Storage v3 又新增 `eg materialize` / `eg export`；**当前顶层命令为 25 个**
->（见 §8.2 的「当前 25 命令一览」），不再是 M6 收口时的 22。
+> Storage v3 又新增 `eg materialize` / `eg export`，candidate review workflow 新增
+> `eg candidate`；**当前顶层命令为 26 个**
+>（见 §8.2 的「当前 26 命令一览」），不再是 M6 收口时的 22。
 > 同时 **`W21` 现已启用**：它是 v2 审阅式 Note 的**非 strict 启发式 warning**（§4.3「来源块数显著少于原文章节数」），
 > **strict 下不升级为 error**，也**不能替代来源保真（§3.8）与「缺漏 = 0」**。历史文档里「M6 命令数 22 / W21 不分配」
 > 描述的是 M6 收口时点的事实，与现态并不矛盾——现态以本段为准。

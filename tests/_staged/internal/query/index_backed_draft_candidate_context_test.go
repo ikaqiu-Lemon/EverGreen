@@ -26,7 +26,8 @@ func draftCandidateFixture(t *testing.T) (string, model.NoteID, string) {
 		t.Fatal(err)
 	}
 	extraction, err := store.CandidateDraftBytes([]store.CandidateDraft{{
-		Key: "cand-query", Kind: store.CandidateKindKnowledge, Title: "查询候选",
+		Key: "cand-query", Kind: store.CandidateKindKnowledge,
+		LogicalSlug: "query-candidate", Title: "查询候选",
 		SourceRefs: []string{"L1-L1"}, Rel: "support", Reason: "来源定义",
 		Sections: []store.CandidateDraftSection{{
 			Name: store.SecKnowledge, Body: []byte("候选正文。\n"),
@@ -64,7 +65,8 @@ func TestContextProjectsDraftCandidatesFromAuthoritativeNote(t *testing.T) {
 	}
 	got := ctx.DraftCandidates[0]
 	if got.Note != string(noteID) || got.Path != rel || got.Key != "cand-query" ||
-		got.Kind != "knowledge" || got.Title != "查询候选" ||
+		got.Kind != "knowledge" || got.LogicalSlug != "query-candidate" ||
+		got.Title != "查询候选" ||
 		got.Status != "draft" || got.Output != "" {
 		t.Fatalf("draft candidate 摘要不完整：%+v", got)
 	}

@@ -26,6 +26,9 @@ and published versions follow [Semantic Versioning](https://semver.org/).
 - Storage v3 Note candidates with deterministic Knowledge/Opinion
   materialization through `eg materialize`, plus read-only plain Markdown
   egress through `eg export --plain`.
+- `eg candidate show|apply` for exporting and atomically applying a complete
+  user-reviewable candidate state before materialization. Candidate drafts can
+  carry a stable `logical_slug` independent of their visible title.
 - Rebuildable `.index/blocks/<n-id>.json` candidate sidecars with deterministic
   build/sync, strict Markdown reconciliation, and scan fallback for `eg context`.
 
@@ -42,6 +45,9 @@ and published versions follow [Semantic Versioning](https://semver.org/).
   remains the source of truth and the index is a rebuildable accelerator. Table
   count stays at six; Knowledge and Opinion share `cards`/`cards_fts` via a
   `kind` column plus opinion `validation`.
+- **Breaking (derived sidecar schema only):** candidate block sidecars advance
+  from schema `1` to `2` to include `logical_slug`; they are rebuilt from
+  authoritative Markdown rather than migrated.
 - **Breaking:** `eg context` now returns `draft_candidates`,
   `knowledge_candidates`, and `opinion_candidates`; the deprecated legacy
   `candidates` alias and its unconditional deprecation `I1` are removed in

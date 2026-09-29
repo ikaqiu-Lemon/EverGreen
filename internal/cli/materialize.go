@@ -32,6 +32,7 @@ func materializeCommand() *Command {
 
 物化不调用模型、不访问网络，只校验并复制 Note 内已经存在的确定字节。目标文件与 Note
 映射更新进入同一个 journal v1 write-set；跨日重跑复用 candidate output，完全一致时 no-op。
+--all 在 candidate coverage 仍含 unresolved 时拒绝；--candidate 保留显式部分物化能力。
 退出码：0 成功 / 幂等 no-op | 1 参数非法（零写入） | 2 授权或结构校验失败（零写入） |
         3 B3 冲突或事务已整体回滚（零 commit） |
         4 Git 提交失败（Markdown 已原子生效并保留） |

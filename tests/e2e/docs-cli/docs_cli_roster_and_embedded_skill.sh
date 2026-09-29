@@ -59,8 +59,8 @@ CANON_CMDS=(
 #    （M4=20 / M5=22 / M6=22 均在它之前收口）。故如实登记为「post-M5 追加项」，当前真实顶层
 #    命令集合抬为 23（= 22 + opinion）；M5 历史结论「恰 22」由「摘掉后续新增项」逐条复算，
 #    一个字不放宽、不把当时的 22 篡成 23。追加项必须真在 `eg --help` 命令区（登记了没注册 = 名单造假）。
-POST_M5_ADDED_CMDS=(opinion materialize export)
-# 当前真实顶层命令集合（25 条）= M5 收口 22 + 后续追加的三条命令。
+POST_M5_ADDED_CMDS=(opinion materialize export candidate)
+# 当前真实顶层命令集合（26 条）= M5 收口 22 + 后续追加的四条命令。
 CURRENT_CMDS=("${CANON_CMDS[@]}" "${POST_M5_ADDED_CMDS[@]}")
 WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M5_ADDED_CMDS[@]}))
 

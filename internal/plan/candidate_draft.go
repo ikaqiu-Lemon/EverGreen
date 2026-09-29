@@ -12,7 +12,9 @@ type CandidateDraftSection = store.CandidateDraftSection
 type CandidateCoverage = store.CandidateCoverage
 
 func candidateDraftKnownKeys() []string {
-	return []string{"key", "kind", "title", "source_refs", "rel", "reason", "tags", "sections"}
+	return []string{
+		"key", "kind", "logical_slug", "title", "source_refs", "rel", "reason", "tags", "sections",
+	}
 }
 
 func candidateDraftSectionKnownKeys() []string { return []string{"name", "body"} }
@@ -42,6 +44,7 @@ func parseCandidateDrafts(opIndex int, value interface{}) ([]CandidateDraft, []D
 		draft.Key, _ = asString(m["key"])
 		kind, _ := asString(m["kind"])
 		draft.Kind = store.CandidateKind(kind)
+		draft.LogicalSlug, _ = asString(m["logical_slug"])
 		draft.Title, _ = asString(m["title"])
 		draft.Rel, _ = asString(m["rel"])
 		draft.Reason, _ = asString(m["reason"])

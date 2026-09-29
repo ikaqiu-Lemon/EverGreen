@@ -308,8 +308,20 @@ file changed underneath you, Evergreen skips that file instead of clobbering it.
 
 Storage v3 plans save Knowledge/Opinion drafts inside the Note with
 `write_note.candidate_drafts[]` and the separate `candidate_coverage[]` matrix. The agent may save
-and revise those drafts, but it must not materialize them. Step 4 shows the explicit user
-materialization after the candidate plan has been applied. A plain export is available independently:
+those drafts, but it must not materialize them. Each new draft also carries a user-editable
+`logical_slug`; it controls the final dated filename independently of the visible title. After the
+plan is applied, export the complete review state, edit it, and apply it atomically:
+
+```console
+$ eg candidate show --note n-20260915-bitter-lesson --json | jq '.data' > review.json
+$ eg candidate apply --note n-20260915-bitter-lesson --file review.json --user-request
+```
+
+The review spec can add, delete, rename, reorder, or retype candidates and can change source ranges,
+payloads, slugs, and coverage together. `candidate apply` requires the exact `note_path` and
+`note_hash` returned by `show`, refuses materialized candidates, and preserves every byte outside the
+candidate-managed part of `## 提取结果`. Step 4 shows the later explicit materialization. A plain
+export is available independently:
 
 ```console
 $ eg export --plain --output ../evergreen-plain
@@ -326,7 +338,7 @@ express the boundary, Evergreen also reads this exact L2 fallback:
 
 ```markdown
 <!-- eg:cd:1 <base64url(JSON)> -->
-:::: {#cand-cross-section .eg-candidate .opinion}
+:::: {#cand-cross-section .eg-candidate .opinion data-slug=cross-section-claim}
 ### A claim spanning sections
 
 #### 观点
@@ -336,8 +348,8 @@ The exact candidate payload.
 ```
 
 The anchor, opener, and title must be three adjacent lines. The opener has at least three colons and
-exactly one `cand-*` ID plus `.eg-candidate` and either `.knowledge` or `.opinion`; the first inner
-line is a non-empty attribute-free ATX H3 title. The closing fence has no attributes and at least as
+exactly one `cand-*` ID plus `.eg-candidate`, either `.knowledge` or `.opinion`, and an optional
+`data-slug`; the first inner line is a non-empty attribute-free ATX H3 title. The closing fence has no attributes and at least as
 many colons as the opener. L2 candidates cannot nest. Code fences take precedence, while headings,
 lists, tables, and other Markdown inside the container remain candidate content. Materialization uses
 the same H4 template mapping as H3 candidates, and plain export removes only the two fence lines while
@@ -374,6 +386,7 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
         {
           "key": "cand-general-methods",
           "kind": "knowledge",
+          "logical_slug": "general-methods-scale-with-compute",
           "title": "General methods scale with compute",
           "source_refs": ["L2-L2", "L3-L3"],
           "rel": "support",
@@ -387,6 +400,7 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
         {
           "key": "cand-scale-bet",
           "kind": "opinion",
+          "logical_slug": "encoding-human-knowledge-long-run-bet",
           "title": "Encoding human knowledge is a losing long-run bet",
           "source_refs": ["L4-L4"],
           "rel": "support",
@@ -445,7 +459,7 @@ $ eg apply --plan plan.json
 commit：842c8ddb03a2bbe2eab7c5a99f4495fe1979ba17
 ```
 
-After reviewing or editing the candidate payloads, the user materializes them explicitly:
+After reviewing and atomically applying the complete candidate spec, the user materializes it:
 
 ```console
 $ eg materialize --note n-20260915-bitter-lesson --all --user-request
@@ -453,7 +467,8 @@ $ eg materialize --note n-20260915-bitter-lesson --all --user-request
 
 That transaction creates one `k-*` and one `o-*` (`validation: pending`) and records their persistent
 mapping in the Note. Repeating the command on a later date is a no-op when the mappings and payloads
-still match.
+still match. `--all` refuses any remaining `unresolved` coverage; targeted `--candidate` remains
+available for an explicit partial workflow.
 
 ### 5. Read it back
 
@@ -732,7 +747,7 @@ content to fill it.
 
 ## Command reference
 
-The CLI exposes 25 top-level commands（顶层命令共 25 个）. Run `eg <command> --help` for the
+The CLI exposes 26 top-level commands（顶层命令共 26 个）. Run `eg <command> --help` for the
 authoritative argument list — every help page documents its own exit codes.
 
 **Setup**
@@ -749,6 +764,7 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg capture` | Store source material and add it to the inbox |
 | `eg context` | Read-only: `draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hashes |
 | `eg apply --plan <file\|->` | Validate and apply a ChangePlan |
+| `eg candidate show\|apply` | Export or atomically apply a complete candidate review spec |
 | `eg materialize` | User-initiated deterministic Note candidate materialization |
 | `eg export --plain` | Export data Markdown without Evergreen-specific protocol syntax |
 | `eg report --last` | Read-only replay of the last report-producing write (`eg apply` or `eg capture`) |
@@ -984,8 +1000,9 @@ distinguished by a `kind` column (`knowledge` / `opinion`); an opinion's `valida
 row. There is **no incremental schema migration**: when the on-disk `schema_version` does not match,
 the whole index is discarded and rebuilt from Markdown.
 
-Each `.index/blocks/<n-id>.json` stores only facts reproducible from its Note: Note path/hash and
-candidate key, kind, syntax, source spans, materialization status/output, and payload hash. It does
+Each schema-v2 `.index/blocks/<n-id>.json` stores only facts reproducible from its Note: Note
+path/hash and candidate key, kind, logical slug, syntax, source spans, materialization status/output,
+and payload hash. It does
 not store authoritative Markdown. `eg context` uses a sidecar only after comparing it with the
 current Note projection; missing, stale, corrupt, or orphaned sidecars produce an index diagnostic
 and fall back to the same direct Markdown scan.

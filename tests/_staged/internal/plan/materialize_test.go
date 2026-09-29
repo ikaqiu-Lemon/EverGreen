@@ -335,15 +335,21 @@ func h3CandidatesAsFencedDivs(t *testing.T, raw []byte) []byte {
 	return out
 }
 
-func TestMaterializeCandidatesKeepsDraftCoverageWhileUnresolved(t *testing.T) {
+func TestMaterializeCandidatesRejectsAllWhileUnresolvedButAllowsTargeted(t *testing.T) {
 	fx := newMaterializeFixture(t, true)
-	result, err := MaterializeCandidates(store.New(fx.root),
-		materializeRequest(t, "2026-09-22"))
+	if _, err := MaterializeCandidates(
+		store.New(fx.root), materializeRequest(t, "2026-09-22"),
+	); err == nil || !strings.Contains(err.Error(), "unresolved") {
+		t.Fatalf("--all 应拒绝 unresolved coverage：%v", err)
+	}
+	req := materializeRequest(t, "2026-09-22")
+	req.All, req.Candidate = false, "cand-knowledge"
+	result, err := MaterializeCandidates(store.New(fx.root), req)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("targeted partial materialization 应继续可用：%v", err)
 	}
 	if result.Finalized || len(result.WriteSet) != 2 {
-		t.Fatalf("有 unresolved 时只应写目标与 Note anchor：%+v", result)
+		t.Fatalf("targeted partial 应只写目标与 Note anchor：%+v", result)
 	}
 	noteAfter := materializeWrite(t, result.WriteSet, fx.noteRel)
 	state, err := mdfile.ParseCandidateCoverageState(noteAfter)
@@ -355,6 +361,47 @@ func TestMaterializeCandidatesKeepsDraftCoverageWhileUnresolved(t *testing.T) {
 		bytes.Contains(noteAfter, []byte("eg:nc:1")) ||
 		bytes.Contains(noteAfter, []byte("missing")) {
 		t.Fatalf("unresolved 不得伪造成最终覆盖：\n%s", noteAfter)
+	}
+}
+
+func TestMaterializeCandidatesLogicalSlugOverridesVisibleTitle(t *testing.T) {
+	fx := newMaterializeFixture(t, false)
+	candidates, err := mdfile.ParseCandidates(fx.noteRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := mdfile.ParseCandidateCoverageState(fx.noteRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drafts := make([]store.CandidateDraft, len(candidates))
+	for i, candidate := range candidates {
+		drafts[i], err = mdfile.CandidateDraftFromParsed(candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		drafts[i].Output = ""
+	}
+	drafts[0].LogicalSlug = "agent-development-boundaries"
+	updated, err := mdfile.ReplaceCandidateDraftState(fx.noteRaw, drafts, state.Draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(fx.root, filepath.FromSlash(fx.noteRel)), updated, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := MaterializeCandidates(store.New(fx.root),
+		materializeRequest(t, "2026-09-22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Candidates[0].Output !=
+		"k-20260922-agent-development-boundaries" {
+		t.Fatalf("logical_slug 未覆盖标题派生：%+v", result.Candidates[0])
+	}
+	if result.Candidates[1].Output != "o-20260922-opinion-candidate" {
+		t.Fatalf("legacy 无 slug candidate 不应改变标题派生：%+v", result.Candidates[1])
 	}
 }
 

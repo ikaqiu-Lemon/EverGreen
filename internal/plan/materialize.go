@@ -124,6 +124,10 @@ func MaterializeCandidates(s *store.Store,
 	} else if err := validateDraftCoverage(coverageState.Draft, candidates, sourceRefs); err != nil {
 		return nil, err
 	}
+	if req.All && !coverageState.Finalized && !coverageEligible(coverageState) {
+		return nil, fmt.Errorf(
+			"materialize --all 要求 candidate coverage 不含 unresolved；请先完成审阅")
+	}
 
 	seenOutput := make(map[string]string, len(candidates))
 	for _, candidate := range candidates {
@@ -415,11 +419,15 @@ func materializedExtractionBytes(planned []plannedCandidate,
 func newCandidateTarget(domain string, date model.Date,
 	candidate store.Candidate,
 ) (string, string) {
+	slug := candidate.LogicalSlug
+	if slug == "" {
+		slug = model.Slug(candidate.Title)
+	}
 	if candidate.Kind == store.CandidateKindKnowledge {
-		id := string(model.NewCardID(date, candidate.Title))
+		id := model.PrefixCard + date.Compact() + "-" + slug
 		return id, store.CardRel(domain, id)
 	}
-	id := string(model.NewOpinionID(date, candidate.Title))
+	id := model.PrefixOpinion + date.Compact() + "-" + slug
 	return id, store.OpinionRel(domain, id)
 }
 
@@ -475,6 +483,10 @@ func verifyMappedCandidate(s *store.Store, index store.Index, domain string,
 ) (string, error) {
 	output := candidate.Anchor.Output
 	var expectedPath string
+	parsedOutput, err := model.ParseID(output)
+	if err != nil {
+		return "", err
+	}
 	switch candidate.Kind {
 	case store.CandidateKindKnowledge:
 		if _, err := model.ParseCardID(output); err != nil {
@@ -488,6 +500,11 @@ func verifyMappedCandidate(s *store.Store, index store.Index, domain string,
 		expectedPath = store.OpinionRel(domain, output)
 	default:
 		return "", fmt.Errorf("candidate %s kind 越界：%s", candidate.Key, candidate.Kind)
+	}
+	if candidate.LogicalSlug != "" && parsedOutput.Slug != candidate.LogicalSlug {
+		return "", fmt.Errorf(
+			"candidate %s 的 logical_slug 漂移：output=%s，data-slug=%s",
+			candidate.Key, parsedOutput.Slug, candidate.LogicalSlug)
 	}
 	actualPath, err := index.Resolve(output)
 	if err != nil {

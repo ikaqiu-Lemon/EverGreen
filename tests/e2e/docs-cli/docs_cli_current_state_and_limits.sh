@@ -60,8 +60,8 @@ CANON_CMDS=(
 # `eg opinion`。它不属于任何历史里程碑（M4=20 / M5=22 / M6=22 均在它之前收口），因此如实登记为
 # 「后续新增项」并在复算历史结论时**摘掉**：M6 的历史结论「恰 22 条」一个字不放宽，当前真实顶层
 # 命令集合抬为 23（= 22 + opinion）。追加项必须真在 `eg --help` 里（登记了没注册 = 名单造假）。
-POST_M6_ADDED_CMDS=(opinion materialize export)
-# 当前真实顶层命令集合（25 条）= M6 收口 22 + 后续追加的三条命令。
+POST_M6_ADDED_CMDS=(opinion materialize export candidate)
+# 当前真实顶层命令集合（26 条）= M6 收口 22 + 后续追加的四条命令。
 CURRENT_CMDS=("${CANON_CMDS[@]}" "${POST_M6_ADDED_CMDS[@]}")
 WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M6_ADDED_CMDS[@]}))
 

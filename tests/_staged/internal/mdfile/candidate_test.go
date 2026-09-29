@@ -89,6 +89,120 @@ func TestCandidateRenderParseRoundTripAndScope(t *testing.T) {
 	}
 }
 
+func TestCandidateLogicalSlugRoundTripAndLegacyCompatibility(t *testing.T) {
+	withSlug := candidateDraft(
+		"cand-logical-slug", CandidateKindKnowledge, "中文展示标题")
+	withSlug.LogicalSlug = "agent-development-boundaries"
+	rendered, err := RenderCandidateDraft(withSlug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(rendered, []byte(" data-slug=agent-development-boundaries}")) {
+		t.Fatalf("渲染结果缺 data-slug：\n%s", rendered)
+	}
+	parsed, err := ParseCandidates(candidateNote(rendered))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 1 || parsed[0].LogicalSlug != withSlug.LogicalSlug {
+		t.Fatalf("logical_slug 未往返：%+v", parsed)
+	}
+	projected, err := CandidateDraftFromParsed(parsed[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := RenderCandidateDraft(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(rendered, replayed) {
+		t.Fatalf("带 slug 的 render→parse→render 不稳定：\n%s\n---\n%s", rendered, replayed)
+	}
+
+	legacy := candidateDraft("cand-legacy", CandidateKindKnowledge, "Legacy Title")
+	legacyRendered, err := RenderCandidateDraft(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyParsed, err := ParseCandidates(candidateNote(legacyRendered))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyParsed) != 1 || legacyParsed[0].LogicalSlug != "" {
+		t.Fatalf("无 data-slug 的 legacy candidate 应保持空 logical_slug：%+v", legacyParsed)
+	}
+
+	invalid := withSlug
+	invalid.LogicalSlug = "Bad_Slug"
+	if _, err := RenderCandidateDraft(invalid); err == nil {
+		t.Fatal("非法 logical_slug 未被拒绝")
+	}
+}
+
+func TestReplaceCandidateDraftStateSupportsAtomicCRUD(t *testing.T) {
+	first := candidateDraft("cand-first", CandidateKindKnowledge, "First")
+	second := candidateDraft("cand-second", CandidateKindOpinion, "Second")
+	initial, err := RenderCandidateDraftState(
+		[]CandidateDraft{first, second},
+		[]CandidateCoverage{
+			{Module: "m-first", SourceRefs: []string{"L1-L4"}, Summary: "first",
+				Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-first"}},
+			{Module: "m-second", SourceRefs: []string{"L1-L4"}, Summary: "second",
+				Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-second"}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := candidateNote(initial)
+	beforeCandidates, err := ParseCandidates(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeState, err := ParseCandidateCoverageState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := append([]byte(nil), raw[:beforeCandidates[0].AnchorStart]...)
+	suffix := append([]byte(nil), raw[beforeState.end:]...)
+
+	renamed := candidateDraft("cand-renamed", CandidateKindKnowledge, "Retyped")
+	renamed.LogicalSlug = "reviewed-boundary"
+	renamed.Sections[0].Body = []byte("用户修改后的知识。\n")
+	added := candidateDraft("cand-added", CandidateKindOpinion, "Added")
+	out, err := ReplaceCandidateDraftState(
+		raw,
+		[]CandidateDraft{renamed, added},
+		[]CandidateCoverage{
+			{Module: "m-renamed", SourceRefs: []string{"L1-L4"}, Summary: "renamed",
+				Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-renamed"}},
+			{Module: "m-added", SourceRefs: []string{"L1-L4"}, Summary: "added",
+				Disposition: CandidateCoverageCandidate, Candidates: []string{"cand-added"}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseCandidates(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Key != "cand-renamed" ||
+		got[0].Kind != CandidateKindKnowledge ||
+		got[0].LogicalSlug != "reviewed-boundary" ||
+		got[1].Key != "cand-added" {
+		t.Fatalf("CRUD 后 candidate 状态错误：%+v", got)
+	}
+	afterState, err := ParseCandidateCoverageState(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out[:got[0].AnchorStart], prefix) ||
+		!bytes.Equal(out[afterState.end:], suffix) {
+		t.Fatal("candidate review 替换改动了管理区外字节")
+	}
+}
+
 func TestCandidateAnchorRenderParseStable(t *testing.T) {
 	in := candidateDraft("cand-stable", CandidateKindKnowledge, "稳定候选")
 	body1, err := RenderCandidateDraft(in)
