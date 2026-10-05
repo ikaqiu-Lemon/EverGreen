@@ -18,6 +18,7 @@ package store
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -195,6 +196,16 @@ type NoteInfo struct {
 	Hash   string
 }
 
+// NoteSegmentationInfo is the locating view of an ns-* workspace.
+type NoteSegmentationInfo struct {
+	ID       model.NoteSegmentationID
+	Rel      string
+	Domain   string
+	Note     model.NoteID
+	NoteHash string
+	Hash     string
+}
+
 // ScanNotes 扫描 `domains/<d>/notes/` 下的材料笔记（S1 全库扫描版）。
 // 结果按相对路径升序。
 func (s *Store) ScanNotes() ([]NoteInfo, error) {
@@ -232,6 +243,51 @@ func (s *Store) NoteOf(id model.SourceID) (NoteInfo, bool, error) {
 		}
 	}
 	return NoteInfo{}, false, nil
+}
+
+// ScanNoteSegmentations scans `domains/<d>/note-segments/`.
+func (s *Store) ScanNoteSegmentations() ([]NoteSegmentationInfo, error) {
+	var out []NoteSegmentationInfo
+	err := s.walkMarkdown(DirDomains, func(rel string, raw []byte) error {
+		if path.Base(path.Dir(rel)) != DirNoteSegmentations {
+			return nil
+		}
+		_, segmentation, err := mdfile.ParseNoteSegmentation(raw)
+		if err != nil {
+			return fmt.Errorf("%s：%w", rel, err)
+		}
+		out = append(out, NoteSegmentationInfo{
+			ID: segmentation.ID, Rel: rel, Domain: DomainOf(rel),
+			Note: segmentation.Note, NoteHash: segmentation.NoteHash,
+			Hash: ContentHash(raw),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Rel < out[j].Rel })
+	return out, nil
+}
+
+// NoteSegmentationOf returns the Note's unique workspace.
+func (s *Store) NoteSegmentationOf(id model.NoteID) (NoteSegmentationInfo, bool, error) {
+	items, err := s.ScanNoteSegmentations()
+	if err != nil {
+		return NoteSegmentationInfo{}, false, err
+	}
+	var found NoteSegmentationInfo
+	for _, item := range items {
+		if item.Note != id {
+			continue
+		}
+		if found.ID != "" {
+			return NoteSegmentationInfo{}, false, fmt.Errorf(
+				"Note %s 存在多个划分工作区：%s / %s", id, found.Rel, item.Rel)
+		}
+		found = item
+	}
+	return found, found.ID != "", nil
 }
 
 // walkMarkdown 遍历 vault 内某个子目录下的 Markdown 文件（相对路径 + 原始字节）。

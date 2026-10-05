@@ -22,9 +22,10 @@ import (
 //
 // 关系一律引用 ID、不引用路径，因此文件允许被重命名或移动（id → path 由扫描完成）。
 const (
-	PrefixSource = "s-"
-	PrefixNote   = "n-"
-	PrefixCard   = "k-"
+	PrefixSource           = "s-"
+	PrefixNote             = "n-"
+	PrefixNoteSegmentation = "ns-"
+	PrefixCard             = "k-"
 
 	// PrefixOpinion 是观点前缀（Schema v2）。观点与知识是**同级**产物，
 	// 不是知识的子类型，因此拿到独立前缀而非 `k-` 上的一个字段。
@@ -41,16 +42,20 @@ type SourceID string
 // NoteID 是材料笔记 ID（前缀 n-）。
 type NoteID string
 
+// NoteSegmentationID 是 Note 的 Knowledge/Opinion 划分工作区 ID（前缀 ns-）。
+type NoteSegmentationID string
+
 // CardID 是知识卡 ID（前缀 k-）。
 type CardID string
 
 // OpinionID 是观点 ID（前缀 o-）。
 type OpinionID string
 
-func (id SourceID) String() string  { return string(id) }
-func (id NoteID) String() string    { return string(id) }
-func (id CardID) String() string    { return string(id) }
-func (id OpinionID) String() string { return string(id) }
+func (id SourceID) String() string           { return string(id) }
+func (id NoteID) String() string             { return string(id) }
+func (id NoteSegmentationID) String() string { return string(id) }
+func (id CardID) String() string             { return string(id) }
+func (id OpinionID) String() string          { return string(id) }
 
 // ParsedID 是 ID 的结构化解析结果。Slug 只作人眼可读信息随附，不参与任何判定。
 type ParsedID struct {
@@ -64,7 +69,7 @@ type ParsedID struct {
 // 单一定义点：ParseID 的遍历与错误信息都读它，新增实体只需在此登记一次，
 // 不会出现「解析认了但错误信息没提」这种半纳管状态。
 func KnownPrefixes() []string {
-	return []string{PrefixSource, PrefixNote, PrefixCard, PrefixOpinion,
+	return []string{PrefixSource, PrefixNote, PrefixNoteSegmentation, PrefixCard, PrefixOpinion,
 		PrefixReview, PrefixProposal}
 }
 
@@ -89,8 +94,8 @@ func ParseID(raw string) (ParsedID, error) {
 		return ParsedID{Prefix: p, Date: date, Slug: slug}, nil
 	}
 	return ParsedID{}, fmt.Errorf(
-		"非法 ID %q：前缀必须是 %s / %s / %s / %s（S2 预留 %s / %s）",
-		raw, PrefixSource, PrefixNote, PrefixCard, PrefixOpinion,
+		"非法 ID %q：前缀必须是 %s / %s / %s / %s / %s（S2 预留 %s / %s）",
+		raw, PrefixSource, PrefixNote, PrefixNoteSegmentation, PrefixCard, PrefixOpinion,
 		PrefixReview, PrefixProposal)
 }
 
@@ -131,6 +136,14 @@ func ParseNoteID(raw string) (NoteID, error) {
 	return NoteID(raw), nil
 }
 
+// ParseNoteSegmentationID 解析并校验 ns- 前缀。
+func ParseNoteSegmentationID(raw string) (NoteSegmentationID, error) {
+	if _, err := parseWithPrefix(raw, PrefixNoteSegmentation); err != nil {
+		return "", err
+	}
+	return NoteSegmentationID(raw), nil
+}
+
 // ParseCardID 解析并校验前缀。
 func ParseCardID(raw string) (CardID, error) {
 	if _, err := parseWithPrefix(raw, PrefixCard); err != nil {
@@ -155,6 +168,12 @@ func (id SourceID) Valid() bool {
 
 // Valid 报告 ID 前缀与形态是否合法。
 func (id NoteID) Valid() bool { _, err := parseWithPrefix(string(id), PrefixNote); return err == nil }
+
+// Valid 报告 ID 前缀与形态是否合法。
+func (id NoteSegmentationID) Valid() bool {
+	_, err := parseWithPrefix(string(id), PrefixNoteSegmentation)
+	return err == nil
+}
 
 // Valid 报告 ID 前缀与形态是否合法。
 func (id CardID) Valid() bool { _, err := parseWithPrefix(string(id), PrefixCard); return err == nil }
@@ -202,10 +221,23 @@ func (e RelationEndpoint) Valid() bool {
 	return err == nil
 }
 
-// NewSourceID / NewNoteID / NewCardID / NewOpinionID 生成稳定 ID。同一 (日期, 标题) 幂等。
+// NewSourceID / NewNoteID / NewNoteSegmentationID / NewCardID / NewOpinionID
+// 生成稳定 ID。同一 (日期, 标题) 幂等。
 func NewSourceID(d Date, title string) SourceID { return SourceID(newID(PrefixSource, d, title)) }
 func NewNoteID(d Date, title string) NoteID     { return NoteID(newID(PrefixNote, d, title)) }
-func NewCardID(d Date, title string) CardID     { return CardID(newID(PrefixCard, d, title)) }
+func NewNoteSegmentationID(d Date, title string) NoteSegmentationID {
+	return NoteSegmentationID(newID(PrefixNoteSegmentation, d, title))
+}
+
+// NoteSegmentationIDForNote derives the canonical one-to-one ns-* ID.
+func NoteSegmentationIDForNote(id NoteID) (NoteSegmentationID, error) {
+	if !id.Valid() {
+		return "", fmt.Errorf("无法从非法 NoteID %q 推导划分工作区 ID", id)
+	}
+	return NoteSegmentationID(PrefixNoteSegmentation + strings.TrimPrefix(string(id), PrefixNote)), nil
+}
+
+func NewCardID(d Date, title string) CardID { return CardID(newID(PrefixCard, d, title)) }
 func NewOpinionID(d Date, title string) OpinionID {
 	return OpinionID(newID(PrefixOpinion, d, title))
 }

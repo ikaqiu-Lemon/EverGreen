@@ -35,6 +35,7 @@ const (
 	dirSources      = "sources"
 	dirDomains      = "domains"
 	dirNotes        = "notes"
+	dirNoteSegments = "note-segments"
 	dirKnowledge    = "knowledge"
 	// dirOpinions 是 schema v2 新增的观点分区（`domains/<d>/opinions/`）。
 	// `eg init` 的骨架里没有它：一个领域的第一条观点才会创建该目录，
@@ -83,6 +84,25 @@ type NoteView struct {
 	Source string `json:"source"`
 }
 
+type SegmentationCoverageView struct {
+	Module      string   `json:"module"`
+	NoteRefs    []string `json:"note_refs"`
+	Summary     string   `json:"summary"`
+	Disposition string   `json:"disposition"`
+	Candidates  []string `json:"candidates"`
+	Reason      string   `json:"reason"`
+}
+
+// NoteSegmentationView exposes the workspace linked to a selected Note.
+type NoteSegmentationView struct {
+	ID       string                     `json:"id"`
+	Path     string                     `json:"path"`
+	Note     string                     `json:"note"`
+	NoteHash string                     `json:"note_hash"`
+	Stale    bool                       `json:"workspace_stale"`
+	Coverage []SegmentationCoverageView `json:"coverage"`
+}
+
 // CardView 是一张同领域 active 知识卡（收敛输入）。
 type CardView struct {
 	ID    string   `json:"id"`
@@ -105,15 +125,18 @@ type Candidate struct {
 // only identity, materialization state, stable output mapping, and a hash of
 // the exact H3 payload interval.
 type DraftCandidate struct {
-	Note        string `json:"note"`
-	Path        string `json:"path"`
-	Key         string `json:"key"`
-	Kind        string `json:"kind"`
-	LogicalSlug string `json:"logical_slug"`
-	Title       string `json:"title"`
-	Status      string `json:"status"`
-	Output      string `json:"output"`
-	PayloadHash string `json:"payload_hash"`
+	Note          string `json:"note"`
+	Path          string `json:"path"`
+	Workspace     string `json:"workspace,omitempty"`
+	WorkspacePath string `json:"workspace_path,omitempty"`
+	Stale         bool   `json:"workspace_stale,omitempty"`
+	Key           string `json:"key"`
+	Kind          string `json:"kind"`
+	LogicalSlug   string `json:"logical_slug"`
+	Title         string `json:"title"`
+	Status        string `json:"status"`
+	Output        string `json:"output"`
+	PayloadHash   string `json:"payload_hash"`
 }
 
 // Context 是 eg context 的输出载荷。
@@ -125,10 +148,11 @@ type DraftCandidate struct {
 // （「这条我是不是已经提过了」）。提案正文**不进上下文**：ProposalSummary 里
 // 没有任何承载七个 H2 内容的字段，因此「只给摘要」是结构性的，不靠调用方自律。
 type Context struct {
-	Domain string      `json:"domain"`
-	Source *SourceView `json:"source"`
-	Notes  []NoteView  `json:"notes"`
-	Cards  []CardView  `json:"cards"`
+	Domain            string                 `json:"domain"`
+	Source            *SourceView            `json:"source"`
+	Notes             []NoteView             `json:"notes"`
+	NoteSegmentations []NoteSegmentationView `json:"note_segmentations"`
+	Cards             []CardView             `json:"cards"`
 	// DraftCandidates comes only from candidate-bearing Notes. These entries
 	// never join the already-materialized Knowledge/Opinion recommendation
 	// sets below.
@@ -161,6 +185,7 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	ctx := &Context{
 		Domain:              req.Domain,
 		Notes:               []NoteView{},
+		NoteSegmentations:   []NoteSegmentationView{},
 		Cards:               []CardView{},
 		DraftCandidates:     []DraftCandidate{},
 		KnowledgeCandidates: []Candidate{},
@@ -191,17 +216,41 @@ func Build(req Request, hash Hasher) (*Context, error) {
 	// Markdown 投影逐字对账的 sidecar 读取；sidecar 不健康时回落同一投影函数，
 	// 并按查询域惯例留下 W22/W23/W24 + Q5。
 	var relevantNotes []NoteEntry
+	relevantNoteHashes := map[string]string{}
 	for _, n := range notes {
 		if target != nil && n.Source != target.ID {
 			continue
 		}
 		relevantNotes = append(relevantNotes, n)
+		relevantNoteHashes[n.ID] = hash(n.Raw)
 		ctx.Notes = append(ctx.Notes, NoteView{ID: n.ID, Path: n.Path, Source: n.Source})
 		ctx.Base[n.Path] = hash(n.Raw)
 	}
+	var relevantSegmentations []NoteSegmentationEntry
+	for _, segmentation := range scan.NoteSegmentations {
+		currentHash, ok := relevantNoteHashes[segmentation.Note]
+		if !ok {
+			continue
+		}
+		coverage := make([]SegmentationCoverageView, len(segmentation.Coverage))
+		for i, item := range segmentation.Coverage {
+			coverage[i] = SegmentationCoverageView{
+				Module: item.Module, NoteRefs: append([]string(nil), item.NoteRefs...),
+				Summary: item.Summary, Disposition: item.Disposition,
+				Candidates: append([]string(nil), item.Candidates...), Reason: item.Reason,
+			}
+		}
+		relevantSegmentations = append(relevantSegmentations, segmentation)
+		ctx.NoteSegmentations = append(ctx.NoteSegmentations, NoteSegmentationView{
+			ID: segmentation.ID, Path: segmentation.Path, Note: segmentation.Note,
+			NoteHash: segmentation.NoteHash, Stale: segmentation.NoteHash != currentHash,
+			Coverage: coverage,
+		})
+		ctx.Base[segmentation.Path] = hash(segmentation.Raw)
+	}
 	var candidateDiags, sidecarDiags []Diagnostic
 	ctx.DraftCandidates, candidateDiags, sidecarDiags =
-		projectDraftCandidates(req.Root, relevantNotes, hash)
+		projectDraftCandidates(req.Root, relevantNotes, relevantSegmentations, hash)
 
 	// ② 收敛输入：同领域 active 卡。打分输入集合只含 kind='card' 且 status: active，
 	//    上面的笔记集合在这一步之前已被排除（EG-NOTE-04）。

@@ -56,13 +56,84 @@ func CandidateBlockDocuments(notes []NoteEntry, hash Hasher) []index.BlockDocume
 	return docs
 }
 
+// CandidateWorkspaceDocuments projects ns-* when present and falls back to
+// legacy candidate-bearing Notes that have not been migrated yet.
+func CandidateWorkspaceDocuments(
+	notes []NoteEntry,
+	workspaces []NoteSegmentationEntry,
+	hash Hasher,
+) []index.BlockDocument {
+	noteByID := make(map[string]NoteEntry, len(notes))
+	workspaceByNote := make(map[string]NoteSegmentationEntry, len(workspaces))
+	for _, note := range notes {
+		noteByID[note.ID] = note
+	}
+	for _, workspace := range workspaces {
+		workspaceByNote[workspace.Note] = workspace
+	}
+	out := make([]index.BlockDocument, 0, len(notes))
+	for _, note := range notes {
+		workspace, ok := workspaceByNote[note.ID]
+		if !ok {
+			out = append(out, CandidateBlockDocuments([]NoteEntry{note}, hash)...)
+			continue
+		}
+		noteHash := hash(note.Raw)
+		doc := index.BlockDocument{
+			SchemaVersion:     index.BlockSidecarVersion,
+			NoteID:            note.ID,
+			NotePath:          note.Path,
+			NoteHash:          noteHash,
+			WorkspaceID:       workspace.ID,
+			WorkspacePath:     workspace.Path,
+			WorkspaceHash:     hash(workspace.Raw),
+			WorkspaceNoteHash: workspace.NoteHash,
+			Stale:             workspace.NoteHash != noteHash,
+			Candidates:        []index.BlockCandidate{},
+			Diagnostics:       []index.BlockDiagnostic{},
+		}
+		candidates, err := mdfile.ParseCandidates(workspace.Raw)
+		if err != nil {
+			diag := newQ1(workspace.Path,
+				"Note segmentation candidate 协议不可解析，候选已跳过：%v", err)
+			doc.Diagnostics = append(doc.Diagnostics, index.BlockDiagnostic{
+				Code: diag.Code, Level: diag.Level, Path: diag.Path, Message: diag.Message,
+			})
+			out = append(out, doc)
+			continue
+		}
+		for _, candidate := range candidates {
+			status := "draft"
+			if candidate.Anchor.Output != "" {
+				status = "materialized"
+			}
+			doc.Candidates = append(doc.Candidates, index.BlockCandidate{
+				Key: candidate.Key, Kind: string(candidate.Kind),
+				LogicalSlug: candidate.LogicalSlug,
+				Syntax:      string(candidate.Syntax), Title: candidate.Title,
+				Status: status, Output: candidate.Anchor.Output,
+				PayloadHash: hash(candidate.Raw(workspace.Raw)),
+				Span: index.BlockSpan{
+					AnchorStart: candidate.AnchorStart, AnchorEnd: candidate.AnchorEnd,
+					BoundaryStart: candidate.BoundaryStart, BoundaryEnd: candidate.BoundaryEnd,
+					HeadingStart: candidate.HeadingStart, HeadingEnd: candidate.HeadingEnd,
+					ContentEnd: candidate.ContentEnd,
+				},
+			})
+		}
+		out = append(out, doc)
+	}
+	return out
+}
+
 func projectDraftCandidates(root string, notes []NoteEntry,
+	workspaces []NoteSegmentationEntry,
 	hash Hasher,
 ) ([]DraftCandidate, []Diagnostic, []Diagnostic) {
 	if len(notes) == 0 {
 		return []DraftCandidate{}, []Diagnostic{}, nil
 	}
-	expected := CandidateBlockDocuments(notes, hash)
+	expected := CandidateWorkspaceDocuments(notes, workspaces, hash)
 	hasCandidateFacts := false
 	for _, doc := range expected {
 		if len(doc.Candidates) > 0 || len(doc.Diagnostics) > 0 {
@@ -95,7 +166,9 @@ func projectDraftCandidates(root string, notes []NoteEntry,
 		for _, candidate := range doc.Candidates {
 			drafts = append(drafts, DraftCandidate{
 				Note: doc.NoteID, Path: doc.NotePath, Key: candidate.Key,
-				Kind: candidate.Kind, LogicalSlug: candidate.LogicalSlug,
+				Workspace: doc.WorkspaceID, WorkspacePath: doc.WorkspacePath,
+				Stale: doc.Stale,
+				Kind:  candidate.Kind, LogicalSlug: candidate.LogicalSlug,
 				Title: candidate.Title, Status: candidate.Status,
 				Output: candidate.Output, PayloadHash: candidate.PayloadHash,
 			})

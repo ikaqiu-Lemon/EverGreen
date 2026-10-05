@@ -163,7 +163,7 @@ func indexDeltaFor(snap index.Snapshot, written []string) index.Delta {
 		}
 	}
 	for _, block := range snap.Blocks {
-		if affectedBlocks[block.NotePath] {
+		if affectedBlocks[block.NotePath] || affectedBlocks[block.WorkspacePath] {
 			d.Blocks = append(d.Blocks, block)
 		}
 	}
@@ -209,7 +209,8 @@ func isIndexedRel(rel string) bool {
 func isNoteRel(rel string) bool {
 	parts := strings.Split(strings.TrimPrefix(rel, "./"), "/")
 	return len(parts) == 4 && parts[0] == store.DirDomains &&
-		parts[2] == store.DirNotes && strings.HasSuffix(parts[3], ".md")
+		(parts[2] == store.DirNotes || parts[2] == store.DirNoteSegmentations) &&
+		strings.HasSuffix(parts[3], ".md")
 }
 
 // indexWriteLabel 是诊断文案里的命令名（`eg edit`、`eg rel add`…）。

@@ -19,21 +19,23 @@ type Kind = mdfile.Kind
 
 // 产物类型。
 const (
-	KindSource = mdfile.KindSource
-	KindNote   = mdfile.KindNote
-	KindCard   = mdfile.KindCard
+	KindSource           = mdfile.KindSource
+	KindNote             = mdfile.KindNote
+	KindNoteSegmentation = mdfile.KindNoteSegmentation
+	KindCard             = mdfile.KindCard
 	// KindOpinion 是观点（Schema v2）。plan 层按此 Kind 取分区口径。
 	KindOpinion = mdfile.KindOpinion
 )
 
 // 固定分区名（知识卡三分区 + 材料笔记四分区 + 观点五分区，Schema v2 §3.2）。
 const (
-	SecKnowledge  = mdfile.SecKnowledge
-	SecBoundary   = mdfile.SecBoundary
-	SecUserAppend = mdfile.SecUserAppend
-	SecNoteBody   = mdfile.SecNoteBody
-	SecExtraction = mdfile.SecExtraction
-	SecOpenQuest  = mdfile.SecOpenQuest
+	SecKnowledge    = mdfile.SecKnowledge
+	SecBoundary     = mdfile.SecBoundary
+	SecUserAppend   = mdfile.SecUserAppend
+	SecNoteBody     = mdfile.SecNoteBody
+	SecExtraction   = mdfile.SecExtraction
+	SecOpenQuest    = mdfile.SecOpenQuest
+	SecSegmentation = mdfile.SecSegmentation
 
 	// —— 观点固定五分区（Schema v2 §3.2）——
 	SecOpinionClaim = mdfile.SecOpinionClaim
@@ -55,8 +57,14 @@ func KnownSections(kind Kind) []string { return mdfile.KnownSections(kind) }
 // CardSections 返回知识卡的固定三分区（顺序固定）。
 func CardSections() []string { return mdfile.CardSections() }
 
-// NoteSections 返回材料笔记的固定四分区（顺序固定）。
+// NoteSections 返回材料笔记的固定三分区（顺序固定）。
 func NoteSections() []string { return mdfile.NoteSections() }
+
+// NoteSegmentationSections 返回划分工作区的固定两分区（顺序固定）。
+func NoteSegmentationSections() []string { return mdfile.NoteSegmentationSections() }
+
+// V2Sections 返回兼容读取/写入所需的 Schema v2 分区顺序。
+func V2Sections(kind Kind) []string { return mdfile.V2Sections(kind) }
 
 // LegacyV1Sections 返回该类型在 v1 是固定分区、v2 起不再是固定分区的分区名。
 func LegacyV1Sections(kind Kind) []string { return mdfile.LegacyV1Sections(kind) }

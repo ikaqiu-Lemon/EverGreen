@@ -38,7 +38,7 @@ func v2Plan(t *testing.T, files map[string]string, ops string) string {
 	}
 	return fmt.Sprintf(`{"plan_version":%d,"verb":"process","domain":"ai-infra",`+
 		`"reason":"Schema v2 用例","requirement_ids":["EG-KNW-04"],"base":{%s},"ops":[%s]}`,
-		PlanVersion, strings.Join(base, ","), ops)
+		PlanVersionV2, strings.Join(base, ","), ops)
 }
 
 // v2Run 用给定库跑一次 v2 校验（自动路径 P-A：不带命令行佐证）。

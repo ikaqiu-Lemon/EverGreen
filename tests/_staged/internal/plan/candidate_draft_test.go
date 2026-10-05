@@ -22,10 +22,26 @@ func draftCandidate(key, kind, title string, refs, sections []string) string {
 		ncJSONArr(refs), strings.Join(sections, ","))
 }
 
+func draftCandidateV3(key, kind, title string, refs, sections []string) string {
+	return fmt.Sprintf(
+		`{"key":%q,"kind":%q,"logical_slug":%q,"title":%q,"note_refs":%s,"rel":"support",`+
+			`"reason":"Note blocks 支持","tags":["draft"],"sections":[%s]}`,
+		key, kind, strings.TrimPrefix(key, "cand-"), title,
+		ncJSONArr(refs), strings.Join(sections, ","))
+}
+
 func draftCoverage(module string, refs []string, disposition string,
 	candidates []string, reason string) string {
 	return fmt.Sprintf(
 		`{"module":%q,"source_refs":%s,"summary":"模块摘要","disposition":%q,`+
+			`"candidates":%s,"reason":%q}`,
+		module, ncJSONArr(refs), disposition, ncJSONArr(candidates), reason)
+}
+
+func draftCoverageV3(module string, refs []string, disposition string,
+	candidates []string, reason string) string {
+	return fmt.Sprintf(
+		`{"module":%q,"note_refs":%s,"summary":"模块摘要","disposition":%q,`+
 			`"candidates":%s,"reason":%q}`,
 		module, ncJSONArr(refs), disposition, ncJSONArr(candidates), reason)
 }
@@ -175,6 +191,69 @@ func TestCandidateDraftWriteNotePersistsWithoutFinalOutputs(t *testing.T) {
 	}
 	if len(coverage) != 2 {
 		t.Fatalf("候选覆盖条目数=%d", len(coverage))
+	}
+}
+
+func TestPlanV3WriteNoteCreatesPureNoteAndSegmentationWorkspace(t *testing.T) {
+	files := covSourceFile(covBody4)
+	drafts := []string{
+		draftCandidateV3("cand-knowledge", "knowledge", "知识候选", []string{"B1"},
+			[]string{draftSection(mdfile.SecKnowledge, "知识正文。")}),
+		draftCandidateV3("cand-opinion", "opinion", "观点候选", []string{"B2"},
+			[]string{draftSection(mdfile.SecOpinionClaim, "观点正文。")}),
+	}
+	coverage := []string{
+		draftCoverageV3("m-1", []string{"B1"}, mdfile.CandidateCoverageCandidate,
+			[]string{"cand-knowledge"}, ""),
+		draftCoverageV3("m-2", []string{"B2"}, mdfile.CandidateCoverageCandidate,
+			[]string{"cand-opinion"}, ""),
+	}
+	op := draftWriteNote("n-20260922-v3", drafts, coverage)
+	op = strings.ReplaceAll(op, `"source_refs"`, `"note_refs"`)
+	var base []string
+	for rel, content := range files {
+		base = append(base, fmt.Sprintf("%q:%q", rel, store.ContentHash([]byte(content))))
+	}
+	rawPlan := fmt.Sprintf(`{"plan_version":%d,"verb":"process","domain":"ai-infra",`+
+		`"reason":"v3 双文件","requirement_ids":["EG-KNW-04"],"base":{%s},"ops":[%s]}`,
+		PlanVersion, strings.Join(base, ","), op)
+	p, err := Parse([]byte(rawPlan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := Validate(p, vault(t, files))
+	requireNoError(t, res)
+	if len(res.Actions) != 1 || res.Actions[0].Segmentation == nil {
+		t.Fatalf("v3 write_note 应展开一条带 ns 子写入的 action：%+v", res.Actions)
+	}
+	if got := res.Targets(); len(got) != 2 ||
+		got[1] != "domains/ai-infra/note-segments/ns-20260922-v3.md" {
+		t.Fatalf("v3 target 集合应含 n + ns：%v", got)
+	}
+
+	dir, out := execOn(t, files, res)
+	notePath := "domains/ai-infra/notes/n-20260922-v3.md"
+	segmentationPath := "domains/ai-infra/note-segments/ns-20260922-v3.md"
+	noteRaw := []byte(readVaultFile(t, dir, notePath))
+	if bytes.Contains(noteRaw, []byte("## "+store.SecExtraction+"\n")) ||
+		bytes.Contains(noteRaw, []byte("[Knowledge Candidate]")) {
+		t.Fatalf("v3 Note 必须是纯学习正文：\n%s", noteRaw)
+	}
+	segmentationRaw := []byte(readVaultFile(t, dir, segmentationPath))
+	_, segmentation, err := mdfile.ParseNoteSegmentation(segmentationRaw)
+	if err != nil {
+		t.Fatalf("ns-* 不可解析：%v\n%s", err, segmentationRaw)
+	}
+	if segmentation.NoteHash != store.ContentHash(noteRaw) {
+		t.Fatalf("ns.note_hash=%s，当前 Note hash=%s",
+			segmentation.NoteHash, store.ContentHash(noteRaw))
+	}
+	candidates, err := mdfile.ParseCandidates(segmentationRaw)
+	if err != nil || len(candidates) != 2 {
+		t.Fatalf("ns candidates=%d err=%v", len(candidates), err)
+	}
+	if out.Segmentation.Path != segmentationPath {
+		t.Fatalf("执行结果未报告划分工作区：%+v", out.Segmentation)
 	}
 }
 

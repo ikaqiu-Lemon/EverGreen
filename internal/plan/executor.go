@@ -49,6 +49,15 @@ type NoteRecord struct {
 	Reused      bool
 }
 
+// NoteSegmentationRecord is the ns-* workspace created with a v3 Note.
+type NoteSegmentationRecord struct {
+	ID       string
+	Note     string
+	Domain   string
+	Path     string
+	NoteHash string
+}
+
 // MaterialRecord 是一条已写入的材料关系（四要素）。
 type MaterialRecord struct {
 	Card   string
@@ -110,8 +119,9 @@ type ExecResult struct {
 	Skipped  []SkipItem
 	Warnings []Diagnostic
 
-	Source SourceRecord
-	Note   NoteRecord
+	Source       SourceRecord
+	Note         NoteRecord
+	Segmentation NoteSegmentationRecord
 
 	CardsCreated []string
 	CardsReused  []string
@@ -351,6 +361,26 @@ func (e *executor) sourceNew(a Action) {
 
 func (e *executor) noteNew(a Action) {
 	op := a.Op
+	if a.Segmentation != nil {
+		if existing, found, scanErr := e.s.NoteSegmentationOf(model.NoteID(a.ID)); scanErr != nil {
+			e.out.Failures = append(e.out.Failures, Diagnostic{
+				Code: Unnumbered, Level: LevelWarning, OpIndex: a.OpIndex,
+				Path:    opPath(a.OpIndex, "segmentation_id"),
+				Message: fmt.Sprintf("检查既有 ns-* 失败：%v", scanErr),
+				Target:  a.Segmentation.ID,
+			})
+			return
+		} else if found {
+			e.out.Failures = append(e.out.Failures, Diagnostic{
+				Code: Unnumbered, Level: LevelWarning, OpIndex: a.OpIndex,
+				Path: opPath(a.OpIndex, "segmentation_id"),
+				Message: fmt.Sprintf("Note %s 已有划分工作区 %s（%s），拒绝创建第二份",
+					a.ID, existing.ID, existing.Rel),
+				Target: a.Segmentation.ID,
+			})
+			return
+		}
+	}
 	out, err := e.s.ApplyNote(store.NoteSpec{
 		Rel:        a.Path,
 		ID:         model.NoteID(a.ID),
@@ -361,12 +391,46 @@ func (e *executor) noteNew(a Action) {
 		Tags:       op.Tags,
 		Sections:   sectionAppends(a.Sections),
 		Extraction: a.Extraction,
+		LegacyV2:   a.LegacyNoteV2,
 		Inbox:      store.InboxSpec{ExpectedHash: e.baseHash(store.UnprocessedFile)},
 	})
 	if !e.record(a, out.Note, err) {
 		return
 	}
 	e.out.Note = NoteRecord{ID: a.ID, Domain: a.Domain, Path: a.Path, Reused: out.Reused}
+	if a.Segmentation != nil {
+		noteFile, readErr := e.s.Read(a.Path)
+		if readErr != nil {
+			e.out.Failures = append(e.out.Failures, Diagnostic{
+				Code: Unnumbered, Level: LevelWarning, OpIndex: a.OpIndex,
+				Path:    opPath(a.OpIndex, "segmentation_id"),
+				Message: fmt.Sprintf("读取刚写入的 Note 以生成 ns-* 失败：%v", readErr),
+				Target:  a.Segmentation.ID,
+			})
+			return
+		}
+		segAction := a
+		segAction.ID = a.Segmentation.ID
+		segAction.Path = a.Segmentation.Path
+		segResult, segErr := e.s.ApplyNoteSegmentation(store.NoteSegmentationSpec{
+			Rel:      a.Segmentation.Path,
+			ID:       model.NoteSegmentationID(a.Segmentation.ID),
+			Note:     model.NoteID(a.ID),
+			NoteHash: noteFile.Hash,
+			Title:    op.Title,
+			Date:     e.dateOf(),
+			Stamp:    e.opt.Stamp,
+			Tags:     op.Tags,
+			Sections: sectionAppends(a.Segmentation.Sections),
+		})
+		if !e.record(segAction, segResult, segErr) {
+			return
+		}
+		e.out.Segmentation = NoteSegmentationRecord{
+			ID: a.Segmentation.ID, Note: a.ID, Domain: a.Domain,
+			Path: a.Segmentation.Path, NoteHash: noteFile.Hash,
+		}
+	}
 	// EG-SRC-02：条目未成功移出必须显式上报，绝不静默。
 	e.inbox(a, op.Source, out.Inbox, out.InboxSkip, "收件区条目未移出")
 }

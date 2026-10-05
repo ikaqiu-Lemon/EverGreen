@@ -54,6 +54,7 @@ import (
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/plan"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 )
 
 // EditNoStateChangeNotice 陈述「系统没做什么」：编辑正文不牵连三个正交维度。
@@ -177,20 +178,35 @@ func (r *Root) runEdit(inv *Invocation) (*Result, error) {
 // B3 不因此放宽——写前重算不一致仍然跳过该文件并进 `skipped[]`（退 3）。
 func (r *Root) buildEditPlan(inv *Invocation, target, candidate, section string, content []byte) (
 	*plan.ChangePlan, error) {
-	base, paths, err := planBase(inv.VaultRoot, []string{target})
+	planTarget := target
+	if candidate != "" {
+		noteID, err := model.ParseNoteID(target)
+		if err != nil {
+			return nil, &UsageError{Msg: fmt.Sprintf(
+				"candidate 模式的 --target 必须是 Note ID：%v", err)}
+		}
+		workspace, found, err := store.New(inv.VaultRoot).NoteSegmentationOf(noteID)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			planTarget = string(workspace.ID)
+		}
+	}
+	base, paths, err := planBase(inv.VaultRoot, []string{planTarget})
 	if err != nil {
 		return nil, err
 	}
 	// base 是锁外采样，临界区在 S2 之后按同一 ID 重采（I-…-022）；B3 依旧逐字比对。
-	inv.selfComputedBase([]string{target})
-	domain, derr := stateOpDomain(inv, paths[target])
+	inv.selfComputedBase([]string{planTarget})
+	domain, derr := stateOpDomain(inv, paths[planTarget])
 	if derr != nil {
 		return nil, derr
 	}
 	op := &plan.Op{
 		Index:          0,
 		Name:           plan.OpEditSection,
-		Target:         target,
+		Target:         planTarget,
 		Candidate:      candidate,
 		Section:        section,
 		Content:        content,

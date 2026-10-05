@@ -15,11 +15,14 @@ import (
 )
 
 const (
-	candidateAnchorFamily  = "eg:cd:"
-	candidateAnchorVersion = "1"
-	candidateAnchorTag     = candidateAnchorFamily + candidateAnchorVersion
-	candidateAnchorOpen    = "<!-- " + candidateAnchorTag + " "
-	candidateAnchorClose   = " -->"
+	candidateAnchorFamily    = "eg:cd:"
+	candidateAnchorVersion   = "1"
+	candidateAnchorTag       = candidateAnchorFamily + candidateAnchorVersion
+	candidateAnchorOpen      = "<!-- " + candidateAnchorTag + " "
+	candidateAnchorVersionV2 = "2"
+	candidateAnchorTagV2     = candidateAnchorFamily + candidateAnchorVersionV2
+	candidateAnchorOpenV2    = "<!-- " + candidateAnchorTagV2 + " "
+	candidateAnchorClose     = " -->"
 
 	candidateKnowledgeLabel = "> **[Knowledge Candidate]**"
 	candidateOpinionLabel   = "> **[Opinion Candidate]**"
@@ -50,6 +53,7 @@ const (
 // candidate boundary (an L1 H3 or an L2 fenced-div opener).
 type CandidateAnchor struct {
 	SourceRefs []string
+	NoteRefs   []string
 	Rel        string
 	Reason     string
 	Tags       []string
@@ -70,6 +74,7 @@ type CandidateDraft struct {
 	LogicalSlug string
 	Title       string
 	SourceRefs  []string
+	NoteRefs    []string
 	Rel         string
 	Reason      string
 	Tags        []string
@@ -127,6 +132,14 @@ type candidateAnchorWire struct {
 	Output     string   `json:"output"`
 }
 
+type candidateAnchorWireV2 struct {
+	NoteRefs []string `json:"note_refs"`
+	Rel      string   `json:"rel"`
+	Reason   string   `json:"reason"`
+	Tags     []string `json:"tags"`
+	Output   string   `json:"output"`
+}
+
 var candidateKeyRE = regexp.MustCompile(
 	`^cand-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
 var candidateLogicalSlugRE = regexp.MustCompile(
@@ -139,6 +152,7 @@ func candidateAnchorFromDraft(d CandidateDraft) CandidateAnchor {
 	}
 	return CandidateAnchor{
 		SourceRefs: d.SourceRefs,
+		NoteRefs:   d.NoteRefs,
 		Rel:        d.Rel,
 		Reason:     d.Reason,
 		Tags:       tags,
@@ -151,17 +165,31 @@ func encodeCandidateAnchor(a CandidateAnchor) string {
 	if tags == nil {
 		tags = []string{}
 	}
-	raw, err := json.Marshal(candidateAnchorWire{
-		SourceRefs: a.SourceRefs,
-		Rel:        a.Rel,
-		Reason:     a.Reason,
-		Tags:       tags,
-		Output:     a.Output,
-	})
+	var raw []byte
+	var err error
+	open := candidateAnchorOpen
+	if len(a.NoteRefs) > 0 {
+		open = candidateAnchorOpenV2
+		raw, err = json.Marshal(candidateAnchorWireV2{
+			NoteRefs: a.NoteRefs,
+			Rel:      a.Rel,
+			Reason:   a.Reason,
+			Tags:     tags,
+			Output:   a.Output,
+		})
+	} else {
+		raw, err = json.Marshal(candidateAnchorWire{
+			SourceRefs: a.SourceRefs,
+			Rel:        a.Rel,
+			Reason:     a.Reason,
+			Tags:       tags,
+			Output:     a.Output,
+		})
+	}
 	if err != nil {
 		panic(fmt.Sprintf("candidate anchor encoding failed: %v", err))
 	}
-	return candidateAnchorOpen + base64.RawURLEncoding.EncodeToString(raw) + candidateAnchorClose
+	return open + base64.RawURLEncoding.EncodeToString(raw) + candidateAnchorClose
 }
 
 func isCandidateAnchorLine(line []byte) bool {
@@ -170,17 +198,23 @@ func isCandidateAnchorLine(line []byte) bool {
 
 func decodeCandidateAnchor(line []byte, kind CandidateKind) (CandidateAnchor, error) {
 	t := bytes.TrimSpace(line)
-	if !bytes.HasPrefix(t, []byte(candidateAnchorOpen)) {
+	open := candidateAnchorOpen
+	version := candidateAnchorVersion
+	if bytes.HasPrefix(t, []byte(candidateAnchorOpenV2)) {
+		open = candidateAnchorOpenV2
+		version = candidateAnchorVersionV2
+	} else if !bytes.HasPrefix(t, []byte(candidateAnchorOpen)) {
 		return CandidateAnchor{}, fmt.Errorf(
-			"未知的 candidate 锚点版本（仅支持 %s）：%q", candidateAnchorTag, t)
+			"未知的 candidate 锚点版本（仅支持 %s / %s）：%q",
+			candidateAnchorTag, candidateAnchorTagV2, t)
 	}
 	if !bytes.HasSuffix(t, []byte(candidateAnchorClose)) {
 		return CandidateAnchor{}, fmt.Errorf("candidate 锚点缺注释结束符：%q", t)
 	}
-	if len(t) < len(candidateAnchorOpen)+len(candidateAnchorClose) {
+	if len(t) < len(open)+len(candidateAnchorClose) {
 		return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷缺失：%q", t)
 	}
-	enc := t[len(candidateAnchorOpen) : len(t)-len(candidateAnchorClose)]
+	enc := t[len(open) : len(t)-len(candidateAnchorClose)]
 	raw, err := base64.RawURLEncoding.DecodeString(string(enc))
 	if err != nil {
 		return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷 base64url 非法：%v", err)
@@ -192,16 +226,20 @@ func decodeCandidateAnchor(line []byte, kind CandidateKind) (CandidateAnchor, er
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷 JSON 非法：%v", err)
 	}
+	refKey := "source_refs"
+	if version == candidateAnchorVersionV2 {
+		refKey = "note_refs"
+	}
 	want := map[string]bool{
-		"source_refs": true,
-		"rel":         true,
-		"reason":      true,
-		"tags":        true,
-		"output":      true,
+		refKey:   true,
+		"rel":    true,
+		"reason": true,
+		"tags":   true,
+		"output": true,
 	}
 	if len(fields) != len(want) {
 		return CandidateAnchor{}, fmt.Errorf(
-			"candidate 锚点字段集不完整：必须恰含 source_refs/rel/reason/tags/output")
+			"candidate 锚点字段集不完整：必须恰含 %s/rel/reason/tags/output", refKey)
 	}
 	for key := range fields {
 		if !want[key] {
@@ -211,20 +249,29 @@ func decodeCandidateAnchor(line []byte, kind CandidateKind) (CandidateAnchor, er
 
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
-	var wire candidateAnchorWire
-	if err := dec.Decode(&wire); err != nil {
-		return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷 JSON 非法：%v", err)
+	var a CandidateAnchor
+	if version == candidateAnchorVersionV2 {
+		var wire candidateAnchorWireV2
+		if err := dec.Decode(&wire); err != nil {
+			return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷 JSON 非法：%v", err)
+		}
+		a = CandidateAnchor{
+			NoteRefs: wire.NoteRefs, Rel: wire.Rel, Reason: wire.Reason,
+			Tags: wire.Tags, Output: wire.Output,
+		}
+	} else {
+		var wire candidateAnchorWire
+		if err := dec.Decode(&wire); err != nil {
+			return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷 JSON 非法：%v", err)
+		}
+		a = CandidateAnchor{
+			SourceRefs: wire.SourceRefs, Rel: wire.Rel, Reason: wire.Reason,
+			Tags: wire.Tags, Output: wire.Output,
+		}
 	}
 	var extra json.RawMessage
 	if err := dec.Decode(&extra); err != io.EOF {
 		return CandidateAnchor{}, fmt.Errorf("candidate 锚点载荷含多余数据（应恰一个 JSON 对象）")
-	}
-	a := CandidateAnchor{
-		SourceRefs: wire.SourceRefs,
-		Rel:        wire.Rel,
-		Reason:     wire.Reason,
-		Tags:       wire.Tags,
-		Output:     wire.Output,
 	}
 	if err := validateCandidateAnchor(a, kind); err != nil {
 		return CandidateAnchor{}, err
@@ -233,12 +280,19 @@ func decodeCandidateAnchor(line []byte, kind CandidateKind) (CandidateAnchor, er
 }
 
 func validateCandidateAnchor(a CandidateAnchor, kind CandidateKind) error {
-	if len(a.SourceRefs) == 0 {
-		return fmt.Errorf("candidate anchor source_refs 为空")
+	if len(a.SourceRefs) == 0 && len(a.NoteRefs) == 0 {
+		return fmt.Errorf("candidate anchor source_refs/note_refs 均为空")
 	}
-	for i, ref := range a.SourceRefs {
+	if len(a.SourceRefs) > 0 && len(a.NoteRefs) > 0 {
+		return fmt.Errorf("candidate anchor source_refs/note_refs 不得同时出现")
+	}
+	refName, refs := "source_refs", a.SourceRefs
+	if len(a.NoteRefs) > 0 {
+		refName, refs = "note_refs", a.NoteRefs
+	}
+	for i, ref := range refs {
 		if strings.TrimSpace(ref) == "" {
-			return fmt.Errorf("candidate anchor source_refs[%d] 为空", i)
+			return fmt.Errorf("candidate anchor %s[%d] 为空", refName, i)
 		}
 	}
 	if _, err := model.ParseMaterialRel(a.Rel); err != nil {

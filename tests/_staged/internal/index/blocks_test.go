@@ -189,7 +189,7 @@ func TestBlockSidecarRejectsNonCanonicalAndUnsafeDocuments(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw[len(raw)-1] != '\n' || !strings.Contains(
-		string(raw), `"schema_version": 2`,
+		string(raw), `"schema_version": 3`,
 	) || !strings.Contains(string(raw), `"logical_slug": ""`) {
 		t.Fatalf("canonical JSON 形态不对：%q", raw)
 	}

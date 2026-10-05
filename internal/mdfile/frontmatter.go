@@ -9,6 +9,7 @@ package mdfile
 import (
 	"errors"
 	"fmt"
+	"regexp"
 
 	"gopkg.in/yaml.v3"
 
@@ -17,6 +18,8 @@ import (
 
 // ErrFrontmatterYAML 对应校验分级 E4：frontmatter YAML 不可解析。
 var ErrFrontmatterYAML = errors.New("E4 frontmatter YAML 不可解析")
+
+var contentHashRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 // DecodeFM 把 frontmatter 反序列化进 out（只读）。无 frontmatter 时按空映射处理。
 func (d *Doc) DecodeFM(out interface{}) error {
@@ -97,6 +100,39 @@ func ParseNote(raw []byte) (*Doc, model.Note, error) {
 		return nil, note, err
 	}
 	return d, note, nil
+}
+
+// ParseNoteSegmentation 解析 Note 的 K/O 划分工作区，并校验其必需关联字段。
+func ParseNoteSegmentation(raw []byte) (*Doc, model.NoteSegmentation, error) {
+	var segmentation model.NoteSegmentation
+	d, err := Parse(raw)
+	if err != nil {
+		return nil, segmentation, err
+	}
+	if err := d.DecodeFM(&segmentation); err != nil {
+		return nil, segmentation, err
+	}
+	if !segmentation.ID.Valid() {
+		return nil, segmentation, fmt.Errorf("note segmentation id 非法：%q", segmentation.ID)
+	}
+	if !segmentation.Note.Valid() {
+		return nil, segmentation, fmt.Errorf("note segmentation note 非法：%q", segmentation.Note)
+	}
+	if !contentHashRE.MatchString(segmentation.NoteHash) {
+		return nil, segmentation, fmt.Errorf(
+			"note segmentation note_hash 不是 sha256:<64 lowercase hex>：%q",
+			segmentation.NoteHash)
+	}
+	if segmentation.CreatedAt.IsZero() {
+		return nil, segmentation, fmt.Errorf("note segmentation created_at 缺失")
+	}
+	if segmentation.UpdatedAt.IsZero() {
+		return nil, segmentation, fmt.Errorf("note segmentation updated_at 缺失")
+	}
+	if err := d.ValidateSections(KindNoteSegmentation); err != nil {
+		return nil, segmentation, err
+	}
+	return d, segmentation, nil
 }
 
 // ParseOpinion 解析观点：索引 + frontmatter 字段 + 分区结构校验。

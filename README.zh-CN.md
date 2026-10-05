@@ -249,8 +249,9 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 ```
 
 这是只读调用，返回原文正文、同领域相似的候选实体，以及最关键的 `base`（文件 → `content_hash`
-映射）。`draft_candidates` 返回 Note 内候选的摘要、草稿/已物化状态、持久 output 与精确 payload
-hash；已物化实体仍分列为 `knowledge_candidates`（知识 `k-*`）与 `opinion_candidates`（观点 `o-*`）。
+映射）。`note_segmentations` 返回关联 workspace 与新鲜度；`draft_candidates` 返回 `ns-*`
+候选的摘要、草稿/已物化状态、持久 output 与精确 payload hash；已物化实体仍分列为
+`knowledge_candidates`（知识 `k-*`）与 `opinion_candidates`（观点 `o-*`）。
 `0.8.0-m8` 已删除旧 `candidates` 别名及其弃用 `I1`。知识与观点候选分别进入 plan 的 `base`：
 
 ```json
@@ -261,6 +262,7 @@ hash；已物化实体仍分列为 `knowledge_candidates`（知识 `k-*`）与 `
       "unprocessed.md": "sha256:ed58e18b227f787c87257d9d6356997aae9eb9bb238858ba158d7da6bcdb9584"
     },
     "draft_candidates": [],
+    "note_segmentations": [],
     "knowledge_candidates": [],
     "opinion_candidates": [],
     "cards": [],
@@ -287,8 +289,8 @@ hash；已物化实体仍分列为 `knowledge_candidates`（知识 `k-*`）与 `
 这些 hash 是**乐观并发令牌**：必须逐字原样填进 ChangePlan 的 `base`，不得省略、不得自己算。
 若文件在你身后被改动，Evergreen 会跳过该文件而不是覆盖它。
 
-Storage v3 通过 `write_note.candidate_drafts[]` 与独立的 `candidate_coverage[]` 把 Knowledge/Opinion
-草稿保存在 Note 内。Agent 可以保存草稿，但不得代替用户确认或物化。每个新草稿还带用户可编辑的
+Storage v3 通过一次 `write_note` 生成纯 `n-*` 与对应的可编辑 `ns-*`；Knowledge/Opinion
+草稿和 `candidate_coverage[]` 位于 `ns-*`。Agent 可以保存草稿，但不得代替用户确认或物化。每个新草稿还带用户可编辑的
 `logical_slug`，它独立于显示标题决定最终带日期文件名。plan 落盘后，先导出完整审阅状态，编辑后
 原子回投：
 
@@ -297,23 +299,24 @@ $ eg candidate show --note n-20260915-bitter-lesson --json | jq '.data' > review
 $ eg candidate apply --note n-20260915-bitter-lesson --file review.json --user-request
 ```
 
-一份 review spec 可同时新增、删除、改 key、重排、改类型，并修改来源范围、payload、slug 和 coverage。
-`candidate apply` 要求 `show` 返回的 `note_path` 与 `note_hash` 仍精确匹配，拒绝已物化候选，并保持
-`## 提取结果` 候选管理区之外的每个字节不变。第 4 步再展示用户显式物化；plain export 可独立执行：
+一份 review spec 可同时新增、删除、改 key、重排、改类型，并修改 Note 块范围、payload、slug 和 coverage。
+`candidate apply` 要求 `show` 返回的 Note/workspace 双路径双 hash 仍精确匹配，并保持
+`## 划分结果` 管理区之外的每个字节不变。Note 改动后需显式
+`candidate apply --rebase --user-request`。第 4 步再展示用户显式物化；plain export 可独立执行：
 
 ```console
 $ eg export --plain --output ../evergreen-plain
 ```
 
 `eg materialize` 不调用模型、不访问网络，只校验并复制候选原始字节；`k-*` 写入 `knowledge/`，
-`o-*` 写入 `opinions/` 且固定 `validation: pending`，目标与 Note 映射同进一个 journal v1 事务。
+`o-*` 写入 `opinions/` 且固定 `validation: pending`，目标与 `ns-*` 映射同进一个 journal v1 事务。
 `eg export --plain` 对 vault 只读，只从导出副本剥离机器锚点、candidate 标题属性与围栏边界行。
 
 常规 candidate 使用 `candidate_drafts[]` 渲染出的 H3 边界。标题层级无法表达边界时，Evergreen
 也读取下面这一种精确的 L2 兜底形态：
 
 ```markdown
-<!-- eg:cd:1 <base64url(JSON)> -->
+<!-- eg:cd:2 <base64url(JSON with note_refs)> -->
 :::: {#cand-cross-section .eg-candidate .opinion data-slug=cross-section-claim}
 ### 跨小节的候选主张
 
@@ -336,7 +339,7 @@ H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷�
 
 ```json
 {
-  "plan_version": 2,
+  "plan_version": 3,
   "verb": "process",
   "domain": "ai-infra",
   "reason": "把 The Bitter Lesson 保存成审阅式 Note，并生成一条知识候选和一条观点候选",
@@ -362,7 +365,7 @@ H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷�
           "kind": "knowledge",
           "logical_slug": "general-methods-scale-with-compute",
           "title": "通用方法能随算力扩展",
-          "source_refs": ["L2-L2", "L3-L3"],
+          "note_refs": ["B1", "B2"],
           "rel": "support",
           "reason": "原文用四个领域的历史给出该结论的直接依据",
           "tags": ["ai", "method"],
@@ -376,7 +379,7 @@ H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷�
           "kind": "opinion",
           "logical_slug": "encoding-human-knowledge-long-run-bet",
           "title": "把人类知识编码进系统是一个长期上会输的押注",
-          "source_refs": ["L4-L4"],
+          "note_refs": ["B3", "B4"],
           "rel": "support",
           "reason": "原文的收尾押注",
           "tags": ["ai", "research-direction"],
@@ -388,18 +391,19 @@ H4 模板映射；plain export 只删除两条围栏行，保留标题与载荷�
         }
       ],
       "candidate_coverage": [
-        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "主张与其历史依据成为一条可复用候选。", "disposition": "candidate", "candidates": ["cand-general-methods"] },
-        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "对长期押注的判断作为观点候选跟踪。",   "disposition": "candidate", "candidates": ["cand-scale-bet"] }
+        { "module": "knowledge", "note_refs": ["B1", "B2"], "summary": "主张与其历史依据成为一条可复用候选。", "disposition": "candidate", "candidates": ["cand-general-methods"] },
+        { "module": "opinion",   "note_refs": ["B3", "B4"], "summary": "长期押注及 Agent 分类成为观点候选。", "disposition": "candidate", "candidates": ["cand-scale-bet"] }
       ]
     }
   ]
 }
 ```
 
-`write_note` 是 v2 canonical 形态：`blocks[]` 按顺序复现原文各行（每个 `source` 块用 `source_ref` 回指
+`write_note` 是 v3 canonical 形态：`blocks[]` 按顺序复现原文各行（每个 `source` 块用 `source_ref` 回指
 它来自的物理行区间），`omissions[]` **显式**登记你有意丢弃的行（即便为空也要写空数组），
-`candidate_drafts[]` 保存完整的 Knowledge/Opinion 模板载荷，`candidate_coverage[]` 则把每个来源
-区间闭合到 `candidate` / `note_only` / `unresolved`。候选路径省略 `output_cards` 与最终
+落盘后的 Note blocks 依次编号为 `B1..Bn`；`candidate_drafts[]` 保存完整的 Knowledge/Opinion
+模板载荷，`candidate_coverage[]` 则把每个 Note block 恰好划分到
+`candidate` / `note_only` / `unresolved`。候选路径省略 `output_cards` 与最终
 `extraction_coverage`，也不会预先猜测 `k-*` / `o-*`。
 
 务必先 dry-run —— 它完整跑校验，**零写入**：
@@ -413,7 +417,7 @@ $ eg apply --plan plan.json --dry-run
 --dry-run：零写入、零 commit，以下是将写入的清单
 知识卡：新建 0 张，复用 0 张，补充 0 张
 关系：材料 0 条，论证 0 条
-写入文件 2 个：domains/ai-infra/notes/n-….md、unprocessed.md
+写入文件 3 个：domains/ai-infra/notes/n-….md、domains/ai-infra/note-segments/ns-….md、unprocessed.md
 commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
 ```
 
@@ -527,17 +531,18 @@ proposals/                        # p-*  控制面：高风险操作提案（按
 
 ### 四种学习实体与控制面
 
-Evergreen 用一条固定的 **Source → Note → {Knowledge, Opinion}** 链来建模一篇原文。四种实体承载你
+Evergreen 用一条固定的 **Source → Note → Note Segmentation → {Knowledge, Opinion}** 链来建模一篇原文。五种实体承载你
 学到的东西；`Proposal` 是独立的控制面对象，不是学习实体：
 
 | 前缀 | 实体 | 作用 |
 | --- | --- | --- |
 | `s-` | **Source（原文）** | 收录的原始材料，作为不可变证据，一篇原文一个文件。 |
 | `n-` | **Note（笔记）** | 单篇原文的完整、顺序忠实的正文，就近在被评述的文字旁放置可移除的批注。 |
+| `ns-` | **Note Segmentation（划分工作区）** | 对整篇 Note 做 Knowledge/Opinion 划分，可由用户继续优化，位于 `note-segments/`。 |
 | `k-` | **Knowledge（知识）** | 稳定的定义 / 组成 / 步骤 / 条件 / 数据。只做整理拆分去重 —— 绝不做多跳推导。这也是 search 默认返回的对象。 |
 | `o-` | **Opinion（观点）** | 评价、因果或预测论断，或一种取舍。承载它的论据、反例和验证生命周期。**当你分不清一件事是 Knowledge 还是 Opinion 时，优先归为 Opinion。** |
 
-`Proposal`（`p-*`）位于仓库根，驱动等待人工批准的高风险操作；它是控制面，绝不可被当作四种学习实体
+`Proposal`（`p-*`）位于仓库根，驱动等待人工批准的高风险操作；它是控制面，绝不可被当作五种学习实体
 之一。
 
 ID 稳定、可读、带日期前缀（`k-20260915-bitter-lesson`）。两条代码级硬规则：`s-` 绝不可写进
@@ -565,7 +570,9 @@ ID 稳定、可读、带日期前缀（`k-20260915-bitter-lesson`）。两条代
 | 待验证 | 待核查项；`validation` 生命周期落在 frontmatter |
 | 用户补充 | **只有你。** |
 
-**Note —— 四分区：** 整理正文、提取结果、存疑与待验证、用户补充。
+**Note —— 三分区：** 整理正文、存疑与待验证、用户补充。
+
+**Note Segmentation —— 两分区：** 划分结果、用户补充；文件位于 `note-segments/`。
 
 旧 v1 的 Knowledge 分区「解释与依据」与「理解自检」**不是**当前固定分区；当更旧的 vault 仍带着它们时，
 会作为未知 / 兼容分区原样逐字保留并以 info 提示，绝不改写。
@@ -581,7 +588,8 @@ ID 稳定、可读、带日期前缀（`k-20260915-bitter-lesson`）。两条代
 分两类：
 
 **材料关系** 把卡连到它的依据 —— 四要素必须齐全：`source` + `note` + `rel`
-（`support` / `against` / `context`）+ `reason`。
+（`support` / `against` / `context`）+ `reason`；从 workspace 物化时额外记录可选
+`segmentation`。
 
 **论证关系** 把卡与卡相连 —— `from` + `type` + `target` + `reason`：
 
@@ -612,7 +620,7 @@ ChangePlan 是 Evergreen 对外的契约：**唯一的程序化写入通道。**
 
 | 键 | 用途 |
 | --- | --- |
-| `plan_version` | 当前 plan 为 `2`。支持集合为 `{1, 2}`；`plan_version: 1` 的 plan 仍为兼容而被接受，并给恰一条 `I1` 迁移 info。 |
+| `plan_version` | 当前 plan 为 `3`。支持集合为 `{1, 2, 3}`；版本 1 和 2 继续按兼容格式读取。 |
 | `verb` | commit verb —— 主链路用 `process`，重新加工用 `reprocess` |
 | `domain` | 一份 plan 只写一个领域 |
 | `reason` | 本次写入的理由 |
@@ -924,8 +932,9 @@ Evergreen 绝不把你的 YAML 过一遍序列化器。它解析原始字节、�
 （`knowledge` / `opinion`）；观点的 `validation` 也落在同一行。**没有增量 schema 迁移**：当盘上的
 `schema_version` 不匹配时，整个索引被丢弃并从 Markdown 重建。
 
-每个 schema v2 的 `.index/blocks/<n-id>.json` 只保存可从 Note 重算的事实：Note 路径/hash，以及
-candidate 的 key、kind、logical slug、syntax、源字节区间、物化状态/output 和 payload hash；
+每个 schema v3 的 `.index/blocks/<n-id>.json` 只保存可从 Markdown 重算的事实：Note
+路径/hash、workspace 路径/hash/新鲜度，以及 candidate 的 key、kind、logical slug、syntax、
+源字节区间、物化状态/output 和 payload hash；
 不保存权威正文。
 `eg context` 只有在 sidecar 与当前 Markdown 投影逐字对账一致时才读取它。sidecar 缺失、陈旧、
 损坏或成为孤儿时会留下索引诊断，并回落同一条直接 Markdown 扫描路径。

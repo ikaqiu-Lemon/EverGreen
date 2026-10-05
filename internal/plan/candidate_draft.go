@@ -13,14 +13,17 @@ type CandidateCoverage = store.CandidateCoverage
 
 func candidateDraftKnownKeys() []string {
 	return []string{
-		"key", "kind", "logical_slug", "title", "source_refs", "rel", "reason", "tags", "sections",
+		"key", "kind", "logical_slug", "title", "source_refs", "note_refs",
+		"rel", "reason", "tags", "sections",
 	}
 }
 
 func candidateDraftSectionKnownKeys() []string { return []string{"name", "body"} }
 
 func candidateCoverageKnownKeys() []string {
-	return []string{"module", "source_refs", "summary", "disposition", "candidates", "reason"}
+	return []string{
+		"module", "source_refs", "note_refs", "summary", "disposition", "candidates", "reason",
+	}
 }
 
 func parseCandidateDrafts(opIndex int, value interface{}) ([]CandidateDraft, []Diagnostic) {
@@ -51,6 +54,11 @@ func parseCandidateDrafts(opIndex int, value interface{}) ([]CandidateDraft, []D
 		if refs, exists := m["source_refs"]; exists {
 			parsed, ds := parseStringArrayStrict(opIndex, path+".source_refs", refs)
 			draft.SourceRefs = parsed
+			diags = append(diags, ds...)
+		}
+		if refs, exists := m["note_refs"]; exists {
+			parsed, ds := parseStringArrayStrict(opIndex, path+".note_refs", refs)
+			draft.NoteRefs = parsed
 			diags = append(diags, ds...)
 		}
 		if tags, exists := m["tags"]; exists {
@@ -145,6 +153,11 @@ func parseCandidateCoverage(opIndex int, value interface{}) ([]CandidateCoverage
 			c.SourceRefs = parsed
 			diags = append(diags, ds...)
 		}
+		if refs, exists := m["note_refs"]; exists {
+			parsed, ds := parseStringArrayStrict(opIndex, path+".note_refs", refs)
+			c.NoteRefs = parsed
+			diags = append(diags, ds...)
+		}
 		if candidates, exists := m["candidates"]; exists {
 			parsed, ds := parseStringArrayStrict(opIndex, path+".candidates", candidates)
 			c.Candidates = parsed
@@ -188,10 +201,10 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 		return nil, true
 	}
 	ok := true
-	if v.p.Version != PlanVersion || !op.BlocksGiven {
+	if (v.p.Version != PlanVersionV2 && v.p.Version != PlanVersion) || !op.BlocksGiven {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate_drafts"),
-			"candidate_drafts/candidate_coverage 只允许用于 plan_version=%d 且 blocks[] 的 write_note",
-			PlanVersion))
+			"candidate_drafts/candidate_coverage 只允许用于 plan_version=%d/%d 且 blocks[] 的 write_note",
+			PlanVersionV2, PlanVersion))
 		ok = false
 	}
 	if len(op.CandidateDrafts) == 0 {
@@ -216,9 +229,17 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 	}
 
 	declaredRefs := map[string]bool{}
-	for _, block := range op.Blocks {
-		if block.Role == NoteBlockSource {
-			declaredRefs[block.SourceRef] = true
+	refField := "source_refs"
+	if v.p.Version == PlanVersion {
+		refField = "note_refs"
+		for i := range op.Blocks {
+			declaredRefs[fmt.Sprintf("B%d", i+1)] = true
+		}
+	} else {
+		for _, block := range op.Blocks {
+			if block.Role == NoteBlockSource {
+				declaredRefs[block.SourceRef] = true
+			}
 		}
 	}
 	allKeys, currentKeys, existingOK := v.existingCandidateKeys(op)
@@ -244,11 +265,25 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 				"candidate_drafts 的 output 必须为空：映射只能由 eg materialize 写入"))
 			ok = false
 		}
-		for j, ref := range draft.SourceRefs {
+		refs := draft.SourceRefs
+		if v.p.Version == PlanVersion {
+			if len(draft.SourceRefs) != 0 {
+				v.add(errorAt(E2, op.Index, path+".source_refs",
+					"plan_version=%d 的 ns-* candidate 必须使用 note_refs，不得使用 source_refs",
+					PlanVersion))
+				ok = false
+			}
+			refs = draft.NoteRefs
+		} else if len(draft.NoteRefs) != 0 {
+			v.add(errorAt(E2, op.Index, path+".note_refs",
+				"plan_version=%d 的 legacy candidate 必须使用 source_refs", PlanVersionV2))
+			ok = false
+		}
+		for j, ref := range refs {
 			if !declaredRefs[ref] {
 				v.add(errorAt(E2, op.Index,
-					fmt.Sprintf("%s.source_refs[%d]", path, j),
-					"candidate source_ref=%q 未精确回指本次 role:source 块", ref))
+					fmt.Sprintf("%s.%s[%d]", path, refField, j),
+					"candidate %s=%q 未精确回指本次 Note block", refField, ref))
 				ok = false
 			}
 		}
@@ -265,7 +300,7 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 		}
 	}
 
-	coveredRefs := map[string]bool{}
+	coveredRefs := map[string]int{}
 	referencedCurrent := map[string]bool{}
 	seenModules := map[string]bool{}
 	for i, c := range op.CandidateCoverage {
@@ -279,18 +314,38 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 			ok = false
 		}
 		seenModules[c.Module] = true
-		if len(c.SourceRefs) == 0 {
-			v.add(errorAt(E2, op.Index, path+".source_refs",
-				"candidate_coverage source_refs 为空"))
+		refs := c.SourceRefs
+		if v.p.Version == PlanVersion {
+			if len(c.SourceRefs) != 0 {
+				v.add(errorAt(E2, op.Index, path+".source_refs",
+					"plan_version=%d 的 ns-* coverage 必须使用 note_refs，不得使用 source_refs",
+					PlanVersion))
+				ok = false
+			}
+			refs = c.NoteRefs
+		} else if len(c.NoteRefs) != 0 {
+			v.add(errorAt(E2, op.Index, path+".note_refs",
+				"plan_version=%d 的 legacy coverage 必须使用 source_refs", PlanVersionV2))
 			ok = false
 		}
-		for j, ref := range c.SourceRefs {
+		if len(refs) == 0 {
+			v.add(errorAt(E2, op.Index, path+"."+refField,
+				"candidate_coverage %s 为空", refField))
+			ok = false
+		}
+		for j, ref := range refs {
 			if !declaredRefs[ref] {
-				v.add(errorAt(E2, op.Index, fmt.Sprintf("%s.source_refs[%d]", path, j),
-					"candidate_coverage source_ref=%q 未精确回指本次 role:source 块", ref))
+				v.add(errorAt(E2, op.Index, fmt.Sprintf("%s.%s[%d]", path, refField, j),
+					"candidate_coverage %s=%q 未精确回指本次 Note block", refField, ref))
 				ok = false
 			} else {
-				coveredRefs[ref] = true
+				coveredRefs[ref]++
+				if v.p.Version == PlanVersion && coveredRefs[ref] > 1 {
+					v.add(errorAt(E2, op.Index,
+						fmt.Sprintf("%s.%s[%d]", path, refField, j),
+						"Note block %s 被多个 coverage 模块重复覆盖", ref))
+					ok = false
+				}
 			}
 		}
 		if strings.TrimSpace(c.Summary) == "" {
@@ -338,9 +393,9 @@ func (v *validator) noteCandidateDraftBytes(op *Op) ([]byte, bool) {
 		}
 	}
 	for ref := range declaredRefs {
-		if !coveredRefs[ref] {
+		if coveredRefs[ref] == 0 {
 			v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate_coverage"),
-				"role:source 的 source_ref=%q 未进入任何 candidate_coverage 模块", ref))
+				"Note block 的 %s=%q 未进入任何 candidate_coverage 模块", refField, ref))
 			ok = false
 		}
 	}

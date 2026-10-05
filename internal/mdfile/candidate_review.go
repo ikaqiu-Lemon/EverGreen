@@ -14,6 +14,7 @@ func CandidateDraftFromParsed(candidate Candidate) (CandidateDraft, error) {
 		LogicalSlug: candidate.LogicalSlug,
 		Title:       candidate.Title,
 		SourceRefs:  append([]string(nil), candidate.Anchor.SourceRefs...),
+		NoteRefs:    append([]string(nil), candidate.Anchor.NoteRefs...),
 		Rel:         candidate.Anchor.Rel,
 		Reason:      candidate.Anchor.Reason,
 		Tags:        append([]string(nil), candidate.Anchor.Tags...),
@@ -52,10 +53,6 @@ func RenderCandidateDraftState(
 	var out []byte
 	seen := make(map[string]bool, len(drafts))
 	for i, draft := range drafts {
-		if draft.Output != "" {
-			return nil, fmt.Errorf(
-				"candidate review candidates[%d] 已含 output=%s", i, draft.Output)
-		}
 		if seen[draft.Key] {
 			return nil, fmt.Errorf(
 				"candidate review candidates[%d].key=%q 重复", i, draft.Key)
@@ -90,13 +87,6 @@ func ReplaceCandidateDraftState(
 	}
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("Note 不含 candidate")
-	}
-	for _, candidate := range candidates {
-		if candidate.Anchor.Output != "" {
-			return nil, fmt.Errorf(
-				"candidate %s 已物化为 %s，不得应用 review spec",
-				candidate.Key, candidate.Anchor.Output)
-		}
 	}
 	state, err := ParseCandidateCoverageState(raw)
 	if err != nil {

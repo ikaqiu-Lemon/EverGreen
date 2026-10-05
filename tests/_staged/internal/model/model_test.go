@@ -63,8 +63,12 @@ func TestStatusThirdValueFailsOnDeserialize(t *testing.T) {
 func TestIDTypesAreDistinctAtCompileTime(t *testing.T) {
 	src := reflect.TypeOf(SourceID(""))
 	note := reflect.TypeOf(NoteID(""))
+	segmentation := reflect.TypeOf(NoteSegmentationID(""))
 	card := reflect.TypeOf(CardID(""))
-	for _, pair := range [][2]reflect.Type{{note, card}, {card, note}, {src, card}, {note, src}} {
+	for _, pair := range [][2]reflect.Type{
+		{note, card}, {card, note}, {src, card}, {note, src},
+		{note, segmentation}, {segmentation, note}, {segmentation, card},
+	} {
 		if pair[0].AssignableTo(pair[1]) {
 			t.Fatalf("%s 不得可赋值给 %s（冻结合同 F2：三类 ID 互不可混用）", pair[0], pair[1])
 		}
@@ -80,6 +84,13 @@ func TestIDConstructorsRejectWrongPrefix(t *testing.T) {
 	}
 	if _, err := ParseSourceID("k-20260901-alpha"); err == nil {
 		t.Fatal("把 k-… 构造成 SourceID 必须报错")
+	}
+	if _, err := ParseNoteSegmentationID("n-20260901-alpha"); err == nil {
+		t.Fatal("把 n-… 构造成 NoteSegmentationID 必须报错")
+	}
+	if id, err := ParseNoteSegmentationID("ns-20260901-alpha"); err != nil ||
+		id != NoteSegmentationID("ns-20260901-alpha") {
+		t.Fatalf("合法划分工作区 ID 解析失败：%v / %q", err, id)
 	}
 	if id, err := ParseCardID("k-20260901-alpha"); err != nil || id != CardID("k-20260901-alpha") {
 		t.Fatalf("合法卡 ID 解析失败：%v / %q", err, id)
@@ -103,6 +114,10 @@ func TestIDGenerationIsIdempotentAndSlugIsASCII(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(a), PrefixCard+"20260901-") {
 		t.Fatalf("ID 形态应为 k-<yyyymmdd>-<slug>，实际 %q", a)
+	}
+	if got := NewNoteSegmentationID(d, "RAG 的 Chunk 粒度：Trade-off!"); got !=
+		NoteSegmentationID("ns-20260901-rag-chunk-trade-off") {
+		t.Fatalf("划分工作区 ID 生成错误：%q", got)
 	}
 	for i := 0; i < len(a); i++ {
 		if a[i] >= 0x80 {

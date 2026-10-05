@@ -293,7 +293,8 @@ func (s *Store) CreateFile(rel string, kind mdfile.Kind, content []byte) (Result
 	if err != nil {
 		return res, err
 	}
-	if kind == mdfile.KindCard || kind == mdfile.KindNote {
+	if kind == mdfile.KindCard || kind == mdfile.KindNote ||
+		kind == mdfile.KindOpinion || kind == mdfile.KindNoteSegmentation {
 		if err := doc.ValidateSections(kind); err != nil {
 			return res, err
 		}

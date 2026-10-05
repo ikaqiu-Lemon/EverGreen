@@ -146,11 +146,12 @@ func (e *executor) editSectionWrite(a Action) {
 	if ed.Candidate != "" {
 		res, err := e.s.ApplyReplaceCandidateSection(store.ReplaceCandidateSectionSpec{
 			Rel:          a.Path,
-			ID:           model.NoteID(a.ID),
+			ID:           a.ID,
 			ExpectedHash: e.expect(a),
 			Candidate:    ed.Candidate,
 			Section:      ed.Section,
 			Content:      ed.Payload,
+			Stamp:        e.opt.Stamp,
 		})
 		if !e.record(a, res, err) {
 			return

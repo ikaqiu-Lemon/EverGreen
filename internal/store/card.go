@@ -126,12 +126,18 @@ func sourcesBlock(refs []model.SourceRef) ([]byte, []string, error) {
 			warnings = append(warnings, fmt.Sprintf("sources[%d] 四要素不全：缺 %v（照写并进报告）",
 				i, ref.MissingFields()))
 		}
-		for j, kv := range [][2]string{
+		fields := [][2]string{
 			{"source", string(ref.Source)},
 			{"note", string(ref.Note)},
+		}
+		if ref.Segmentation != "" {
+			fields = append(fields, [2]string{"segmentation", string(ref.Segmentation)})
+		}
+		fields = append(fields, [][2]string{
 			{"rel", string(ref.Rel)},
 			{"reason", ref.Reason},
-		} {
+		}...)
+		for j, kv := range fields {
 			value, err := quoted(kv[1])
 			if err != nil {
 				return nil, nil, fmt.Errorf("sources[%d].%s：%w", i, kv[0], err)

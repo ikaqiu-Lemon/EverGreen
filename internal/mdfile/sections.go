@@ -37,9 +37,10 @@ type Kind string
 
 // 文档类型。
 const (
-	KindCard   Kind = "card"
-	KindNote   Kind = "note"
-	KindSource Kind = "source"
+	KindCard             Kind = "card"
+	KindNote             Kind = "note"
+	KindNoteSegmentation Kind = "note_segmentation"
+	KindSource           Kind = "source"
 
 	// KindOpinion 是观点（Schema v2）。与 KindCard **同级**，不是它的子类型：
 	// 观点不是「带倾向的知识卡」，两者的正文结构、写权限与生命周期都不同。
@@ -51,12 +52,13 @@ const (
 // 「用户补充」被四类实体共用：它在任何实体上都是同一条安全底线（B2），
 // 复制一份新常量只会让 NeverWriteSections 需要按类型分支。
 const (
-	SecKnowledge  = "知识内容"
-	SecBoundary   = "条件与边界"
-	SecUserAppend = "用户补充"
-	SecNoteBody   = "整理正文"
-	SecExtraction = "提取结果"
-	SecOpenQuest  = "存疑与待验证"
+	SecKnowledge    = "知识内容"
+	SecBoundary     = "条件与边界"
+	SecUserAppend   = "用户补充"
+	SecNoteBody     = "整理正文"
+	SecExtraction   = "提取结果"
+	SecOpenQuest    = "存疑与待验证"
+	SecSegmentation = "划分结果"
 )
 
 // v1 存量分区名（Schema v2 起**不再是固定分区**，但常量必须保留）。
@@ -117,6 +119,23 @@ func V1Sections(kind Kind) []string {
 	}
 }
 
+// V2Sections 返回 Schema v2 模板下的固定分区名与顺序。
+//
+// v3 只改变 Note：把候选审阅移到 ns-* 后，`提取结果` 不再属于 n-*。
+// Card 与 Opinion 的 v2 模板继续是它们的当前模板。
+func V2Sections(kind Kind) []string {
+	switch kind {
+	case KindCard:
+		return CardSections()
+	case KindNote:
+		return []string{SecNoteBody, SecExtraction, SecOpenQuest, SecUserAppend}
+	case KindOpinion:
+		return OpinionSections()
+	default:
+		return nil
+	}
+}
+
 // v1RequiredSection 返回 v1 模板下该类型的必需分区。
 //
 // 与 v2 的差别只在 Note：v1 的落点是 `材料提炼`，v2 是 `整理正文`（契约 §3.2）。
@@ -140,9 +159,11 @@ const (
 	SchemaV1 SchemaVersion = 1
 	// SchemaV2 是 Schema v2 模板：Knowledge 三分区、Note 四分区（契约 §3.2）。
 	SchemaV2 SchemaVersion = 2
+	// SchemaV3 把 Note 的候选审阅正文拆到独立 ns-* 工作区。
+	SchemaV3 SchemaVersion = 3
 )
 
-// SectionSchema 判定这份文档按哪一版模板校验：正文里出现任一 v1 专有分区即判 v1。
+// SectionSchema 判定这份文档按哪一版模板校验。
 //
 // 判据只看**分区名**、不看 frontmatter：模板版本是正文结构的属性，
 // 而 v1 存量文件的 frontmatter 里并没有版本字段，补写一个就等于改字节
@@ -166,6 +187,12 @@ func (d *Doc) SectionSchema(kind Kind) SchemaVersion {
 		if legacy[s.Name] {
 			return SchemaV1
 		}
+	}
+	if kind == KindNote {
+		if _, ok := d.Section(SecExtraction); ok {
+			return SchemaV2
+		}
+		return SchemaV3
 	}
 	return SchemaV2
 }
@@ -200,16 +227,17 @@ func OpinionSections() []string {
 	return []string{SecOpinionClaim, SecArgument, SecCounter, SecToVerify, SecUserAppend}
 }
 
-// NoteSections 是材料笔记的固定四分区，顺序固定（F5 + 契约 §3.2）。
+// NoteSections 是新建材料笔记的固定三分区，顺序固定。
 //
-// v1 的五分区合并为四：`材料提炼` + `Agent 分析` → `整理正文`，
-// `产出知识卡` → `提取结果`。材料笔记**没有**「理解自检」——它在 v1 就是知识卡独有
-// （EG-NOTE-01），v2 起知识卡也不再有。
-//
-// 「用户补充」在本模板里排**末位**（v1 排第三）：四张模板从此一致以它收尾，
-// 使「用户的字永远在文件末尾、永不被 CLI 触碰」这条安全底线在版式上也成立。
+// v3 把候选划分整体迁到 ns-*，所以 n-* 只保留学习正文、存疑与用户补充。
+// v2 四分区 Note 仍由 V2Sections + SectionSchema 兼容读取。
 func NoteSections() []string {
-	return []string{SecNoteBody, SecExtraction, SecOpenQuest, SecUserAppend}
+	return []string{SecNoteBody, SecOpenQuest, SecUserAppend}
+}
+
+// NoteSegmentationSections 是 ns-* 工作区的固定两分区。
+func NoteSegmentationSections() []string {
+	return []string{SecSegmentation, SecUserAppend}
 }
 
 // KnownSections 返回该类型的固定分区名。
@@ -221,6 +249,8 @@ func KnownSections(kind Kind) []string {
 		return OpinionSections()
 	case KindNote:
 		return NoteSections()
+	case KindNoteSegmentation:
+		return NoteSegmentationSections()
 	default:
 		return nil
 	}
@@ -239,6 +269,8 @@ func RequiredSection(kind Kind) string {
 		return SecOpinionClaim
 	case KindNote:
 		return SecNoteBody
+	case KindNoteSegmentation:
+		return SecSegmentation
 	default:
 		return ""
 	}
@@ -263,7 +295,9 @@ func AutoWritableSections(kind Kind) []string {
 	case KindOpinion:
 		return []string{SecArgument, SecCounter, SecToVerify}
 	case KindNote:
-		return []string{SecNoteBody, SecExtraction, SecOpenQuest}
+		return []string{SecNoteBody, SecOpenQuest}
+	case KindNoteSegmentation:
+		return []string{SecSegmentation}
 	default:
 		return nil
 	}
@@ -306,9 +340,14 @@ func (e *SectionError) Error() string {
 func (d *Doc) ValidateSections(kind Kind) error {
 	known := KnownSections(kind)
 	required := RequiredSection(kind)
-	if d.SectionSchema(kind) == SchemaV1 {
+	switch d.SectionSchema(kind) {
+	case SchemaV1:
 		known = V1Sections(kind)
 		required = v1RequiredSection(kind)
+	case SchemaV2:
+		if legacy := V2Sections(kind); len(legacy) > 0 {
+			known = legacy
+		}
 	}
 	if len(known) == 0 {
 		return nil

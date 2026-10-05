@@ -138,7 +138,8 @@ func (r *Root) runMaterialize(inv *Invocation) (*Result, error) {
 
 	res.Data = materializeResultData(out)
 	res.DataOrder = []string{
-		"note", "note_path", "materialized_candidates", "finalized", "txn_id", "commit",
+		"note", "note_path", "workspace", "workspace_path",
+		"materialized_candidates", "finalized", "txn_id", "commit",
 	}
 	switch {
 	case out.RolledBack:
@@ -181,8 +182,9 @@ func materializeValidationError(target, prefix string, err error) error {
 
 func materializeEmptyData(note string) map[string]interface{} {
 	return map[string]interface{}{
-		"note": note, "note_path": "", "materialized_candidates": []materializeCandidateData{},
-		"finalized": false, "txn_id": "", "commit": nil,
+		"note": note, "note_path": "", "workspace": "", "workspace_path": "",
+		"materialized_candidates": []materializeCandidateData{},
+		"finalized":               false, "txn_id": "", "commit": nil,
 	}
 }
 
@@ -200,6 +202,8 @@ func materializeResultData(out *materializeTxnOutcome) map[string]interface{} {
 	}
 	return map[string]interface{}{
 		"note": string(out.Materialized.Note), "note_path": out.Materialized.NotePath,
+		"workspace":               string(out.Materialized.Workspace),
+		"workspace_path":          out.Materialized.WorkspacePath,
 		"materialized_candidates": items, "finalized": out.Materialized.Finalized,
 		"txn_id": out.TxnID, "commit": commit,
 	}

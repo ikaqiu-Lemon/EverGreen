@@ -80,11 +80,22 @@ func fmSeq(key string, items []string) ([]byte, error) {
 // sections 是「分区名 → 载荷」；缺失的固定分区留空（分区头照写，正文为空）。
 // 载荷逐字插入，必须以 \n 结束。
 func document(kind mdfile.Kind, fm []byte, sections map[string][]byte) ([]byte, error) {
+	return documentWithSections(kind, fm, sections,
+		mdfile.KnownSections(kind), mdfile.RequiredSection(kind))
+}
+
+func documentWithSections(
+	kind mdfile.Kind,
+	fm []byte,
+	sections map[string][]byte,
+	order []string,
+	required string,
+) ([]byte, error) {
 	out := make([]byte, 0, len(fm)+256)
 	out = append(out, "---\n"...)
 	out = append(out, fm...)
 	out = append(out, "---\n\n"...)
-	for _, name := range mdfile.KnownSections(kind) {
+	for _, name := range order {
 		out = append(out, "## "...)
 		out = append(out, name...)
 		out = append(out, '\n', '\n')
@@ -98,9 +109,9 @@ func document(kind mdfile.Kind, fm []byte, sections map[string][]byte) ([]byte, 
 		out = append(out, payload...)
 		out = append(out, '\n')
 	}
-	if req := mdfile.RequiredSection(kind); req != "" {
-		if len(sections[req]) == 0 {
-			return nil, fmt.Errorf("%w：「%s」（%s）", ErrMissingSection, req, kind)
+	if required != "" {
+		if len(sections[required]) == 0 {
+			return nil, fmt.Errorf("%w：「%s」（%s）", ErrMissingSection, required, kind)
 		}
 	}
 	return out, nil
@@ -108,9 +119,17 @@ func document(kind mdfile.Kind, fm []byte, sections map[string][]byte) ([]byte, 
 
 // sectionMap 把有序的分区追加动作折叠成「分区名 → 载荷」，并拒绝写「用户补充」（B2）。
 func sectionMap(kind mdfile.Kind, appends []SectionAppend) (map[string][]byte, error) {
+	return sectionMapWithSections(kind, appends, mdfile.KnownSections(kind))
+}
+
+func sectionMapWithSections(
+	kind mdfile.Kind,
+	appends []SectionAppend,
+	sectionNames []string,
+) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(appends))
 	known := map[string]bool{}
-	for _, name := range mdfile.KnownSections(kind) {
+	for _, name := range sectionNames {
 		known[name] = true
 	}
 	for _, sa := range appends {

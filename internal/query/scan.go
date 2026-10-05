@@ -104,6 +104,22 @@ type NoteEntry struct {
 	Doc       *mdfile.Doc
 }
 
+// NoteSegmentationEntry is the authoritative ns-* workspace projection.
+type NoteSegmentationEntry struct {
+	ID        string
+	Path      string
+	Domain    string
+	Note      string
+	NoteHash  string
+	Title     string
+	Tags      []string
+	CreatedAt string
+	UpdatedAt string
+	Raw       []byte
+	Doc       *mdfile.Doc
+	Coverage  []mdfile.CandidateCoverage
+}
+
 // OpinionEntry 是一条被扫描到的观点（schema v2 的第三类领域产物，落在
 // `domains/<d>/opinions/o-*.md`）。
 //
@@ -182,8 +198,9 @@ type ScanOptions struct {
 // ScannedFiles == len(Cards)+len(Notes)+len(Opinions)+SkippedFiles，
 // 这是「没有第三条静默路径」的机器判据。
 type ScanResult struct {
-	Cards []CardEntry
-	Notes []NoteEntry
+	Cards             []CardEntry
+	Notes             []NoteEntry
+	NoteSegmentations []NoteSegmentationEntry
 	// Opinions 是观点分区的条目（schema v2）。
 	//
 	// 为什么**不设开关**、恒随扫描带出：观点是 vault 里真实存在的落盘对象，
@@ -206,7 +223,8 @@ func (r *ScanResult) HasQ() bool { return len(r.Diagnostics) > 0 }
 // 其余合法文件照常返回（一个坏文件不丢全部结果）。
 func VaultScan(root string, opt ScanOptions) (*ScanResult, error) {
 	res := &ScanResult{Cards: []CardEntry{}, Notes: []NoteEntry{},
-		Opinions: []OpinionEntry{}, Diagnostics: []Diagnostic{}}
+		NoteSegmentations: []NoteSegmentationEntry{},
+		Opinions:          []OpinionEntry{}, Diagnostics: []Diagnostic{}}
 	domains, err := resolveDomains(root, opt.Domains)
 	if err != nil {
 		return nil, err
@@ -222,10 +240,16 @@ func VaultScan(root string, opt ScanOptions) (*ScanResult, error) {
 			if err := scanNoteDir(root, d, res); err != nil {
 				return nil, err
 			}
+			if err := scanNoteSegmentationDir(root, d, res); err != nil {
+				return nil, err
+			}
 		}
 	}
 	sort.SliceStable(res.Cards, func(i, j int) bool { return res.Cards[i].Path < res.Cards[j].Path })
 	sort.SliceStable(res.Notes, func(i, j int) bool { return res.Notes[i].Path < res.Notes[j].Path })
+	sort.SliceStable(res.NoteSegmentations, func(i, j int) bool {
+		return res.NoteSegmentations[i].Path < res.NoteSegmentations[j].Path
+	})
 	sort.SliceStable(res.Opinions, func(i, j int) bool {
 		return res.Opinions[i].Path < res.Opinions[j].Path
 	})
@@ -418,6 +442,36 @@ func scanNoteDir(root, domain string, res *ScanResult) error {
 			Raw:        raw, Doc: doc,
 		})
 		return nil // 正常收录：无 Diagnostic
+	})
+}
+
+func scanNoteSegmentationDir(root, domain string, res *ScanResult) error {
+	dir := filepath.Join(root, dirDomains, domain, dirNoteSegments)
+	return walkMarkdown(dir, root, func(rel string, raw []byte) error {
+		res.ScannedFiles++
+		doc, segmentation, err := mdfile.ParseNoteSegmentation(raw)
+		if err != nil {
+			res.skip(newQ1(rel, "Note 划分工作区不可解析，已跳过：%v", err))
+			return nil
+		}
+		state, err := mdfile.ParseCandidateCoverageState(raw)
+		if err != nil {
+			res.skip(newQ1(rel, "Note 划分工作区 coverage 不可解析，已跳过：%v", err))
+			return nil
+		}
+		if state.Finalized {
+			res.skip(newQ1(rel, "Note 划分工作区使用 legacy 最终覆盖形态，已跳过"))
+			return nil
+		}
+		res.NoteSegmentations = append(res.NoteSegmentations, NoteSegmentationEntry{
+			ID: string(segmentation.ID), Path: rel, Domain: domain,
+			Note: string(segmentation.Note), NoteHash: segmentation.NoteHash,
+			Title: segmentation.Title, Tags: segmentation.Tags,
+			CreatedAt: segmentation.CreatedAt.String(),
+			UpdatedAt: segmentation.UpdatedAt.String(),
+			Raw:       raw, Doc: doc, Coverage: state.Draft,
+		})
+		return nil
 	})
 }
 

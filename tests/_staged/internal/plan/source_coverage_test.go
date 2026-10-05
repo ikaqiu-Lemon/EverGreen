@@ -324,7 +324,7 @@ func TestSourceFrontmatterUnterminatedIsE2(t *testing.T) {
 	ops := covNote("n-20261017-unterm", []string{covSB("L1-L4", "整段抄。")}, nil, true)
 	plan := fmt.Sprintf(`{"plan_version":%d,"verb":"process","domain":"ai-infra",`+
 		`"reason":"未闭合 frontmatter","requirement_ids":["EG-KNW-04"],"base":{},"ops":[%s]}`,
-		PlanVersion, ops)
+		PlanVersionV2, ops)
 	res := run(t, env, plan)
 	requireErrorAt(t, res, E2, "ops[0].source")
 	if len(res.Actions) != 0 {
