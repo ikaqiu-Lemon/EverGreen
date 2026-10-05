@@ -124,14 +124,17 @@ compatibility/validation digest):
 - **Storage v3 commands.** `eg materialize --note <n-id>
   (--candidate <cand-key> | --all) --user-request` copies exact candidate bytes
   from `domains/<domain>/note-segments/ns-*.md` into Knowledge/Opinion through
-  journal v1. `eg export --plain --output <dir>`
+  journal v1. Canonical `n-*` files contain no Evergreen machine anchors; their
+  `B1..Bn` vocabulary and provenance are stored by `eg:nb:1` in the linked
+  `ns-*`. `eg export --plain --output <dir>`
   creates a read-only egress copy without Evergreen protocol anchors.
 - **Candidate review.** `eg candidate show --note <n-id> --json` exports the
   complete editable draft state. Apply the edited `.data` object with
   `eg candidate apply --note <n-id> --file <review.json> --user-request`.
-  When the Note changed, reconcile the spec and add `--rebase`. Legacy
-  embedded candidates can be split with
-  `eg candidate migrate --note <n-id> --user-request`.
+  When the Note changed, reconcile the spec and add `--rebase`.
+  `eg candidate migrate --note <n-id> --user-request` splits legacy embedded
+  candidates and also normalizes an existing n/ns pair whose Note still
+  carries legacy review anchors.
   The note path/hash is an optimistic-concurrency token; apply replaces only
   the candidate-managed extraction region in one journal-v1 transaction.
 - **Candidate boundaries.** H3 is the default. The L2 fallback is an

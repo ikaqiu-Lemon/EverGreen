@@ -455,6 +455,16 @@ func TestCandidateMigrateSplitsLegacyNoteAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	bodyBefore, _ := beforeDoc.Section(mdfile.SecNoteBody)
+	reviewBefore, err := mdfile.ParseReviewNote(
+		before[bodyBefore.Body:bodyBefore.End])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPlain, err := mdfile.RenderPlainReviewNote(
+		reviewBefore.Blocks, reviewBefore.Omissions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := newTestRoot(t, dir)
 	root.Now = func() time.Time {
 		return time.Date(2026, 10, 4, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
@@ -475,9 +485,11 @@ func TestCandidateMigrateSplitsLegacyNoteAtomically(t *testing.T) {
 		t.Fatalf("迁移后的 n-* 仍含提取结果：\n%s", after)
 	}
 	bodyAfter, _ := afterDoc.Section(mdfile.SecNoteBody)
-	if !bytes.Equal(before[bodyBefore.Start:bodyBefore.End],
-		after[bodyAfter.Start:bodyAfter.End]) {
-		t.Fatal("迁移改写了整理正文")
+	wantFramed := append([]byte("\n"), wantPlain...)
+	wantFramed = append(wantFramed, '\n')
+	if !bytes.Equal(after[bodyAfter.Body:bodyAfter.End], wantFramed) ||
+		mdfile.ContainsEvergreenMachineAnchors(after) {
+		t.Fatalf("迁移后的 n-* 未成为 anchorless 可见正文：\n%s", after)
 	}
 	workspaceRaw := mustRead(t, filepath.Join(dir, filepath.FromSlash(workspaceRel)))
 	_, workspace, err := mdfile.ParseNoteSegmentation(workspaceRaw)
@@ -485,6 +497,7 @@ func TestCandidateMigrateSplitsLegacyNoteAtomically(t *testing.T) {
 		t.Fatalf("迁移后的 ns-* 不可解析：%v\n%s", err, workspaceRaw)
 	}
 	if workspace.NoteHash != store.ContentHash(after) ||
+		!bytes.Contains(workspaceRaw, []byte("<!-- eg:nb:1 ")) ||
 		!bytes.Contains(workspaceRaw, []byte("<!-- eg:cd:2 ")) ||
 		!bytes.Contains(workspaceRaw, []byte("<!-- eg:cc:2 ")) {
 		t.Fatalf("迁移后的关联/hash/协议不成立：%+v\n%s", workspace, workspaceRaw)
@@ -507,6 +520,90 @@ func TestCandidateMigrateSplitsLegacyNoteAtomically(t *testing.T) {
 	}
 	if got := gitOut(t, dir, "rev-list", "--count", "HEAD"); got != commitsBeforeReplay {
 		t.Fatal("重复 migrate 产生了空 commit")
+	}
+}
+
+func TestCandidateMigrateNormalizesExistingWorkspaceAtomically(t *testing.T) {
+	dir, noteRel, workspaceRel := materializeWorkspaceFixture(t)
+	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
+	workspacePath := filepath.Join(dir, filepath.FromSlash(workspaceRel))
+	noteBefore := mustRead(t, notePath)
+	workspaceBefore := mustRead(t, workspacePath)
+	candidatesBefore, err := mdfile.ParseCandidates(workspaceBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceDocBefore, err := mdfile.Parse(workspaceBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userBefore, _ := workspaceDocBefore.Section(mdfile.SecUserAppend)
+
+	root := newTestRoot(t, dir)
+	root.Now = func() time.Time {
+		return time.Date(2026, 10, 5, 12, 0, 0, 0,
+			time.FixedZone("CST", 8*60*60))
+	}
+	code, migrated, errOut := runStorageV3CLI(t, root,
+		"candidate", "migrate", "--vault", dir, "--json",
+		"--note", "n-20260922-workspace", "--user-request")
+	if code != ExitOK {
+		t.Fatalf("existing workspace migrate 失败：%d %s %+v",
+			code, errOut, migrated)
+	}
+	noteAfter := mustRead(t, notePath)
+	workspaceAfter := mustRead(t, workspacePath)
+	if bytes.Equal(noteAfter, noteBefore) ||
+		mdfile.ContainsEvergreenMachineAnchors(noteAfter) {
+		t.Fatalf("已有 n/ns 迁移未移除 n-* 机器锚点：\n%s", noteAfter)
+	}
+	manifest, found, err := mdfile.ParseNoteBlockManifest(workspaceAfter)
+	if err != nil || !found || len(manifest.Blocks) != 2 {
+		t.Fatalf("已有 n/ns 迁移未写块清单：found=%v err=%v %+v\n%s",
+			found, err, manifest, workspaceAfter)
+	}
+	candidatesAfter, err := mdfile.ParseCandidates(workspaceAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidatesAfter) != len(candidatesBefore) {
+		t.Fatalf("candidate 数量变化：%d -> %d",
+			len(candidatesBefore), len(candidatesAfter))
+	}
+	for i := range candidatesBefore {
+		if !bytes.Equal(candidatesBefore[i].Raw(workspaceBefore),
+			candidatesAfter[i].Raw(workspaceAfter)) {
+			t.Fatalf("candidate %s 字节被迁移改写", candidatesBefore[i].Key)
+		}
+	}
+	workspaceDocAfter, _, err := mdfile.ParseNoteSegmentation(workspaceAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userAfter, _ := workspaceDocAfter.Section(mdfile.SecUserAppend)
+	if !bytes.Equal(
+		workspaceBefore[userBefore.Body:userBefore.End],
+		workspaceAfter[userAfter.Body:userAfter.End]) {
+		t.Fatal("已有 n/ns 迁移改写了 workspace 用户补充")
+	}
+	_, segmentation, _, _, refs, err := store.ParseMaterializationWorkspace(
+		noteAfter, workspaceAfter)
+	if err != nil || segmentation.NoteHash != store.ContentHash(noteAfter) ||
+		len(refs) != 2 || !refs["B1"] || !refs["B2"] {
+		t.Fatalf("规范化后的 workspace 不可物化：err=%v segmentation=%+v refs=%v",
+			err, segmentation, refs)
+	}
+
+	headBeforeReplay := gitOut(t, dir, "rev-parse", "HEAD")
+	code, replay, errOut := runStorageV3CLI(t, root,
+		"candidate", "migrate", "--vault", dir, "--json",
+		"--note", "n-20260922-workspace", "--user-request")
+	if code != ExitOK || replay.Data["txn_id"] != "" {
+		t.Fatalf("规范化重复 migrate 应 no-op：%d %s %+v",
+			code, errOut, replay.Data)
+	}
+	if got := gitOut(t, dir, "rev-parse", "HEAD"); got != headBeforeReplay {
+		t.Fatal("规范化重复 migrate 产生空 commit")
 	}
 }
 

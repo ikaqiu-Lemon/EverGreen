@@ -8,10 +8,9 @@ import "github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 //
 // 这两个结构体承载解析层（internal/plan）从 `write_note` 读到的 omissions[] /
 // extraction_coverage[] 原始字段。二者的落盘去向不同，按设计真源分别接入：
-//   - omissions[] **已被消费**：v2 审阅式 writer（NoteReviewBytes → mdfile 的机器锚点协议）
-//     把每条 omission 的 source_ref / reason 编进一条版本化机器锚点，满足设计真源对 omissions
-//     的「校验 + source_ref round-trip」要求。它**不**新增任何名为「遗漏说明」的可见分区或清单——
-//     遗漏是机器元数据，靠锚点严格读回，而不是渲染成读者可见的段落。
+//   - omissions[] **已被消费**：v3 把它写入 ns-* 的 note block manifest，n-* 保持零机器
+//     锚点；v2 兼容 writer 仍把它编码为 review 锚点。两条路径都不新增任何名为「遗漏说明」
+//     的可见分区或清单。
 //   - extraction_coverage[] **已被消费**：语义校验由 plan 侧 note_coverage.go 承担（T12-4，
 //     契约 §4.2.3），校验通过后原样透传给 NoteExtraction.Coverage；落盘渲染 / 读回的唯一实现
 //     收在 mdfile 的覆盖矩阵协议（RenderCoverageMatrix / ParseCoverageMatrix）——渲染成「提取
@@ -30,8 +29,8 @@ import "github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 
 // Omission 承载一条 `omissions[]` 项（契约 §4.2.1）：SourceRef 指向一段来源行段
 // （形如 `L<start>-L<end>`），Reason 说明为何未纳入整理。行段可解析性、与 blocks 覆盖的
-// 关系由 plan 侧校验（source_coverage.go）；source_ref / reason 的机器锚点 round-trip 由
-// NoteReviewBytes → mdfile 落地。本结构体本身只承载解析结果。
+// 关系由 plan 侧校验（source_coverage.go）；source_ref / reason 的 v2 锚点或 v3 manifest
+// round-trip 由 mdfile 落地。本结构体本身只承载解析结果。
 type Omission struct {
 	SourceRef string
 	Reason    string

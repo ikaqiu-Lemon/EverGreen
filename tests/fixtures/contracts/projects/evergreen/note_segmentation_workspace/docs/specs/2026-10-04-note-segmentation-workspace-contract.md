@@ -113,17 +113,16 @@ New `plan_version: 3` Notes have exactly three canonical H2 sections:
 
 They contain no:
 
+- Evergreen machine anchors of any family, including `eg:nr:*`;
 - candidate H3 attributes;
 - `[Knowledge Candidate]` / `[Opinion Candidate]` labels;
 - candidate coverage matrix;
 - K/O output list;
 - `## 提取结果` section.
 
-`eg:nr:1` review anchors remain valid inside `整理正文`; they describe the
-Note's source/agent blocks, not K/O segmentation.
-
-Legacy `n-*` files with four sections and embedded candidates remain readable.
-The canonical v3 writer never creates that shape.
+Legacy `n-*` files containing `eg:nr:1` review anchors remain readable only
+for compatibility and migration. The canonical v3 writer never emits machine
+metadata into `n-*`.
 
 ### 3.2 Segmentation workspace
 
@@ -143,6 +142,7 @@ never written by the automatic path.
 
 Canonical candidates use:
 
+- one `eg:nb:1` note-block manifest before all candidates;
 - `eg:cd:2` candidate anchors;
 - `eg:cc:2` coverage anchors;
 - the existing H3/L2 structural boundary syntax;
@@ -166,16 +166,18 @@ new `ns-*` files.
 
 ## 4. Whole-Note reference and coverage
 
-The parser assigns every ordered block in the parent Note's `整理正文` a
+During `write_note`, the validator assigns every ordered input block a
 version-local reference:
 
 ```text
 B1, B2, ... Bn
 ```
 
-The order includes both source and agent blocks. These references are valid
-only together with the exact `note_hash` recorded by `ns-*`; they are not
-stable IDs across Note edits.
+The order includes both source and agent blocks. The complete ordered
+vocabulary and its role/provenance/content digest are stored in one
+`eg:nb:1 <base64url(JSON)>` manifest in `ns-*`; no block identifier is written
+to `n-*`. These references are valid only together with the `note_hash`
+recorded by `ns-*`; they are not stable IDs across Note edits.
 
 Each candidate lists one or more `note_refs`. Coverage partitions the full
 set `{B1..Bn}` with no gaps:
@@ -276,8 +278,8 @@ Rebase is full-state and optimistic:
 
 1. `note_path`, `note_hash`, `workspace_path`, and `workspace_hash` must all
    match disk;
-2. the submitted candidates and coverage must validate against the current
-   `{B1..Bn}` vocabulary;
+2. the submitted candidates and coverage must validate against the
+   `{B1..Bn}` vocabulary stored in the workspace's `eg:nb:1` manifest;
 3. the complete submitted workspace becomes the target state;
 4. bytes outside the managed `划分结果` region, including `用户补充`, remain
    unchanged;
@@ -344,8 +346,9 @@ Add:
 eg candidate migrate --note <n-id> --user-request
 ```
 
-It accepts only a legacy, unmaterialized `n-*` containing `eg:cd:1`
-candidates and draft coverage.
+It accepts either a legacy, unmaterialized `n-*` containing `eg:cd:1`
+candidates and draft coverage, or an already split `n-* + ns-*` pair whose
+Note still contains legacy `eg:nr:1` block anchors.
 
 In one journal-v1 transaction it:
 
@@ -357,9 +360,15 @@ In one journal-v1 transaction it:
 5. records the hash of the target pure Note;
 6. commits both files once.
 
-Ambiguous references, existing `ns-*`, non-empty candidate outputs, finalized
-coverage, or any B3 mismatch fail with zero writes. Repeating a completed
-migration is a no-op.
+For an already split pair whose `n-*` still contains `eg:nr:1`,
+the same command atomically strips those anchors, inserts the equivalent
+`eg:nb:1` manifest into the existing `ns-*`, preserves candidate and user
+bytes, and advances `note_hash` only when the workspace was fresh before
+migration.
+
+Ambiguous references, conflicting block metadata, non-empty candidate
+outputs in a legacy embedded Note, finalized legacy coverage, or any B3
+mismatch fail with zero writes. Repeating a completed migration is a no-op.
 
 Already-materialized legacy Notes remain readable through the old path and are
 not automatically rewritten.
@@ -390,8 +399,8 @@ not automatically rewritten.
 ## 12. Acceptance matrix
 
 1. A new source produces one pure `n-*` and one linked `ns-*`.
-2. The Note contains no candidate labels, candidate attributes, candidate
-   coverage or duplicate extraction prose.
+2. The Note contains no Evergreen machine anchors, candidate labels,
+   candidate attributes, candidate coverage or duplicate extraction prose.
 3. Workspace coverage accounts for every source and agent block in the Note.
 4. A user may edit either file without the other being silently rewritten.
 5. A Note edit makes the workspace stale and blocks materialization.

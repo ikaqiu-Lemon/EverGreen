@@ -131,6 +131,7 @@ func isPlainProtocolAnchor(line []byte) bool {
 	}
 	for _, family := range [][]byte{
 		[]byte("<!-- eg:nr:"),
+		[]byte("<!-- eg:nb:"),
 		[]byte("<!-- eg:cd:"),
 		[]byte("<!-- eg:cc:"),
 		[]byte("<!-- eg:nc:"),

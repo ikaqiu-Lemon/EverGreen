@@ -217,9 +217,10 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 	// v2 加严（契约 §4.2 第 4/5 条 / §4.2.1 / §4.2.2）：先判字段互斥与批注词表（source 只用
 	// source_ref、agent 只用非空且合法的 annotation/label，字段级 E2、零写入），再判 source_ref +
 	// omissions + Source 快照覆盖，覆盖过关后做结构资产保真（T12-2B），最后用 v2 审阅式 writer
-	// 落盘（机器锚点 + 多类型标签 + omissions 元数据）。这些都只作用于当前版本的 plan；兼容期
-	// v1 plan 即便用了 blocks[] 也走旧的 NoteBlockBytes 与 W21-only 口径，一字节不变（v1
-	// sections / v2 sections 的兼容路径同样不变）。任一阶段失败即整条 op 零写入。
+	// 落盘。v2 把块元数据写成 Note 内机器锚点；v3 的 Note 只保留可见 Markdown，并把同一
+	// B1..Bn 词表写入 ns-* manifest。这些都只作用于当前版本的 plan；兼容期 v1 plan 即便
+	// 用了 blocks[] 也走旧的 NoteBlockBytes 与 W21-only 口径，一字节不变（v1 sections /
+	// v2 sections 的兼容路径同样不变）。任一阶段失败即整条 op 零写入。
 	if v.p.Version == PlanVersionV2 || v.p.Version == PlanVersion {
 		if !v.noteAnnotationValidate(op) {
 			return nil, false
@@ -241,7 +242,13 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		} else if !v.noteCoverageValidate(op) {
 			return nil, false
 		}
-		body, err := store.NoteReviewBytes(op.Blocks, op.Omissions)
+		var body []byte
+		var err error
+		if v.p.Version == PlanVersion {
+			body, err = store.NotePlainReviewBytes(op.Blocks, op.Omissions)
+		} else {
+			body, err = store.NoteReviewBytes(op.Blocks, op.Omissions)
+		}
 		if err != nil {
 			v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"), "blocks[] 不成立：%v", err))
 			return nil, false
@@ -250,7 +257,14 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		writes := []SectionWrite{{Section: store.SecNoteBody, Payload: body}}
 		if len(draftBody) > 0 {
 			if v.p.Version == PlanVersion {
-				op.SegmentationBody = draftBody
+				manifest, manifestErr := store.NoteBlockManifestBytes(
+					op.Blocks, op.Omissions)
+				if manifestErr != nil {
+					v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"),
+						"blocks[] 无法生成 ns-* 块清单：%v", manifestErr))
+					return nil, false
+				}
+				op.SegmentationBody = append(manifest, draftBody...)
 			} else {
 				writes = append(writes,
 					SectionWrite{Section: store.SecExtraction, Payload: draftBody})

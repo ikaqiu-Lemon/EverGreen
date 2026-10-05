@@ -71,6 +71,46 @@ func assertRoundTrip(t *testing.T, blocks []ReviewBlock, oms []ReviewOmission) {
 	}
 }
 
+func TestPlainReviewMovesAllMachineMetadataToManifest(t *testing.T) {
+	blocks := []ReviewBlock{
+		rtSrc("来源", "L1-L2", "原文第一段。\n\n原文第二段。"),
+		rtAgent("", "emphasis", "", "这是重点。"),
+	}
+	omissions := []ReviewOmission{{
+		SourceRef: "L3-L3",
+		Reason:    "导航噪声",
+	}}
+	plain, err := RenderPlainReviewNote(blocks, omissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ContainsEvergreenMachineAnchors(plain) ||
+		!bytes.Contains(plain, []byte("### 来源\n\n原文第一段。")) ||
+		!bytes.Contains(plain, []byte("> **[Agent 强调]** 这是重点。")) {
+		t.Fatalf("anchorless Note 正文不成立：\n%s", plain)
+	}
+	manifestRaw, err := RenderNoteBlockManifest(blocks, omissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, found, err := ParseNoteBlockManifest(manifestRaw)
+	if err != nil || !found || len(manifest.Blocks) != 2 ||
+		manifest.Blocks[0].Ref != "B1" ||
+		manifest.Blocks[1].Annotation != "emphasis" ||
+		len(manifest.Omissions) != 1 {
+		t.Fatalf("note block manifest round-trip 不成立：found=%v err=%v %+v",
+			found, err, manifest)
+	}
+}
+
+func TestPlainReviewRejectsAnyEvergreenAnchorInVisibleBody(t *testing.T) {
+	blocks := []ReviewBlock{rtSrc(
+		"", "L1-L1", "正文。\n<!-- eg:cd:2 reserved -->")}
+	if _, err := RenderPlainReviewNote(blocks, nil); err == nil {
+		t.Fatal("anchorless Note 不得放行任何 <!-- eg: 机器锚点")
+	}
+}
+
 // TestReviewRoundTripMatrix —— 覆盖交错 / heading 有无 / 多段·列表·围栏 body /
 // 多行 agent body / 七类 + 扩展 / 多条 omissions 顺序。
 func TestReviewRoundTripMatrix(t *testing.T) {

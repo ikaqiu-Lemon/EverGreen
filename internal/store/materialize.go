@@ -116,10 +116,17 @@ func ParseMaterializationWorkspace(
 		return model.Note{}, model.NoteSegmentation{}, nil,
 			CandidateCoverageState{}, nil, err
 	}
-	noteRefs, err := NoteBlockVocabulary(noteRaw)
+	noteRefs, foundManifest, err := mdfile.NoteBlockManifestVocabulary(workspaceRaw)
 	if err != nil {
 		return model.Note{}, model.NoteSegmentation{}, nil,
 			CandidateCoverageState{}, nil, err
+	}
+	if !foundManifest {
+		noteRefs, err = NoteBlockVocabulary(noteRaw)
+		if err != nil {
+			return model.Note{}, model.NoteSegmentation{}, nil,
+				CandidateCoverageState{}, nil, err
+		}
 	}
 	coverage := CandidateCoverageState{
 		Draft: state.Draft, Finalized: state.Finalized,

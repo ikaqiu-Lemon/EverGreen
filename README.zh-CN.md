@@ -290,7 +290,8 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 若文件在你身后被改动，Evergreen 会跳过该文件而不是覆盖它。
 
 Storage v3 通过一次 `write_note` 生成纯 `n-*` 与对应的可编辑 `ns-*`；Knowledge/Opinion
-草稿和 `candidate_coverage[]` 位于 `ns-*`。Agent 可以保存草稿，但不得代替用户确认或物化。每个新草稿还带用户可编辑的
+草稿和 `candidate_coverage[]` 位于 `ns-*`。`n-*` 不含任何 Evergreen 机器锚点；有序
+`B1..Bn` 块词表及其溯源元数据统一保存在 `ns-*` 的 `eg:nb:1` manifest 中。Agent 可以保存草稿，但不得代替用户确认或物化。每个新草稿还带用户可编辑的
 `logical_slug`，它独立于显示标题决定最终带日期文件名。plan 落盘后，先导出完整审阅状态，编辑后
 原子回投：
 
