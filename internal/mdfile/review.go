@@ -140,6 +140,34 @@ func RenderReviewNote(blocks []ReviewBlock, omissions []ReviewOmission) ([]byte,
 	return out, nil
 }
 
+// RenderPlainReviewNote renders the visible review body without any Evergreen
+// machine anchors. Block identity and provenance belong in the paired ns-*
+// note block manifest; n-* remains ordinary Markdown.
+func RenderPlainReviewNote(
+	blocks []ReviewBlock,
+	omissions []ReviewOmission,
+) ([]byte, error) {
+	anchored, err := RenderReviewNote(blocks, omissions)
+	if err != nil {
+		return nil, err
+	}
+	var out []byte
+	for _, line := range bytes.Split(anchored, []byte("\n")) {
+		if isReviewAnchorLine(line) {
+			continue
+		}
+		out = append(out, line...)
+		out = append(out, '\n')
+	}
+	out = bytes.Trim(out, "\n")
+	out = append(out, '\n')
+	if bytes.Contains(out, []byte("<!-- eg:")) {
+		return nil, fmt.Errorf(
+			"n-* 正文含 Evergreen 机器锚点保留字（<!-- eg:），无法生成纯 Markdown")
+	}
+	return out, nil
+}
+
 // firstReservedAnchorLine 报告 body 里是否有任何一行是机器锚点保留字（据以拒绝保留字冲突）。
 func firstReservedAnchorLine(body []byte) ([]byte, bool) {
 	for _, line := range bytes.Split(body, []byte("\n")) {

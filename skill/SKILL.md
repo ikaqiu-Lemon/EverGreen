@@ -136,7 +136,10 @@ eg apply --plan <file|-> [--dry-run] [--json]
 新主路径由一次 `write_note` 原子创建纯 `n-*` 与对应的可编辑 `ns-*`，不直接伪造最终 output：
 
 - `n-*` 只含 `整理正文` / `存疑与待验证` / `用户补充`，不含候选标签、覆盖矩阵或
-  `提取结果`；`ns-*` 位于 `domains/<domain>/note-segments/`，固定含 `划分结果` / `用户补充`。
+  `提取结果`，也不含任何 `<!-- eg:* -->` 机器锚点；`ns-*` 位于
+  `domains/<domain>/note-segments/`，固定含 `划分结果` / `用户补充`。
+- `blocks[]` 的有序 `B1..Bn` 词表、source/agent 角色、溯源字段和正文摘要只写入
+  `ns-*` 的单个 `eg:nb:1` manifest；candidate/coverage 分别使用 `eg:cd:2` / `eg:cc:2`。
 - `candidate_drafts[]` 中每项固定给 `key`、`kind`、`logical_slug`、`title`、`note_refs`、
   `rel`、`reason`、`tags` 与有序 `sections[]`；`logical_slug` 使用无日期的小写 ASCII
   kebab-case，并独立于显示标题决定最终文件名。Knowledge 使用 `知识内容` / 可选 `条件与边界`，Opinion 使用
@@ -149,7 +152,8 @@ eg apply --plan <file|-> [--dry-run] [--json]
   logical slug、Note 块范围、payload 和 coverage；Note 改动后 workspace 标记为 stale，
   必须在审阅完整状态后显式使用 `--rebase --user-request`，工具不会自动合并语义文本。
 - 旧的未物化内嵌候选可由 `eg candidate migrate --note <n-id> --user-request` 原子拆成
-  纯 `n-* + ns-*`；已物化或引用映射有歧义时零写入拒绝。
+  纯 `n-* + ns-*`；已有 `ns-*` 但 `n-*` 仍含 `eg:nr:1` 时，同一命令原子移除 Note
+  锚点并把块元数据迁入 workspace。已物化 legacy 候选、引用映射有歧义或元数据冲突时零写入拒绝。
 - `eg edit --target <n-id> --candidate <cand-key> --section <H4> --content <text|file>
   --user-request` 仍可用于只改一个未物化候选分区。
 - **Agent 不得调用 `eg materialize`。** 用户确认草稿后显式执行

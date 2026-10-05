@@ -43,7 +43,8 @@ eg candidate migrate --note <n-id> --user-request [--strict] [--json]
 show 只读；新工作区返回 schema_version=2、n/ns 双路径双 hash 与 stale。apply 把 spec
 当成完整目标状态，可修改未物化候选及 note_refs/payload/coverage；已物化候选不可改。
 Note 改动后，只有显式 --rebase 才会推进 workspace_note_hash。migrate 把 legacy
-未物化内嵌候选原子拆成纯 n-* 与 ns-*。所有写入走 journal v1 与一次 Git commit。
+未物化内嵌候选原子拆成纯 n-* 与 ns-*；也可把已有 n/ns 对中的 Note 机器锚点原子迁入
+workspace。所有写入走 journal v1 与一次 Git commit。
 退出码：0 成功 / 幂等 no-op | 1 参数非法 | 2 授权、spec 或结构校验失败（零写入） |
         3 原子提交已整体回滚 | 4 Git 提交失败（Markdown 已生效并保留） |
         5 写前安全复核失败（E15）/ run.lock 不可用（E16），两者均零权威写入

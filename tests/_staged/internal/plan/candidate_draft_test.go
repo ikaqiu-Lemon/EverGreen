@@ -236,7 +236,8 @@ func TestPlanV3WriteNoteCreatesPureNoteAndSegmentationWorkspace(t *testing.T) {
 	segmentationPath := "domains/ai-infra/note-segments/ns-20260922-v3.md"
 	noteRaw := []byte(readVaultFile(t, dir, notePath))
 	if bytes.Contains(noteRaw, []byte("## "+store.SecExtraction+"\n")) ||
-		bytes.Contains(noteRaw, []byte("[Knowledge Candidate]")) {
+		bytes.Contains(noteRaw, []byte("[Knowledge Candidate]")) ||
+		mdfile.ContainsEvergreenMachineAnchors(noteRaw) {
 		t.Fatalf("v3 Note 必须是纯学习正文：\n%s", noteRaw)
 	}
 	segmentationRaw := []byte(readVaultFile(t, dir, segmentationPath))
@@ -248,9 +249,19 @@ func TestPlanV3WriteNoteCreatesPureNoteAndSegmentationWorkspace(t *testing.T) {
 		t.Fatalf("ns.note_hash=%s，当前 Note hash=%s",
 			segmentation.NoteHash, store.ContentHash(noteRaw))
 	}
+	manifest, found, err := mdfile.ParseNoteBlockManifest(segmentationRaw)
+	if err != nil || !found || len(manifest.Blocks) != 2 ||
+		manifest.Blocks[0].Ref != "B1" || manifest.Blocks[1].Ref != "B2" {
+		t.Fatalf("ns note block manifest 不成立：found=%v err=%v %+v\n%s",
+			found, err, manifest, segmentationRaw)
+	}
 	candidates, err := mdfile.ParseCandidates(segmentationRaw)
 	if err != nil || len(candidates) != 2 {
 		t.Fatalf("ns candidates=%d err=%v", len(candidates), err)
+	}
+	if !bytes.Contains(segmentationRaw, []byte("<!-- eg:cd:2 ")) ||
+		!bytes.Contains(segmentationRaw, []byte("<!-- eg:cc:2 ")) {
+		t.Fatalf("ns 缺 candidate/coverage 协议：\n%s", segmentationRaw)
 	}
 	if out.Segmentation.Path != segmentationPath {
 		t.Fatalf("执行结果未报告划分工作区：%+v", out.Segmentation)

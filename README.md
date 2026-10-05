@@ -310,6 +310,8 @@ file changed underneath you, Evergreen skips that file instead of clobbering it.
 
 Storage v3 plans create a pure learning Note (`n-*`) and a linked Knowledge/Opinion segmentation
 workspace (`ns-*`) from the same `write_note.candidate_drafts[]` and `candidate_coverage[]` input.
+The Note contains no Evergreen machine anchors. Its ordered `B1..Bn` block vocabulary and
+provenance live in one `eg:nb:1` manifest inside the linked workspace.
 The agent may save those drafts, but it must not materialize them. Each new draft also carries a user-editable
 `logical_slug`; it controls the final dated filename independently of the visible title. After the
 plan is applied, export the complete review state, edit it, and apply it atomically:

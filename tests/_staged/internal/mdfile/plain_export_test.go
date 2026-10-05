@@ -24,7 +24,8 @@ func TestPlainExportPreservesVisibleCandidateBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := candidateNote(
-		[]byte("<!-- eg:nr:1 machine -->\n> [Agent 补充] 可见批注。\n\n"),
+		[]byte("<!-- eg:nr:1 machine -->\n<!-- eg:nb:1 machine -->\n"+
+			"> [Agent 补充] 可见批注。\n\n"),
 		rendered,
 		coverage,
 	)
@@ -33,7 +34,7 @@ func TestPlainExportPreservesVisibleCandidateBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range [][]byte{
-		[]byte("<!-- eg:nr:"), []byte("<!-- eg:cd:"),
+		[]byte("<!-- eg:nr:"), []byte("<!-- eg:nb:"), []byte("<!-- eg:cd:"),
 		[]byte("<!-- eg:cc:"), []byte("#cand-plain .eg-candidate"),
 		[]byte("data-slug"),
 		[]byte("[Knowledge Candidate]"), []byte("[Opinion Candidate]"),

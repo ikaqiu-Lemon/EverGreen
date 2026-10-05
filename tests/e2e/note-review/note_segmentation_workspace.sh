@@ -68,6 +68,8 @@ PLAN
 [ -f "${WORKSPACE_FILE}" ] || die "ns workspace 未落盘"
 ! grep -qF '## 提取结果' "${NOTE}" || die "纯 Note 含旧提取结果"
 ! grep -qF '[Knowledge Candidate]' "${NOTE}" || die "纯 Note 含候选标签"
+! grep -qF '<!-- eg:' "${NOTE}" || die "纯 Note 含 Evergreen 机器锚点"
+grep -qF '<!-- eg:nb:1 ' "${WORKSPACE_FILE}" || die "workspace 缺 eg:nb:1"
 grep -qF '<!-- eg:cd:2 ' "${WORKSPACE_FILE}" || die "workspace 缺 eg:cd:2"
 grep -qF '<!-- eg:cc:2 ' "${WORKSPACE_FILE}" || die "workspace 缺 eg:cc:2"
 ok "v3 原子生成纯 n-* 与可编辑 ns-*"
@@ -166,6 +168,8 @@ PLAN
 LEGACY_NOTE="${VAULT}/domains/tech/notes/${LEGACY_ID}.md"
 LEGACY_NS="${VAULT}/domains/tech/note-segments/ns-20261004-legacy.md"
 ! grep -qF '## 提取结果' "${LEGACY_NOTE}" || die "legacy Note 未净化"
+! grep -qF '<!-- eg:' "${LEGACY_NOTE}" || die "legacy Note 迁移后仍含机器锚点"
+grep -qF '<!-- eg:nb:1 ' "${LEGACY_NS}" || die "legacy workspace 缺块清单"
 grep -qF '<!-- eg:cd:2 ' "${LEGACY_NS}" || die "legacy candidate 未升级"
 HEAD_BEFORE="$(git -C "${VAULT}" rev-parse HEAD)"
 "${EG}" --vault "${VAULT}" candidate migrate --note "${LEGACY_ID}" \
