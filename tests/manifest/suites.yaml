@@ -1033,6 +1033,23 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: e2e.note-review.note_segmentation_workspace
+  layer: e2e
+  capability: note-review
+  kind: shell
+  target: tests/e2e/note-review/note_segmentation_workspace.sh
+  source: tests/e2e/note-review/note_segmentation_workspace.sh
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-004
+  profiles:
+  - e2e
+  - full
+  timeout_s: 900
+  min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: e2e.ops-diagnostics.cmd_check
   layer: e2e
   capability: ops-diagnostics
@@ -1683,7 +1700,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 505
+  min_cases: 508
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1742,7 +1759,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 137
+  min_cases: 140
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1781,7 +1798,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 216
+  min_cases: 219
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1820,7 +1837,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 163
+  min_cases: 164
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1935,7 +1952,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 139
+  min_cases: 141
   required: true
   platform_required: linux/amd64
   not_run_when: null

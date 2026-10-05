@@ -261,7 +261,7 @@ func TestE4BrokenFrontmatter(t *testing.T) {
 // 判据本身没有放宽：仍要求 E5 + 零展开，且 v2 侧另有正例证明当前版本零 error（见下）。
 func TestE5VersionAndUnknownOp(t *testing.T) {
 	env, _ := baseVault(t)
-	res := run(t, env, `{"plan_version":3,"verb":"process","domain":"ai-infra","ops":[]}`)
+	res := run(t, env, `{"plan_version":4,"verb":"process","domain":"ai-infra","ops":[]}`)
 	d0 := requireError(t, res, E5)
 	if !strings.Contains(d0.Message, "不被支持") {
 		t.Fatalf("越界版本应注明不被支持：%+v", d0)
@@ -274,8 +274,8 @@ func TestE5VersionAndUnknownOp(t *testing.T) {
 	if d := requireError(t, res, E5); !strings.Contains(d.Message, "缺失") {
 		t.Fatalf("缺 plan_version 应注明缺失：%+v", d)
 	}
-	// 反向正例：当前版本 2 不再是 E5 的来源（空 ops[] 本身不是错误）。
-	res = run(t, env, `{"plan_version":2,"verb":"process","domain":"ai-infra","ops":[]}`)
+	// 反向正例：当前版本 3 不再是 E5 的来源（空 ops[] 本身不是错误）。
+	res = run(t, env, `{"plan_version":3,"verb":"process","domain":"ai-infra","ops":[]}`)
 	if _, ok := find(res.Errors, E5); ok {
 		t.Fatalf("plan_version=%d 是当前版本，不得再判 E5：%v", PlanVersion, codes(res.Errors))
 	}

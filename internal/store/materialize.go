@@ -29,13 +29,14 @@ type CandidateNoteMaterializationSpec struct {
 // CandidateArtifactSpec contains the facts copied from one Note candidate into
 // a new Knowledge or Opinion artifact.
 type CandidateArtifactSpec struct {
-	Rel       string
-	Output    string
-	Candidate Candidate
-	Source    model.SourceID
-	Note      model.NoteID
-	Date      model.Date
-	Stamp     model.Stamp
+	Rel          string
+	Output       string
+	Candidate    Candidate
+	Source       model.SourceID
+	Note         model.NoteID
+	Segmentation model.NoteSegmentationID
+	Date         model.Date
+	Stamp        model.Stamp
 }
 
 // ParseMaterializationNote reads all Markdown-owned facts needed by the plan
@@ -83,6 +84,54 @@ func ParseMaterializationNote(
 		}
 	}
 	return note, candidates, coverage, sourceRefs, nil
+}
+
+// ParseMaterializationWorkspace reads the pure Note and its ns-* candidate
+// authority without merging their independently editable bytes.
+func ParseMaterializationWorkspace(
+	noteRaw, workspaceRaw []byte,
+) (model.Note, model.NoteSegmentation, []Candidate, CandidateCoverageState, map[string]bool, error) {
+	_, note, err := mdfile.ParseNote(noteRaw)
+	if err != nil {
+		return model.Note{}, model.NoteSegmentation{}, nil,
+			CandidateCoverageState{}, nil, err
+	}
+	_, segmentation, err := mdfile.ParseNoteSegmentation(workspaceRaw)
+	if err != nil {
+		return model.Note{}, model.NoteSegmentation{}, nil,
+			CandidateCoverageState{}, nil, err
+	}
+	if segmentation.Note != note.ID {
+		return model.Note{}, model.NoteSegmentation{}, nil,
+			CandidateCoverageState{}, nil, fmt.Errorf(
+				"ns-* note=%s 与 Note id=%s 不一致", segmentation.Note, note.ID)
+	}
+	candidates, err := mdfile.ParseCandidates(workspaceRaw)
+	if err != nil {
+		return model.Note{}, model.NoteSegmentation{}, nil,
+			CandidateCoverageState{}, nil, err
+	}
+	state, err := mdfile.ParseCandidateCoverageState(workspaceRaw)
+	if err != nil {
+		return model.Note{}, model.NoteSegmentation{}, nil,
+			CandidateCoverageState{}, nil, err
+	}
+	noteRefs, err := NoteBlockVocabulary(noteRaw)
+	if err != nil {
+		return model.Note{}, model.NoteSegmentation{}, nil,
+			CandidateCoverageState{}, nil, err
+	}
+	coverage := CandidateCoverageState{
+		Draft: state.Draft, Finalized: state.Finalized,
+	}
+	coverage.Final = make([]ExtractionCoverage, len(state.Final))
+	for i, item := range state.Final {
+		coverage.Final[i] = ExtractionCoverage{
+			Module: item.Module, SourceRefs: item.SourceRefs, Summary: item.Summary,
+			Disposition: item.Disposition, Outputs: item.Outputs, Reason: item.Reason,
+		}
+	}
+	return note, segmentation, candidates, coverage, noteRefs, nil
 }
 
 // ApplyCandidateNoteMaterialization updates candidate output anchors and,
@@ -155,10 +204,11 @@ func (s *Store) ApplyCandidateArtifact(spec CandidateArtifactSpec) (Result, erro
 		return Result{Path: spec.Rel}, err
 	}
 	sources := []model.SourceRef{{
-		Source: spec.Source,
-		Note:   spec.Note,
-		Rel:    rel,
-		Reason: spec.Candidate.Anchor.Reason,
+		Source:       spec.Source,
+		Note:         spec.Note,
+		Segmentation: spec.Segmentation,
+		Rel:          rel,
+		Reason:       spec.Candidate.Anchor.Reason,
 	}}
 	switch spec.Candidate.Kind {
 	case CandidateKindKnowledge:
@@ -208,7 +258,11 @@ func candidateWriterSections(candidate Candidate) ([]SectionAppend, error) {
 
 // VerifyCandidateArtifact checks the stable mapping facts without requiring a
 // byte-for-byte match of user-controlled frontmatter or user supplements.
-func (s *Store) VerifyCandidateArtifact(rel string, candidate Candidate) error {
+func (s *Store) VerifyCandidateArtifact(
+	rel string,
+	candidate Candidate,
+	segmentation ...model.NoteSegmentationID,
+) error {
 	file, err := s.Read(rel)
 	if err != nil {
 		return err
@@ -216,24 +270,37 @@ func (s *Store) VerifyCandidateArtifact(rel string, candidate Candidate) error {
 	output := candidate.Anchor.Output
 	var doc *mdfile.Doc
 	var artifactID string
+	var sources []model.SourceRef
 	switch candidate.Kind {
 	case CandidateKindKnowledge:
 		parsed, card, err := mdfile.ParseCard(file.Bytes)
 		if err != nil {
 			return fmt.Errorf("Knowledge 目标不可解析：%w", err)
 		}
-		doc, artifactID = parsed, string(card.ID)
+		doc, artifactID, sources = parsed, string(card.ID), card.Sources
 	case CandidateKindOpinion:
 		parsed, opinion, err := mdfile.ParseOpinion(file.Bytes)
 		if err != nil {
 			return fmt.Errorf("Opinion 目标不可解析：%w", err)
 		}
-		doc, artifactID = parsed, string(opinion.ID)
+		doc, artifactID, sources = parsed, string(opinion.ID), opinion.Sources
 	default:
 		return fmt.Errorf("candidate %s kind 越界：%s", candidate.Key, candidate.Kind)
 	}
 	if artifactID != output {
 		return fmt.Errorf("目标 ID 漂移：%s != %s", artifactID, output)
+	}
+	if len(segmentation) > 0 && segmentation[0] != "" {
+		found := false
+		for _, source := range sources {
+			if source.Segmentation == segmentation[0] {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("目标 sources[] 缺 segmentation=%s", segmentation[0])
+		}
 	}
 	var meta struct {
 		Title string `yaml:"title"`

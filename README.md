@@ -266,8 +266,9 @@ $ eg context --source s-20260915-the-bitter-lesson --json
 ```
 
 This read-only call returns the source body, similar existing entities, and — most importantly —
-`base`, a map of file → `content_hash`. `draft_candidates` reports candidate summaries embedded in
-Notes, including their draft/materialized state, persistent output ID, and exact payload hash.
+`base`, a map of file → `content_hash`. `note_segmentations` reports linked `ns-*` workspaces and
+their freshness. `draft_candidates` reports candidate summaries from those workspaces, including
+their draft/materialized state, persistent output ID, and exact payload hash.
 Already-materialized entities remain separate in `knowledge_candidates` (Knowledge `k-*`) and
 `opinion_candidates` (Opinion `o-*`). Version 0.8.0-m8 removes the legacy `candidates` alias and its
 deprecation `I1`. The two materialized candidate lists feed the plan's `base`:
@@ -280,6 +281,7 @@ deprecation `I1`. The two materialized candidate lists feed the plan's `base`:
       "unprocessed.md": "sha256:49d70d685f07d2b18acfaa97893565bd6e7c252a6a0deb43ec1c94a35ae656f5"
     },
     "draft_candidates": [],
+    "note_segmentations": [],
     "knowledge_candidates": [],
     "opinion_candidates": [],
     "cards": [],
@@ -306,9 +308,9 @@ deprecation `I1`. The two materialized candidate lists feed the plan's `base`:
 Those hashes are an **optimistic-concurrency token**: copy them verbatim into your ChangePlan. If a
 file changed underneath you, Evergreen skips that file instead of clobbering it.
 
-Storage v3 plans save Knowledge/Opinion drafts inside the Note with
-`write_note.candidate_drafts[]` and the separate `candidate_coverage[]` matrix. The agent may save
-those drafts, but it must not materialize them. Each new draft also carries a user-editable
+Storage v3 plans create a pure learning Note (`n-*`) and a linked Knowledge/Opinion segmentation
+workspace (`ns-*`) from the same `write_note.candidate_drafts[]` and `candidate_coverage[]` input.
+The agent may save those drafts, but it must not materialize them. Each new draft also carries a user-editable
 `logical_slug`; it controls the final dated filename independently of the visible title. After the
 plan is applied, export the complete review state, edit it, and apply it atomically:
 
@@ -317,10 +319,11 @@ $ eg candidate show --note n-20260915-bitter-lesson --json | jq '.data' > review
 $ eg candidate apply --note n-20260915-bitter-lesson --file review.json --user-request
 ```
 
-The review spec can add, delete, rename, reorder, or retype candidates and can change source ranges,
-payloads, slugs, and coverage together. `candidate apply` requires the exact `note_path` and
-`note_hash` returned by `show`, refuses materialized candidates, and preserves every byte outside the
-candidate-managed part of `## 提取结果`. Step 4 shows the later explicit materialization. A plain
+The review spec can add, delete, rename, reorder, or retype unmaterialized candidates and can change
+Note block references, payloads, slugs, and coverage together. `candidate apply` requires the exact
+Note/workspace paths and hashes returned by `show`, and preserves every byte outside the
+candidate-managed part of `## 划分结果`. If the Note changed, rerun `show`, reconcile the complete
+state, then apply it with `--rebase --user-request`. Step 4 shows the later explicit materialization. A plain
 export is available independently:
 
 ```console
@@ -329,7 +332,7 @@ $ eg export --plain --output ../evergreen-plain
 
 `eg materialize` performs no model or network call. It validates and copies exact candidate bytes,
 writes `k-*` under `knowledge/` and `o-*` under `opinions/` (`validation: pending`), and commits the
-targets plus the Note mapping in one journal-v1 transaction. `eg export --plain` is read-only with
+targets plus the `ns-*` output mappings in one journal-v1 transaction. `eg export --plain` is read-only with
 respect to the vault and removes only Evergreen machine anchors, visible candidate type labels,
 candidate attributes, and fenced-div boundary lines from the exported Markdown.
 
@@ -337,7 +340,7 @@ Most candidates use the H3 boundary rendered by `candidate_drafts[]`. When headi
 express the boundary, Evergreen also reads this exact L2 fallback:
 
 ```markdown
-<!-- eg:cd:1 <base64url(JSON)> -->
+<!-- eg:cd:2 <base64url(JSON with note_refs)> -->
 :::: {#cand-cross-section .eg-candidate .opinion data-slug=cross-section-claim}
 ### A claim spanning sections
 > **[Opinion Candidate]**
@@ -367,7 +370,7 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
 
 ```json
 {
-  "plan_version": 2,
+  "plan_version": 3,
   "verb": "process",
   "domain": "ai-infra",
   "reason": "save The Bitter Lesson as a review Note with one knowledge and one opinion candidate",
@@ -393,7 +396,7 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
           "kind": "knowledge",
           "logical_slug": "general-methods-scale-with-compute",
           "title": "General methods scale with compute",
-          "source_refs": ["L2-L2", "L3-L3"],
+          "note_refs": ["B1", "B2"],
           "rel": "support",
           "reason": "the article grounds the claim in four domains of history",
           "tags": ["ai", "method"],
@@ -407,7 +410,7 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
           "kind": "opinion",
           "logical_slug": "encoding-human-knowledge-long-run-bet",
           "title": "Encoding human knowledge is a losing long-run bet",
-          "source_refs": ["L4-L4"],
+          "note_refs": ["B3", "B4"],
           "rel": "support",
           "reason": "the article's closing bet",
           "tags": ["ai", "research-direction"],
@@ -419,20 +422,21 @@ lines are `L2`, `L3`, `L4`. Save this as `plan.json`, pasting in the `base` hash
         }
       ],
       "candidate_coverage": [
-        { "module": "knowledge", "source_refs": ["L2-L2", "L3-L3"], "summary": "Claim and its historical grounds become one reusable candidate.", "disposition": "candidate", "candidates": ["cand-general-methods"] },
-        { "module": "opinion",   "source_refs": ["L4-L4"],          "summary": "The long-run bet is a value judgement, tracked as an opinion candidate.", "disposition": "candidate", "candidates": ["cand-scale-bet"] }
+        { "module": "knowledge", "note_refs": ["B1", "B2"], "summary": "Claim and its historical grounds become one reusable candidate.", "disposition": "candidate", "candidates": ["cand-general-methods"] },
+        { "module": "opinion",   "note_refs": ["B3", "B4"], "summary": "The long-run bet and Agent classification become an opinion candidate.", "disposition": "candidate", "candidates": ["cand-scale-bet"] }
       ]
     }
   ]
 }
 ```
 
-`write_note` is the v2 canonical shape: `blocks[]` reproduce the source lines in order (each `source`
+`write_note` is the v3 canonical shape: `blocks[]` reproduce the source lines in order (each `source`
 block cites the physical range it came from via `source_ref`), `omissions[]` records — explicitly,
-even when empty — the lines you deliberately dropped. `candidate_drafts[]` stores complete
-Knowledge/Opinion template payloads, while `candidate_coverage[]` classifies every source range as
-`candidate`, `note_only`, or `unresolved`. The candidate path omits `output_cards` and final
-`extraction_coverage`; it never predicts a `k-*` or `o-*` ID.
+even when empty — the lines you deliberately dropped. The rendered Note blocks are numbered `B1..Bn`;
+`candidate_drafts[]` stores complete Knowledge/Opinion template payloads, while
+`candidate_coverage[]` partitions every Note block as `candidate`, `note_only`, or `unresolved`.
+The candidate path omits `output_cards` and final `extraction_coverage`; it never predicts a `k-*`
+or `o-*` ID.
 
 Always dry-run first — it runs full validation with **zero writes**:
 
@@ -445,7 +449,7 @@ $ eg apply --plan plan.json --dry-run
 --dry-run：零写入、零 commit，以下是将写入的清单
 知识卡：新建 0 张，复用 0 张，补充 0 张
 关系：材料 0 条，论证 0 条
-写入文件 2 个：domains/ai-infra/notes/n-….md、unprocessed.md
+写入文件 3 个：domains/ai-infra/notes/n-….md、domains/ai-infra/note-segments/ns-….md、unprocessed.md
 commit：无（未产生 commit 或提交失败；磁盘保留当前状态，未做任何还原）
 ```
 
@@ -561,20 +565,22 @@ A **domain** is a top-level partition (`ai-infra`, `product`, …). Evergreen wi
 you: if `default_domain` is unset, every command except `init` and `config` exits `1` and tells you
 to configure it.
 
-### Four learning entities and a control plane
+### Five learning entities and a control plane
 
-Evergreen models a source through a fixed **Source → Note → {Knowledge, Opinion}** chain. Four
+Evergreen models a source through a fixed
+**Source → Note → Note Segmentation → {Knowledge, Opinion}** chain. Five
 entities carry what you learn; `Proposal` is a separate control-plane object, not a learning entity:
 
 | Prefix | Entity | Role |
 | --- | --- | --- |
 | `s-` | **Source** | Raw captured material. Immutable evidence, one file per source. |
 | `n-` | **Note** | The complete, order-faithful body of one source, with removable annotations placed inline right next to the text they comment on. |
+| `ns-` | **Note Segmentation** | The editable Knowledge/Opinion partition for one exact Note version, stored under `note-segments/`. |
 | `k-` | **Knowledge** | A stable definition / composition / step / condition / datum. Split, dedupe, and tidy only — never a multi-hop inference. This is what search returns by default. |
 | `o-` | **Opinion** | An evaluation, causal or predictive claim, or a trade-off. Carries its argument, counter-examples, and validation lifecycle. **When you cannot tell whether something is Knowledge or Opinion, prefer Opinion.** |
 
 `Proposal` (`p-*`) lives at the repository root and drives risky operations pending human approval; it
-is a control surface and must never be treated as one of the four learning entities.
+is a control surface and must never be treated as one of the five learning entities.
 
 IDs are stable, human-readable, and date-prefixed (`k-20260915-bitter-lesson`). Two hard rules,
 enforced in code: an `s-` ID may never appear in `relations`, and a `k-`/`o-` ID may never appear in
@@ -602,8 +608,11 @@ Each learning entity has a fixed, ordered set of sections, compared byte-for-byt
 | 待验证 — *To verify* | Open checks; the `validation` lifecycle lives in frontmatter |
 | 用户补充 — *User notes* | **Only you.** |
 
-**Note — four sections:** 整理正文 (tidied body), 提取结果 (extraction results), 存疑与待验证 (open
-questions), 用户补充 (user notes).
+**Note — three sections:** 整理正文 (tidied body), 存疑与待验证 (open questions), 用户补充
+(user notes).
+
+**Note segmentation workspace — two sections:** 划分结果 (candidate partition and coverage),
+用户补充 (user notes). It lives at `domains/<domain>/note-segments/ns-*.md`.
 
 The legacy v1 Knowledge sections 解释与依据 and 理解自检 are **not** current fixed sections; when an
 older vault still carries them they are preserved verbatim as unknown/compatibility sections and
@@ -622,7 +631,8 @@ silently redefine the claim, and it can never touch your words.
 Two different kinds:
 
 **Material relationships** connect a card to its evidence — four required elements: `source` +
-`note` + `rel` (`support` / `against` / `context`) + `reason`.
+`note` + `rel` (`support` / `against` / `context`) + `reason`. K/O created from a workspace also
+records optional `segmentation`.
 
 **Argument relationships** connect cards to each other — `from` + `type` + `target` + `reason`:
 
@@ -654,7 +664,7 @@ channel.** It has exactly eight top-level keys:
 
 | Key | Purpose |
 | --- | --- |
-| `plan_version` | `2` for current plans. The supported set is `{1, 2}`; a `plan_version: 1` plan is still accepted for compatibility and flagged with a single `I1` migration info. |
+| `plan_version` | `3` for current plans. The supported set is `{1, 2, 3}`; versions 1 and 2 remain compatibility formats. |
 | `verb` | Commit verb — `process` normally, `reprocess` when re-deriving a note |
 | `domain` | Exactly one domain per plan |
 | `reason` | Why this write happens |
@@ -1005,11 +1015,11 @@ distinguished by a `kind` column (`knowledge` / `opinion`); an opinion's `valida
 row. There is **no incremental schema migration**: when the on-disk `schema_version` does not match,
 the whole index is discarded and rebuilt from Markdown.
 
-Each schema-v2 `.index/blocks/<n-id>.json` stores only facts reproducible from its Note: Note
-path/hash and candidate key, kind, logical slug, syntax, source spans, materialization status/output,
-and payload hash. It does
+Each schema-v3 `.index/blocks/<n-id>.json` stores only facts reproducible from Markdown: Note
+path/hash, workspace path/hash/freshness, and candidate key, kind, logical slug, syntax, source
+spans, materialization status/output, and payload hash. It does
 not store authoritative Markdown. `eg context` uses a sidecar only after comparing it with the
-current Note projection; missing, stale, corrupt, or orphaned sidecars produce an index diagnostic
+current Note/workspace projection; missing, stale, corrupt, or orphaned sidecars produce an index diagnostic
 and fall back to the same direct Markdown scan.
 
 ```console

@@ -29,6 +29,9 @@ and published versions follow [Semantic Versioning](https://semver.org/).
 - `eg candidate show|apply` for exporting and atomically applying a complete
   user-reviewable candidate state before materialization. Candidate drafts can
   carry a stable `logical_slug` independent of their visible title.
+- Editable `ns-*` Note segmentation workspaces under
+  `domains/<domain>/note-segments/`, plus explicit stale rebasing and
+  `eg candidate migrate` for unmaterialized legacy Notes.
 - Rebuildable `.index/blocks/<n-id>.json` candidate sidecars with deterministic
   build/sync, strict Markdown reconciliation, and scan fallback for `eg context`.
 
@@ -38,10 +41,12 @@ and published versions follow [Semantic Versioning](https://semver.org/).
   `[Knowledge Candidate]` or `[Opinion Candidate]` label below their title.
   Legacy unlabeled candidates remain readable; malformed or kind-mismatched
   labels fail closed and plain export removes canonical labels.
-- ChangePlan `plan_version` is now `2` for current plans; the supported set is
-  `{1, 2}`. This is an **additive schema change with compatibility**, not a
-  break: a `plan_version: 1` plan is still accepted and flagged with a single
-  `I1`.
+- ChangePlan `plan_version` is now `3` for current plans; the supported set is
+  `{1, 2, 3}`. This is an **additive schema change with compatibility**, not a
+  break: versions 1 and 2 remain accepted.
+- New Notes now contain only `整理正文` / `存疑与待验证` / `用户补充`; candidate
+  payloads and whole-Note coverage live in linked `ns-*` workspaces using
+  `eg:cd:2` / `eg:cc:2` and version-local `B1..Bn` references.
 - **Breaking (derived storage schema only):** the derived index
   `schema_version` is now `2`. There is no incremental migration — a
   `schema_version` mismatch discards and rebuilds the local `.index/` database
@@ -50,8 +55,8 @@ and published versions follow [Semantic Versioning](https://semver.org/).
   count stays at six; Knowledge and Opinion share `cards`/`cards_fts` via a
   `kind` column plus opinion `validation`.
 - **Breaking (derived sidecar schema only):** candidate block sidecars advance
-  from schema `1` to `2` to include `logical_slug`; they are rebuilt from
-  authoritative Markdown rather than migrated.
+  to schema `3` to identify the authoritative `ns-*` workspace and its
+  freshness; they are rebuilt from authoritative Markdown rather than migrated.
 - **Breaking:** `eg context` now returns `draft_candidates`,
   `knowledge_candidates`, and `opinion_candidates`; the deprecated legacy
   `candidates` alias and its unconditional deprecation `I1` are removed in
@@ -71,6 +76,8 @@ and published versions follow [Semantic Versioning](https://semver.org/).
 
 - `plan_version: 1` plans are still accepted and flagged with a single `I1`
   migration info.
+- `plan_version: 2` Notes with embedded `eg:cd:1` candidates remain readable
+  and materializable; unmaterialized Notes can be migrated explicitly.
 - `create_card` / `append_card` remain accepted as aliases, normalized to
   `create_knowledge` / `append_knowledge` with an `I1`; new plans should use the
   canonical ops.

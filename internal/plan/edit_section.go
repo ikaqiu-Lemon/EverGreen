@@ -141,15 +141,18 @@ func (v *validator) editSection(op *Op) {
 }
 
 func (v *validator) editCandidateSection(op *Op) {
-	if _, err := model.ParseNoteID(op.Target); err != nil {
-		v.add(errorAt(E2, op.Index, opPath(op.Index, "target"),
-			"candidate 模式的 target 必须是合法 Note ID：%v", err))
-		return
+	if _, noteErr := model.ParseNoteID(op.Target); noteErr != nil {
+		if _, segmentationErr := model.ParseNoteSegmentationID(op.Target); segmentationErr != nil {
+			v.add(errorAt(E2, op.Index, opPath(op.Index, "target"),
+				"candidate 模式的 target 必须是合法 Note 或 NoteSegmentation ID：%v / %v",
+				noteErr, segmentationErr))
+			return
+		}
 	}
 	rel, ok := v.resolve(op.Target)
 	if !ok {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "target"),
-			"candidate 模式的 Note %s 不存在于全库", op.Target))
+			"candidate 模式的 Note/workspace %s 不存在于全库", op.Target))
 		return
 	}
 	v.requireInitiator(op)
@@ -169,13 +172,13 @@ func (v *validator) editCandidateSection(op *Op) {
 	raw, readable := v.readExisting(rel)
 	if !readable {
 		v.add(errorAt(E4, op.Index, opPath(op.Index, "target"),
-			"candidate 模式无法读取目标 Note：%s", rel))
+			"candidate 模式无法读取目标 Note/workspace：%s", rel))
 		return
 	}
 	candidates, err := store.ParseCandidates(raw)
 	if err != nil {
 		v.add(errorAt(E4, op.Index, opPath(op.Index, "candidate"),
-			"目标 Note 的 candidate 协议无法严格读回：%v", err))
+			"目标 Note/workspace 的 candidate 协议无法严格读回：%v", err))
 		return
 	}
 	var found *store.Candidate
@@ -187,7 +190,7 @@ func (v *validator) editCandidateSection(op *Op) {
 	}
 	if found == nil {
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate"),
-			"目标 Note 不含 candidate %q", op.Candidate))
+			"目标 Note/workspace 不含 candidate %q", op.Candidate))
 		return
 	}
 	if found.Anchor.Output != "" {

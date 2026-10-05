@@ -20,7 +20,7 @@ const (
 	BlocksDirName = "blocks"
 
 	// BlockSidecarVersion is independent from the SQLite schema version.
-	BlockSidecarVersion = 2
+	BlockSidecarVersion = 3
 )
 
 const (
@@ -91,12 +91,17 @@ type BlockDiagnostic struct {
 
 // BlockDocument is the complete sidecar for one authoritative Note.
 type BlockDocument struct {
-	SchemaVersion int               `json:"schema_version"`
-	NoteID        string            `json:"note_id"`
-	NotePath      string            `json:"note_path"`
-	NoteHash      string            `json:"note_hash"`
-	Candidates    []BlockCandidate  `json:"candidates"`
-	Diagnostics   []BlockDiagnostic `json:"diagnostics"`
+	SchemaVersion     int               `json:"schema_version"`
+	NoteID            string            `json:"note_id"`
+	NotePath          string            `json:"note_path"`
+	NoteHash          string            `json:"note_hash"`
+	WorkspaceID       string            `json:"workspace_id,omitempty"`
+	WorkspacePath     string            `json:"workspace_path,omitempty"`
+	WorkspaceHash     string            `json:"workspace_hash,omitempty"`
+	WorkspaceNoteHash string            `json:"workspace_note_hash,omitempty"`
+	Stale             bool              `json:"workspace_stale"`
+	Candidates        []BlockCandidate  `json:"candidates"`
+	Diagnostics       []BlockDiagnostic `json:"diagnostics"`
 }
 
 // BlockChanges is a deterministic Note-ID diff between sidecars and Markdown.
@@ -164,6 +169,22 @@ func validateBlockDocument(doc BlockDocument) error {
 	}
 	if !blockHashRE.MatchString(doc.NoteHash) {
 		return fmt.Errorf("block sidecar note_hash 非法：%q", doc.NoteHash)
+	}
+	if doc.WorkspaceID != "" {
+		if !strings.HasPrefix(doc.WorkspaceID, "ns-") {
+			return fmt.Errorf("block sidecar workspace_id 非法：%q", doc.WorkspaceID)
+		}
+		if err := validateBlockNotePath(doc.WorkspacePath); err != nil ||
+			!strings.Contains(doc.WorkspacePath, "/note-segments/") {
+			return fmt.Errorf("block sidecar workspace_path 非法：%q", doc.WorkspacePath)
+		}
+		if !blockHashRE.MatchString(doc.WorkspaceHash) ||
+			!blockHashRE.MatchString(doc.WorkspaceNoteHash) {
+			return fmt.Errorf("block sidecar workspace hash 非法")
+		}
+	} else if doc.WorkspacePath != "" || doc.WorkspaceHash != "" ||
+		doc.WorkspaceNoteHash != "" || doc.Stale {
+		return fmt.Errorf("legacy block sidecar 不得携带 workspace 字段")
 	}
 	if doc.Candidates == nil || doc.Diagnostics == nil {
 		return fmt.Errorf("block sidecar candidates/diagnostics 必须是数组")

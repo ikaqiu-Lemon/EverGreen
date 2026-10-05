@@ -12,15 +12,15 @@ package cli
 //   2) 「三行原文逐字保真」不再用句中子串——而是从 quick-start capture 的 heredoc 取三条**完整正文**，
 //      再把 plan JSON 的 write_note.blocks **结构化 json 解析**，断言 L2-L2/L3-L3/L4-L4 各恰一条、
 //      body 与对应 capture 行**逐字相等**、且无 L1；删前缀 / 删后缀会翻红（见 self-check）；
-//   3) **正式断言与 mutation/self-check 复用同一份 validator**（vPlanVersionTwo / vOpinionCandidates /
+//   3) **正式断言与 mutation/self-check 复用同一份 validator**（vPlanVersionThree / vOpinionCandidates /
 //      vKnowledgeThree / vWriteNoteFidelity）——self-check 证明的是正式判据本身、不是另写的简化 lambda；
-//   4) 章节内措辞逐字锁定：ChangePlan 明确「当前 plan_version=2」；search 精确到 `--kind opinion` /
+//   4) 章节内措辞逐字锁定：ChangePlan 明确「当前 plan_version=3」；search 精确到 `--kind opinion` /
 //      `--kind all`；index 精确到 `schema_version = 2` + 「六表」措辞 + 六个表名 + 整库重建；v1 Note 兼容
 //      说明除三旧名外还断言「兼容映射 + 按字节 / byte-for-byte 原样保留」语义；
 //   5) CHANGELOG 的 plan_version 非 Breaking 按**整条 bullet**判断（不是同一行）。
 //
 // 实现真值锚点（供审阅逐条复核）：
-//   internal/plan/schema.go：PlanVersion=2、SupportedPlanVersions={1,2}、TopLevelKeys 恰 8、
+//   internal/plan/schema.go：PlanVersion=3、SupportedPlanVersions={1,2,3}、TopLevelKeys 恰 8、
 //     OpNames 恰 9（add_source/write_note/create_knowledge/append_knowledge/create_opinion/
 //     append_opinion/add_material_rel/add_relation/add_open_question）、OpAliases{create_card→
 //     create_knowledge, append_card→append_knowledge}；write_note 字段表含 blocks/omissions/
@@ -31,8 +31,8 @@ package cli
 //   internal/index/schema.go：IndexSchemaVersion=2、cards/cards_fts 带 kind + validation、共 6 表、
 //     版本不符整库重建（无增量迁移）。
 //   internal/mdfile/sections.go：Knowledge 三分区（知识内容/条件与边界/用户补充）、Opinion 五分区
-//     （观点/论据与推理/条件与反例/待验证/用户补充）、Note 四分区（整理正文/提取结果/存疑与待验证/
-//     用户补充）；解释与依据 / 理解自检 属 LegacyV1Sections（兼容原样保留 + info，非当前固定分区）。
+//     （观点/论据与推理/条件与反例/待验证/用户补充）、Note 三分区
+//     （整理正文/存疑与待验证/用户补充）、Note Segmentation 两分区（划分结果/用户补充）。
 //   internal/store：Source 落盘正文 L1 为模板前导空行，真实正文自 L2 起。
 //   internal/plan/validate_opinion.go：create_opinion 默认 validation=pending，plan 内直接写
 //     validated/rejected 判 E2。
@@ -106,7 +106,7 @@ func readmeAnchorTable() []readmeAnchors {
 			entitiesEnd:     "### Entity templates",
 			templatesStart:  "### Entity templates",
 			templatesEnd:    "### Relationships",
-			noteTplStart:    "**Note — four sections:**",
+			noteTplStart:    "**Note — three sections:**",
 			noteTplEnd:      "The legacy v1 Knowledge sections",
 			noteCompatStart: "Likewise, the legacy v1 Note sections",
 			noteCompatEnd:   "This split is what keeps",
@@ -120,7 +120,7 @@ func readmeAnchorTable() []readmeAnchors {
 			ctxRemovedPhrase:         "removes the legacy `candidates` alias and its\ndeprecation `I1`",
 			ctxBasePhrase:            "The two materialized candidate lists feed the plan's `base`",
 			eightKeysPhrase:          "exactly eight top-level keys",
-			planVersionCurrentPhrase: "`2` for current plans",
+			planVersionCurrentPhrase: "`3` for current plans",
 			searchDefaultPhrase:      "defaults to `--kind knowledge`",
 			sixTablesPhrase:          "six tables",
 			indexNoMigratePhrase:     "no incremental schema migration",
@@ -141,7 +141,7 @@ func readmeAnchorTable() []readmeAnchors {
 			entitiesEnd:     "### 实体模板",
 			templatesStart:  "### 实体模板",
 			templatesEnd:    "### 关系",
-			noteTplStart:    "**Note —— 四分区：**",
+			noteTplStart:    "**Note —— 三分区：**",
 			noteTplEnd:      "旧 v1 的 Knowledge 分区",
 			noteCompatStart: "同样，旧 v1 的 Note 分区",
 			noteCompatEnd:   "这套切分正是让",
@@ -155,7 +155,7 @@ func readmeAnchorTable() []readmeAnchors {
 			ctxRemovedPhrase:         "已删除旧 `candidates` 别名及其弃用 `I1`",
 			ctxBasePhrase:            "分别进入 plan 的 `base`",
 			eightKeysPhrase:          "顶层恰 8 个键",
-			planVersionCurrentPhrase: "当前 plan 为 `2`",
+			planVersionCurrentPhrase: "当前 plan 为 `3`",
 			searchDefaultPhrase:      "默认 `--kind knowledge`",
 			sixTablesPhrase:          "六张表",
 			indexNoMigratePhrase:     "没有增量 schema 迁移",
@@ -302,14 +302,14 @@ func writeNoteRegion(t *testing.T, block string) string {
 // ---------------------------------------------------------------------------
 
 var (
-	planV2RE = regexp.MustCompile(`"plan_version"\s*:\s*2\b`)
+	planV3RE = regexp.MustCompile(`"plan_version"\s*:\s*3\b`)
 	planV1RE = regexp.MustCompile(`"plan_version"\s*:\s*1\b`)
 )
 
-// vPlanVersionTwo：quick-start ChangePlan 示例必须声明 plan_version:2 且不得再出现 plan_version:1。
-func vPlanVersionTwo(planBlock string) error {
-	if !planV2RE.MatchString(planBlock) {
-		return fmt.Errorf(`未声明 "plan_version": 2`)
+// vPlanVersionThree：quick-start ChangePlan 示例必须声明 plan_version:3 且不得再出现 plan_version:1。
+func vPlanVersionThree(planBlock string) error {
+	if !planV3RE.MatchString(planBlock) {
+		return fmt.Errorf(`未声明 "plan_version": 3`)
 	}
 	if planV1RE.MatchString(planBlock) {
 		return fmt.Errorf(`当前示例块仍出现 "plan_version": 1`)
@@ -410,11 +410,11 @@ func vWriteNoteFidelity(planBlock string, capture []string) error {
 // 正式断言
 // ---------------------------------------------------------------------------
 
-// TestDocsV2_PlanVersionIsTwo：两份 README 的 quick-start ChangePlan 示例 plan_version 必须为 2，
-// 且当前示例块内不得再出现 plan_version:1。调用共享 validator vPlanVersionTwo。
-func TestDocsV2_PlanVersionIsTwo(t *testing.T) {
+// TestDocsV2_PlanVersionIsThree：两份 README 的 quick-start ChangePlan 示例 plan_version 必须为 3，
+// 且当前示例块内不得再出现 plan_version:1。调用共享 validator vPlanVersionThree。
+func TestDocsV2_PlanVersionIsThree(t *testing.T) {
 	for _, p := range docsREADMEs() {
-		if err := vPlanVersionTwo(planJSONBlock(t, p)); err != nil {
+		if err := vPlanVersionThree(planJSONBlock(t, p)); err != nil {
 			t.Fatalf("%s 的 quick-start ChangePlan：%v", p, err)
 		}
 	}
@@ -440,6 +440,14 @@ func TestDocsV2_WriteNoteCanonicalShape(t *testing.T) {
 			if _, ok := op[must]; !ok {
 				t.Fatalf("%s 的 write_note 缺 Storage v3 canonical 字段 %q", p, must)
 			}
+		}
+		rawCandidates, _ := json.Marshal(op["candidate_drafts"])
+		rawCoverage, _ := json.Marshal(op["candidate_coverage"])
+		if strings.Contains(string(rawCandidates), `"source_refs"`) ||
+			strings.Contains(string(rawCoverage), `"source_refs"`) ||
+			!strings.Contains(string(rawCandidates), `"note_refs"`) ||
+			!strings.Contains(string(rawCoverage), `"note_refs"`) {
+			t.Fatalf("%s 的 v3 candidate/coverage 必须只使用 note_refs", p)
 		}
 		for _, banned := range []string{
 			"coverage_gaps", "output_cards", "extraction_coverage",
@@ -495,7 +503,9 @@ func TestDocsV2_ContextDualCandidates(t *testing.T) {
 	for _, p := range docsREADMEs() {
 		a := anchorsFor(t, p)
 		block := contextJSONBlock(t, p)
-		for _, must := range []string{`"draft_candidates"`, `"knowledge_candidates"`} {
+		for _, must := range []string{
+			`"draft_candidates"`, `"knowledge_candidates"`, `"note_segmentations"`,
+		} {
 			if !strings.Contains(block, must) {
 				t.Fatalf("%s 的 eg context 示例缺字段 %s（Storage v3 三集合分列）", p, must)
 			}
@@ -526,7 +536,10 @@ func TestDocsV2_FourLearningEntities(t *testing.T) {
 	for _, p := range docsREADMEs() {
 		a := anchorsFor(t, p)
 		sec := sectionBetween(t, readDocs(t, p), a.entitiesStart, a.entitiesEnd)
-		for _, must := range []string{"s-", "n-", "k-", "o-", "Opinion", "opinions/", "knowledge/", "p-"} {
+		for _, must := range []string{
+			"s-", "n-", "ns-", "k-", "o-", "Opinion", "opinions/",
+			"knowledge/", "note-segments/", "p-",
+		} {
 			if !strings.Contains(sec, must) {
 				t.Fatalf("%s 的核心概念小节缺标记 %q", p, must)
 			}
@@ -534,12 +547,13 @@ func TestDocsV2_FourLearningEntities(t *testing.T) {
 	}
 }
 
-// TestDocsV2_EntityTemplates：实体模板小节内，Knowledge 三分区 / Opinion 五分区 / Note 四分区的
+// TestDocsV2_EntityTemplates：实体模板小节内，Knowledge 三分区 / Opinion 五分区 / Note 三分区的
 // **当前固定分区名**逐条在场；Knowledge「三分区而非五分区」走共享 validator vKnowledgeThree。
 func TestDocsV2_EntityTemplates(t *testing.T) {
 	knowledge := []string{"知识内容", "条件与边界", "用户补充"}
 	opinion := []string{"观点", "论据与推理", "条件与反例", "待验证", "用户补充"}
-	note := []string{"整理正文", "提取结果", "存疑与待验证", "用户补充"}
+	note := []string{"整理正文", "存疑与待验证", "用户补充"}
+	segmentation := []string{"划分结果", "note-segments/"}
 	for _, p := range docsREADMEs() {
 		a := anchorsFor(t, p)
 		sec := sectionBetween(t, readDocs(t, p), a.templatesStart, a.templatesEnd)
@@ -558,14 +572,19 @@ func TestDocsV2_EntityTemplates(t *testing.T) {
 				t.Fatalf("%s 的模板小节缺 Note 当前分区名「%s」", p, s)
 			}
 		}
+		for _, s := range segmentation {
+			if !strings.Contains(sec, s) {
+				t.Fatalf("%s 的模板小节缺 Note Segmentation 标记 %q", p, s)
+			}
+		}
 		if err := vKnowledgeThree(sec, a.knowledgeThree, a.knowledgeFive); err != nil {
 			t.Fatalf("%s 的模板小节：%v", p, err)
 		}
 	}
 }
 
-// TestDocsV2_ChangePlanOps：ChangePlan 概念小节写明「顶层恰 8 键」、明确「当前 plan_version=2」/ 支持
-// {1,2} / v1 给恰一条 I1；主链路 canonical op 恰九个逐条在场；create_card / append_card 归一 + I1 + 新 plan 不用。
+// TestDocsV2_ChangePlanOps：ChangePlan 概念小节写明当前 plan_version=3 与兼容集合；
+// 主链路 canonical op 恰九个逐条在场；create_card / append_card 归一 + I1 + 新 plan 不用。
 func TestDocsV2_ChangePlanOps(t *testing.T) {
 	nineOps := []string{
 		"add_source", "write_note", "create_knowledge", "append_knowledge",
@@ -587,10 +606,10 @@ func TestDocsV2_ChangePlanOps(t *testing.T) {
 			}
 		}
 		if !strings.Contains(sec, a.planVersionCurrentPhrase) {
-			t.Fatalf("%s 的 ChangePlan 小节未明确「当前 plan_version=2」（缺 %q）", p, a.planVersionCurrentPhrase)
+			t.Fatalf("%s 的 ChangePlan 小节未明确「当前 plan_version=3」（缺 %q）", p, a.planVersionCurrentPhrase)
 		}
-		if !strings.Contains(sec, "{1, 2}") {
-			t.Fatalf("%s 的 ChangePlan 小节未写明支持集合 {1, 2}", p)
+		if !strings.Contains(sec, "{1, 2, 3}") {
+			t.Fatalf("%s 的 ChangePlan 小节未写明支持集合 {1, 2, 3}", p)
 		}
 		if !strings.Contains(sec, "I1") {
 			t.Fatalf("%s 的 ChangePlan 小节未写明 v1 plan 的 I1 兼容提示", p)
@@ -759,7 +778,8 @@ func TestDocsV2_InstallSchemaSummary(t *testing.T) {
 	doc := readDocs(t, docsINSTALL)
 	sec := sectionBetween(t, doc, "## Schema v2 summary", "## Review and logical deletion")
 	for _, must := range []string{
-		"plan_version", "{1, 2}", "schema_version", "draft_candidates",
+		"plan_version", "{1, 2, 3}", "schema_version", "draft_candidates",
+		"note_segmentations", "note-segments/",
 		"knowledge_candidates", "opinion_candidates",
 		"opinions/", "create_knowledge", "create_opinion", "--kind knowledge",
 	} {
@@ -783,7 +803,7 @@ func TestDocsV2_NoStaleNoteSections(t *testing.T) {
 		noteTpl := sectionBetween(t, doc, a.noteTplStart, a.noteTplEnd)
 		for _, stale := range a.staleNoteSections {
 			if strings.Contains(noteTpl, stale) {
-				t.Fatalf("%s 的当前 Note 模板句仍列旧 v1 分区名「%s」（须只保留四分区：整理正文/提取结果/存疑与待验证/用户补充）", p, stale)
+				t.Fatalf("%s 的当前 Note 模板句仍列旧 v1 分区名「%s」（须只保留三分区：整理正文/存疑与待验证/用户补充）", p, stale)
 			}
 		}
 		compat := sectionBetween(t, doc, a.noteCompatStart, a.noteCompatEnd)
@@ -802,7 +822,7 @@ func TestDocsV2_NoStaleNoteSections(t *testing.T) {
 }
 
 // TestDocsV2_SelfCheckMutations：定向 mutation/self-check——把**当前章节 / 当前 JSON**里的关键事实故意
-// 改坏，必须让对应判据翻红。关键是：这里调用的是**正式断言用的同一份 validator**（vPlanVersionTwo /
+// 改坏，必须让对应判据翻红。关键是：这里调用的是**正式断言用的同一份 validator**（vPlanVersionThree /
 // vOpinionCandidates / vKnowledgeThree / vWriteNoteFidelity），所以证明的是正式判据本身、不是简化 lambda。
 // 覆盖：
 //
@@ -816,11 +836,11 @@ func TestDocsV2_SelfCheckMutations(t *testing.T) {
 
 		// (a) plan_version。
 		plan := planJSONBlock(t, a.path)
-		if err := vPlanVersionTwo(plan); err != nil {
-			t.Fatalf("%s: 自检基线异常，当前 plan 块未过 vPlanVersionTwo：%v", a.path, err)
+		if err := vPlanVersionThree(plan); err != nil {
+			t.Fatalf("%s: 自检基线异常，当前 plan 块未过 vPlanVersionThree：%v", a.path, err)
 		}
-		if vPlanVersionTwo(planV2RE.ReplaceAllString(plan, `"plan_version": 1`)) == nil {
-			t.Fatalf("%s: 自检失效——plan_version 2→1 后 vPlanVersionTwo 仍绿", a.path)
+		if vPlanVersionThree(planV3RE.ReplaceAllString(plan, `"plan_version": 1`)) == nil {
+			t.Fatalf("%s: 自检失效——plan_version 3→1 后 vPlanVersionThree 仍绿", a.path)
 		}
 
 		// (b) opinion_candidates。

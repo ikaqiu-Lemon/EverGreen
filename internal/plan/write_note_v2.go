@@ -77,6 +77,19 @@ func (v *validator) noteWrites(op *Op) ([]SectionWrite, bool) {
 			"candidate_drafts/candidate_coverage 必须与 v2 blocks[] 正文一起保存"))
 		return nil, false
 	}
+	if v.p.Version == PlanVersion && hasSections {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "sections"),
+			"plan_version=%d 的 write_note 只接受 blocks[]；n-* 不再承载候选分区",
+			PlanVersion))
+		return nil, false
+	}
+	if v.p.Version == PlanVersion &&
+		(!op.CandidateDraftsGiven || !op.CandidateCoverageGiven) {
+		v.add(errorAt(E2, op.Index, opPath(op.Index, "candidate_drafts"),
+			"plan_version=%d 必须同时给出 candidate_drafts 与 candidate_coverage，"+
+				"以生成对应 ns-* 划分工作区", PlanVersion))
+		return nil, false
+	}
 	switch {
 	case op.BlocksGiven && hasSections:
 		v.add(errorAt(E2, op.Index, opPath(op.Index, "blocks"),
@@ -108,7 +121,7 @@ func (v *validator) noteWrites(op *Op) ([]SectionWrite, bool) {
 // 日后 `replace_block` 就无法只替换其中一段）。
 func (v *validator) legacyNoteWrites(op *Op) []SectionWrite {
 	mapping := v1LegacyNoteSectionMap()
-	writable := set(store.AutoWritableSections(store.KindNote))
+	writable := set([]string{store.SecNoteBody, store.SecExtraction, store.SecOpenQuest})
 	merged := map[string][]byte{}
 	var order []string
 	for _, legacy := range v1LegacyNoteOrder() {
@@ -151,6 +164,10 @@ func (v *validator) legacyNoteWrites(op *Op) []SectionWrite {
 
 // legacyNoteLeftovers 对映射表之外的 v1 分区键发声：`用户补充` 判 E6，其余记 I1。
 func (v *validator) legacyNoteLeftovers(op *Op, mapping map[string]string) {
+	known := set(store.KnownSections(store.KindNote))
+	for _, name := range store.V2Sections(store.KindNote) {
+		known[name] = true
+	}
 	for name := range op.Sections {
 		switch {
 		case name == store.SecUserAppend:
@@ -158,7 +175,7 @@ func (v *validator) legacyNoteLeftovers(op *Op, mapping map[string]string) {
 				"「用户补充」任何时候都不得写入（安全底线 B2）：目标文件字节不变"))
 		case mapping[name] != "":
 			continue
-		case set(store.KnownSections(store.KindNote))[name]:
+		case known[name]:
 			// v2 的固定分区名直接写在 v1 形态里：允许，按同名落位。
 			continue
 		default:
@@ -203,7 +220,7 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 	// 落盘（机器锚点 + 多类型标签 + omissions 元数据）。这些都只作用于当前版本的 plan；兼容期
 	// v1 plan 即便用了 blocks[] 也走旧的 NoteBlockBytes 与 W21-only 口径，一字节不变（v1
 	// sections / v2 sections 的兼容路径同样不变）。任一阶段失败即整条 op 零写入。
-	if v.p.Version == PlanVersion {
+	if v.p.Version == PlanVersionV2 || v.p.Version == PlanVersion {
 		if !v.noteAnnotationValidate(op) {
 			return nil, false
 		}
@@ -232,7 +249,12 @@ func (v *validator) noteBlockWrites(op *Op) ([]SectionWrite, bool) {
 		v.coverageDiagnosisRaw(op, sourceBlocks, cov.snap.raw)
 		writes := []SectionWrite{{Section: store.SecNoteBody, Payload: body}}
 		if len(draftBody) > 0 {
-			writes = append(writes, SectionWrite{Section: store.SecExtraction, Payload: draftBody})
+			if v.p.Version == PlanVersion {
+				op.SegmentationBody = draftBody
+			} else {
+				writes = append(writes,
+					SectionWrite{Section: store.SecExtraction, Payload: draftBody})
+			}
 		}
 		return writes, true
 	}
@@ -343,7 +365,7 @@ func (v *validator) noteExtraction(op *Op) *NoteExtraction {
 	ext := &NoteExtraction{Knowledge: knowledge, Opinions: opinions}
 	// v2 blocks 路径已通过 noteCoverageValidate 的语义闸门，coverage 原样透传给 store 渲染覆盖矩阵；
 	// 兼容路径（v1 sections / v1 blocks / v2 sections）不携带 coverage，覆盖矩阵不出现。
-	if op.BlocksGiven && v.p.Version == PlanVersion && op.ExtractionCoverageGiven {
+	if op.BlocksGiven && v.p.Version == PlanVersionV2 && op.ExtractionCoverageGiven {
 		ext.Coverage = op.ExtractionCoverage
 	}
 	return ext

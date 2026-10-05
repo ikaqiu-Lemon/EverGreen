@@ -19,7 +19,7 @@ import (
 // v1 → v2 的差别只在写口：`write_note` 由固定分区 `sections` 改为有序 `blocks[]`，
 // 并新增 `create_knowledge` / `append_knowledge` / `create_opinion` / `append_opinion`
 // 四个 op。顶层 8 键**一个未改**（契约 §4.1 末条），因此 v1 与 v2 共用同一条解析路径。
-const PlanVersion = 2
+const PlanVersion = 3
 
 // PlanVersionV1 是**兼容期**仍被接受的旧版本号。
 //
@@ -27,12 +27,15 @@ const PlanVersion = 2
 // 与 noteBlocks（互斥判定）三处都要判版本，三处必须引用同一个字面量。
 const PlanVersionV1 = 1
 
+// PlanVersionV2 是仍可读取和执行的内嵌 candidate Note 版本。
+const PlanVersionV2 = 2
+
 // SupportedPlanVersions 是受支持的版本集合（声明顺序 = 从旧到新）。
 //
 // 为什么是「集合」而不是「最低版本 + 单调放宽」：plan 版本不是语义化版本，
 // 两个版本各自对应一套**写口形态**，不存在「≥ N 都行」的连续区间。
 // 集合让「哪一版被接受」可机器复算，也让兼容期结束时的收窄只需删一个元素。
-func SupportedPlanVersions() []int { return []int{PlanVersionV1, PlanVersion} }
+func SupportedPlanVersions() []int { return []int{PlanVersionV1, PlanVersionV2, PlanVersion} }
 
 // PlanVersionSupported 报告某个版本号是否在受支持集合内。
 func PlanVersionSupported(n int) bool {
@@ -159,12 +162,13 @@ type Op struct {
 	SourceID     string
 
 	// write_note
-	Source       string
-	NoteID       string
-	OutputCards  []OutputCard
-	Gaps         []string
-	Reprocess    bool
-	ReprocessSet bool
+	Source         string
+	NoteID         string
+	SegmentationID string
+	OutputCards    []OutputCard
+	Gaps           []string
+	Reprocess      bool
+	ReprocessSet   bool
 	// Blocks 是 v2 `write_note` 的**有序块数组**（契约 §4.2）：数组顺序即落盘顺序。
 	// BlocksGiven 区分「缺 blocks 字段」与「给了空数组」——前者可能是 v1 plan，
 	// 后者是「声称按块整理却一个块都没有」，两种成因的诊断不同，不得折叠成一个判断。
@@ -186,6 +190,9 @@ type Op struct {
 	CandidateDraftsGiven   bool
 	CandidateCoverage      []CandidateCoverage
 	CandidateCoverageGiven bool
+	// SegmentationBody is derived during v3 validation and is never parsed
+	// directly from the plan.
+	SegmentationBody []byte
 
 	// create_opinion / append_opinion
 	//
@@ -392,7 +399,8 @@ func opKnownKeys(name string) []string {
 		// 审阅式提炼的两组清单会静默丢失。
 		return []string{"op", "source", "note_id", "title", "domain", "tags",
 			"sections", "blocks", "output_cards", "coverage_gaps", "reprocess",
-			"omissions", "extraction_coverage", "candidate_drafts", "candidate_coverage"}
+			"omissions", "extraction_coverage", "candidate_drafts", "candidate_coverage",
+			"segmentation_id"}
 	case OpCreateKnowledge, OpCreateCard:
 		return []string{"op", "title", "card_id", "domain", "tags", "sources", "sections"}
 	case OpAppendKnowledge, OpAppendCard:
@@ -453,6 +461,7 @@ func parseOp(index int, item interface{}) (*Op, []Diagnostic) {
 	}
 	op.Source, _ = asString(m["source"])
 	op.NoteID, _ = asString(m["note_id"])
+	op.SegmentationID, _ = asString(m["segmentation_id"])
 	op.CardID, _ = asString(m["card_id"])
 	op.Card, _ = asString(m["card"])
 	op.Note, _ = asString(m["note"])

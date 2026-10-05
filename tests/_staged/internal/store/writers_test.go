@@ -63,7 +63,6 @@ func noteSpecFixture(t *testing.T) NoteSpec {
 		Sections: []SectionAppend{
 			{Section: mdfile.SecNoteBody, Payload: []byte("要点：注意力是加权求和。\n\n> **[Agent 补充]** 与 RNN 的差别在并行度。\n")},
 		},
-		Extraction: &NoteExtraction{Knowledge: []string{"k-20260901-attention（新建）"}},
 	}
 }
 
@@ -250,10 +249,50 @@ func TestNoteWriteDetachesInboxEntry(t *testing.T) {
 		}
 	}
 	note := mustBytes(t, filepath.Join(root, out.Note.Path))
-	if !bytes.Contains(note, []byte("- k-20260901-attention（新建）\n")) {
-		t.Fatalf("「%s」应含新建卡 ID 与括注：\n%s", mdfile.SecExtraction, note)
+	if bytes.Contains(note, []byte("## "+mdfile.SecExtraction+"\n")) {
+		t.Fatalf("canonical Note 不得再含「%s」：\n%s", mdfile.SecExtraction, note)
 	}
 	assertNoTmp(t, root)
+}
+
+func TestNoteSegmentationWriterUsesCanonicalShape(t *testing.T) {
+	s, root := newVault(t)
+	note := []byte("canonical note bytes\n")
+	spec := NoteSegmentationSpec{
+		Rel:      NoteSegmentationRel("ai-infra", "ns-20260901-attention"),
+		ID:       "ns-20260901-attention",
+		Note:     "n-20260901-attention",
+		NoteHash: ContentHash(note),
+		Title:    "Attention 划分",
+		Date:     day(t, "2026-09-01"),
+		Stamp:    stamp(t, "2026-09-01T10:00:00+08:00"),
+		Tags:     []string{"review"},
+		Sections: []SectionAppend{{
+			Section: mdfile.SecSegmentation,
+			Payload: []byte("候选正文。\n"),
+		}},
+	}
+	res, err := s.ApplyNoteSegmentation(spec)
+	if err != nil || !res.Written {
+		t.Fatalf("新建划分工作区失败：%v / %+v", err, res)
+	}
+	raw := mustBytes(t, filepath.Join(root, filepath.FromSlash(spec.Rel)))
+	doc, segmentation, err := mdfile.ParseNoteSegmentation(raw)
+	if err != nil {
+		t.Fatalf("写出的划分工作区不可解析：%v\n%s", err, raw)
+	}
+	if segmentation.ID != spec.ID || segmentation.Note != spec.Note ||
+		segmentation.NoteHash != spec.NoteHash {
+		t.Fatalf("划分工作区关联字段漂移：%+v", segmentation)
+	}
+	if got := doc.SectionNames(); strings.Join(got, "/") !=
+		strings.Join(mdfile.NoteSegmentationSections(), "/") {
+		t.Fatalf("划分工作区分区错误：%v", got)
+	}
+	if got := NoteSegmentationRel("ai-infra", string(spec.ID)); got !=
+		"domains/ai-infra/note-segments/ns-20260901-attention.md" {
+		t.Fatalf("划分工作区路径错误：%s", got)
+	}
 }
 
 func TestNoteInboxDetachFailureIsReported(t *testing.T) {

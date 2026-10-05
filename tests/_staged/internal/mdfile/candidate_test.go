@@ -36,6 +36,17 @@ func candidateNote(parts ...[]byte) []byte {
 	return append(out, []byte("## 存疑与待验证\n\n保留。\n\n## 用户补充\n\n用户文字。\n")...)
 }
 
+func candidateSegmentation(parts ...[]byte) []byte {
+	out := []byte("---\nid: ns-20260922-candidate\nnote: n-20260922-candidate\n" +
+		"note_hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n" +
+		"created_at: '2026-09-22'\nupdated_at: '2026-09-22T10:00:00+08:00'\n---\n\n" +
+		"## 划分结果\n\n")
+	for _, part := range parts {
+		out = append(out, part...)
+	}
+	return append(out, []byte("## 用户补充\n\n用户文字。\n")...)
+}
+
 func TestCandidateRenderParseRoundTripAndScope(t *testing.T) {
 	k := candidateDraft("cand-react-loop", CandidateKindKnowledge, "ReAct Loop 的执行流程")
 	k.Sections = append(k.Sections,
@@ -94,6 +105,51 @@ func TestCandidateRenderParseRoundTripAndScope(t *testing.T) {
 			t.Fatalf("candidate[%d] 锚点必须与 H3 逐行相邻：anchor_end=%d heading_start=%d",
 				i, c.AnchorEnd, c.HeadingStart)
 		}
+	}
+}
+
+func TestCandidateV2UsesNoteRefsInsideSegmentationWorkspace(t *testing.T) {
+	draft := candidateDraft(
+		"cand-note-block", CandidateKindKnowledge, "Note block candidate")
+	draft.SourceRefs = nil
+	draft.NoteRefs = []string{"B1", "B2"}
+	rendered, err := RenderCandidateDraft(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(rendered, []byte("<!-- eg:cd:2 ")) ||
+		bytes.Contains(rendered, []byte("<!-- eg:cd:1 ")) {
+		t.Fatalf("note_refs 必须渲染为 eg:cd:2：\n%s", rendered)
+	}
+	coverage, err := RenderCandidateCoverageMatrix([]CandidateCoverage{{
+		Module: "m-note", NoteRefs: []string{"B1", "B2"}, Summary: "whole Note",
+		Disposition: CandidateCoverageCandidate, Candidates: []string{draft.Key},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(coverage, []byte("<!-- eg:cc:2 ")) ||
+		!bytes.Contains(coverage, []byte("| 模块 | Note 块 |")) {
+		t.Fatalf("note_refs coverage 必须渲染为 eg:cc:2：\n%s", coverage)
+	}
+
+	raw := candidateSegmentation(rendered, coverage)
+	got, err := ParseCandidates(raw)
+	if err != nil {
+		t.Fatalf("解析 ns candidate：%v\n%s", err, raw)
+	}
+	if len(got) != 1 || strings.Join(got[0].Anchor.NoteRefs, ",") != "B1,B2" ||
+		len(got[0].Anchor.SourceRefs) != 0 {
+		t.Fatalf("eg:cd:2 note_refs 未精确读回：%+v", got)
+	}
+	gotCoverage, err := ParseCandidateCoverageMatrix(coverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotCoverage) != 1 ||
+		strings.Join(gotCoverage[0].NoteRefs, ",") != "B1,B2" ||
+		len(gotCoverage[0].SourceRefs) != 0 {
+		t.Fatalf("eg:cc:2 note_refs 未精确读回：%+v", gotCoverage)
 	}
 }
 

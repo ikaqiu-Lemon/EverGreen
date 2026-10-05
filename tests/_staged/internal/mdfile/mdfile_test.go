@@ -278,6 +278,62 @@ func TestNoteHasNoStatusAndNoSelfCheckSection(t *testing.T) {
 	}
 }
 
+func TestNoteV3AndLegacyV2BothParse(t *testing.T) {
+	v3 := []byte("---\nid: n-20261004-pure\nsource: s-20261004-source\n---\n\n" +
+		"## 整理正文\n\n正文。\n\n## 存疑与待验证\n\n## 用户补充\n")
+	doc, _, err := ParseNote(v3)
+	if err != nil {
+		t.Fatalf("v3 三分区 Note 应可解析：%v", err)
+	}
+	if got := doc.SectionSchema(KindNote); got != SchemaV3 {
+		t.Fatalf("三分区 Note schema=%v，期望 v3", got)
+	}
+
+	v2 := []byte("---\nid: n-20261004-legacy-v2\nsource: s-20261004-source\n---\n\n" +
+		"## 整理正文\n\n正文。\n\n## 提取结果\n\n旧候选。\n\n" +
+		"## 存疑与待验证\n\n## 用户补充\n")
+	doc, _, err = ParseNote(v2)
+	if err != nil {
+		t.Fatalf("legacy v2 四分区 Note 应继续可解析：%v", err)
+	}
+	if got := doc.SectionSchema(KindNote); got != SchemaV2 {
+		t.Fatalf("四分区 Note schema=%v，期望 v2", got)
+	}
+}
+
+func TestNoteSegmentationFrontmatterAndSections(t *testing.T) {
+	raw := []byte("---\n" +
+		"id: ns-20261004-pure\n" +
+		"note: n-20261004-pure\n" +
+		"note_hash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n" +
+		"title: Pure\n" +
+		"created_at: '2026-10-04'\n" +
+		"updated_at: '2026-10-04T10:00:00+08:00'\n" +
+		"---\n\n## 划分结果\n\n候选。\n\n## 用户补充\n")
+	doc, segmentation, err := ParseNoteSegmentation(raw)
+	if err != nil {
+		t.Fatalf("合法 ns-* 应可解析：%v", err)
+	}
+	if segmentation.ID != "ns-20261004-pure" ||
+		segmentation.Note != "n-20261004-pure" ||
+		segmentation.NoteHash == "" {
+		t.Fatalf("划分工作区 frontmatter 未完整读出：%+v", segmentation)
+	}
+	if got := doc.SectionNames(); strings.Join(got, ",") != "划分结果,用户补充" {
+		t.Fatalf("划分工作区分区错误：%v", got)
+	}
+
+	for name, malformed := range map[string][]byte{
+		"wrong id":   bytes.Replace(raw, []byte("ns-20261004-pure"), []byte("n-20261004-pure"), 1),
+		"bad hash":   bytes.Replace(raw, []byte("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"), []byte("sha256:bad"), 1),
+		"wrong note": bytes.Replace(raw, []byte("note: n-20261004-pure"), []byte("note: ns-20261004-pure"), 1),
+	} {
+		if _, _, err := ParseNoteSegmentation(malformed); err == nil {
+			t.Fatalf("%s 应 fail closed", name)
+		}
+	}
+}
+
 // —— ⑥ unprocessed.md ——
 
 func TestUnprocessedRoundTripAndKeying(t *testing.T) {

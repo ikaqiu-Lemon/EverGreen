@@ -88,6 +88,85 @@ func materializeTxnFixture(t *testing.T) (string, string) {
 	return dir, noteRel
 }
 
+func materializeWorkspaceFixture(t *testing.T) (string, string, string) {
+	t.Helper()
+	dir, _, _ := initVault(t, "--domain", "ai-infra")
+	st := store.New(dir)
+	review, err := store.NoteReviewBytes([]store.NoteBlock{
+		{Role: store.NoteBlockSource, Body: []byte("知识来源。"), SourceRef: "L1-L1"},
+		{Role: store.NoteBlockAgent, Body: []byte("观点批注。"), Annotation: "supplement"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteID := model.NoteID("n-20260922-workspace")
+	noteRel := store.NoteRel("ai-infra", string(noteID))
+	if _, err := st.ApplyNote(store.NoteSpec{
+		Rel: noteRel, ID: noteID, SourceID: "s-20260922-source",
+		Title: "Workspace", Date: materializeTxnDate(t, "2026-09-22"),
+		Stamp: materializeTxnStamp(t, "2026-09-22T09:00:00+08:00"),
+		Sections: []store.SectionAppend{{
+			Section: store.SecNoteBody, Payload: review,
+		}},
+		Inbox: store.InboxSpec{Detached: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	noteFile, err := st.Read(noteRel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentationBody, err := store.CandidateDraftBytes([]store.CandidateDraft{
+		{
+			Key: "cand-k", Kind: store.CandidateKindKnowledge, Title: "Workspace Knowledge",
+			NoteRefs: []string{"B1"}, Rel: "support", Reason: "Note 定义块支持",
+			Tags: []string{},
+			Sections: []store.CandidateDraftSection{{
+				Name: store.SecKnowledge, Body: []byte("工作区知识。\n"),
+			}},
+		},
+		{
+			Key: "cand-o", Kind: store.CandidateKindOpinion, Title: "Workspace Opinion",
+			NoteRefs: []string{"B2"}, Rel: "context", Reason: "Note 批注块支持",
+			Tags: []string{},
+			Sections: []store.CandidateDraftSection{{
+				Name: store.SecOpinionClaim, Body: []byte("工作区观点。\n"),
+			}},
+		},
+	}, []store.CandidateCoverage{
+		{Module: "m-k", NoteRefs: []string{"B1"}, Summary: "知识",
+			Disposition: store.CandidateCoverageCandidate, Candidates: []string{"cand-k"}},
+		{Module: "m-o", NoteRefs: []string{"B2"}, Summary: "观点",
+			Disposition: store.CandidateCoverageCandidate, Candidates: []string{"cand-o"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentationID := model.NoteSegmentationID("ns-20260922-workspace")
+	segmentationRel := store.NoteSegmentationRel("ai-infra", string(segmentationID))
+	if _, err := st.ApplyNoteSegmentation(store.NoteSegmentationSpec{
+		Rel: segmentationRel, ID: segmentationID, Note: noteID,
+		NoteHash: noteFile.Hash, Title: "Workspace",
+		Date:  materializeTxnDate(t, "2026-09-22"),
+		Stamp: materializeTxnStamp(t, "2026-09-22T09:00:00+08:00"),
+		Sections: []store.SectionAppend{{
+			Section: store.SecSegmentation, Payload: segmentationBody,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	segmentationPath := filepath.Join(dir, filepath.FromSlash(segmentationRel))
+	raw := mustRead(t, segmentationPath)
+	raw = bytes.Replace(raw, []byte("## 用户补充\n"),
+		[]byte("## 用户补充\n\n用户保留文字。\n"), 1)
+	if err := os.WriteFile(segmentationPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, dir, "add", "-A")
+	gitOut(t, dir, "commit", "-qm", "workspace fixture")
+	return dir, noteRel, segmentationRel
+}
+
 func materializeTxnRequest(t *testing.T) plan.MaterializeRequest {
 	t.Helper()
 	return plan.MaterializeRequest{

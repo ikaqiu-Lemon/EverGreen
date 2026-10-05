@@ -11,13 +11,15 @@ import (
 // MaterializeRequest selects either one candidate or every candidate in a
 // Note. Date and Stamp are injected by the process boundary.
 type MaterializeRequest struct {
-	Note             model.NoteID
-	Candidate        string
-	All              bool
-	Date             model.Date
-	Stamp            model.Stamp
-	ExpectedNotePath string
-	ExpectedNoteHash string
+	Note                  model.NoteID
+	Candidate             string
+	All                   bool
+	Date                  model.Date
+	Stamp                 model.Stamp
+	ExpectedNotePath      string
+	ExpectedNoteHash      string
+	ExpectedWorkspacePath string
+	ExpectedWorkspaceHash string
 }
 
 // MaterializedCandidate records the stable candidate-to-artifact mapping.
@@ -32,11 +34,13 @@ type MaterializedCandidate struct {
 // MaterializeResult is the pure preflight result consumed by the transaction
 // layer. WriteSet is empty for a successful idempotent replay.
 type MaterializeResult struct {
-	Note       model.NoteID
-	NotePath   string
-	Candidates []MaterializedCandidate
-	Finalized  bool
-	WriteSet   []store.AtomicFileSpec
+	Note          model.NoteID
+	NotePath      string
+	Workspace     model.NoteSegmentationID
+	WorkspacePath string
+	Candidates    []MaterializedCandidate
+	Finalized     bool
+	WriteSet      []store.AtomicFileSpec
 }
 
 type plannedCandidate struct {
@@ -95,10 +99,70 @@ func MaterializeCandidates(s *store.Store,
 				req.ExpectedNoteHash, noteFile.Hash),
 		}
 	}
-	note, candidates, coverageState, sourceRefs, err :=
-		store.ParseMaterializationNote(noteFile.Bytes)
+	var (
+		note          model.Note
+		segmentation  model.NoteSegmentation
+		candidates    []store.Candidate
+		coverageState store.CandidateCoverageState
+		candidateRefs map[string]bool
+		authorityRel  = noteRel
+		authorityHash = noteFile.Hash
+		workspaceMode bool
+	)
+	workspace, foundWorkspace, err := s.NoteSegmentationOf(req.Note)
 	if err != nil {
-		return nil, fmt.Errorf("materialize 解析 Note：%w", err)
+		return nil, fmt.Errorf("materialize 定位 ns-*：%w", err)
+	}
+	if foundWorkspace {
+		workspaceMode = true
+		if workspace.Domain != domain {
+			return nil, fmt.Errorf("materialize ns-* 与 Note 不在同一领域：%s / %s",
+				workspace.Rel, noteRel)
+		}
+		if req.ExpectedWorkspacePath != "" &&
+			req.ExpectedWorkspacePath != workspace.Rel {
+			return nil, &store.SkipError{
+				Path: workspace.Rel, Reason: store.SkipFileChanged,
+				Detail: fmt.Sprintf("自读取以来 ns-* 路径已变化：期望 %s，磁盘 %s",
+					req.ExpectedWorkspacePath, workspace.Rel),
+			}
+		}
+		workspaceFile, readErr := s.Read(workspace.Rel)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if req.ExpectedWorkspaceHash != "" &&
+			req.ExpectedWorkspaceHash != workspaceFile.Hash {
+			return nil, &store.SkipError{
+				Path: workspace.Rel, Reason: store.SkipFileChanged,
+				Detail: fmt.Sprintf("自读取以来 ns-* 已变化：期望 %s，磁盘 %s",
+					req.ExpectedWorkspaceHash, workspaceFile.Hash),
+			}
+		}
+		note, segmentation, candidates, coverageState, candidateRefs, err =
+			store.ParseMaterializationWorkspace(noteFile.Bytes, workspaceFile.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("materialize 解析 n/ns：%w", err)
+		}
+		if segmentation.NoteHash != noteFile.Hash {
+			return nil, fmt.Errorf(
+				"划分工作区已 stale：workspace note_hash=%s，当前 Note hash=%s；请先 candidate apply --rebase",
+				segmentation.NoteHash, noteFile.Hash)
+		}
+		authorityRel = workspace.Rel
+		authorityHash = workspaceFile.Hash
+	} else {
+		if req.ExpectedWorkspacePath != "" || req.ExpectedWorkspaceHash != "" {
+			return nil, &store.SkipError{
+				Path: req.ExpectedWorkspacePath, Reason: store.SkipFileChanged,
+				Detail: "自读取以来 ns-* 已消失",
+			}
+		}
+		note, candidates, coverageState, candidateRefs, err =
+			store.ParseMaterializationNote(noteFile.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("materialize 解析 Note：%w", err)
+		}
 	}
 	if note.ID != req.Note {
 		return nil, fmt.Errorf("materialize Note 路径与 frontmatter ID 不一致：%s != %s",
@@ -118,10 +182,14 @@ func MaterializeCandidates(s *store.Store,
 	}
 
 	if coverageState.Finalized {
-		if err := validateFinalCoverage(coverageState.Final, candidates, sourceRefs); err != nil {
+		if workspaceMode {
+			return nil, fmt.Errorf("ns-* 不接受 legacy 最终覆盖形态")
+		}
+		if err := validateFinalCoverage(coverageState.Final, candidates, candidateRefs); err != nil {
 			return nil, err
 		}
-	} else if err := validateDraftCoverage(coverageState.Draft, candidates, sourceRefs); err != nil {
+	} else if err := validateDraftCoverage(
+		coverageState.Draft, candidates, candidateRefs, workspaceMode); err != nil {
 		return nil, err
 	}
 	if req.All && !coverageState.Finalized && !coverageEligible(coverageState) {
@@ -143,7 +211,8 @@ func MaterializeCandidates(s *store.Store,
 	planned := make([]plannedCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
 		if candidate.Anchor.Output != "" {
-			path, err := verifyMappedCandidate(s, index, domain, candidate)
+			path, err := verifyMappedCandidate(
+				s, index, domain, candidate, segmentation.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -189,7 +258,7 @@ func MaterializeCandidates(s *store.Store,
 	var finalExtraction []byte
 	if coverageState.Finalized {
 		finalExtraction, err = materializedExtractionBytes(planned, coverageState.Final)
-	} else if eligible {
+	} else if eligible && !workspaceMode {
 		finalCoverage, convErr := materializedCoverage(coverageState.Draft, planned)
 		if convErr != nil {
 			return nil, convErr
@@ -213,11 +282,12 @@ func MaterializeCandidates(s *store.Store,
 	}
 	sort.Slice(toCreate, func(i, j int) bool { return toCreate[i].path < toCreate[j].path })
 	for _, item := range toCreate {
-		if err := createCandidateTarget(s, note, req, item); err != nil {
+		if err := createCandidateTarget(s, note, segmentation.ID, req, item); err != nil {
 			return nil, fmt.Errorf("materialize candidate %s：%w", item.candidate.Key, err)
 		}
 		if _, err := verifyMappedCandidate(s, indexWithOutput(index, item.output, item.path),
-			domain, candidateWithOutput(item.candidate, item.output)); err != nil {
+			domain, candidateWithOutput(item.candidate, item.output),
+			segmentation.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -228,20 +298,22 @@ func MaterializeCandidates(s *store.Store,
 	}
 	if len(outputUpdates) > 0 || finalExtraction != nil {
 		if _, err := s.ApplyCandidateNoteMaterialization(store.CandidateNoteMaterializationSpec{
-			Rel:             noteRel,
-			ExpectedHash:    noteFile.Hash,
+			Rel:             authorityRel,
+			ExpectedHash:    authorityHash,
 			Outputs:         outputUpdates,
 			FinalExtraction: finalExtraction,
 		}); err != nil {
-			return nil, fmt.Errorf("materialize 更新 Note：%w", err)
+			return nil, fmt.Errorf("materialize 更新 candidate 工作区：%w", err)
 		}
 	}
 
 	result := &MaterializeResult{
-		Note:      req.Note,
-		NotePath:  noteRel,
-		Finalized: coverageState.Finalized || eligible,
-		WriteSet:  s.AtomicWriteSet(),
+		Note: req.Note, NotePath: noteRel,
+		Finalized: coverageState.Finalized || eligible, WriteSet: s.AtomicWriteSet(),
+	}
+	if workspaceMode {
+		result.Workspace = segmentation.ID
+		result.WorkspacePath = authorityRel
 	}
 	for _, item := range planned {
 		if req.All || item.candidate.Key == req.Candidate {
@@ -256,27 +328,55 @@ func MaterializeCandidates(s *store.Store,
 
 func validateDraftCoverage(coverage []store.CandidateCoverage,
 	candidates []store.Candidate,
-	sourceRefs map[string]bool,
+	refs map[string]bool,
+	workspaceMode bool,
 ) error {
 	keys := make(map[string]bool, len(candidates))
 	for _, candidate := range candidates {
 		keys[candidate.Key] = true
-		for _, ref := range candidate.Anchor.SourceRefs {
-			if !sourceRefs[ref] {
-				return fmt.Errorf("candidate %s 的 source_ref=%q 不存在于整理正文",
-					candidate.Key, ref)
+		candidateRefs := candidate.Anchor.SourceRefs
+		refName := "source_ref"
+		if workspaceMode {
+			if len(candidate.Anchor.SourceRefs) != 0 {
+				return fmt.Errorf("ns-* candidate %s 不得使用 legacy source_refs", candidate.Key)
+			}
+			candidateRefs = candidate.Anchor.NoteRefs
+			refName = "note_ref"
+		} else if len(candidate.Anchor.NoteRefs) != 0 {
+			return fmt.Errorf("legacy Note candidate %s 不得使用 note_refs", candidate.Key)
+		}
+		for _, ref := range candidateRefs {
+			if !refs[ref] {
+				return fmt.Errorf("candidate %s 的 %s=%q 不存在于整理正文",
+					candidate.Key, refName, ref)
 			}
 		}
 	}
-	coveredRefs := make(map[string]bool)
+	coveredRefs := make(map[string]int)
 	referenced := make(map[string]bool)
 	for _, item := range coverage {
-		for _, ref := range item.SourceRefs {
-			if !sourceRefs[ref] {
-				return fmt.Errorf("candidate coverage %s 的 source_ref=%q 不存在于整理正文",
-					item.Module, ref)
+		itemRefs := item.SourceRefs
+		refName := "source_ref"
+		if workspaceMode {
+			if len(item.SourceRefs) != 0 {
+				return fmt.Errorf("ns-* candidate coverage %s 不得使用 legacy source_refs",
+					item.Module)
 			}
-			coveredRefs[ref] = true
+			itemRefs = item.NoteRefs
+			refName = "note_ref"
+		} else if len(item.NoteRefs) != 0 {
+			return fmt.Errorf("legacy Note candidate coverage %s 不得使用 note_refs",
+				item.Module)
+		}
+		for _, ref := range itemRefs {
+			if !refs[ref] {
+				return fmt.Errorf("candidate coverage %s 的 %s=%q 不存在于整理正文",
+					item.Module, refName, ref)
+			}
+			coveredRefs[ref]++
+			if workspaceMode && coveredRefs[ref] > 1 {
+				return fmt.Errorf("Note block %s 被多个 coverage 模块重复覆盖", ref)
+			}
 		}
 		if item.Disposition != store.CandidateCoverageCandidate {
 			continue
@@ -289,9 +389,9 @@ func validateDraftCoverage(coverage []store.CandidateCoverage,
 			referenced[key] = true
 		}
 	}
-	for ref := range sourceRefs {
-		if !coveredRefs[ref] {
-			return fmt.Errorf("整理正文 source_ref=%q 未被 candidate coverage 覆盖", ref)
+	for ref := range refs {
+		if coveredRefs[ref] == 0 {
+			return fmt.Errorf("整理正文引用 %q 未被 candidate coverage 覆盖", ref)
 		}
 	}
 	for key := range keys {
@@ -468,18 +568,21 @@ func indexWithOutput(index store.Index, output, path string) store.Index {
 }
 
 func createCandidateTarget(s *store.Store, note model.Note,
+	segmentation model.NoteSegmentationID,
 	req MaterializeRequest,
 	item plannedCandidate,
 ) error {
 	_, err := s.ApplyCandidateArtifact(store.CandidateArtifactSpec{
 		Rel: item.path, Output: item.output, Candidate: item.candidate,
-		Source: note.Source, Note: note.ID, Date: req.Date, Stamp: req.Stamp,
+		Source: note.Source, Note: note.ID, Segmentation: segmentation,
+		Date: req.Date, Stamp: req.Stamp,
 	})
 	return err
 }
 
 func verifyMappedCandidate(s *store.Store, index store.Index, domain string,
 	candidate store.Candidate,
+	segmentation model.NoteSegmentationID,
 ) (string, error) {
 	output := candidate.Anchor.Output
 	var expectedPath string
@@ -514,7 +617,7 @@ func verifyMappedCandidate(s *store.Store, index store.Index, domain string,
 		return "", fmt.Errorf("candidate %s 的 output 路径漂移：%s != %s",
 			candidate.Key, actualPath, expectedPath)
 	}
-	if err := s.VerifyCandidateArtifact(actualPath, candidate); err != nil {
+	if err := s.VerifyCandidateArtifact(actualPath, candidate, segmentation); err != nil {
 		return "", fmt.Errorf("candidate %s 的映射目标漂移：%w", candidate.Key, err)
 	}
 	return actualPath, nil

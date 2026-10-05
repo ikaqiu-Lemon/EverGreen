@@ -10,13 +10,17 @@ import (
 )
 
 const (
-	candidateCoverageAnchorFamily  = "eg:cc:"
-	candidateCoverageAnchorVersion = "1"
-	candidateCoverageAnchorTag     = candidateCoverageAnchorFamily + candidateCoverageAnchorVersion
-	candidateCoverageAnchorOpen    = "<!-- " + candidateCoverageAnchorTag + " "
+	candidateCoverageAnchorFamily    = "eg:cc:"
+	candidateCoverageAnchorVersion   = "1"
+	candidateCoverageAnchorTag       = candidateCoverageAnchorFamily + candidateCoverageAnchorVersion
+	candidateCoverageAnchorOpen      = "<!-- " + candidateCoverageAnchorTag + " "
+	candidateCoverageAnchorVersionV2 = "2"
+	candidateCoverageAnchorTagV2     = candidateCoverageAnchorFamily + candidateCoverageAnchorVersionV2
+	candidateCoverageAnchorOpenV2    = "<!-- " + candidateCoverageAnchorTagV2 + " "
 
 	candidateCoverageHeading   = "### 候选覆盖"
 	candidateCoverageHeaderRow = "| 模块 | 来源范围 | 语义模块 | 草稿处置 |"
+	candidateCoverageHeaderV2  = "| 模块 | Note 块 | 语义模块 | 草稿处置 |"
 	candidateCoverageSepRow    = "| --- | --- | --- | --- |"
 )
 
@@ -31,6 +35,7 @@ const (
 type CandidateCoverage struct {
 	Module      string
 	SourceRefs  []string
+	NoteRefs    []string
 	Summary     string
 	Disposition string
 	Candidates  []string
@@ -57,16 +62,29 @@ type candidateCoverageWire struct {
 	Reason      string   `json:"reason"`
 }
 
+type candidateCoverageWireV2 struct {
+	Module      string   `json:"module"`
+	NoteRefs    []string `json:"note_refs"`
+	Summary     string   `json:"summary"`
+	Disposition string   `json:"disposition"`
+	Candidates  []string `json:"candidates"`
+	Reason      string   `json:"reason"`
+}
+
 func validateCandidateCoverage(c CandidateCoverage) error {
 	if strings.TrimSpace(c.Module) == "" {
 		return fmt.Errorf("候选覆盖项 module 为空")
 	}
-	if len(c.SourceRefs) == 0 {
-		return fmt.Errorf("候选覆盖项 %q 的 source_refs 为空", c.Module)
+	if len(c.SourceRefs) == 0 && len(c.NoteRefs) == 0 {
+		return fmt.Errorf("候选覆盖项 %q 的 source_refs/note_refs 均为空", c.Module)
 	}
-	for i, ref := range c.SourceRefs {
+	if len(c.SourceRefs) > 0 && len(c.NoteRefs) > 0 {
+		return fmt.Errorf("候选覆盖项 %q 的 source_refs/note_refs 不得同时出现", c.Module)
+	}
+	refName, refs := candidateCoverageRefs(c)
+	for i, ref := range refs {
 		if strings.TrimSpace(ref) == "" {
-			return fmt.Errorf("候选覆盖项 %q 的 source_refs[%d] 为空", c.Module, i)
+			return fmt.Errorf("候选覆盖项 %q 的 %s[%d] 为空", c.Module, refName, i)
 		}
 	}
 	if strings.TrimSpace(c.Summary) == "" {
@@ -100,6 +118,13 @@ func validateCandidateCoverage(c CandidateCoverage) error {
 	return nil
 }
 
+func candidateCoverageRefs(c CandidateCoverage) (string, []string) {
+	if len(c.NoteRefs) > 0 {
+		return "note_refs", c.NoteRefs
+	}
+	return "source_refs", c.SourceRefs
+}
+
 func candidateCoverageDispositionCell(c CandidateCoverage) string {
 	switch c.Disposition {
 	case CandidateCoverageCandidate:
@@ -112,7 +137,8 @@ func candidateCoverageDispositionCell(c CandidateCoverage) string {
 }
 
 func candidateCoverageVisibleRow(c CandidateCoverage) string {
-	return "| " + codeSpan(c.Module) + " | " + backtickJoin(c.SourceRefs) + " | " +
+	_, refs := candidateCoverageRefs(c)
+	return "| " + codeSpan(c.Module) + " | " + backtickJoin(refs) + " | " +
 		cellEscaper.Replace(c.Summary) + " | " + candidateCoverageDispositionCell(c) + " |"
 }
 
@@ -121,18 +147,25 @@ func encodeCandidateCoverageAnchor(c CandidateCoverage) string {
 	if candidates == nil {
 		candidates = []string{}
 	}
-	raw, err := json.Marshal(candidateCoverageWire{
-		Module:      c.Module,
-		SourceRefs:  c.SourceRefs,
-		Summary:     c.Summary,
-		Disposition: c.Disposition,
-		Candidates:  candidates,
-		Reason:      c.Reason,
-	})
+	var raw []byte
+	var err error
+	open := candidateCoverageAnchorOpen
+	if len(c.NoteRefs) > 0 {
+		open = candidateCoverageAnchorOpenV2
+		raw, err = json.Marshal(candidateCoverageWireV2{
+			Module: c.Module, NoteRefs: c.NoteRefs, Summary: c.Summary,
+			Disposition: c.Disposition, Candidates: candidates, Reason: c.Reason,
+		})
+	} else {
+		raw, err = json.Marshal(candidateCoverageWire{
+			Module: c.Module, SourceRefs: c.SourceRefs, Summary: c.Summary,
+			Disposition: c.Disposition, Candidates: candidates, Reason: c.Reason,
+		})
+	}
 	if err != nil {
 		panic(fmt.Sprintf("candidate coverage anchor encoding failed: %v", err))
 	}
-	return candidateCoverageAnchorOpen +
+	return open +
 		base64.RawURLEncoding.EncodeToString(raw) + candidateAnchorClose
 }
 
@@ -143,9 +176,17 @@ func RenderCandidateCoverageMatrix(cov []CandidateCoverage) ([]byte, error) {
 		return nil, fmt.Errorf("候选覆盖矩阵为空")
 	}
 	seen := map[string]bool{}
+	refName := ""
 	for i, c := range cov {
 		if err := validateCandidateCoverage(c); err != nil {
 			return nil, fmt.Errorf("候选覆盖矩阵第 %d 项不成立：%w", i, err)
+		}
+		currentRefName, _ := candidateCoverageRefs(c)
+		if refName == "" {
+			refName = currentRefName
+		} else if refName != currentRefName {
+			return nil, fmt.Errorf(
+				"候选覆盖矩阵不得混用 source_refs 与 note_refs")
 		}
 		if seen[c.Module] {
 			return nil, fmt.Errorf("候选覆盖矩阵 module 原始字节重复：%q", c.Module)
@@ -155,7 +196,11 @@ func RenderCandidateCoverageMatrix(cov []CandidateCoverage) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString(candidateCoverageHeading)
 	b.WriteString("\n\n")
-	b.WriteString(candidateCoverageHeaderRow)
+	header := candidateCoverageHeaderRow
+	if refName == "note_refs" {
+		header = candidateCoverageHeaderV2
+	}
+	b.WriteString(header)
 	b.WriteByte('\n')
 	b.WriteString(candidateCoverageSepRow)
 	b.WriteByte('\n')
@@ -177,17 +222,23 @@ func isCandidateCoverageAnchorLine(line []byte) bool {
 
 func decodeCandidateCoverageAnchor(line []byte) (CandidateCoverage, error) {
 	t := bytes.TrimSpace(line)
-	if !bytes.HasPrefix(t, []byte(candidateCoverageAnchorOpen)) {
+	open := candidateCoverageAnchorOpen
+	version := candidateCoverageAnchorVersion
+	if bytes.HasPrefix(t, []byte(candidateCoverageAnchorOpenV2)) {
+		open = candidateCoverageAnchorOpenV2
+		version = candidateCoverageAnchorVersionV2
+	} else if !bytes.HasPrefix(t, []byte(candidateCoverageAnchorOpen)) {
 		return CandidateCoverage{}, fmt.Errorf(
-			"未知的候选覆盖锚点版本（仅支持 %s）：%q", candidateCoverageAnchorTag, t)
+			"未知的候选覆盖锚点版本（仅支持 %s / %s）：%q",
+			candidateCoverageAnchorTag, candidateCoverageAnchorTagV2, t)
 	}
 	if !bytes.HasSuffix(t, []byte(candidateAnchorClose)) {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点缺注释结束符：%q", t)
 	}
-	if len(t) < len(candidateCoverageAnchorOpen)+len(candidateAnchorClose) {
+	if len(t) < len(open)+len(candidateAnchorClose) {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷缺失：%q", t)
 	}
-	enc := t[len(candidateCoverageAnchorOpen) : len(t)-len(candidateAnchorClose)]
+	enc := t[len(open) : len(t)-len(candidateAnchorClose)]
 	raw, err := base64.RawURLEncoding.DecodeString(string(enc))
 	if err != nil {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷 base64url 非法：%v", err)
@@ -199,8 +250,12 @@ func decodeCandidateCoverageAnchor(line []byte) (CandidateCoverage, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷 JSON 非法：%v", err)
 	}
+	refKey := "source_refs"
+	if version == candidateCoverageAnchorVersionV2 {
+		refKey = "note_refs"
+	}
 	want := map[string]bool{
-		"module": true, "source_refs": true, "summary": true,
+		"module": true, refKey: true, "summary": true,
 		"disposition": true, "candidates": true, "reason": true,
 	}
 	if len(fields) != len(want) {
@@ -213,20 +268,34 @@ func decodeCandidateCoverageAnchor(line []byte) (CandidateCoverage, error) {
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
-	var wire candidateCoverageWire
-	if err := dec.Decode(&wire); err != nil {
-		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷 JSON 非法：%v", err)
+	var c CandidateCoverage
+	if version == candidateCoverageAnchorVersionV2 {
+		var wire candidateCoverageWireV2
+		if err := dec.Decode(&wire); err != nil {
+			return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷 JSON 非法：%v", err)
+		}
+		c = CandidateCoverage{
+			Module: wire.Module, NoteRefs: wire.NoteRefs, Summary: wire.Summary,
+			Disposition: wire.Disposition, Candidates: wire.Candidates, Reason: wire.Reason,
+		}
+	} else {
+		var wire candidateCoverageWire
+		if err := dec.Decode(&wire); err != nil {
+			return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷 JSON 非法：%v", err)
+		}
+		c = CandidateCoverage{
+			Module: wire.Module, SourceRefs: wire.SourceRefs, Summary: wire.Summary,
+			Disposition: wire.Disposition, Candidates: wire.Candidates, Reason: wire.Reason,
+		}
 	}
 	var extra json.RawMessage
 	if err := dec.Decode(&extra); err != io.EOF {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点载荷含多余数据")
 	}
-	if wire.SourceRefs == nil || wire.Candidates == nil {
-		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点 source_refs/candidates 必须是数组")
-	}
-	c := CandidateCoverage{
-		Module: wire.Module, SourceRefs: wire.SourceRefs, Summary: wire.Summary,
-		Disposition: wire.Disposition, Candidates: wire.Candidates, Reason: wire.Reason,
+	_, refs := candidateCoverageRefs(c)
+	if refs == nil || c.Candidates == nil {
+		return CandidateCoverage{}, fmt.Errorf(
+			"候选覆盖锚点 %s/candidates 必须是数组", refKey)
 	}
 	if err := validateCandidateCoverage(c); err != nil {
 		return CandidateCoverage{}, fmt.Errorf("候选覆盖锚点形态违规：%w", err)
@@ -248,7 +317,8 @@ func ParseCandidateCoverageMatrix(body []byte) ([]CandidateCoverage, error) {
 		cov = append(cov, item)
 	}
 	if len(cov) == 0 {
-		return nil, fmt.Errorf("候选覆盖矩阵缺机器锚点（%s）", candidateCoverageAnchorTag)
+		return nil, fmt.Errorf("候选覆盖矩阵缺机器锚点（%s / %s）",
+			candidateCoverageAnchorTag, candidateCoverageAnchorTagV2)
 	}
 	want, err := RenderCandidateCoverageMatrix(cov)
 	if err != nil {
@@ -338,7 +408,8 @@ func candidateExtractionTail(raw []byte) (int, []byte, error) {
 		return 0, nil, err
 	}
 	if root == nil {
-		return 0, nil, fmt.Errorf("Note 缺分区「%s」", SecExtraction)
+		return 0, nil, fmt.Errorf("文档缺 candidate 分区「%s」或「%s」",
+			SecSegmentation, SecExtraction)
 	}
 	start := candidates[len(candidates)-1].End
 	if start >= extraction.End {
@@ -364,7 +435,8 @@ func parseDraftCoveragePrefix(tail []byte) ([]CandidateCoverage, []byte, bool, e
 	}
 	if len(items) == 0 {
 		return nil, nil, false, fmt.Errorf(
-			"候选覆盖矩阵缺机器锚点（%s）", candidateCoverageAnchorTag)
+			"候选覆盖矩阵缺机器锚点（%s / %s）",
+			candidateCoverageAnchorTag, candidateCoverageAnchorTagV2)
 	}
 	rendered, err := RenderCandidateCoverageMatrix(items)
 	if err != nil {

@@ -671,7 +671,8 @@ func TestContextCandidateFieldKeysClosedAndAlias(t *testing.T) {
 	}
 	sort.Strings(keys)
 	want := []string{"base", "cards", "diagnostics", "domain", "draft_candidates",
-		"knowledge_candidates", "notes", "opinion_candidates", "proposals", "source", "warnings"}
+		"knowledge_candidates", "note_segmentations", "notes", "opinion_candidates",
+		"proposals", "source", "warnings"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("Context 字段键闭集 = %v，期望 %v", keys, want)
 	}

@@ -110,24 +110,28 @@ After installing, know these Schema v2 contract facts (the full walkthrough is
 in [README.md](README.md); this is only the post-install
 compatibility/validation digest):
 
-- **ChangePlan `plan_version`.** Current plans use `plan_version: 2`; the
-  supported set is `{1, 2}`. A `plan_version: 1` plan is still accepted for
-  compatibility and flagged with a single `I1` migration info.
+- **ChangePlan `plan_version`.** Current plans use `plan_version: 3`; the
+  supported set is `{1, 2, 3}`. Versions 1 and 2 remain readable compatibility
+  formats.
 - **Index `schema_version`.** The derived index carries `schema_version = 2`
   and still holds six tables. There is no incremental migration: on a version
   mismatch the whole index is discarded and rebuilt from Markdown.
 - **`eg context` candidates.** The context envelope returns
-  `draft_candidates`, `knowledge_candidates`, and `opinion_candidates`.
-  `draft_candidates` projects Note-embedded draft/materialized mappings without
+  `note_segmentations`, `draft_candidates`, `knowledge_candidates`, and
+  `opinion_candidates`. `draft_candidates` projects `ns-*` draft/materialized mappings without
   mixing them into already-materialized search candidates. Version `0.8.0-m8`
   removes the legacy `candidates` alias and its deprecation `I1`.
 - **Storage v3 commands.** `eg materialize --note <n-id>
   (--candidate <cand-key> | --all) --user-request` copies exact candidate bytes
-  into Knowledge/Opinion through journal v1. `eg export --plain --output <dir>`
+  from `domains/<domain>/note-segments/ns-*.md` into Knowledge/Opinion through
+  journal v1. `eg export --plain --output <dir>`
   creates a read-only egress copy without Evergreen protocol anchors.
 - **Candidate review.** `eg candidate show --note <n-id> --json` exports the
   complete editable draft state. Apply the edited `.data` object with
   `eg candidate apply --note <n-id> --file <review.json> --user-request`.
+  When the Note changed, reconcile the spec and add `--rebase`. Legacy
+  embedded candidates can be split with
+  `eg candidate migrate --note <n-id> --user-request`.
   The note path/hash is an optimistic-concurrency token; apply replaces only
   the candidate-managed extraction region in one journal-v1 transaction.
 - **Candidate boundaries.** H3 is the default. The L2 fallback is an
@@ -252,10 +256,10 @@ roster you can verify against `eg --help`.
 
 - `.eg/` stores the latest report and is excluded through
   `.git/info/exclude`.
-- `.index/` stores the derived database, deterministic schema-v2 per-Note
+- `.index/` stores the derived database, deterministic schema-v3 per-Note
   candidate sidecars under `blocks/`, `run.lock`, and transaction state. The
-  sidecars contain only Markdown-recomputable identities, logical slugs, spans,
-  mappings, and hashes;
+  sidecars contain only Markdown-recomputable Note/workspace identities,
+  freshness, logical slugs, spans, mappings, and hashes;
   unhealthy sidecars make candidate queries fall back to Markdown.
 - Build output under `bin/` and `dist/` is ignored by the source repository.
 

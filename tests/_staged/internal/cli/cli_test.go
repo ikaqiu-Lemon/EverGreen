@@ -99,6 +99,7 @@ var contractUnregisteredFlags = map[string]string{
 	"output": "Storage v3 正式合同 D6.1：eg export --output <dir>",
 	"plain":  "Storage v3 正式合同 D6.1：eg export --plain",
 	"file":   "Candidate review workflow 合同 §3：eg candidate apply --file <review.json>",
+	"rebase": "Note segmentation workspace 合同 §7：eg candidate apply --rebase",
 }
 
 // 命令展示名（S1 九命令按合同 §1 表格行序，之后是 M3 的三条用户显式状态命令，T-…-039）。
@@ -146,7 +147,7 @@ var wantCommands = []string{
 	"materialize",
 	"export",
 	// Candidate review workflow：完整候选状态 show/apply。
-	"candidate show|apply",
+	"candidate show|apply|migrate",
 }
 
 // wantCommandCount 是注册命令总数：S1 九条 + M3 状态三条（deprecate / restore / replaced-by）
@@ -242,7 +243,7 @@ var wantFlags = map[string][]string{
 	"opinion":     {"domain", "tag", "since", "until", "include-deleted", "include-deprecated", "limit", "offset", "reason", "reopen"},
 	"materialize": {"note", "candidate", "all", "strict"},
 	"export":      {"plain", "output"},
-	"candidate":   {"note", "file", "strict"},
+	"candidate":   {"note", "file", "rebase", "strict"},
 }
 
 var globalFlagNames = []string{"json", "vault", "help", "h"}

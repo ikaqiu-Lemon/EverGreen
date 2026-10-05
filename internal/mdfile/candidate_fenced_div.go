@@ -26,7 +26,10 @@ func candidateExtraction(raw []byte) (Span, ast.Node, map[int]bool, []candidateF
 	if err != nil {
 		return Span{}, nil, nil, nil, err
 	}
-	extraction, ok := doc.Section(SecExtraction)
+	extraction, ok := doc.Section(SecSegmentation)
+	if !ok {
+		extraction, ok = doc.Section(SecExtraction)
+	}
 	if !ok {
 		return Span{}, nil, nil, nil, nil
 	}

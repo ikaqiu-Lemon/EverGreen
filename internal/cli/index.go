@@ -457,7 +457,8 @@ func (r *Root) indexSnapshotWith(root string, quick bool) (index.Snapshot, []rep
 	}
 
 	snap := index.Snapshot{Head: indexHead(root)}
-	snap.Blocks = query.CandidateBlockDocuments(scan.Notes, store.ContentHash)
+	snap.Blocks = query.CandidateWorkspaceDocuments(
+		scan.Notes, scan.NoteSegmentations, store.ContentHash)
 	for _, c := range scan.Cards {
 		size, mtime := fileStat(filepath.Join(root, filepath.FromSlash(c.Path)))
 		// trueHash 是**现态字节**的真 content_hash（store.ContentHash，与 B3 同源）。

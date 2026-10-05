@@ -97,10 +97,11 @@ func sectionBodyFraming(payload []byte) []byte {
 type ReplaceCandidateSectionSpec struct {
 	Rel          string
 	ExpectedHash string
-	ID           model.NoteID
+	ID           string
 	Candidate    string
 	Section      string
 	Content      []byte
+	Stamp        model.Stamp
 }
 
 // ApplyReplaceCandidateSection replaces exactly one unmaterialized candidate
@@ -114,9 +115,13 @@ func (s *Store) ApplyReplaceCandidateSection(spec ReplaceCandidateSectionSpec) (
 	if len(spec.Content) == 0 || spec.Content[len(spec.Content)-1] != '\n' {
 		return res, mdfile.ErrPayloadNotLineTerminated
 	}
-	return s.mutateGuarded(spec.Rel, spec.ExpectedHash,
-		func(f File, _ *mdfile.Doc) ([]byte, error) {
-			return mdfile.ReplaceCandidateSection(
-				f.Bytes, spec.Candidate, spec.Section, spec.Content)
-		})
+	build := func(f File, _ *mdfile.Doc) ([]byte, error) {
+		return mdfile.ReplaceCandidateSection(
+			f.Bytes, spec.Candidate, spec.Section, spec.Content)
+	}
+	if _, err := model.ParseNoteSegmentationID(spec.ID); err == nil {
+		return s.mutateGuarded(spec.Rel, spec.ExpectedHash,
+			withUpdatedAt(spec.Stamp, build))
+	}
+	return s.mutateGuarded(spec.Rel, spec.ExpectedHash, build)
 }

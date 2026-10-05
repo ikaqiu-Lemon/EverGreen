@@ -18,6 +18,8 @@ const (
 	DirDomains = "domains"
 	// DirNotes 是领域内的材料笔记目录。
 	DirNotes = "notes"
+	// DirNoteSegmentations 是领域内的 K/O 划分工作区目录。
+	DirNoteSegmentations = "note-segments"
 	// DirKnowledge 是领域内的知识卡目录。
 	DirKnowledge = "knowledge"
 	// DirOpinions 是领域内的观点目录（Schema v2 §3.1）。
@@ -34,6 +36,12 @@ func SourceRel(id string) string { return path.Join(DirSources, id+".md") }
 // NoteRel 是材料笔记的落位路径：`domains/<domain>/notes/<n-id>.md`。
 func NoteRel(domain, id string) string {
 	return path.Join(DirDomains, domain, DirNotes, id+".md")
+}
+
+// NoteSegmentationRel 是划分工作区的落位路径：
+// `domains/<domain>/note-segments/<ns-id>.md`。
+func NoteSegmentationRel(domain, id string) string {
+	return path.Join(DirDomains, domain, DirNoteSegmentations, id+".md")
 }
 
 // CardRel 是知识卡的落位路径：`domains/<domain>/knowledge/<k-id>.md`。

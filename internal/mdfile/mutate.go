@@ -264,3 +264,19 @@ func (d *Doc) ReplaceSectionBody(section string, payload []byte) ([]byte, error)
 	}
 	return out, nil
 }
+
+// RemoveSection removes one complete H2 section while preserving every byte
+// outside its half-open span.
+func (d *Doc) RemoveSection(section string) ([]byte, error) {
+	span, ok := d.Section(section)
+	if !ok {
+		return nil, fmt.Errorf("%w：%s", ErrSectionNotFound, section)
+	}
+	out := make([]byte, 0, len(d.Raw)-(span.End-span.Start))
+	out = append(out, d.Raw[:span.Start]...)
+	out = append(out, d.Raw[span.End:]...)
+	if err := SelfCheck(out); err != nil {
+		return nil, fmt.Errorf("%w：%v", ErrSectionReplaceUnsafe, err)
+	}
+	return out, nil
+}

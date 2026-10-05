@@ -56,6 +56,7 @@ func (r *Root) runContext(inv *Invocation) (*Result, error) {
 		"default_domain_fallback": fallback,
 		"source":                  ctx.Source,
 		"notes":                   ctx.Notes,
+		"note_segmentations":      ctx.NoteSegmentations,
 		"cards":                   ctx.Cards,
 		"draft_candidates":        ctx.DraftCandidates,
 		"knowledge_candidates":    ctx.KnowledgeCandidates,

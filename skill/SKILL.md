@@ -133,9 +133,11 @@ eg apply --plan <file|-> [--dry-run] [--json]
 
 ### 2.4.1 Storage v3 候选草稿与用户物化
 
-新主路径只在 `write_note` 中保存候选草稿，不直接伪造最终 output：
+新主路径由一次 `write_note` 原子创建纯 `n-*` 与对应的可编辑 `ns-*`，不直接伪造最终 output：
 
-- `candidate_drafts[]` 中每项固定给 `key`、`kind`、`logical_slug`、`title`、`source_refs`、
+- `n-*` 只含 `整理正文` / `存疑与待验证` / `用户补充`，不含候选标签、覆盖矩阵或
+  `提取结果`；`ns-*` 位于 `domains/<domain>/note-segments/`，固定含 `划分结果` / `用户补充`。
+- `candidate_drafts[]` 中每项固定给 `key`、`kind`、`logical_slug`、`title`、`note_refs`、
   `rel`、`reason`、`tags` 与有序 `sections[]`；`logical_slug` 使用无日期的小写 ASCII
   kebab-case，并独立于显示标题决定最终文件名。Knowledge 使用 `知识内容` / 可选 `条件与边界`，Opinion 使用
   `观点` / 可选 `论据与推理`、`条件与反例`、`待验证`。
@@ -144,14 +146,18 @@ eg apply --plan <file|-> [--dry-run] [--json]
 - 用户先用 `eg candidate show --note <n-id> --json` 导出完整审阅状态（将信封的 `.data`
   保存为 review JSON），再用 `eg candidate apply --note <n-id> --file <review.json>
   --user-request` 原子回投。一次 apply 可新增、删除、改 key、重排、改类型，并修改
-  logical slug、来源范围、payload 和 coverage；`note_path` / `note_hash` 不匹配或已有候选物化时零写入拒绝。
+  logical slug、Note 块范围、payload 和 coverage；Note 改动后 workspace 标记为 stale，
+  必须在审阅完整状态后显式使用 `--rebase --user-request`，工具不会自动合并语义文本。
+- 旧的未物化内嵌候选可由 `eg candidate migrate --note <n-id> --user-request` 原子拆成
+  纯 `n-* + ns-*`；已物化或引用映射有歧义时零写入拒绝。
 - `eg edit --target <n-id> --candidate <cand-key> --section <H4> --content <text|file>
   --user-request` 仍可用于只改一个未物化候选分区。
 - **Agent 不得调用 `eg materialize`。** 用户确认草稿后显式执行
   `eg materialize --note <n-id> (--candidate <cand-key> | --all) --user-request`。该命令不调用模型，
-  只复制确定字节，并把目标与 Note output 映射放进同一个 journal v1 事务；`--all` 遇到
+  只复制 `ns-*` 中的确定字节，并把目标与 workspace output 映射放进同一个 journal v1 事务；`--all` 遇到
   `unresolved` coverage 必须拒绝，定向 `--candidate` 仍可用于显式部分物化。
-- `candidate_drafts[]` 默认写 H3 边界。读取存量 Note 时还支持 L2 兜底：`eg:cd:1` 锚点下一行是
+- `candidate_drafts[]` 默认在 `ns-*` 写 H3 边界和 `eg:cd:2` 锚点；`candidate_coverage[]`
+  使用 `eg:cc:2`。读取存量 Note 时还支持 L2 兜底：`eg:cd:1` 锚点下一行是
   `::: {#cand-key .eg-candidate .knowledge}`（或把末项换成 `.opinion`）开围栏，再下一行必须是非空、
   无属性的 ATX H3 title，H4 模板随后出现，最后以不少于开围栏冒号数的无属性围栏闭合。三行必须
   相邻，L2 不得嵌套；代码围栏优先，容器内其它标题仍属当前 candidate。L1/L2 共用同一模板映射
@@ -228,27 +234,28 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 - [ ] **存疑只写开放式问题**（`add_open_question` → Note「存疑与待验证」），不预设成立方；
       **不得引入掌握度、评分、复习排程一类字段**。Agent **不得**直接改写 Opinion 的 `validation`（见 §3.7）。
 
-### 3.4 语义模块拆分与提炼覆盖矩阵 `extraction_coverage`
+### 3.4 全 Note 划分与候选覆盖矩阵 `candidate_coverage`
 
 提炼前必须先把 Note 拆成**比章节更细的语义模块**（定义、组成、步骤 / 状态流、API / 数据结构 / 接入位置、
 条件与边界、数据 / 时效事实，以及评价 / 因果判断 / 预测 / 优劣比较 / 取舍主张），**不得直接从章节标题
-跳到少量主题卡**。随后建立 `Note 模块 → Knowledge / Opinion / Note-only` 的**覆盖矩阵**，逐项写进
-`write_note.extraction_coverage[]`：
+跳到少量主题卡**。随后对 `blocks[]` 的每个 source/agent 块按顺序编号 `B1..Bn`，建立
+`Note 块 → Knowledge / Opinion / Note-only / unresolved` 的**覆盖矩阵**，逐项写进
+`write_note.candidate_coverage[]`：
 
 | 字段 | 说明 |
 |-|-|
 | `module` | 本 Note 内唯一的模块标识 |
-| `source_refs[]` | 非空，只能引用本次 `blocks[]` 已声明的来源范围 |
+| `note_refs[]` | 非空，只能引用本次 `blocks[]` 对应的 `B1..Bn` |
 | `summary` | 具体描述该模块讲了什么 |
-| `disposition` | 封闭三值：`outputs` / `note_only` / `missing` |
-| `outputs[]` | `disposition=outputs` 时列一个或多个 `k-*` / `o-*`，且与 `output_cards` 双向一致 |
-| `reason` | `note_only` / `missing` 必填，说明为何不产出 / 待补什么 |
+| `disposition` | 封闭三值：`candidate` / `note_only` / `unresolved` |
+| `candidates[]` | `disposition=candidate` 时列一个或多个 `cand-*` |
+| `reason` | `note_only` / `unresolved` 必填，说明为何不产出 / 待确认什么 |
 
-- [ ] 每个 `source_ref` **至少进入一个模块**；可独立复用的事实**不能只藏在 Opinion 的「论据与推理」里**，必须同时产出 Knowledge。
-- [ ] `outputs` 不得带 `reason`；`note_only` 必须给非空 `reason` 且不得有 `outputs`；`missing` 必须给 `reason` 且不得有 `outputs`。
-- [ ] **`missing` 无条件报 `E2`、退 `2` 阻止 apply**：可执行 ChangePlan 里**缺漏必须为 0**。
-- [ ] `output_cards` 与各模块 `outputs` **双向一致**：一方有、另一方没有都会被拦。
-- [ ] writer 在 Note「提取结果」分区渲染 Knowledge / Opinion 清单 + 完整覆盖矩阵，使 review 能从任一模块追到产物或 `Note-only` 理由。
+- [ ] 每个 `B*` **恰进入一个模块**；source 与 agent 块都必须覆盖。
+- [ ] `candidate` 不得带 `reason`；`note_only` / `unresolved` 必须给非空 `reason` 且不得带 candidates。
+- [ ] `unresolved` 可保存到 `ns-*`，但会阻止 `materialize --all`。
+- [ ] 每个 candidate 至少被一个 `disposition=candidate` 模块引用。
+- [ ] writer 在 `ns-*` 的「划分结果」渲染候选与完整覆盖矩阵；`n-*` 不重复保存这些内容。
 
 > **`W21` 不是覆盖证明**：`W21`（§4.3）只是「来源块数显著少于原文章节数」的**启发式 warning**，
 > 只能发现极端结构退化，**看不见块内遗漏**；它**不能替代来源保真（§3.8）与「缺漏 = 0」**，更不因为没报 `W21` 就说明覆盖完整。
@@ -256,8 +263,9 @@ commit 是哪一个、有哪些 warning。**如实转述，不美化、不合并
 > **v1 兼容：`coverage_gaps`**。v1（`plan_version: 1`）的 `write_note` 用受控枚举七值
 > `core_claim` / `key_evidence` / `counterexample` / `boundary` / `method` / `conclusion` / `limitation`
 > 的 `coverage_gaps` 做覆盖自评：**原文未表达的要点写进 `coverage_gaps`**，**不得编造原文未出现的要点**，
-> **无缺失时不写该字段**。该机制在兼容期仍被受理，但**新 plan 用 `plan_version: 2` 的 `extraction_coverage[]`
-> 覆盖矩阵**表达提炼去向，不再用 `coverage_gaps`。
+> **无缺失时不写该字段**。该机制在兼容期仍被受理；`plan_version: 2` 的
+> `extraction_coverage[]` 也是兼容格式。新 plan 用 `plan_version: 3` 的
+> `candidate_coverage[]` 表达划分去向。
 
 ### 3.5 收敛结论怎么被呈现（M2 起四个出口同源同事实）
 
@@ -362,8 +370,8 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
 ## 4. ChangePlan 填写规则
 
 顶层恰 8 键：`plan_version` / `verb` / `domain` / `reason` / `requirement_ids` / `convergence[]` /
-`base` / `ops[]`。**`plan_version` 支持集合 `{1, 2}`；当前 plan 一律写 `2`**，旧的 `plan_version: 1`
-仍被受理但会各得**恰一条 `I1` 兼容提示**（见 §4.4）。主链路 canonical op **恰九个**：`add_source`、
+`base` / `ops[]`。**`plan_version` 支持集合 `{1, 2, 3}`；当前 plan 一律写 `3`**，旧版本
+仍按兼容路径受理。主链路 canonical op **恰九个**：`add_source`、
 `write_note`、`create_knowledge`、`append_knowledge`、`create_opinion`、`append_opinion`、
 `add_material_rel`、`add_relation`、`add_open_question`（未知 op → **E5**，退 `2` 零写入）。
 `create_card` / `append_card` 仅作**兼容别名**规范化到 `create_knowledge` / `append_knowledge`（§4.4），
@@ -377,9 +385,10 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
   省略某个被改文件 → **W6 warning + 跳过该文件**（该处内容根本不会落盘）；与磁盘不一致 → 按 B3 跳过该文件并进
   `skipped[]`（`kind=file_changed`、`cause=content_hash_mismatch`）。新建文件可以不给 `base`。
 - **`convergence[]`**：涉及已有卡时每张被比较的候选卡写一条（§3.1）。
-- **`write_note` 用 `blocks[]`（不是 `sections{}`）**：审阅式 Note 由 `blocks[]` + `omissions[]` +
-  `candidate_drafts[]` + `candidate_coverage[]` 表达（§3.6 / §3.8 / §3.4）；来源块按物理行号连续覆盖正文，
-  批注块紧邻正文。候选草稿路径必须省略/置空 `output_cards` 与 `extraction_coverage`。
+- **`write_note` 用 `blocks[]`（不是 `sections{}`）**：纯 Note 由 `blocks[]` + `omissions[]`
+  表达；同一 op 用 `candidate_drafts[]` + `candidate_coverage[]` 生成 `ns-*`。来源块按物理行号
+  连续覆盖原文，批注块紧邻正文；候选与覆盖使用 `B1..Bn` 的 `note_refs[]`。
+  必须省略/置空 `output_cards` 与 `extraction_coverage`。
   **v1 的 `write_note.sections{}` / `coverage_gaps` 只在兼容期受理，新 plan 禁用。**
 - **`create_knowledge` / `append_knowledge` 的 `sections` 分区名逐字固定**：Knowledge 三分区
   「知识内容」（必写）「条件与边界」「用户补充」（永不写）；自动路径的 `append_knowledge` 只能追加
@@ -397,9 +406,9 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
   `add_open_question`。此集合之外一律 **E5**（退 `2` 零写入）。
 - **兼容别名**：`create_card` → `create_knowledge`、`append_card` → `append_knowledge`，被规范化后照常执行；
   **新 plan 不要再用别名**。
-- **`plan_version` 兼容**：支持 `{1, 2}`，当前写 `2`。`plan_version: 1` 的 plan 仍被受理，但会得到**恰一条
-  `I1`** 兼容提示；v1 的 `write_note.sections{}`（材料提炼 / Agent 分析 / 产出知识卡…）与 `coverage_gaps`
-  按兼容映射受理并**按字节原样保留**，不再是当前固定形态。
+- **`plan_version` 兼容**：支持 `{1, 2, 3}`，当前写 `3`。v1 的
+  `write_note.sections{}` 与 v2 的内嵌 candidate Note 仍可读取/执行；新写入统一走
+  `s-* -> n-* -> ns-* -> k-*/o-*`。
 
 ## 5. 边界与禁止项（B-01 ~ B-13，逐条硬约束）
 
@@ -463,7 +472,7 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
 <!-- e2e-sample: 1 -->
 ```json
 {
-  "plan_version": 2,
+  "plan_version": 3,
   "verb": "process",
   "domain": "ai-infra",
   "reason": "把《The Bitter Lesson》整理成审阅式学习版 Note，并保存一条知识候选与两条观点候选",
@@ -568,9 +577,10 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
       "candidate_coverage": [
         {
           "module": "标题与署名",
-          "source_refs": [
-            "L2-L2",
-            "L4-L5"
+          "note_refs": [
+            "B1",
+            "B2",
+            "B3"
           ],
           "summary": "文章标题与作者、发表日期等来源元信息。",
           "disposition": "note_only",
@@ -578,8 +588,9 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "长期优劣判断：算力驱动的通用方法长期胜出",
-          "source_refs": [
-            "L7-L27"
+          "note_refs": [
+            "B4",
+            "B5"
           ],
           "summary": "短期靠人工知识领先、长期只有算力的杠杆作用决定胜负——这是优劣比较与预测。",
           "disposition": "candidate",
@@ -589,8 +600,8 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "历史印证·国际象棋",
-          "source_refs": [
-            "L29-L39"
+          "note_refs": [
+            "B6"
           ],
           "summary": "1997 年击败卡斯帕罗夫的是大规模深度搜索，而非人工注入的国际象棋知识。",
           "disposition": "note_only",
@@ -598,8 +609,8 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "历史印证·围棋",
-          "source_refs": [
-            "L41-L56"
+          "note_refs": [
+            "B7"
           ],
           "summary": "围棋同样在放弃人工知识、拥抱搜索与自对弈学习后才取得大突破；本段直接点出「搜索与学习是利用大规模算力最重要的两类技术」。",
           "disposition": "note_only",
@@ -607,8 +618,8 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "历史印证·语音识别",
-          "source_refs": [
-            "L58-L77"
+          "note_refs": [
+            "B8"
           ],
           "summary": "语音识别从基于人类知识的方法转向统计 / HMM / 深度学习，算力与统计方法最终胜出。",
           "disposition": "note_only",
@@ -616,8 +627,9 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "历史印证·计算机视觉",
-          "source_refs": [
-            "L79-L83"
+          "note_refs": [
+            "B9",
+            "B10"
           ],
           "summary": "计算机视觉从边缘 / SIFT 等人工特征转向卷积等少量先验的深度网络，效果更好。",
           "disposition": "note_only",
@@ -625,8 +637,8 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "大教训总结：四点历史观察",
-          "source_refs": [
-            "L85-L97"
+          "note_refs": [
+            "B11"
           ],
           "summary": "把四个领域归纳为四点历史观察：人工注入知识短期有效、长期封顶，最终由基于算力扩展的搜索与学习取得突破。",
           "disposition": "note_only",
@@ -634,9 +646,9 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "稳定事实：搜索与学习是两类能利用大规模计算的通用方法",
-          "source_refs": [
-            "L41-L56",
-            "L99-L103"
+          "note_refs": [
+            "B12",
+            "B13"
           ],
           "summary": "原文围棋段称「搜索与学习是利用大规模算力最重要的两类技术」，文末说它们「似乎能随算力任意扩展」——这是原文直接给出的稳定事实（不声称穷尽、保留 seem 的不确定）。",
           "disposition": "candidate",
@@ -646,8 +658,9 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
         },
         {
           "module": "路线取舍主张：应构建能自行发现的元方法",
-          "source_refs": [
-            "L105-L117"
+          "note_refs": [
+            "B14",
+            "B15"
           ],
           "summary": "作者主张不要把人类已有认知写进系统，而应构建能自行发现、随算力扩展的元方法。",
           "disposition": "candidate",
@@ -662,9 +675,10 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
           "kind": "knowledge",
           "logical_slug": "search-and-learning-general-methods",
           "title": "搜索与学习是两类能利用大规模计算的通用方法",
-          "source_refs": [
-            "L41-L56",
-            "L99-L103"
+          "note_refs": [
+            "B7",
+            "B12",
+            "B13"
           ],
           "rel": "support",
           "reason": "原文围棋段直接指出搜索与学习是利用大规模算力最重要的两类技术，文末补充它们似乎能随算力任意扩展",
@@ -690,13 +704,15 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
           "kind": "opinion",
           "logical_slug": "general-methods-win-long-term",
           "title": "长期看，随算力扩展的通用方法优于把人类知识写进系统",
-          "source_refs": [
-            "L7-L27",
-            "L29-L39",
-            "L41-L56",
-            "L58-L77",
-            "L79-L83",
-            "L85-L97"
+          "note_refs": [
+            "B4",
+            "B5",
+            "B6",
+            "B7",
+            "B8",
+            "B9",
+            "B10",
+            "B11"
           ],
           "rel": "support",
           "reason": "原文用国际象棋、围棋、语音和视觉四个领域的历史印证长期优劣判断",
@@ -728,8 +744,9 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
           "kind": "opinion",
           "logical_slug": "build-meta-methods",
           "title": "AI 研究应转向能自行发现的元方法",
-          "source_refs": [
-            "L105-L117"
+          "note_refs": [
+            "B14",
+            "B15"
           ],
           "rel": "support",
           "reason": "原文结尾主张只应把能发现并捕获复杂性的元方法写进系统",
@@ -762,14 +779,14 @@ Note = 干净、顺序忠实的来源正文 + 就近、显式、可移除的 Age
 }
 ```
 
-> **实跑预期**：样例 ① 用 `eg apply` 落盘时 **退 `0`、零 error，并带恰一条 `I1`**（本次尚未
-> 产生正式知识卡，属合法草稿状态），只写 Note 和三条 candidate 草稿，不创建
+> **实跑预期**：样例 ① 用 `eg apply` 落盘时 **退 `0`、零 error**（本次尚未
+> 产生正式知识卡，属合法草稿状态），写入一篇纯 Note 和一个含三条 candidate 的 `ns-*`，不创建
 > Knowledge/Opinion、不建立材料关系。用户确认后执行
 > `eg materialize --note n-20260917-the-bitter-lesson --all --user-request`，才由 CLI 确定性生成
 > 1 张 Knowledge 与 2 条 `validation: pending` 的 Opinion。
 
-**目标渲染片段（样例 ① 的 Note `n-20260917-the-bitter-lesson`，非样例、不被 e2e 执行）**——
-展示 `blocks[]` 落盘后来源正文与就近 Agent 批注的实际渲染、candidate H3/H4，以及四列候选覆盖矩阵。
+**目标渲染片段（样例 ① 的 Note `n-20260917-the-bitter-lesson` 与对应 `ns-*`，非样例、不被 e2e 执行）**——
+依次展示 `blocks[]` 落入 Note 的来源正文与就近 Agent 批注，以及 workspace 的 candidate H3/H4 和覆盖矩阵。
 本片段只演示**方法**（就近批注 + 草稿覆盖怎么长），**批注的数量与类型按文章实际需要来，不要照抄本例的 5 条、4 类**（`guide`×1 / `emphasis`×2 / `distinction`×1 / `reflection`×1）：
 
 ```markdown
@@ -803,7 +820,9 @@ This is a big lesson. As a field, we still have not thoroughly learned it……
 
 > **[Agent 反思]** 作者最后从描述转向主张：不应把人类已有认知写进系统，而应构建能自行发现的元方法——这是一条关于研究路线取舍的判断，属观点而非事实。
 
-## 提取结果
+（以下内容位于对应的 `ns-*`，不在 `n-*` 中。）
+
+## 划分结果
 
 ### 搜索与学习是两类能利用大规模计算的通用方法 {#cand-search-learning .eg-candidate .knowledge data-slug=search-and-learning-general-methods}
 
@@ -833,7 +852,7 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
 
 ### 候选覆盖
 
-| 模块 | 来源范围 | 语义模块 | 草稿处置 |
+| 模块 | Note 块 | 语义模块 | 草稿处置 |
 | --- | --- | --- | --- |
 | `标题与署名` | `L2-L2` `L4-L5` | 文章标题与作者、发表日期等来源元信息。 | Note-only：来源元信息随正文保真保留，不单独产出卡 |
 | `长期优劣判断：算力驱动的通用方法长期胜出` | `L7-L27` | 短期靠人工知识领先、长期只有算力的杠杆作用决定胜负——优劣比较与预测。 | `cand-long-term` |
@@ -864,7 +883,7 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
 <!-- e2e-sample: 2 -->
 ```json
 {
-  "plan_version": 2,
+  "plan_version": 3,
   "verb": "process",
   "domain": "ai-infra",
   "reason": "把算力持续增长与任务可利用结构两条成立条件保存为自包含 Knowledge candidate，等待用户确认",
@@ -944,9 +963,10 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
       "candidate_coverage": [
         {
           "module": "标题与署名",
-          "source_refs": [
-            "L2-L2",
-            "L4-L4"
+          "note_refs": [
+            "B1",
+            "B2",
+            "B3"
           ],
           "summary": "笔记标题与署名（工程笔记，测试 fixture，2026）等来源元信息。",
           "disposition": "note_only",
@@ -954,8 +974,9 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
         },
         {
           "module": "同核心事实复述与写作意图",
-          "source_refs": [
-            "L6-L12"
+          "note_refs": [
+            "B4",
+            "B5"
           ],
           "summary": "复述已知事实——搜索与学习是两类能利用大规模计算的通用方法，并声明本文只为该事实补条件、不提新方法。",
           "disposition": "candidate",
@@ -965,8 +986,9 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
         },
         {
           "module": "成立条件一·算力须持续增长",
-          "source_refs": [
-            "L14-L18"
+          "note_refs": [
+            "B6",
+            "B7"
           ],
           "summary": "第一条成立条件：算力必须对该问题持续增长；预算固定且较小时手工方法可能领先。",
           "disposition": "candidate",
@@ -976,8 +998,8 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
         },
         {
           "module": "成立条件二·任务须暴露可搜索结构或可学习信号",
-          "source_refs": [
-            "L20-L25"
+          "note_refs": [
+            "B8"
           ],
           "summary": "第二条成立条件：任务须暴露可枚举/采样的结构与区分好坏的信号，或大量廉价的训练信号，否则加算力收益很小。",
           "disposition": "candidate",
@@ -987,8 +1009,9 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
         },
         {
           "module": "边界归纳",
-          "source_refs": [
-            "L27-L33"
+          "note_refs": [
+            "B9",
+            "B10"
           ],
           "summary": "把两条条件归纳为对通用方法事实的边界：仅当两条件同时成立时搜索与学习才占优。",
           "disposition": "candidate",
@@ -998,8 +1021,8 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
         },
         {
           "module": "无新增主张声明",
-          "source_refs": [
-            "L35-L37"
+          "note_refs": [
+            "B11"
           ],
           "summary": "明确本文不提出任何新的总括主张，只记录两类已知通用方法真正把算力转成能力的条件。",
           "disposition": "note_only",
@@ -1012,11 +1035,14 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
           "kind": "knowledge",
           "logical_slug": "scaling-preconditions",
           "title": "搜索与学习把算力转成能力的两项前提",
-          "source_refs": [
-            "L6-L12",
-            "L14-L18",
-            "L20-L25",
-            "L27-L33"
+          "note_refs": [
+            "B4",
+            "B5",
+            "B6",
+            "B7",
+            "B8",
+            "B9",
+            "B10"
           ],
           "rel": "support",
           "reason": "原文完整说明核心事实及算力持续增长、任务暴露可利用结构两项前提",
@@ -1044,12 +1070,12 @@ AI 研究的长期路线应转向能自行发现、随算力扩展的元方法�
 ```
 
 > **实跑预期**：样例 ② 用 `eg apply` 落盘时 **退 `0`、零 error，并带恰一条 `I1`**（本次尚未
-> 产生正式知识卡，属合法草稿状态），只写 Note 与 `cand-scaling-preconditions`。
+> 产生正式知识卡，属合法草稿状态），写入纯 Note 与对应 `ns-*`。
 > 用户确认后显式 materialize，CLI 才创建自包含 Knowledge；
 > Agent apply 阶段不会自动修改样例 ① 的任何已物化产物。
 
-**目标渲染片段（样例 ② 的 Note `n-20260917-search-and-learning-have-limits`，非样例、不被 e2e 执行）**——
-同样展示来源正文 + 就近 Agent 批注、candidate H3/H4、四列候选覆盖矩阵。**注意与样例 ① 的差异**：
+**目标渲染片段（样例 ② 的 Note `n-20260917-search-and-learning-have-limits` 与对应 `ns-*`，非样例、不被 e2e 执行）**——
+依次展示 Note 的来源正文 + 就近 Agent 批注，以及 workspace 的 candidate H3/H4 与四列候选覆盖矩阵。**注意与样例 ① 的差异**：
 本篇批注更少、类型不同，正是「只学方法、不复制批注数量与类型」的示例：
 
 ```markdown
@@ -1074,7 +1100,9 @@ The first precondition is that computation actually keeps growing for the proble
 
 > **[Agent 总结]** 两条条件合起来划出边界：搜索与学习只有在「算力持续增长」且「任务暴露可搜索结构或可学习信号」同时成立时才占优。
 
-## 提取结果
+（以下内容位于对应的 `ns-*`，不在 `n-*` 中。）
+
+## 划分结果
 
 ### 搜索与学习把算力转成能力的两项前提 {#cand-scaling-preconditions .eg-candidate .knowledge data-slug=scaling-preconditions}
 
@@ -1089,7 +1117,7 @@ The first precondition is that computation actually keeps growing for the proble
 
 ### 候选覆盖
 
-| 模块 | 来源范围 | 语义模块 | 草稿处置 |
+| 模块 | Note 块 | 语义模块 | 草稿处置 |
 | --- | --- | --- | --- |
 | `标题与署名` | `L2-L2` `L4-L4` | 笔记标题与署名等来源元信息。 | Note-only：来源元信息随正文保真保留，不单独产出卡 |
 | `同核心事实复述与写作意图` | `L6-L12` | 复述核心事实并声明本文补充成立条件。 | `cand-scaling-preconditions` |
@@ -1111,10 +1139,10 @@ The first precondition is that computation actually keeps growing for the proble
 - [ ] `plan.base` 的每个值都来自本次 `eg context`，逐字未改。
 - [ ] `eg context` 返回的每张相似已物化实体均在 `convergence[]` 中如实比较；没有相似项时数组为空。
 - [ ] op 组合与 §3.2 表格对得上；没有状态类 op、没有 S2+ op。
-- [ ] （v2 主路径）`write_note` 先做到来源保真：`blocks[]` 按物理行号连续覆盖原文，网页噪声进 `omissions[]`（无删除时为空数组显式给出）。
-- [ ] （Storage v3 新主路径）`candidate_drafts[]` 非空、模板分区完整且自包含；没有预计的 `k-*` / `o-*`。
-- [ ] （Storage v3 新主路径）`candidate_coverage[]` 非空：每个来源块都登记为 `candidate` / `note_only` / `unresolved`，没有用 `missing` 冒充未完成项。
-- [ ] （Storage v3 新主路径）省略/置空 `output_cards` 与 `extraction_coverage`；Agent 没有调用 `eg materialize`。
+- [ ] （v3 主路径）`write_note` 先做到来源保真：`blocks[]` 按物理行号连续覆盖原文，网页噪声进 `omissions[]`（无删除时为空数组显式给出）。
+- [ ] （v3 主路径）`candidate_drafts[]` 非空、模板分区完整且自包含；每项使用 `note_refs: [B…]`，没有预计的 `k-*` / `o-*`。
+- [ ] （v3 主路径）`candidate_coverage[]` 非空：每个 source/agent Note block 恰登记一次为 `candidate` / `note_only` / `unresolved`。
+- [ ] （v3 主路径）省略/置空 `output_cards` 与 `extraction_coverage`；Agent 没有调用 `eg materialize`。
 - [ ] （v1 兼容自检，仅当 `plan_version: 1`）`coverage_gaps` 只登记原文没有的要点；无缺失时该字段不出现。
 - [ ] 逐卡收敛结论已被最终报告如实转述（卡 ID / 处理关系 / 三维度 / `note` 照搬，缺的写「未给出」，见 §3.5）。
 - [ ] 报告如实转述 `skipped[]` 与 `warnings[]`，退 `3` / `4` 时按 §2.6 处置，**没有**自行做 Git 操作。

@@ -48,6 +48,9 @@ type NoteSpec struct {
 	Stamp    model.Stamp
 	Tags     []string
 	Sections []SectionAppend
+	// LegacyV2 keeps the former four-section Note shape for plan_version 2.
+	// New writes leave it false and emit the canonical three-section Note.
+	LegacyV2 bool
 
 	// Extraction 是「提取结果」的 Knowledge/Opinion 清单 + 覆盖矩阵（Schema v2 §5.1 / §4.2.3）。
 	//
@@ -98,7 +101,18 @@ func (s *Store) ApplyNote(spec NoteSpec) (NoteOutcome, error) {
 
 // noteContent 拼装新建笔记的完整字节。
 func noteContent(spec NoteSpec) ([]byte, error) {
-	sections, err := sectionMap(mdfile.KindNote, spec.Sections)
+	legacyV2 := spec.LegacyV2 || !spec.Extraction.Empty()
+	for _, section := range spec.Sections {
+		if section.Section == mdfile.SecExtraction {
+			legacyV2 = true
+			break
+		}
+	}
+	order := mdfile.NoteSections()
+	if legacyV2 {
+		order = mdfile.V2Sections(mdfile.KindNote)
+	}
+	sections, err := sectionMapWithSections(mdfile.KindNote, spec.Sections, order)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +151,7 @@ func noteContent(spec NoteSpec) ([]byte, error) {
 		return nil, err
 	}
 	fm = append(fm, tags...)
-	return document(mdfile.KindNote, fm, sections)
+	return documentWithSections(mdfile.KindNote, fm, sections, order, mdfile.SecNoteBody)
 }
 
 // OpenQuestionSpec 是一次 add_open_question 的落盘输入：向笔记「存疑与待验证」**追加**

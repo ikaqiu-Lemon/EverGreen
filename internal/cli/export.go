@@ -153,7 +153,12 @@ func plainExportDataPath(rel string) bool {
 	if rel == "unprocessed.md" {
 		return true
 	}
-	first := strings.Split(rel, "/")[0]
+	parts := strings.Split(rel, "/")
+	first := parts[0]
+	if first == "domains" && len(parts) >= 3 &&
+		parts[2] == "note-segments" {
+		return false
+	}
 	switch first {
 	case "sources", "domains", "reviews", "proposals":
 		return true

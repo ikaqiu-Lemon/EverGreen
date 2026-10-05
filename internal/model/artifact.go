@@ -79,13 +79,15 @@ type ReplacedBy struct {
 	Reason string           `yaml:"reason" json:"reason"`
 }
 
-// SourceRef 是知识卡 sources[] 的一条四要素材料关系（EG-KNW-04）。
-// Note 存**笔记 ID**，不存路径。
+// SourceRef 是知识卡 sources[] 的材料关系（EG-KNW-04）。
+// Source / Note 是必需的既有四要素；Segmentation 是从 ns-* 工作区物化时写入的
+// 可选 provenance。既有 K/O 缺该字段仍然合法。
 type SourceRef struct {
-	Source SourceID    `yaml:"source" json:"source"`
-	Note   NoteID      `yaml:"note" json:"note"`
-	Rel    MaterialRel `yaml:"rel" json:"rel"`
-	Reason string      `yaml:"reason" json:"reason"`
+	Source       SourceID           `yaml:"source" json:"source"`
+	Note         NoteID             `yaml:"note" json:"note"`
+	Segmentation NoteSegmentationID `yaml:"segmentation,omitempty" json:"segmentation,omitempty"`
+	Rel          MaterialRel        `yaml:"rel" json:"rel"`
+	Reason       string             `yaml:"reason" json:"reason"`
 }
 
 // MissingFields 返回缺失的要素名（顺序稳定），供上层出 error / warning。
@@ -134,6 +136,24 @@ type Note struct {
 	ReviewedAt    *Stamp `yaml:"reviewed_at,omitempty" json:"reviewed_at,omitempty"`
 	DeletedAt     *Stamp `yaml:"deleted_at,omitempty" json:"deleted_at,omitempty"`
 	DeletedReason string `yaml:"deleted_reason,omitempty" json:"deleted_reason,omitempty"`
+
+	// Extra 承接未知 frontmatter 字段（原样透传容器）。
+	Extra map[string]interface{} `yaml:",inline" json:"-"`
+}
+
+// NoteSegmentation 是一篇 Note 的 Knowledge/Opinion 划分工作区。
+//
+// 工作区没有 lifecycle status。NoteHash 锁定生成或重基线时的 Note 整文件字节；
+// 当前 Note hash 不同即 stale，由上层在候选审阅和物化前判定。
+type NoteSegmentation struct {
+	ID        NoteSegmentationID `yaml:"id" json:"id"`
+	Note      NoteID             `yaml:"note" json:"note"`
+	NoteHash  string             `yaml:"note_hash" json:"note_hash"`
+	Title     string             `yaml:"title,omitempty" json:"title,omitempty"`
+	CreatedAt Date               `yaml:"created_at" json:"created_at"`
+	UpdatedAt Stamp              `yaml:"updated_at" json:"updated_at"`
+
+	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 
 	// Extra 承接未知 frontmatter 字段（原样透传容器）。
 	Extra map[string]interface{} `yaml:",inline" json:"-"`

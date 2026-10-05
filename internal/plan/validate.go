@@ -36,6 +36,13 @@ const (
 	ActOpenQuestion  ActionKind = "open_question"
 )
 
+// NoteSegmentationWrite is the ns-* child created with a v3 write_note.
+type NoteSegmentationWrite struct {
+	ID       string
+	Path     string
+	Sections []SectionWrite
+}
+
 // SectionWrite 是一次分区追加（载荷逐字，必须以换行结束；本包不改写一个字节）。
 type SectionWrite struct {
 	Section string
@@ -64,6 +71,8 @@ type Action struct {
 	Material     *MaterialRef
 	Relation     *RelationWrite
 	Gaps         []string
+	LegacyNoteV2 bool
+	Segmentation *NoteSegmentationWrite
 
 	// Extraction 是 Note「提取结果」的 Knowledge/Opinion 清单 + 覆盖矩阵（Schema v2 §5.1 /
 	// §4.2.3）：两组清单由 `op.OutputCards` 按 ID 前缀拆分而来，覆盖矩阵由 v2 blocks 路径经
@@ -649,9 +658,16 @@ func (v *validator) writeNote(op *Op) {
 	v.coverageGaps(op)
 
 	act := Action{Kind: ActNoteNew, OpIndex: op.Index, Op: op, ID: id, Domain: domain,
-		Sections: sections, Gaps: op.Gaps, Extraction: v.noteExtraction(op)}
+		Sections: sections, Gaps: op.Gaps, Extraction: v.noteExtraction(op),
+		LegacyNoteV2: v.p.Version != PlanVersion}
 	if id != "" {
 		if rel, ok := v.resolve(id); ok {
+			if v.p.Version == PlanVersion {
+				v.add(errorAt(E2, op.Index, opPath(op.Index, "note_id"),
+					"plan_version=%d 不通过 write_note 覆盖既有 Note；请编辑 n-* 后对 ns-* 显式 rebase",
+					PlanVersion))
+				return
+			}
 			act.Path = rel
 			v.domainCheck(op, "note_id", rel)
 			if !v.frontmatterCheck(op, "note_id", rel) {
@@ -698,6 +714,40 @@ func (v *validator) writeNote(op *Op) {
 	act.Path = store.NoteRel(domain, id)
 	if !v.declare(op, "note_id", id, act.Path) {
 		return
+	}
+	if v.p.Version == PlanVersion {
+		derived, err := model.NoteSegmentationIDForNote(model.NoteID(id))
+		if err != nil {
+			v.add(errorAt(E1, op.Index, opPath(op.Index, "segmentation_id"),
+				"无法推导 segmentation_id：%v", err))
+			return
+		}
+		segmentationID := op.SegmentationID
+		if segmentationID == "" {
+			segmentationID = string(derived)
+		}
+		if _, err := model.ParseNoteSegmentationID(segmentationID); err != nil {
+			v.add(errorAt(E1, op.Index, opPath(op.Index, "segmentation_id"),
+				"segmentation_id 格式非法：%v", err))
+			return
+		}
+		segmentationPath := store.NoteSegmentationRel(domain, segmentationID)
+		if _, exists := v.readExisting(segmentationPath); exists {
+			v.add(errorAt(E1, op.Index, opPath(op.Index, "segmentation_id"),
+				"划分工作区 %s 已存在（%s），write_note 不覆盖用户编辑",
+				segmentationID, segmentationPath))
+			return
+		}
+		if !v.declare(op, "segmentation_id", segmentationID, segmentationPath) {
+			return
+		}
+		act.Segmentation = &NoteSegmentationWrite{
+			ID: segmentationID, Path: segmentationPath,
+			Sections: []SectionWrite{{
+				Section: store.SecSegmentation,
+				Payload: op.SegmentationBody,
+			}},
+		}
 	}
 	v.res.Actions = append(v.res.Actions, act)
 }

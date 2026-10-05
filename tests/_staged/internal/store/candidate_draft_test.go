@@ -78,6 +78,47 @@ func TestCandidateDraftBytesRequiresBothLists(t *testing.T) {
 	}
 }
 
+func TestNoteSegmentationCoveragePartitionsAllNoteBlocks(t *testing.T) {
+	body, err := NoteReviewBytes([]NoteBlock{
+		{Role: NoteBlockSource, Body: []byte("来源块。\n"), SourceRef: "L1-L2"},
+		{Role: NoteBlockAgent, Body: []byte("批注块。\n"), Annotation: "supplement"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := append([]byte("---\nid: n-20260922-blocks\nsource: s-20260922-source\n---\n\n"+
+		"## 整理正文\n\n"), body...)
+	raw = append(raw, []byte("\n## 存疑与待验证\n\n## 用户补充\n")...)
+	refs, err := NoteBlockVocabulary(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 2 || !refs["B1"] || !refs["B2"] {
+		t.Fatalf("Note blocks 必须按全文顺序编号 B1..Bn：%v", refs)
+	}
+
+	draft := storeCandidate(
+		"cand-note", mdfile.CandidateKindKnowledge, "Note candidate", mdfile.SecKnowledge)
+	draft.SourceRefs = nil
+	draft.NoteRefs = []string{"B1", "B2"}
+	coverage := []CandidateCoverage{{
+		Module: "m-1", NoteRefs: []string{"B1", "B2"}, Summary: "整篇 Note",
+		Disposition: mdfile.CandidateCoverageCandidate, Candidates: []string{draft.Key},
+	}}
+	if err := ValidateNoteSegmentation([]CandidateDraft{draft}, coverage, refs); err != nil {
+		t.Fatalf("完整且不重叠的 B1..Bn 划分应通过：%v", err)
+	}
+
+	overlap := append([]CandidateCoverage(nil), coverage...)
+	overlap = append(overlap, CandidateCoverage{
+		Module: "m-2", NoteRefs: []string{"B2"}, Summary: "重复",
+		Disposition: mdfile.CandidateCoverageNoteOnly, Reason: "保留",
+	})
+	if err := ValidateNoteSegmentation([]CandidateDraft{draft}, overlap, refs); err == nil {
+		t.Fatal("同一 Note block 被多个 coverage 模块覆盖必须拒绝")
+	}
+}
+
 func TestApplyReplaceCandidateSectionPreservesOtherBytes(t *testing.T) {
 	dir := t.TempDir()
 	rel := NoteRel("ai-infra", "n-20260922-edit-candidate")

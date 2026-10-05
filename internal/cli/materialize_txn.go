@@ -42,6 +42,14 @@ func prepareMaterializeRequest(root string,
 	}
 	req.ExpectedNotePath = rel
 	req.ExpectedNoteHash = file.Hash
+	workspace, ok, err := st.NoteSegmentationOf(req.Note)
+	if err != nil {
+		return req, err
+	}
+	if ok {
+		req.ExpectedWorkspacePath = workspace.Rel
+		req.ExpectedWorkspaceHash = workspace.Hash
+	}
 	return req, nil
 }
 
@@ -136,14 +144,21 @@ func rebaseMaterializeNote(root string, restored []string,
 	if err != nil {
 		return err
 	}
-	if !stringIn(restored, rel) {
-		return nil
+	if stringIn(restored, rel) {
+		file, err := st.Read(rel)
+		if err != nil {
+			return err
+		}
+		req.ExpectedNoteHash = file.Hash
 	}
-	file, err := st.Read(rel)
-	if err != nil {
-		return err
+	if req.ExpectedWorkspacePath != "" &&
+		stringIn(restored, req.ExpectedWorkspacePath) {
+		file, err := st.Read(req.ExpectedWorkspacePath)
+		if err != nil {
+			return err
+		}
+		req.ExpectedWorkspaceHash = file.Hash
 	}
-	req.ExpectedNoteHash = file.Hash
 	return nil
 }
 

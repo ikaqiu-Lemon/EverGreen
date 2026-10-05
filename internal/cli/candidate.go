@@ -16,31 +16,34 @@ import (
 )
 
 const (
-	subCandidateShow  = "show"
-	subCandidateApply = "apply"
+	subCandidateShow    = "show"
+	subCandidateApply   = "apply"
+	subCandidateMigrate = "migrate"
 )
 
 func candidateCommand() *Command {
 	return &Command{
 		Name:        "candidate",
-		Display:     "candidate show|apply",
+		Display:     "candidate show|apply|migrate",
 		Summary:     "导出或原子应用 Note candidate 的完整用户审阅状态",
 		Owner:       "T-evergreen.candidate_review_workflow-158614-002",
-		Subs:        []string{subCandidateShow, subCandidateApply},
+		Subs:        []string{subCandidateShow, subCandidateApply, subCandidateMigrate},
 		SubRequired: true,
 		Usage: `eg candidate show --note <n-id> [--json]
-eg candidate apply --note <n-id> --file <review.json|-> --user-request [--strict] [--json]
+eg candidate apply --note <n-id> --file <review.json|-> --user-request [--rebase] [--strict] [--json]
+eg candidate migrate --note <n-id> --user-request [--strict] [--json]
 
 参数：
-  --note <n-id>        是；包含未物化 candidate 的 Note
+  --note <n-id>        是；candidate 所属的 Note
   --file <path|->      apply 必填；完整 review spec，- 从标准输入读取
   --user-request       apply 必填；用户显式确认并发起
+  --rebase             apply 可选；仅在 n-* 已变化时显式推进 ns.note_hash
   --strict             apply 可选；保留统一写命令强校验参数面
 
-show 只读，返回 schema_version=1 的完整候选与覆盖状态。apply 把 spec 当成完整目标状态，
-可一次新增、删除、重命名、重排、改类型、改 logical_slug/source_refs/payload/coverage。
-apply 要求 note_path 与 note_hash 精确匹配、现有候选全未物化，只替换「提取结果」中的候选
-审阅管理区；其余 Note 字节保持不变。写入走 journal v1 与一次 Git commit。
+show 只读；新工作区返回 schema_version=2、n/ns 双路径双 hash 与 stale。apply 把 spec
+当成完整目标状态，可修改未物化候选及 note_refs/payload/coverage；已物化候选不可改。
+Note 改动后，只有显式 --rebase 才会推进 workspace_note_hash。migrate 把 legacy
+未物化内嵌候选原子拆成纯 n-* 与 ns-*。所有写入走 journal v1 与一次 Git commit。
 退出码：0 成功 / 幂等 no-op | 1 参数非法 | 2 授权、spec 或结构校验失败（零写入） |
         3 原子提交已整体回滚 | 4 Git 提交失败（Markdown 已生效并保留） |
         5 写前安全复核失败（E15）/ run.lock 不可用（E16），两者均零权威写入
@@ -48,6 +51,7 @@ apply 要求 note_path 与 note_hash 精确匹配、现有候选全未物化，�
 		Flags: func(fs *flagSet) {
 			fs.String("note", "", "包含 candidate 的 Note ID")
 			fs.String("file", "", "完整 candidate review spec 文件；- 表示标准输入")
+			fs.Bool("rebase", false, "显式把 ns-* 重基线到当前 Note")
 			registerStrictFlag(fs)
 		},
 		Validate: validateCandidateArgs,
@@ -73,9 +77,16 @@ func validateCandidateArgs(inv *Invocation) error {
 		if inv.Set(StrictFlag) {
 			return &UsageError{Msg: "eg candidate show 是只读命令，不接受 --strict"}
 		}
+		if inv.Set("rebase") {
+			return &UsageError{Msg: "eg candidate show 不接受 --rebase"}
+		}
 	case subCandidateApply:
 		if strings.TrimSpace(inv.String("file")) == "" {
 			return &UsageError{Msg: "eg candidate apply 缺必填参数 --file <review.json|->"}
+		}
+	case subCandidateMigrate:
+		if inv.Set("file") || inv.Set("rebase") {
+			return &UsageError{Msg: "eg candidate migrate 不接受 --file 或 --rebase"}
 		}
 	}
 	return nil
@@ -91,16 +102,19 @@ type candidateReviewCandidate struct {
 	Kind        store.CandidateKind      `json:"kind"`
 	LogicalSlug string                   `json:"logical_slug"`
 	Title       string                   `json:"title"`
-	SourceRefs  []string                 `json:"source_refs"`
+	SourceRefs  []string                 `json:"source_refs,omitempty"`
+	NoteRefs    []string                 `json:"note_refs,omitempty"`
 	Rel         string                   `json:"rel"`
 	Reason      string                   `json:"reason"`
 	Tags        []string                 `json:"tags"`
+	Output      string                   `json:"output"`
 	Sections    []candidateReviewSection `json:"sections"`
 }
 
 type candidateReviewCoverage struct {
 	Module      string   `json:"module"`
-	SourceRefs  []string `json:"source_refs"`
+	SourceRefs  []string `json:"source_refs,omitempty"`
+	NoteRefs    []string `json:"note_refs,omitempty"`
 	Summary     string   `json:"summary"`
 	Disposition string   `json:"disposition"`
 	Candidates  []string `json:"candidates"`
@@ -108,17 +122,25 @@ type candidateReviewCoverage struct {
 }
 
 type candidateReviewSpec struct {
-	SchemaVersion int                        `json:"schema_version"`
-	Note          string                     `json:"note"`
-	NotePath      string                     `json:"note_path"`
-	NoteHash      string                     `json:"note_hash"`
-	Candidates    []candidateReviewCandidate `json:"candidates"`
-	Coverage      []candidateReviewCoverage  `json:"coverage"`
+	SchemaVersion     int                        `json:"schema_version"`
+	Note              string                     `json:"note"`
+	NotePath          string                     `json:"note_path"`
+	NoteHash          string                     `json:"note_hash"`
+	Workspace         string                     `json:"workspace,omitempty"`
+	WorkspacePath     string                     `json:"workspace_path,omitempty"`
+	WorkspaceHash     string                     `json:"workspace_hash,omitempty"`
+	WorkspaceNoteHash string                     `json:"workspace_note_hash,omitempty"`
+	Stale             bool                       `json:"stale,omitempty"`
+	Candidates        []candidateReviewCandidate `json:"candidates"`
+	Coverage          []candidateReviewCoverage  `json:"coverage"`
 }
 
 func (r *Root) runCandidate(inv *Invocation) (*Result, error) {
 	if inv.Sub == subCandidateShow {
 		return r.runCandidateShow(inv)
+	}
+	if inv.Sub == subCandidateMigrate {
+		return r.runCandidateMigrate(inv)
 	}
 	return r.runCandidateApply(inv)
 }
@@ -136,8 +158,19 @@ func (r *Root) runCandidateShow(inv *Invocation) (*Result, error) {
 			"schema_version", "note", "note_path", "note_hash", "candidates", "coverage",
 		},
 		Summary: []string{fmt.Sprintf(
-			"candidate show：Note %s 含 %d 个未物化 candidate、%d 条 coverage；只读",
+			"candidate show：Note %s 含 %d 个 candidate、%d 条 coverage；只读",
 			spec.Note, len(spec.Candidates), len(spec.Coverage))},
+	}
+	if spec.SchemaVersion == 2 {
+		res.DataOrder = []string{
+			"schema_version", "note", "note_path", "note_hash",
+			"workspace", "workspace_path", "workspace_hash", "workspace_note_hash",
+			model.FMKeyStale, "candidates", "coverage",
+		}
+		res.Summary = []string{fmt.Sprintf(
+			"candidate show：Note %s / workspace %s 含 %d 个 candidate、"+
+				"%d 条 coverage；stale=%t；只读",
+			spec.Note, spec.Workspace, len(spec.Candidates), len(spec.Coverage), spec.Stale)}
 	}
 	return res, nil
 }
@@ -160,27 +193,65 @@ func loadCandidateReviewSpec(root, noteText string) (candidateReviewSpec, error)
 	if err != nil {
 		return candidateReviewSpec{}, err
 	}
-	note, candidates, state, _, err := store.ParseMaterializationNote(file.Bytes)
+	workspace, found, err := st.NoteSegmentationOf(noteID)
 	if err != nil {
 		return candidateReviewSpec{}, err
+	}
+
+	var (
+		candidates []store.Candidate
+		state      store.CandidateCoverageState
+		note       model.Note
+		spec       candidateReviewSpec
+		noteRefs   map[string]bool
+	)
+	if found {
+		workspaceFile, readErr := st.Read(workspace.Rel)
+		if readErr != nil {
+			return candidateReviewSpec{}, readErr
+		}
+		var segmentation model.NoteSegmentation
+		note, segmentation, candidates, state, noteRefs, err =
+			store.ParseMaterializationWorkspace(file.Bytes, workspaceFile.Bytes)
+		if err != nil {
+			return candidateReviewSpec{}, err
+		}
+		spec = candidateReviewSpec{
+			SchemaVersion:     2,
+			Note:              noteText,
+			NotePath:          notePath,
+			NoteHash:          file.Hash,
+			Workspace:         string(segmentation.ID),
+			WorkspacePath:     workspace.Rel,
+			WorkspaceHash:     workspaceFile.Hash,
+			WorkspaceNoteHash: segmentation.NoteHash,
+			Stale:             segmentation.NoteHash != file.Hash,
+			Candidates:        make([]candidateReviewCandidate, len(candidates)),
+			Coverage:          reviewCoverageFromStore(state.Draft),
+		}
+	} else {
+		note, candidates, state, _, err = store.ParseMaterializationNote(file.Bytes)
+		if err != nil {
+			return candidateReviewSpec{}, err
+		}
+		spec = candidateReviewSpec{
+			SchemaVersion: 1,
+			Note:          noteText,
+			NotePath:      notePath,
+			NoteHash:      file.Hash,
+			Candidates:    make([]candidateReviewCandidate, len(candidates)),
+			Coverage:      reviewCoverageFromStore(state.Draft),
+		}
 	}
 	if note.ID != noteID {
 		return candidateReviewSpec{}, fmt.Errorf(
 			"Note 路径与 frontmatter ID 不一致：%s != %s", noteID, note.ID)
 	}
 	if state.Finalized {
-		return candidateReviewSpec{}, fmt.Errorf("Note 已写最终覆盖，不再是 candidate 审阅工作区")
-	}
-	spec := candidateReviewSpec{
-		SchemaVersion: 1,
-		Note:          noteText,
-		NotePath:      notePath,
-		NoteHash:      file.Hash,
-		Candidates:    make([]candidateReviewCandidate, len(candidates)),
-		Coverage:      reviewCoverageFromStore(state.Draft),
+		return candidateReviewSpec{}, fmt.Errorf("candidate 工作区已写 legacy 最终覆盖，不能审阅")
 	}
 	for i, candidate := range candidates {
-		if candidate.Anchor.Output != "" {
+		if spec.SchemaVersion == 1 && candidate.Anchor.Output != "" {
 			return candidateReviewSpec{}, fmt.Errorf(
 				"candidate %s 已物化为 %s，不能导出可回投 review spec",
 				candidate.Key, candidate.Anchor.Output)
@@ -190,6 +261,12 @@ func loadCandidateReviewSpec(root, noteText string) (candidateReviewSpec, error)
 			return candidateReviewSpec{}, err
 		}
 		spec.Candidates[i] = reviewCandidateFromDraft(draft)
+	}
+	if spec.SchemaVersion == 2 && !spec.Stale {
+		if err := store.ValidateNoteSegmentation(
+			reviewDrafts(spec), reviewCoverage(spec), noteRefs); err != nil {
+			return candidateReviewSpec{}, err
+		}
 	}
 	return spec, nil
 }
@@ -202,8 +279,9 @@ func reviewCandidateFromDraft(draft store.CandidateDraft) candidateReviewCandida
 	return candidateReviewCandidate{
 		Key: draft.Key, Kind: draft.Kind, LogicalSlug: draft.LogicalSlug,
 		Title: draft.Title, SourceRefs: cloneReviewStrings(draft.SourceRefs),
-		Rel: draft.Rel, Reason: draft.Reason, Tags: cloneReviewStrings(draft.Tags),
-		Sections: sections,
+		NoteRefs: cloneReviewStrings(draft.NoteRefs),
+		Rel:      draft.Rel, Reason: draft.Reason, Tags: cloneReviewStrings(draft.Tags),
+		Output: draft.Output, Sections: sections,
 	}
 }
 
@@ -212,7 +290,8 @@ func reviewCoverageFromStore(items []store.CandidateCoverage) []candidateReviewC
 	for i, item := range items {
 		out[i] = candidateReviewCoverage{
 			Module: item.Module, SourceRefs: cloneReviewStrings(item.SourceRefs),
-			Summary: item.Summary, Disposition: item.Disposition,
+			NoteRefs: cloneReviewStrings(item.NoteRefs),
+			Summary:  item.Summary, Disposition: item.Disposition,
 			Candidates: cloneReviewStrings(item.Candidates), Reason: item.Reason,
 		}
 	}
@@ -220,13 +299,16 @@ func reviewCoverageFromStore(items []store.CandidateCoverage) []candidateReviewC
 }
 
 func cloneReviewStrings(items []string) []string {
+	if items == nil {
+		return nil
+	}
 	out := make([]string, len(items))
 	copy(out, items)
 	return out
 }
 
 func candidateReviewSpecData(spec candidateReviewSpec) map[string]interface{} {
-	return map[string]interface{}{
+	data := map[string]interface{}{
 		"schema_version": spec.SchemaVersion,
 		"note":           spec.Note,
 		"note_path":      spec.NotePath,
@@ -234,6 +316,14 @@ func candidateReviewSpecData(spec candidateReviewSpec) map[string]interface{} {
 		"candidates":     spec.Candidates,
 		"coverage":       spec.Coverage,
 	}
+	if spec.SchemaVersion == 2 {
+		data["workspace"] = spec.Workspace
+		data["workspace_path"] = spec.WorkspacePath
+		data["workspace_hash"] = spec.WorkspaceHash
+		data["workspace_note_hash"] = spec.WorkspaceNoteHash
+		data[model.FMKeyStale] = spec.Stale
+	}
+	return data
 }
 
 func (r *Root) runCandidateApply(inv *Invocation) (*Result, error) {
@@ -268,15 +358,21 @@ func (r *Root) runCandidateApply(inv *Invocation) (*Result, error) {
 		if errors.As(err, &blocked) {
 			return res, err
 		}
+		var usage *UsageError
+		if errors.As(err, &usage) {
+			return res, err
+		}
 		return res, candidateReviewValidationError(noteText, "candidate apply 失败", err)
 	}
 	res.Data = map[string]interface{}{
 		"note": noteText, "note_path": spec.NotePath,
+		"workspace": spec.Workspace, "workspace_path": spec.WorkspacePath,
 		"candidates": len(spec.Candidates), "coverage": len(spec.Coverage),
 		"txn_id": out.TxnID, "commit": candidateApplyCommitData(out.Commit),
 	}
 	res.DataOrder = []string{
-		"note", "note_path", "candidates", "coverage", "txn_id", "commit",
+		"note", "note_path", "workspace", "workspace_path",
+		"candidates", "coverage", "txn_id", "commit",
 	}
 	switch {
 	case out.RolledBack:
@@ -330,23 +426,56 @@ func decodeCandidateReviewSpec(raw []byte) (candidateReviewSpec, error) {
 	if err := dec.Decode(&extra); err != io.EOF {
 		return candidateReviewSpec{}, fmt.Errorf("review spec 必须恰含一个 JSON 对象")
 	}
-	if spec.SchemaVersion != 1 {
+	if spec.SchemaVersion != 1 && spec.SchemaVersion != 2 {
 		return candidateReviewSpec{}, fmt.Errorf(
-			"schema_version=%d，期望 1", spec.SchemaVersion)
+			"schema_version=%d，期望 1 或 2", spec.SchemaVersion)
 	}
 	if spec.Candidates == nil || spec.Coverage == nil {
 		return candidateReviewSpec{}, fmt.Errorf("candidates/coverage 必须是数组")
 	}
 	for i, candidate := range spec.Candidates {
-		if candidate.SourceRefs == nil || candidate.Tags == nil || candidate.Sections == nil {
+		refs := candidate.SourceRefs
+		refName := "source_refs"
+		if spec.SchemaVersion == 2 {
+			refs = candidate.NoteRefs
+			refName = "note_refs"
+			if candidate.SourceRefs != nil {
+				return candidateReviewSpec{}, fmt.Errorf(
+					"candidates[%d] 的 schema v2 不得携带 source_refs", i)
+			}
+		} else if candidate.NoteRefs != nil {
 			return candidateReviewSpec{}, fmt.Errorf(
-				"candidates[%d] 的 source_refs/tags/sections 必须是数组", i)
+				"candidates[%d] 的 schema v1 不得携带 note_refs", i)
+		}
+		if len(refs) == 0 {
+			return candidateReviewSpec{}, fmt.Errorf(
+				"candidates[%d] 的 %s 必须是非空数组", i, refName)
 		}
 	}
 	for i, item := range spec.Coverage {
-		if item.SourceRefs == nil || item.Candidates == nil {
+		refs := item.SourceRefs
+		refName := "source_refs"
+		if spec.SchemaVersion == 2 {
+			refs = item.NoteRefs
+			refName = "note_refs"
+			if item.SourceRefs != nil {
+				return candidateReviewSpec{}, fmt.Errorf(
+					"coverage[%d] 的 schema v2 不得携带 source_refs", i)
+			}
+		} else if item.NoteRefs != nil {
 			return candidateReviewSpec{}, fmt.Errorf(
-				"coverage[%d] 的 source_refs/candidates 必须是数组", i)
+				"coverage[%d] 的 schema v1 不得携带 note_refs", i)
+		}
+		if len(refs) == 0 {
+			return candidateReviewSpec{}, fmt.Errorf(
+				"coverage[%d] 的 %s 必须是非空数组", i, refName)
+		}
+	}
+	if spec.SchemaVersion == 2 {
+		if spec.Workspace == "" || spec.WorkspacePath == "" ||
+			spec.WorkspaceHash == "" || spec.WorkspaceNoteHash == "" {
+			return candidateReviewSpec{}, fmt.Errorf(
+				"schema v2 必须给出 workspace/workspace_path/workspace_hash/workspace_note_hash")
 		}
 	}
 	return spec, nil
@@ -420,8 +549,10 @@ func reviewDrafts(spec candidateReviewSpec) []store.CandidateDraft {
 			Key: candidate.Key, Kind: candidate.Kind,
 			LogicalSlug: candidate.LogicalSlug, Title: candidate.Title,
 			SourceRefs: cloneReviewStrings(candidate.SourceRefs),
+			NoteRefs:   cloneReviewStrings(candidate.NoteRefs),
 			Rel:        candidate.Rel, Reason: candidate.Reason,
-			Tags: cloneReviewStrings(candidate.Tags), Sections: sections,
+			Tags: cloneReviewStrings(candidate.Tags), Output: candidate.Output,
+			Sections: sections,
 		}
 	}
 	return out
@@ -432,7 +563,8 @@ func reviewCoverage(spec candidateReviewSpec) []store.CandidateCoverage {
 	for i, item := range spec.Coverage {
 		out[i] = store.CandidateCoverage{
 			Module: item.Module, SourceRefs: cloneReviewStrings(item.SourceRefs),
-			Summary: item.Summary, Disposition: item.Disposition,
+			NoteRefs: cloneReviewStrings(item.NoteRefs),
+			Summary:  item.Summary, Disposition: item.Disposition,
 			Candidates: cloneReviewStrings(item.Candidates), Reason: item.Reason,
 		}
 	}
@@ -484,46 +616,131 @@ func (r *Root) candidateApplyCritical(
 		return nil, fmt.Errorf(
 			"note_hash 已变化：spec=%s，磁盘=%s", spec.NoteHash, file.Hash)
 	}
-	note, current, state, sourceRefs, err := store.ParseMaterializationNote(file.Bytes)
-	if err != nil {
-		return nil, err
-	}
-	if string(note.ID) != spec.Note {
-		return nil, fmt.Errorf(
-			"Note 路径与 frontmatter ID 不一致：%s != %s", spec.Note, note.ID)
-	}
-	if state.Finalized {
-		return nil, fmt.Errorf("Note 已写最终覆盖，不得应用 review spec")
-	}
-	for _, candidate := range current {
-		if candidate.Anchor.Output != "" {
-			return nil, fmt.Errorf(
-				"candidate %s 已物化为 %s，不得应用 review spec",
-				candidate.Key, candidate.Anchor.Output)
-		}
-	}
 	drafts := reviewDrafts(spec)
 	coverage := reviewCoverage(spec)
-	if err := store.ValidateCandidateReview(drafts, coverage, sourceRefs); err != nil {
-		return nil, err
-	}
-	target, err := mdfile.ReplaceCandidateDraftState(file.Bytes, drafts, coverage)
-	if err != nil {
-		return nil, err
-	}
-	if _, _, _, _, err := store.ParseMaterializationNote(target); err != nil {
-		return nil, fmt.Errorf("review spec 应用后 Note 自检失败：%w", err)
+	rebase := inv.String("rebase") == "true"
+	targetPath := notePath
+	targetFile := file
+	var target []byte
+
+	if spec.SchemaVersion == 2 {
+		workspacePath, resolveErr := index.Resolve(spec.Workspace)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if workspacePath != spec.WorkspacePath {
+			return nil, fmt.Errorf(
+				"workspace_path 已变化：spec=%s，磁盘=%s",
+				spec.WorkspacePath, workspacePath)
+		}
+		workspaceFile, readErr := st.Read(workspacePath)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if workspaceFile.Hash != spec.WorkspaceHash {
+			return nil, fmt.Errorf(
+				"workspace_hash 已变化：spec=%s，磁盘=%s",
+				spec.WorkspaceHash, workspaceFile.Hash)
+		}
+		note, segmentation, current, state, noteRefs, parseErr :=
+			store.ParseMaterializationWorkspace(file.Bytes, workspaceFile.Bytes)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if string(note.ID) != spec.Note {
+			return nil, fmt.Errorf(
+				"Note 路径与 frontmatter ID 不一致：%s != %s", spec.Note, note.ID)
+		}
+		if string(segmentation.ID) != spec.Workspace ||
+			segmentation.NoteHash != spec.WorkspaceNoteHash {
+			return nil, fmt.Errorf(
+				"workspace identity/note_hash 已变化：spec=%s/%s，磁盘=%s/%s",
+				spec.Workspace, spec.WorkspaceNoteHash,
+				segmentation.ID, segmentation.NoteHash)
+		}
+		stale := segmentation.NoteHash != file.Hash
+		if stale != spec.Stale {
+			return nil, fmt.Errorf(
+				"workspace stale 状态已变化：spec=%t，磁盘=%t", spec.Stale, stale)
+		}
+		if stale && !rebase {
+			return nil, fmt.Errorf(
+				"划分工作区已 stale；须显式使用 candidate apply --rebase --user-request")
+		}
+		if !stale && rebase {
+			return nil, &UsageError{Msg: "workspace 当前为 fresh，不接受 --rebase"}
+		}
+		if state.Finalized {
+			return nil, fmt.Errorf("ns-* 不接受 legacy 最终覆盖形态")
+		}
+		if err := validateMappedWorkspaceCandidates(current, drafts); err != nil {
+			return nil, err
+		}
+		if err := store.ValidateNoteSegmentation(drafts, coverage, noteRefs); err != nil {
+			return nil, err
+		}
+		target, err = mdfile.ReplaceCandidateDraftState(
+			workspaceFile.Bytes, drafts, coverage)
+		if err != nil {
+			return nil, err
+		}
+		if rebase || !bytes.Equal(target, workspaceFile.Bytes) {
+			target, err = store.NoteSegmentationRebasedBytes(
+				target, file.Hash, model.NewStamp(r.now()))
+			if err != nil {
+				return nil, err
+			}
+		}
+		if _, _, _, _, _, err := store.ParseMaterializationWorkspace(
+			file.Bytes, target); err != nil {
+			return nil, fmt.Errorf("review spec 应用后 ns-* 自检失败：%w", err)
+		}
+		targetPath = workspacePath
+		targetFile = workspaceFile
+	} else {
+		if rebase {
+			return nil, &UsageError{Msg: "legacy schema v1 review 不支持 --rebase"}
+		}
+		note, current, state, sourceRefs, parseErr :=
+			store.ParseMaterializationNote(file.Bytes)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if string(note.ID) != spec.Note {
+			return nil, fmt.Errorf(
+				"Note 路径与 frontmatter ID 不一致：%s != %s", spec.Note, note.ID)
+		}
+		if state.Finalized {
+			return nil, fmt.Errorf("Note 已写最终覆盖，不得应用 review spec")
+		}
+		for _, candidate := range current {
+			if candidate.Anchor.Output != "" {
+				return nil, fmt.Errorf(
+					"candidate %s 已物化为 %s，不得应用 review spec",
+					candidate.Key, candidate.Anchor.Output)
+			}
+		}
+		if err := store.ValidateCandidateReview(drafts, coverage, sourceRefs); err != nil {
+			return nil, err
+		}
+		target, err = mdfile.ReplaceCandidateDraftState(file.Bytes, drafts, coverage)
+		if err != nil {
+			return nil, err
+		}
+		if _, _, _, _, err := store.ParseMaterializationNote(target); err != nil {
+			return nil, fmt.Errorf("review spec 应用后 Note 自检失败：%w", err)
+		}
 	}
 	fireTxnStep(TxnStepExecuted, "")
 
 	out := &candidateApplyOutcome{}
-	if bytes.Equal(target, file.Bytes) {
+	if bytes.Equal(target, targetFile.Bytes) {
 		return out, nil
 	}
 	out.Changed = true
 	ws := []store.AtomicFileSpec{{
-		Path: notePath, TargetBytes: target, TargetHash: store.ContentHash(target),
-		IsNew: false, PreBytes: file.Bytes, PreHash: file.Hash,
+		Path: targetPath, TargetBytes: target, TargetHash: store.ContentHash(target),
+		IsNew: false, PreBytes: targetFile.Bytes, PreHash: targetFile.Hash,
 	}}
 	txnID, err := sess.openTxn(
 		inv, intentFilesOf(ws), nil, r.Now, func(id string) { out.TxnID = id })
@@ -549,9 +766,9 @@ func (r *Root) candidateApplyCritical(
 	fireTxnStep(TxnStepCommitted, txnID)
 
 	repo := r.repo(inv.VaultRoot)
-	noteExistingChangesInResult(res, repo, []string{notePath})
+	noteExistingChangesInResult(res, repo, []string{targetPath})
 	info, gitErr := repo.Commit(git.Message{
-		Verb: string(model.VerbProcess), Domain: store.DomainOf(notePath),
+		Verb: string(model.VerbProcess), Domain: store.DomainOf(targetPath),
 		Subject: "审阅 candidates " + spec.Note,
 		Reason:  "用户显式应用完整 candidate review spec",
 	})
@@ -560,9 +777,48 @@ func (r *Root) candidateApplyCritical(
 	out.GitErr = gitErr
 	fireTxnStep(TxnStepGit, txnID)
 
-	r.syncResultIndex(res, inv, inv.VaultRoot, []string{notePath})
+	r.syncResultIndex(res, inv, inv.VaultRoot, []string{targetPath})
 	fireTxnStep(TxnStepIndexSync, txnID)
 	return out, nil
+}
+
+func validateMappedWorkspaceCandidates(
+	current []store.Candidate,
+	submitted []store.CandidateDraft,
+) error {
+	byKey := make(map[string]store.CandidateDraft, len(submitted))
+	for _, draft := range submitted {
+		byKey[draft.Key] = draft
+	}
+	for _, candidate := range current {
+		if candidate.Anchor.Output == "" {
+			continue
+		}
+		want, err := mdfile.CandidateDraftFromParsed(candidate)
+		if err != nil {
+			return err
+		}
+		got, ok := byKey[candidate.Key]
+		if !ok {
+			return fmt.Errorf(
+				"已物化 candidate %s 不得删除（output=%s）",
+				candidate.Key, candidate.Anchor.Output)
+		}
+		wantBytes, err := mdfile.RenderCandidateDraft(want)
+		if err != nil {
+			return err
+		}
+		gotBytes, err := mdfile.RenderCandidateDraft(got)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(wantBytes, gotBytes) {
+			return fmt.Errorf(
+				"已物化 candidate %s 不得修改；请使用新 key 创建修订候选",
+				candidate.Key)
+		}
+	}
+	return nil
 }
 
 func candidateApplyCommitData(info git.CommitInfo) interface{} {

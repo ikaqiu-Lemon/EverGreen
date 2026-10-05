@@ -67,7 +67,8 @@ func TestContextDataKeysAndReadOnly(t *testing.T) {
 		t.Fatalf("eg context 退出码 = %d，期望 0：%s", code, errOut)
 	}
 	want := []string{"base", "cards", "default_domain",
-		"default_domain_fallback", "domain", "draft_candidates", "knowledge_candidates", "notes",
+		"default_domain_fallback", "domain", "draft_candidates", "knowledge_candidates",
+		"note_segmentations", "notes",
 		"opinion_candidates", "proposals", "source"}
 	var got []string
 	for k := range env.Data {
@@ -480,7 +481,9 @@ func TestContextDualCandidatesJSON(t *testing.T) {
 		t.Fatalf("eg context 退出码 = %d：%s", code, errOut)
 	}
 	// 三个键都在，且都是数组（空也必须是 []，不是 null / 缺键）。
-	for _, k := range []string{"draft_candidates", "knowledge_candidates", "opinion_candidates"} {
+	for _, k := range []string{
+		"draft_candidates", "knowledge_candidates", "note_segmentations", "opinion_candidates",
+	} {
 		if _, ok := env.Data[k].([]interface{}); !ok {
 			t.Fatalf("data.%s 必须是数组，实得 %#v", k, env.Data[k])
 		}

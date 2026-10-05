@@ -31,6 +31,10 @@ func (r *Result) Targets() []string {
 		}
 		seen[a.Path] = true
 		out = append(out, a.Path)
+		if a.Segmentation != nil && !seen[a.Segmentation.Path] {
+			seen[a.Segmentation.Path] = true
+			out = append(out, a.Segmentation.Path)
+		}
 	}
 	return out
 }

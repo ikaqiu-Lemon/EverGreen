@@ -151,6 +151,22 @@ func TestExportPlainWritesOutsideVaultAndPreservesVisibleContent(t *testing.T) {
 	}
 }
 
+func TestExportPlainExcludesNoteSegmentationWorkspaces(t *testing.T) {
+	dir, noteRel, workspaceRel := materializeWorkspaceFixture(t)
+	out := filepath.Join(t.TempDir(), "plain")
+	code, _, errOut := runStorageV3CLI(t, newTestRoot(t, dir),
+		"export", "--vault", dir, "--json", "--plain", "--output", out)
+	if code != ExitOK {
+		t.Fatalf("export 失败：%d %s", code, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(noteRel))); err != nil {
+		t.Fatalf("pure Note 应被导出：%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(workspaceRel))); !os.IsNotExist(err) {
+		t.Fatalf("note-segments 默认不得进入 plain export：%v", err)
+	}
+}
+
 func TestExportPlainRejectsUnsafeOutputs(t *testing.T) {
 	dir, _, _ := initVault(t, "--domain", "ai-infra")
 	nonempty := filepath.Join(t.TempDir(), "nonempty")
@@ -339,6 +355,158 @@ func TestCandidateShowApplyCRUDAndMaterializeLogicalSlug(t *testing.T) {
 		"--note", spec.Note, "--file", reviewPath, "--user-request")
 	if code != ExitValidation || !bytes.Equal(materializedNote, mustRead(t, notePath)) {
 		t.Fatalf("已物化 candidate 应拒绝 review apply 且零写入，实际 code=%d", code)
+	}
+}
+
+func TestCandidateWorkspaceApplyAndExplicitRebase(t *testing.T) {
+	dir, noteRel, workspaceRel := materializeWorkspaceFixture(t)
+	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
+	workspacePath := filepath.Join(dir, filepath.FromSlash(workspaceRel))
+	noteBefore := mustRead(t, notePath)
+	root := newTestRoot(t, dir)
+	root.Now = func() time.Time {
+		return time.Date(2026, 9, 29, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	code, shown, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json",
+		"--note", "n-20260922-workspace")
+	if code != ExitOK {
+		t.Fatalf("workspace show 失败：%d %s %+v", code, errOut, shown)
+	}
+	if shown.Data["schema_version"] != float64(2) ||
+		shown.Data["workspace"] != "ns-20260922-workspace" ||
+		shown.Data["stale"] != false {
+		t.Fatalf("workspace show schema/freshness 错误：%+v", shown.Data)
+	}
+	shownRaw, _ := json.Marshal(shown.Data)
+	var spec candidateReviewSpec
+	if err := json.Unmarshal(shownRaw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	spec.Candidates[0].Sections[0].Body = "用户优化后的工作区知识。\n"
+	reviewPath := filepath.Join(t.TempDir(), "workspace-review.json")
+	reviewRaw, _ := json.Marshal(spec)
+	if err := os.WriteFile(reviewPath, reviewRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitOK {
+		t.Fatalf("workspace apply 失败：%d %s", code, errOut)
+	}
+	if got := mustRead(t, notePath); !bytes.Equal(got, noteBefore) {
+		t.Fatal("candidate apply 改写了 n-*")
+	}
+	workspaceAfter := mustRead(t, workspacePath)
+	if !bytes.Contains(workspaceAfter, []byte("用户优化后的工作区知识。")) ||
+		!bytes.Contains(workspaceAfter, []byte("用户保留文字。")) {
+		t.Fatalf("candidate apply 未保留/应用 ns-* 用户内容：\n%s", workspaceAfter)
+	}
+
+	changedNote := bytes.Replace(noteBefore, []byte("知识来源。"), []byte("修订后的知识来源。"), 1)
+	if err := os.WriteFile(notePath, changedNote, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, staleView, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json", "--note", spec.Note)
+	if code != ExitOK || staleView.Data["stale"] != true {
+		t.Fatalf("stale workspace 必须仍可 show：code=%d err=%s data=%+v",
+			code, errOut, staleView.Data)
+	}
+	staleRaw, _ := json.Marshal(staleView.Data)
+	if err := os.WriteFile(reviewPath, staleRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--user-request")
+	if code != ExitValidation {
+		t.Fatalf("stale workspace 无 --rebase 应退 2，实得 %d", code)
+	}
+	if got := mustRead(t, workspacePath); !bytes.Equal(got, workspaceAfter) {
+		t.Fatal("stale 拒绝路径改写了 ns-*")
+	}
+
+	code, _, errOut = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--rebase", "--user-request")
+	if code != ExitOK {
+		t.Fatalf("显式 rebase 失败：%d %s", code, errOut)
+	}
+	rebased := mustRead(t, workspacePath)
+	_, workspace, err := mdfile.ParseNoteSegmentation(rebased)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.NoteHash != store.ContentHash(changedNote) ||
+		!bytes.Contains(rebased, []byte("用户保留文字。")) {
+		t.Fatalf("rebase 未推进 hash 或破坏用户补充：%+v\n%s", workspace, rebased)
+	}
+}
+
+func TestCandidateMigrateSplitsLegacyNoteAtomically(t *testing.T) {
+	dir, noteRel := materializeTxnFixture(t)
+	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
+	before := mustRead(t, notePath)
+	beforeDoc, err := mdfile.Parse(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodyBefore, _ := beforeDoc.Section(mdfile.SecNoteBody)
+	root := newTestRoot(t, dir)
+	root.Now = func() time.Time {
+		return time.Date(2026, 10, 4, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	code, migrated, errOut := runStorageV3CLI(t, root,
+		"candidate", "migrate", "--vault", dir, "--json",
+		"--note", "n-20260922-txn-materialize", "--user-request")
+	if code != ExitOK {
+		t.Fatalf("candidate migrate 失败：%d %s %+v", code, errOut, migrated)
+	}
+	workspaceRel := "domains/ai-infra/note-segments/ns-20260922-txn-materialize.md"
+	after := mustRead(t, notePath)
+	afterDoc, _, err := mdfile.ParseNote(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := afterDoc.Section(mdfile.SecExtraction); ok {
+		t.Fatalf("迁移后的 n-* 仍含提取结果：\n%s", after)
+	}
+	bodyAfter, _ := afterDoc.Section(mdfile.SecNoteBody)
+	if !bytes.Equal(before[bodyBefore.Start:bodyBefore.End],
+		after[bodyAfter.Start:bodyAfter.End]) {
+		t.Fatal("迁移改写了整理正文")
+	}
+	workspaceRaw := mustRead(t, filepath.Join(dir, filepath.FromSlash(workspaceRel)))
+	_, workspace, err := mdfile.ParseNoteSegmentation(workspaceRaw)
+	if err != nil {
+		t.Fatalf("迁移后的 ns-* 不可解析：%v\n%s", err, workspaceRaw)
+	}
+	if workspace.NoteHash != store.ContentHash(after) ||
+		!bytes.Contains(workspaceRaw, []byte("<!-- eg:cd:2 ")) ||
+		!bytes.Contains(workspaceRaw, []byte("<!-- eg:cc:2 ")) {
+		t.Fatalf("迁移后的关联/hash/协议不成立：%+v\n%s", workspace, workspaceRaw)
+	}
+
+	noteBeforeReplay := mustRead(t, notePath)
+	workspaceBeforeReplay := mustRead(t,
+		filepath.Join(dir, filepath.FromSlash(workspaceRel)))
+	commitsBeforeReplay := gitOut(t, dir, "rev-list", "--count", "HEAD")
+	code, replay, errOut := runStorageV3CLI(t, root,
+		"candidate", "migrate", "--vault", dir, "--json",
+		"--note", "n-20260922-txn-materialize", "--user-request")
+	if code != ExitOK || replay.Data["txn_id"] != "" {
+		t.Fatalf("重复 migrate 应 no-op：%d %s %+v", code, errOut, replay.Data)
+	}
+	if !bytes.Equal(mustRead(t, notePath), noteBeforeReplay) ||
+		!bytes.Equal(mustRead(t,
+			filepath.Join(dir, filepath.FromSlash(workspaceRel))), workspaceBeforeReplay) {
+		t.Fatal("重复 migrate 改写了 n-* 或 ns-*")
+	}
+	if got := gitOut(t, dir, "rev-list", "--count", "HEAD"); got != commitsBeforeReplay {
+		t.Fatal("重复 migrate 产生了空 commit")
 	}
 }
 

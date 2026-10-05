@@ -119,6 +119,79 @@ func newMaterializeFixture(t *testing.T, unresolved bool) materializeFixture {
 	return materializeFixture{root: root, noteRel: noteRel, noteRaw: raw}
 }
 
+func newMaterializeWorkspaceFixture(t *testing.T) materializeFixture {
+	t.Helper()
+	root := t.TempDir()
+	s := store.New(root)
+	date := materializeDate(t, "2026-09-20")
+	stamp := materializeStamp(t, "2026-09-20T10:00:00+08:00")
+	review, err := store.NoteReviewBytes([]store.NoteBlock{
+		{Role: store.NoteBlockSource, Heading: "定义", Body: []byte("第一段来源。"),
+			SourceRef: "L1-L1"},
+		{Role: store.NoteBlockAgent, Body: []byte("保持这条批注。"),
+			Annotation: "supplement"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteID := model.NoteID("n-20260920-materialize")
+	noteRel := store.NoteRel("ai-infra", string(noteID))
+	if _, err := s.ApplyNote(store.NoteSpec{
+		Rel: noteRel, ID: noteID, SourceID: "s-20260920-source",
+		Title: "Materialize Source", Date: date, Stamp: stamp,
+		Sections: []store.SectionAppend{{
+			Section: mdfile.SecNoteBody, Payload: review,
+		}},
+		Inbox: store.InboxSpec{Detached: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	noteFile, err := s.Read(noteRel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drafts := []store.CandidateDraft{
+		{
+			Key: "cand-knowledge", Kind: mdfile.CandidateKindKnowledge,
+			Title: "Knowledge Candidate", NoteRefs: []string{"B1"},
+			Rel: "support", Reason: "Note 定义块支持", Tags: []string{"core"},
+			Sections: []store.CandidateDraftSection{{
+				Name: mdfile.SecKnowledge, Body: []byte("知识正文。\n"),
+			}},
+		},
+		{
+			Key: "cand-opinion", Kind: mdfile.CandidateKindOpinion,
+			Title: "Opinion Candidate", NoteRefs: []string{"B2"},
+			Rel: "context", Reason: "Note 批注块提供判断", Tags: []string{"claim"},
+			Sections: []store.CandidateDraftSection{{
+				Name: mdfile.SecOpinionClaim, Body: []byte("观点正文。\n"),
+			}},
+		},
+	}
+	coverage := []store.CandidateCoverage{
+		{Module: "m-1", NoteRefs: []string{"B1"}, Summary: "知识模块",
+			Disposition: mdfile.CandidateCoverageCandidate, Candidates: []string{"cand-knowledge"}},
+		{Module: "m-2", NoteRefs: []string{"B2"}, Summary: "观点模块",
+			Disposition: mdfile.CandidateCoverageCandidate, Candidates: []string{"cand-opinion"}},
+	}
+	segmentationBody, err := store.CandidateDraftBytes(drafts, coverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentationID := model.NoteSegmentationID("ns-20260920-materialize")
+	if _, err := s.ApplyNoteSegmentation(store.NoteSegmentationSpec{
+		Rel: store.NoteSegmentationRel("ai-infra", string(segmentationID)),
+		ID:  segmentationID, Note: noteID, NoteHash: noteFile.Hash,
+		Title: "Materialize Source", Date: date, Stamp: stamp,
+		Sections: []store.SectionAppend{{
+			Section: mdfile.SecSegmentation, Payload: segmentationBody,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return materializeFixture{root: root, noteRel: noteRel, noteRaw: noteFile.Bytes}
+}
+
 func materializeRequest(t *testing.T, date string) MaterializeRequest {
 	t.Helper()
 	return MaterializeRequest{
@@ -266,6 +339,55 @@ func TestMaterializeCandidatesCreatesExactTargetsAndFinalizes(t *testing.T) {
 				t.Fatalf("%s 重跑不得创建第二文件：%+v", rerunDate, item)
 			}
 		}
+	}
+}
+
+func TestMaterializeCandidatesUsesFreshWorkspaceAndWritesProvenance(t *testing.T) {
+	fx := newMaterializeWorkspaceFixture(t)
+	result, err := MaterializeCandidates(store.New(fx.root),
+		materializeRequest(t, "2026-09-22"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Workspace != "ns-20260920-materialize" ||
+		!strings.Contains(result.WorkspacePath, "/note-segments/") {
+		t.Fatalf("materialize 未解析 ns-* 权威工作区：%+v", result)
+	}
+	if len(result.WriteSet) != 3 {
+		t.Fatalf("首次 workspace 物化应写 K/O/ns 三个文件：%+v", result.WriteSet)
+	}
+	for _, write := range result.WriteSet {
+		if write.Path == fx.noteRel {
+			t.Fatal("workspace 物化不得改写纯 n-*")
+		}
+	}
+	kRaw := materializeWrite(t, result.WriteSet,
+		"domains/ai-infra/knowledge/k-20260922-knowledge-candidate.md")
+	_, card, err := mdfile.ParseCard(kRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(card.Sources) != 1 ||
+		card.Sources[0].Segmentation != "ns-20260920-materialize" {
+		t.Fatalf("K/O provenance 缺 segmentation：%+v", card.Sources)
+	}
+}
+
+func TestMaterializeCandidatesRejectsStaleWorkspace(t *testing.T) {
+	fx := newMaterializeWorkspaceFixture(t)
+	notePath := filepath.Join(fx.root, filepath.FromSlash(fx.noteRel))
+	changed := append(append([]byte(nil), fx.noteRaw...), []byte("\n用户修改 Note。\n")...)
+	if err := os.WriteFile(notePath, changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MaterializeCandidates(store.New(fx.root),
+		materializeRequest(t, "2026-09-22")); err == nil ||
+		!strings.Contains(err.Error(), "stale") {
+		t.Fatalf("stale workspace 必须零写入拒绝：%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(fx.root,
+		"domains/ai-infra/knowledge/k-20260922-knowledge-candidate.md")); !os.IsNotExist(err) {
+		t.Fatal("stale workspace 不得创建 K/O")
 	}
 }
 

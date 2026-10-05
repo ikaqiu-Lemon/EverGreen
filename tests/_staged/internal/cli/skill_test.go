@@ -628,9 +628,9 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
 			t.Fatalf("样例 %d 不是合法 JSON：%v", i+1, err)
 		}
-		// ① v2 few-shot 必须写 `plan_version: 2`（当前版本），不得再是 v1。
-		if m.PlanVersion != 2 {
-			t.Fatalf("样例 %d 的 plan_version = %d：v2 few-shot 必须写 2（契约 §4.1）", i+1, m.PlanVersion)
+		// ① v3 few-shot 必须写 `plan_version: 3`（当前版本）。
+		if m.PlanVersion != 3 {
+			t.Fatalf("样例 %d 的 plan_version = %d：v3 few-shot 必须写 3", i+1, m.PlanVersion)
 		}
 		if m.Verb == "" || m.Domain == "" || m.Reason == "" || len(m.Ops) == 0 {
 			t.Fatalf("样例 %d 顶层键不完整：%+v", i+1, m)
@@ -646,7 +646,7 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 			if name != "write_note" {
 				t.Fatalf("样例 %d 含直接产物 op %q：Storage v3 主路径只允许 write_note 保存草稿", i+1, name)
 			}
-			// ③ write_note 必须是 v2 blocks[] 形态，不得残留 v1 sections{} / coverage_gaps。
+			// ③ write_note 必须是 v3 blocks[] 形态，不得残留 v1 sections{} / coverage_gaps。
 			if _, ok := op["sections"]; ok {
 				t.Fatalf("样例 %d 的 write_note 仍用 v1 sections{}：v2 必须用 blocks[]（契约 §4.2）", i+1)
 			}
@@ -716,6 +716,12 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 						i+1, key, logicalSlug)
 				}
 				draftKeys[key] = true
+				if _, ok := d["note_refs"].([]interface{}); !ok {
+					t.Fatalf("样例 %d：candidate %s 必须使用非空 note_refs", i+1, key)
+				}
+				if _, ok := d["source_refs"]; ok {
+					t.Fatalf("样例 %d：candidate %s 不得再使用 source_refs", i+1, key)
+				}
 				sections, _ := d["sections"].([]interface{})
 				if len(sections) == 0 {
 					t.Fatalf("样例 %d：candidate %s 缺模板 sections", i+1, key)
@@ -756,6 +762,12 @@ func TestSkillSamplesAreValidPlans(t *testing.T) {
 			referenced := map[string]bool{}
 			for _, ci := range cov {
 				c, _ := ci.(map[string]interface{})
+				if refs, ok := c["note_refs"].([]interface{}); !ok || len(refs) == 0 {
+					t.Fatalf("样例 %d：candidate_coverage 必须使用非空 note_refs", i+1)
+				}
+				if _, ok := c["source_refs"]; ok {
+					t.Fatalf("样例 %d：candidate_coverage 不得再使用 source_refs", i+1)
+				}
 				disp, _ := c["disposition"].(string)
 				switch disp {
 				case "candidate":
@@ -998,12 +1010,12 @@ func TestSkillNoteContractV2(t *testing.T) {
 		"同时给出非空 `label`",
 		"不设配额，不要求每篇用满七类")
 
-	// ⑤ §4.2.3 语义模块拆分 + 覆盖矩阵 + 缺漏=0 + W21 只是启发式（不能替代来源保真/缺漏=0）。
+	// ⑤ 全 Note 划分 + 候选覆盖矩阵 + W21 只是启发式。
 	must("§4.2.3 覆盖矩阵",
 		"语义模块",
-		"extraction_coverage",
+		"candidate_coverage",
 		"`disposition`",
-		"缺漏必须为 0")
+		"每个 `B*`")
 	must("§4.2.3 W21 定位",
 		"`W21` 不是覆盖证明",
 		"启发式 warning",
@@ -1017,12 +1029,12 @@ func TestSkillNoteContractV2(t *testing.T) {
 		"必须**给 `source_ref`",
 		"必须**给 `annotation`")
 
-	// ⑦ §4.4 op 集合：canonical 恰九个 + 两个兼容别名标注「兼容期，勿用于新 plan」+ plan_version {1,2}。
+	// ⑦ §4.4 op 集合：canonical 恰九个 + 两个兼容别名 + plan_version {1,2,3}。
 	must("§4.4 op 集合",
 		"canonical op 恰九个",
 		"兼容别名",
 		"新 plan 不要再用别名",
-		"支持 `{1, 2}`")
+		"支持 `{1, 2, 3}`")
 	for _, opName := range []string{
 		"add_source", "write_note", "create_knowledge", "append_knowledge",
 		"create_opinion", "append_opinion", "add_material_rel", "add_relation", "add_open_question",
@@ -1080,7 +1092,7 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 		t.Fatalf("应恰有 2 个「目标渲染片段」（每份样例一个），实际 %d", len(frags))
 	}
 
-	const matrixHeader = "| 模块 | 来源范围 | 语义模块 | 草稿处置 |"
+	const matrixHeader = "| 模块 | Note 块 | 语义模块 | 草稿处置 |"
 	for i, s := range samples {
 		var m struct {
 			Ops []struct {
@@ -1124,8 +1136,8 @@ func TestSkillSamplesHaveTargetRender(t *testing.T) {
 		if hits != 1 {
 			t.Fatalf("样例 %d（note %s）应恰有 1 个目标渲染片段引用它，实际 %d", i+1, noteID, hits)
 		}
-		if !strings.Contains(hit, "## 提取结果") {
-			t.Fatalf("样例 %d（note %s）的目标渲染片段缺「## 提取结果」", i+1, noteID)
+		if !strings.Contains(hit, "## 划分结果") {
+			t.Fatalf("样例 %d（note %s）的目标渲染片段缺「## 划分结果」", i+1, noteID)
 		}
 		if !strings.Contains(hit, "### 候选覆盖") || !strings.Contains(hit, matrixHeader) {
 			t.Fatalf("样例 %d（note %s）的目标渲染片段缺四列候选覆盖矩阵（表头 %q）", i+1, noteID, matrixHeader)

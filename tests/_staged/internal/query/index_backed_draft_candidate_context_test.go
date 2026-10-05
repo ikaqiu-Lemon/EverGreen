@@ -88,6 +88,88 @@ func TestContextProjectsDraftCandidatesFromAuthoritativeNote(t *testing.T) {
 	}
 }
 
+func TestContextProjectsWorkspaceCandidatesAndFreshness(t *testing.T) {
+	root, noteID, noteRel := draftCandidateFixture(t)
+	st := store.New(root)
+	noteFile, err := st.Read(noteRel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := store.CandidateDraftBytes([]store.CandidateDraft{{
+		Key: "cand-workspace", Kind: store.CandidateKindKnowledge,
+		LogicalSlug: "workspace", Title: "工作区候选",
+		NoteRefs: []string{"B1"}, Rel: "support", Reason: "Note block 支持",
+		Sections: []store.CandidateDraftSection{{
+			Name: store.SecKnowledge, Body: []byte("工作区正文。\n"),
+		}},
+	}}, []store.CandidateCoverage{{
+		Module: "m-workspace", NoteRefs: []string{"B1"}, Summary: "工作区",
+		Disposition: store.CandidateCoverageCandidate, Candidates: []string{"cand-workspace"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentationID := model.NoteSegmentationID("ns-20260922-query-candidate")
+	segmentationRel := store.NoteSegmentationRel("ai-infra", string(segmentationID))
+	date, _ := model.ParseDate("2026-09-22")
+	stamp, _ := model.ParseStamp("2026-09-22T10:00:00+08:00")
+	if _, err := st.ApplyNoteSegmentation(store.NoteSegmentationSpec{
+		Rel: segmentationRel, ID: segmentationID, Note: noteID,
+		NoteHash: noteFile.Hash, Date: date, Stamp: stamp,
+		Sections: []store.SectionAppend{{
+			Section: store.SecSegmentation, Payload: body,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := build(t, root, query.Request{Note: string(noteID)})
+	if len(ctx.NoteSegmentations) != 1 || ctx.NoteSegmentations[0].Stale ||
+		ctx.NoteSegmentations[0].Path != segmentationRel {
+		t.Fatalf("context workspace 投影错误：%+v", ctx.NoteSegmentations)
+	}
+	if len(ctx.DraftCandidates) != 1 ||
+		ctx.DraftCandidates[0].Key != "cand-workspace" ||
+		ctx.DraftCandidates[0].Workspace != string(segmentationID) ||
+		ctx.DraftCandidates[0].WorkspacePath != segmentationRel ||
+		ctx.DraftCandidates[0].Stale {
+		t.Fatalf("context 未从 ns-* 投影 candidate：%+v", ctx.DraftCandidates)
+	}
+	if ctx.Base[segmentationRel] == "" {
+		t.Fatalf("context base 缺 workspace hash：%+v", ctx.Base)
+	}
+	scan, err := query.VaultScan(root, query.ScanOptions{
+		Domains: []string{"ai-infra"}, IncludeNotes: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := query.CandidateWorkspaceDocuments(
+		scan.Notes, scan.NoteSegmentations, store.ContentHash)
+	var workspaceDoc *index.BlockDocument
+	for i := range docs {
+		if docs[i].WorkspaceID == string(segmentationID) {
+			workspaceDoc = &docs[i]
+			break
+		}
+	}
+	if workspaceDoc == nil || workspaceDoc.WorkspacePath != segmentationRel ||
+		workspaceDoc.Stale {
+		t.Fatalf("workspace sidecar 投影错误：%+v", docs)
+	}
+
+	changed := bytes.Replace(noteFile.Bytes, []byte("候选来源。"), []byte("修订来源。"), 1)
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(noteRel)), changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale := build(t, root, query.Request{Note: string(noteID)})
+	if len(stale.NoteSegmentations) != 1 || !stale.NoteSegmentations[0].Stale ||
+		len(stale.DraftCandidates) != 1 || !stale.DraftCandidates[0].Stale {
+		t.Fatalf("Note 编辑后 workspace stale 未暴露：%+v / %+v",
+			stale.NoteSegmentations, stale.DraftCandidates)
+	}
+}
+
 func TestContextCandidateSidecarHealthyAndFallbackEquivalent(t *testing.T) {
 	root, noteID, _ := draftCandidateFixture(t)
 	req := query.Request{Note: string(noteID)}
