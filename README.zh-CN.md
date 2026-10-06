@@ -302,8 +302,10 @@ $ eg candidate apply --note n-20260915-bitter-lesson --file review.json --user-r
 
 一份 review spec 可同时新增、删除、改 key、重排、改类型，并修改 Note 块范围、payload、slug 和 coverage。
 `candidate apply` 要求 `show` 返回的 Note/workspace 双路径双 hash 仍精确匹配，并保持
-`## 划分结果` 管理区之外的每个字节不变。Note 改动后需显式
-`candidate apply --rebase --user-request`。第 4 步再展示用户显式物化；plain export 可独立执行：
+`## 划分结果` 管理区之外的每个字节不变。Note 改动后，review spec 必须补充能逐字重渲染
+当前正文的完整 `note_blocks[]` / `omissions[]`，并按新 B 词表重新提交无缺口 coverage，
+再显式执行 `candidate apply --rebase --user-request`；只推进 hash 会被拒绝。第 4 步再展示
+用户显式物化；plain export 可独立执行：
 
 ```console
 $ eg export --plain --output ../evergreen-plain

@@ -359,7 +359,7 @@ func TestCandidateShowApplyCRUDAndMaterializeLogicalSlug(t *testing.T) {
 }
 
 func TestCandidateWorkspaceApplyAndExplicitRebase(t *testing.T) {
-	dir, noteRel, workspaceRel := materializeWorkspaceFixture(t)
+	dir, noteRel, workspaceRel := materializeCanonicalWorkspaceFixture(t)
 	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
 	workspacePath := filepath.Join(dir, filepath.FromSlash(workspaceRel))
 	noteBefore := mustRead(t, notePath)
@@ -404,8 +404,15 @@ func TestCandidateWorkspaceApplyAndExplicitRebase(t *testing.T) {
 		!bytes.Contains(workspaceAfter, []byte("用户保留文字。")) {
 		t.Fatalf("candidate apply 未保留/应用 ns-* 用户内容：\n%s", workspaceAfter)
 	}
+	manifestBefore, found, err := mdfile.ParseNoteBlockManifest(workspaceAfter)
+	if err != nil || !found {
+		t.Fatalf("canonical workspace 缺旧 block manifest：found=%v err=%v", found, err)
+	}
 
-	changedNote := bytes.Replace(noteBefore, []byte("知识来源。"), []byte("修订后的知识来源。"), 1)
+	changedNote := bytes.Replace(noteBefore,
+		[]byte("知识来源。\n\n> **[Agent 补充]** 观点批注。"),
+		[]byte("修订后的知识来源。\n\n> **[Agent 补充]** 观点批注。\n\n"+
+			"> **[Agent 强调]** 新增判断。"), 1)
 	if err := os.WriteFile(notePath, changedNote, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -429,6 +436,73 @@ func TestCandidateWorkspaceApplyAndExplicitRebase(t *testing.T) {
 		t.Fatal("stale 拒绝路径改写了 ns-*")
 	}
 
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--rebase", "--user-request")
+	if code != ExitValidation {
+		t.Fatalf("缺新 note_blocks 的 rebase 应退 2，实得 %d", code)
+	}
+	if got := mustRead(t, workspacePath); !bytes.Equal(got, workspaceAfter) {
+		t.Fatal("缺新 note_blocks 的 rebase 改写了 ns-*")
+	}
+
+	var rebaseSpec candidateReviewSpec
+	if err := json.Unmarshal(staleRaw, &rebaseSpec); err != nil {
+		t.Fatal(err)
+	}
+	rebaseSpec.NoteBlocks = []candidateReviewNoteBlock{
+		{
+			Role: store.NoteBlockSource, Body: "知识来源。",
+			SourceRef: "L1-L1",
+		},
+		{
+			Role: store.NoteBlockAgent, Body: "观点批注。",
+			Annotation: "supplement",
+		},
+		{
+			Role: store.NoteBlockAgent, Body: "新增判断。",
+			Annotation: "emphasis",
+		},
+	}
+	rebaseSpec.Omissions = []candidateReviewOmission{}
+	rebaseRaw, _ := json.Marshal(rebaseSpec)
+	if err := os.WriteFile(reviewPath, rebaseRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--rebase", "--user-request")
+	if code != ExitValidation {
+		t.Fatalf("不能重渲染当前正文的 note_blocks 应退 2，实得 %d", code)
+	}
+	if got := mustRead(t, workspacePath); !bytes.Equal(got, workspaceAfter) {
+		t.Fatal("非法 note_blocks 的 rebase 改写了 ns-*")
+	}
+
+	rebaseSpec.NoteBlocks[0].Body = "修订后的知识来源。"
+	rebaseRaw, _ = json.Marshal(rebaseSpec)
+	if err := os.WriteFile(reviewPath, rebaseRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--rebase", "--user-request")
+	if code != ExitValidation {
+		t.Fatalf("新 B3 未进入 coverage 的 rebase 应退 2，实得 %d", code)
+	}
+	if got := mustRead(t, workspacePath); !bytes.Equal(got, workspaceAfter) {
+		t.Fatal("coverage 有缺口的 rebase 改写了 ns-*")
+	}
+
+	rebaseSpec.Coverage = append(rebaseSpec.Coverage, candidateReviewCoverage{
+		Module: "m-new", NoteRefs: []string{"B3"}, Summary: "新增判断",
+		Disposition: store.CandidateCoverageNoteOnly,
+		Reason:      "新增批注只保留在 Note",
+	})
+	rebaseRaw, _ = json.Marshal(rebaseSpec)
+	if err := os.WriteFile(reviewPath, rebaseRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	code, _, errOut = runStorageV3CLI(t, root,
 		"candidate", "apply", "--vault", dir, "--json",
 		"--note", spec.Note, "--file", reviewPath, "--rebase", "--user-request")
@@ -443,6 +517,21 @@ func TestCandidateWorkspaceApplyAndExplicitRebase(t *testing.T) {
 	if workspace.NoteHash != store.ContentHash(changedNote) ||
 		!bytes.Contains(rebased, []byte("用户保留文字。")) {
 		t.Fatalf("rebase 未推进 hash 或破坏用户补充：%+v\n%s", workspace, rebased)
+	}
+	manifestAfter, found, err := mdfile.ParseNoteBlockManifest(rebased)
+	if err != nil || !found || len(manifestAfter.Blocks) != 3 {
+		t.Fatalf("rebase 未重建 block manifest：found=%v err=%v %+v",
+			found, err, manifestAfter)
+	}
+	if manifestAfter.Blocks[0].ContentHash ==
+		manifestBefore.Blocks[0].ContentHash {
+		t.Fatal("正文变化后 B1 content_hash 未变化，仍在复用旧 manifest")
+	}
+	code, freshView, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json", "--note", spec.Note)
+	if code != ExitOK || freshView.Data["stale"] != false {
+		t.Fatalf("完整重划分后 workspace 应 fresh：code=%d err=%s data=%+v",
+			code, errOut, freshView.Data)
 	}
 }
 

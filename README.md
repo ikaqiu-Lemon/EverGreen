@@ -325,8 +325,10 @@ The review spec can add, delete, rename, reorder, or retype unmaterialized candi
 Note block references, payloads, slugs, and coverage together. `candidate apply` requires the exact
 Note/workspace paths and hashes returned by `show`, and preserves every byte outside the
 candidate-managed part of `## 划分结果`. If the Note changed, rerun `show`, reconcile the complete
-state, then apply it with `--rebase --user-request`. Step 4 shows the later explicit materialization. A plain
-export is available independently:
+state, add complete `note_blocks[]` and `omissions[]` that render the current Note body exactly,
+regenerate full coverage against those new blocks, then apply it with `--rebase --user-request`.
+Hash-only rebases are rejected. Step 4 shows the later explicit materialization. A plain export is
+available independently:
 
 ```console
 $ eg export --plain --output ../evergreen-plain

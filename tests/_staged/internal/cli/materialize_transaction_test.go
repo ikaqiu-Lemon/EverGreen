@@ -89,13 +89,28 @@ func materializeTxnFixture(t *testing.T) (string, string) {
 }
 
 func materializeWorkspaceFixture(t *testing.T) (string, string, string) {
+	return materializeWorkspaceFixtureMode(t, false)
+}
+
+func materializeCanonicalWorkspaceFixture(t *testing.T) (string, string, string) {
+	return materializeWorkspaceFixtureMode(t, true)
+}
+
+func materializeWorkspaceFixtureMode(
+	t *testing.T,
+	canonical bool,
+) (string, string, string) {
 	t.Helper()
 	dir, _, _ := initVault(t, "--domain", "ai-infra")
 	st := store.New(dir)
-	review, err := store.NoteReviewBytes([]store.NoteBlock{
+	blocks := []store.NoteBlock{
 		{Role: store.NoteBlockSource, Body: []byte("知识来源。"), SourceRef: "L1-L1"},
 		{Role: store.NoteBlockAgent, Body: []byte("观点批注。"), Annotation: "supplement"},
-	}, nil)
+	}
+	review, err := store.NoteReviewBytes(blocks, nil)
+	if canonical {
+		review, err = store.NotePlainReviewBytes(blocks, nil)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +156,13 @@ func materializeWorkspaceFixture(t *testing.T) (string, string, string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if canonical {
+		manifest, manifestErr := store.NoteBlockManifestBytes(blocks, nil)
+		if manifestErr != nil {
+			t.Fatal(manifestErr)
+		}
+		segmentationBody = append(manifest, segmentationBody...)
 	}
 	segmentationID := model.NoteSegmentationID("ns-20260922-workspace")
 	segmentationRel := store.NoteSegmentationRel("ai-infra", string(segmentationID))

@@ -278,19 +278,26 @@ Rebase is full-state and optimistic:
 
 1. `note_path`, `note_hash`, `workspace_path`, and `workspace_hash` must all
    match disk;
-2. the submitted candidates and coverage must validate against the
-   `{B1..Bn}` vocabulary stored in the workspace's `eg:nb:1` manifest;
-3. the complete submitted workspace becomes the target state;
-4. bytes outside the managed `划分结果` region, including `用户补充`, remain
+2. the submitted review spec must include complete `note_blocks[]` and
+   `omissions[]`; rendering them as canonical anchorless review Markdown must
+   reproduce the current Note's `整理正文` bytes exactly;
+3. the CLI rebuilds `eg:nb:1` from those submitted blocks, then validates the
+   submitted candidates and complete coverage against the new `{B1..Bn}`
+   vocabulary; reusing only the old manifest or old coverage fails closed;
+4. the complete submitted workspace becomes the target state;
+5. bytes outside the managed `划分结果` region, including `用户补充`, remain
    unchanged;
-5. one journal-v1 transaction and one Git commit update the workspace.
+6. only after all checks pass may one journal-v1 transaction and one Git
+   commit update the workspace and advance `note_hash`.
 
-The CLI never regenerates or merges semantic text. The review spec starts from
-the current workspace, so user edits are preserved unless the submitting
-caller explicitly changes or removes them. If old and new Note content cannot
-be reconciled confidently, the caller keeps the affected coverage as
-`unresolved`; materialization remains blocked. This is the fail-closed conflict
-state.
+The CLI never invents or merges semantic text. The submitting Agent regenerates
+the complete blocks, candidates, and coverage from the current Note; the CLI
+proves that the block rendering equals that Note and that coverage has no gap
+or overlap. Existing workspace edits are preserved only when the submitted
+full state carries them forward. If old and new Note content cannot be
+reconciled confidently, the caller keeps the affected coverage as
+`unresolved`; materialization remains blocked. Updating only `note_hash` is
+forbidden.
 
 For a fresh workspace, normal `candidate apply --user-request` remains valid
 and does not require `--rebase`. Supplying `--rebase` when already fresh is
@@ -404,8 +411,9 @@ not automatically rewritten.
 3. Workspace coverage accounts for every source and agent block in the Note.
 4. A user may edit either file without the other being silently rewritten.
 5. A Note edit makes the workspace stale and blocks materialization.
-6. Explicit rebase preserves submitted workspace edits and updates only the
-   managed segmentation region plus `note_hash`.
+6. Explicit rebase requires blocks that reproduce the current Note, rebuilds
+   the block manifest and complete coverage, preserves submitted workspace
+   edits, and only then advances `note_hash`.
 7. Unresolved rebase conflicts remain visible and block `--all`.
 8. Materialization creates exact K/O payloads with `s → n → ns → k/o`
    provenance and is idempotent.

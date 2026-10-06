@@ -97,8 +97,10 @@ func NoteBlockVocabulary(raw []byte) (map[string]bool, error) {
 	return refs, nil
 }
 
-// NoteSegmentationRebasedBytes advances only note_hash and updated_at.
-// Candidate state and every byte in 用户补充 remain unchanged.
+// NoteSegmentationRebasedBytes is the low-level scalar update used only after
+// callers have validated or rebuilt the workspace against the target Note.
+// It advances note_hash and updated_at; candidate state and 用户补充 stay
+// byte-identical.
 func NoteSegmentationRebasedBytes(
 	raw []byte,
 	noteHash string,
