@@ -195,6 +195,50 @@ func ParseNoteBlockManifest(raw []byte) (NoteBlockManifest, bool, error) {
 	return out, true, nil
 }
 
+// ReplaceNoteBlockManifest replaces the single eg:nb manifest line while
+// preserving every other workspace byte.
+func ReplaceNoteBlockManifest(
+	raw []byte,
+	blocks []ReviewBlock,
+	omissions []ReviewOmission,
+) ([]byte, error) {
+	if _, found, err := ParseNoteBlockManifest(raw); err != nil {
+		return nil, err
+	} else if !found {
+		return nil, fmt.Errorf("ns-* 缺 note block manifest")
+	}
+	replacement, err := RenderNoteBlockManifest(blocks, omissions)
+	if err != nil {
+		return nil, err
+	}
+	start, end := -1, -1
+	for at := 0; at < len(raw); {
+		endLine := lineEnd(raw, at)
+		trimmed := bytes.TrimSpace(raw[at:endLine])
+		if bytes.HasPrefix(trimmed, []byte("<!-- "+noteBlockManifestFamily)) {
+			if start >= 0 {
+				return nil, fmt.Errorf("ns-* 含多个 note block manifest")
+			}
+			start, end = at, endLine
+		}
+		at = endLine
+	}
+	if start < 0 {
+		return nil, fmt.Errorf("ns-* 缺 note block manifest")
+	}
+	out := make([]byte, 0, len(raw)-(end-start)+len(replacement))
+	out = append(out, raw[:start]...)
+	out = append(out, replacement...)
+	out = append(out, raw[end:]...)
+	if _, found, err := ParseNoteBlockManifest(out); err != nil || !found {
+		if err != nil {
+			return nil, fmt.Errorf("替换后的 note block manifest 不成立：%w", err)
+		}
+		return nil, fmt.Errorf("替换后的 note block manifest 缺失")
+	}
+	return out, nil
+}
+
 // NoteBlockManifestVocabulary returns the exact B1..Bn set stored in ns-*.
 func NoteBlockManifestVocabulary(raw []byte) (map[string]bool, bool, error) {
 	manifest, found, err := ParseNoteBlockManifest(raw)

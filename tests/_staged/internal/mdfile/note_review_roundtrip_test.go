@@ -103,6 +103,35 @@ func TestPlainReviewMovesAllMachineMetadataToManifest(t *testing.T) {
 	}
 }
 
+func TestReplaceNoteBlockManifestPreservesWorkspaceBytes(t *testing.T) {
+	oldBlocks := []ReviewBlock{rtSrc("", "L1-L1", "旧正文。")}
+	oldManifest, err := RenderNoteBlockManifest(oldBlocks, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := append([]byte("## 划分结果\n\n"), oldManifest...)
+	raw = append(raw, []byte("<!-- eg:cd:2 candidate -->\n用户候选正文。\n")...)
+	newBlocks := []ReviewBlock{
+		rtSrc("", "L1-L1", "新正文。"),
+		rtAgent("", "supplement", "", "新增批注。"),
+	}
+	out, err := ReplaceNoteBlockManifest(raw, newBlocks, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasSuffix(out,
+		[]byte("<!-- eg:cd:2 candidate -->\n用户候选正文。\n")) {
+		t.Fatalf("manifest 替换改写了 workspace 其它字节：\n%s", out)
+	}
+	manifest, found, err := ParseNoteBlockManifest(out)
+	if err != nil || !found || len(manifest.Blocks) != 2 ||
+		manifest.Blocks[0].ContentHash == "" ||
+		manifest.Blocks[1].Annotation != "supplement" {
+		t.Fatalf("替换后的 manifest 不成立：found=%v err=%v %+v",
+			found, err, manifest)
+	}
+}
+
 func TestPlainReviewRejectsAnyEvergreenAnchorInVisibleBody(t *testing.T) {
 	blocks := []ReviewBlock{rtSrc(
 		"", "L1-L1", "正文。\n<!-- eg:cd:2 reserved -->")}

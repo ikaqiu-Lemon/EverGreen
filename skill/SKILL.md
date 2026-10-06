@@ -150,7 +150,9 @@ eg apply --plan <file|-> [--dry-run] [--json]
   保存为 review JSON），再用 `eg candidate apply --note <n-id> --file <review.json>
   --user-request` 原子回投。一次 apply 可新增、删除、改 key、重排、改类型，并修改
   logical slug、Note 块范围、payload 和 coverage；Note 改动后 workspace 标记为 stale，
-  必须在审阅完整状态后显式使用 `--rebase --user-request`，工具不会自动合并语义文本。
+  Agent 必须重新读取当前完整 Note，在 review spec 中补充能逐字重渲染正文的完整
+  `note_blocks[]` / `omissions[]`，并按新 `B1..Bn` 重新生成无缺口 coverage，再显式使用
+  `--rebase --user-request`。CLI 只验证并重建 manifest，不会自动合并语义文本；只推进 hash 必须拒绝。
 - 旧的未物化内嵌候选可由 `eg candidate migrate --note <n-id> --user-request` 原子拆成
   纯 `n-* + ns-*`；已有 `ns-*` 但 `n-*` 仍含 `eg:nr:1` 时，同一命令原子移除 Note
   锚点并把块元数据迁入 workspace。已物化 legacy 候选、引用映射有歧义或元数据冲突时零写入拒绝。

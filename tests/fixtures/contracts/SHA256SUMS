@@ -5,7 +5,7 @@ b40254d72686807de778e3f63cf43652470549a0c86ff6d19ea18a1b9f65464f  projects/everg
 a10328c795d051330fb52fe99fee629031ed23b244b6c03898010bea99c20ee2  projects/evergreen/block_boundary_materialization/docs/specs/2026-09-22-t008-baseline-receipt.md
 ca7fddb30e9a6d5c130c9c6b902ed17b4d6a7b7904fb423b26778c1bc59d0e7f  projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-15-knowledge-opinion-schema-v2-design.md
 b9257c9a412e969d55342ed975955e93a94e3fe7e2745a7ca089c2a0bb99a19c  projects/evergreen/knowledge_opinion_split/docs/specs/2026-09-19-opinion-unsupported-validated-adjudication.md
-8891152518c2f1a8c09c719fc96a31a0bf640d4f1b79a00de7f810110a814faa  projects/evergreen/note_segmentation_workspace/docs/specs/2026-10-04-note-segmentation-workspace-contract.md
+05806c12441929018437a74dec8b122409d905eb40e11b5ba2f590a460a54885  projects/evergreen/note_segmentation_workspace/docs/specs/2026-10-04-note-segmentation-workspace-contract.md
 4acfb6c79b7cb180fa295e40493155e285537c45549ba152e974597396e0bbcc  projects/evergreen/s1_main_flow/docs/specs/2026-08-31-evergreen-s1-tech-design.md
 57579ed7cbb6d02764d5f984a070ba24e89ca452525471e189158ef318394e38  projects/evergreen/s1_main_flow/docs/specs/2026-08-31-language-selection.md
 6eb71a158046361f47905f3f1f257ab2ce669cf89df528d8e20affcc4b39dc6c  projects/evergreen/s1_main_flow/docs/specs/2026-08-31-m1-task-review-round2.md

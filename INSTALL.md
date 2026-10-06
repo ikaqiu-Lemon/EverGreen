@@ -131,7 +131,9 @@ compatibility/validation digest):
 - **Candidate review.** `eg candidate show --note <n-id> --json` exports the
   complete editable draft state. Apply the edited `.data` object with
   `eg candidate apply --note <n-id> --file <review.json> --user-request`.
-  When the Note changed, reconcile the spec and add `--rebase`.
+  When the Note body changed, add complete `note_blocks[]` and `omissions[]`
+  that reproduce the current body, regenerate full coverage against the new
+  B references, then add `--rebase`; hash-only rebases are rejected.
   `eg candidate migrate --note <n-id> --user-request` splits legacy embedded
   candidates and also normalizes an existing n/ns pair whose Note still
   carries legacy review anchors.

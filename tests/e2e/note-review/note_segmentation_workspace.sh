@@ -101,26 +101,48 @@ git -C "${VAULT}" add "${NOTE_REL}"
 git -C "${VAULT}" commit -qm "user: edit note"
 "${EG}" --vault "${VAULT}" candidate show --note "${NOTE_ID}" --json </dev/null \
   >"${WORK}/stale.json"
-python3 - "${WORK}/stale.json" "${WORK}/rebase.json" <<'PY'
+python3 - "${WORK}/stale.json" "${WORK}/rebase-missing.json" "${WORK}/rebase.json" <<'PY'
 import json, sys
 o = json.load(open(sys.argv[1], encoding="utf-8"))["data"]
 assert o["stale"] is True
 json.dump(o, open(sys.argv[2], "w", encoding="utf-8"), ensure_ascii=False)
+o["note_blocks"] = [
+    {
+        "role": "source",
+        "source_ref": "L2-L2",
+        "heading": "事实",
+        "body": "修订后的原文事实。"
+    },
+    {
+        "role": "agent",
+        "annotation": "distinction",
+        "body": "这是一条稳定事实。"
+    }
+]
+o["omissions"] = []
+json.dump(o, open(sys.argv[3], "w", encoding="utf-8"), ensure_ascii=False)
 PY
 [ "$(run_code materialize --note "${NOTE_ID}" --all --user-request)" = "2" ] ||
   die "stale workspace 未阻断 materialize"
 [ "$(run_code candidate apply --note "${NOTE_ID}" --file "${WORK}/rebase.json" --user-request)" = "2" ] ||
   die "stale workspace 未阻断普通 apply"
+[ "$(run_code candidate apply --note "${NOTE_ID}" --file "${WORK}/rebase-missing.json" --rebase --user-request)" = "2" ] ||
+  die "缺新 note_blocks 的 rebase 未被阻断"
 "${EG}" --vault "${VAULT}" candidate apply --note "${NOTE_ID}" \
   --file "${WORK}/rebase.json" --rebase --user-request --json </dev/null >/dev/null
 python3 - "${NOTE}" "${WORKSPACE_FILE}" <<'PY'
-import hashlib, re, sys
+import base64, hashlib, json, re, sys
 note = open(sys.argv[1], "rb").read()
 workspace = open(sys.argv[2], "rb").read().decode()
 want = "sha256:" + hashlib.sha256(note).hexdigest()
 got = re.search(r"^note_hash: '([^']+)'$", workspace, re.M).group(1)
 assert got == want, (got, want)
 assert "用户优化后的知识。" in workspace
+manifest = re.search(r"<!-- eg:nb:1 ([A-Za-z0-9_-]+) -->", workspace).group(1)
+payload = json.loads(base64.urlsafe_b64decode(manifest + "=" * (-len(manifest) % 4)))
+assert len(payload["blocks"]) == 2
+assert payload["blocks"][0]["content_hash"] == \
+    "sha256:" + hashlib.sha256("修订后的原文事实。".encode()).hexdigest()
 PY
 ok "workspace 编辑与显式 rebase 均保留用户内容"
 

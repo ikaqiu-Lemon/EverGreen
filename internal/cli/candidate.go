@@ -37,12 +37,13 @@ eg candidate migrate --note <n-id> --user-request [--strict] [--json]
   --note <n-id>        是；candidate 所属的 Note
   --file <path|->      apply 必填；完整 review spec，- 从标准输入读取
   --user-request       apply 必填；用户显式确认并发起
-  --rebase             apply 可选；仅在 n-* 已变化时显式推进 ns.note_hash
+  --rebase             apply 可选；n-* 已变化时提交完整 note_blocks/omissions/coverage 并重建 ns
   --strict             apply 可选；保留统一写命令强校验参数面
 
 show 只读；新工作区返回 schema_version=2、n/ns 双路径双 hash 与 stale。apply 把 spec
 当成完整目标状态，可修改未物化候选及 note_refs/payload/coverage；已物化候选不可改。
-Note 改动后，只有显式 --rebase 才会推进 workspace_note_hash。migrate 把 legacy
+Note 改动后，--rebase 必须提交能逐字重渲染当前正文的完整 note_blocks/omissions，
+并同时提交覆盖全部新 B 引用的 coverage；CLI 重建 block manifest 后才推进 note_hash。migrate 把 legacy
 未物化内嵌候选原子拆成纯 n-* 与 ns-*；也可把已有 n/ns 对中的 Note 机器锚点原子迁入
 workspace。所有写入走 journal v1 与一次 Git commit。
 退出码：0 成功 / 幂等 no-op | 1 参数非法 | 2 授权、spec 或结构校验失败（零写入） |
@@ -122,6 +123,20 @@ type candidateReviewCoverage struct {
 	Reason      string   `json:"reason"`
 }
 
+type candidateReviewNoteBlock struct {
+	Role       store.NoteBlockRole `json:"role"`
+	Heading    string              `json:"heading,omitempty"`
+	Body       string              `json:"body"`
+	SourceRef  string              `json:"source_ref,omitempty"`
+	Annotation string              `json:"annotation,omitempty"`
+	Label      string              `json:"label,omitempty"`
+}
+
+type candidateReviewOmission struct {
+	SourceRef string `json:"source_ref"`
+	Reason    string `json:"reason"`
+}
+
 type candidateReviewSpec struct {
 	SchemaVersion     int                        `json:"schema_version"`
 	Note              string                     `json:"note"`
@@ -132,6 +147,8 @@ type candidateReviewSpec struct {
 	WorkspaceHash     string                     `json:"workspace_hash,omitempty"`
 	WorkspaceNoteHash string                     `json:"workspace_note_hash,omitempty"`
 	Stale             bool                       `json:"stale,omitempty"`
+	NoteBlocks        []candidateReviewNoteBlock `json:"note_blocks,omitempty"`
+	Omissions         []candidateReviewOmission  `json:"omissions"`
 	Candidates        []candidateReviewCandidate `json:"candidates"`
 	Coverage          []candidateReviewCoverage  `json:"coverage"`
 }
@@ -323,6 +340,12 @@ func candidateReviewSpecData(spec candidateReviewSpec) map[string]interface{} {
 		data["workspace_hash"] = spec.WorkspaceHash
 		data["workspace_note_hash"] = spec.WorkspaceNoteHash
 		data[model.FMKeyStale] = spec.Stale
+		if spec.NoteBlocks != nil {
+			data["note_blocks"] = spec.NoteBlocks
+		}
+		if spec.Omissions != nil {
+			data["omissions"] = spec.Omissions
+		}
 	}
 	return data
 }
@@ -478,6 +501,17 @@ func decodeCandidateReviewSpec(raw []byte) (candidateReviewSpec, error) {
 			return candidateReviewSpec{}, fmt.Errorf(
 				"schema v2 必须给出 workspace/workspace_path/workspace_hash/workspace_note_hash")
 		}
+		if (spec.NoteBlocks == nil) != (spec.Omissions == nil) {
+			return candidateReviewSpec{}, fmt.Errorf(
+				"note_blocks/omissions 必须同时给出或同时省略")
+		}
+		if spec.NoteBlocks != nil && len(spec.NoteBlocks) == 0 {
+			return candidateReviewSpec{}, fmt.Errorf(
+				"给出 note_blocks 时必须至少包含一个块")
+		}
+	} else if spec.NoteBlocks != nil || spec.Omissions != nil {
+		return candidateReviewSpec{}, fmt.Errorf(
+			"schema v1 review 不接受 note_blocks/omissions")
 	}
 	return spec, nil
 }
@@ -567,6 +601,29 @@ func reviewCoverage(spec candidateReviewSpec) []store.CandidateCoverage {
 			NoteRefs: cloneReviewStrings(item.NoteRefs),
 			Summary:  item.Summary, Disposition: item.Disposition,
 			Candidates: cloneReviewStrings(item.Candidates), Reason: item.Reason,
+		}
+	}
+	return out
+}
+
+func reviewNoteBlocks(spec candidateReviewSpec) []store.NoteBlock {
+	out := make([]store.NoteBlock, len(spec.NoteBlocks))
+	for i, block := range spec.NoteBlocks {
+		out[i] = store.NoteBlock{
+			Role: block.Role, Heading: block.Heading, Body: []byte(block.Body),
+			SourceRef: block.SourceRef, Annotation: block.Annotation,
+			Label: block.Label,
+		}
+	}
+	return out
+}
+
+func reviewOmissions(spec candidateReviewSpec) []store.Omission {
+	out := make([]store.Omission, len(spec.Omissions))
+	for i, omission := range spec.Omissions {
+		out[i] = store.Omission{
+			SourceRef: omission.SourceRef,
+			Reason:    omission.Reason,
 		}
 	}
 	return out
@@ -671,25 +728,45 @@ func (r *Root) candidateApplyCritical(
 		if !stale && rebase {
 			return nil, &UsageError{Msg: "workspace 当前为 fresh，不接受 --rebase"}
 		}
+		if !rebase && (spec.NoteBlocks != nil || spec.Omissions != nil) {
+			return nil, &UsageError{
+				Msg: "note_blocks/omissions 只允许用于 stale workspace 的显式 rebase",
+			}
+		}
 		if state.Finalized {
 			return nil, fmt.Errorf("ns-* 不接受 legacy 最终覆盖形态")
 		}
 		if err := validateMappedWorkspaceCandidates(current, drafts); err != nil {
 			return nil, err
 		}
-		if err := store.ValidateNoteSegmentation(drafts, coverage, noteRefs); err != nil {
-			return nil, err
-		}
-		target, err = mdfile.ReplaceCandidateDraftState(
-			workspaceFile.Bytes, drafts, coverage)
-		if err != nil {
-			return nil, err
-		}
-		if rebase || !bytes.Equal(target, workspaceFile.Bytes) {
-			target, err = store.NoteSegmentationRebasedBytes(
-				target, file.Hash, model.NewStamp(r.now()))
+		if rebase {
+			if len(spec.NoteBlocks) == 0 || spec.Omissions == nil {
+				return nil, fmt.Errorf(
+					"rebase 必须提交当前 Note 的完整 note_blocks[] 与 omissions[]，" +
+						"以重建 block manifest 和 coverage")
+			}
+			target, err = store.RebaseCandidateWorkspaceBytes(
+				file.Bytes, workspaceFile.Bytes,
+				reviewNoteBlocks(spec), reviewOmissions(spec),
+				drafts, coverage, model.NewStamp(r.now()))
 			if err != nil {
 				return nil, err
+			}
+		} else {
+			if err := store.ValidateNoteSegmentation(drafts, coverage, noteRefs); err != nil {
+				return nil, err
+			}
+			target, err = mdfile.ReplaceCandidateDraftState(
+				workspaceFile.Bytes, drafts, coverage)
+			if err != nil {
+				return nil, err
+			}
+			if !bytes.Equal(target, workspaceFile.Bytes) {
+				target, err = store.NoteSegmentationRebasedBytes(
+					target, file.Hash, model.NewStamp(r.now()))
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		if _, _, _, _, _, err := store.ParseMaterializationWorkspace(
