@@ -98,6 +98,14 @@ type PlannedReview struct {
 	Diff      ReviewDiff       `json:"diff"`
 }
 
+type ReviewEditPlanRequest struct {
+	OperationID string           `json:"operation_id"`
+	NoteID      LogicalID        `json:"note_id"`
+	Base        string           `json:"base"`
+	Edited      json.RawMessage  `json:"edited"`
+	Lineage     []SegmentLineage `json:"lineage,omitempty"`
+}
+
 type SegmentEditResult struct {
 	After    []byte           `json:"after"`
 	Snapshot ReviewSnapshot   `json:"snapshot"`
@@ -410,6 +418,57 @@ func (s *AuthorityService) PlanReview(
 		return PlannedReview{}, err
 	}
 	return PlannedReview{Operation: operation, Snapshot: snapshot, Diff: diff}, nil
+}
+
+func (s *AuthorityService) InspectReview(
+	ctx context.Context,
+	noteID LogicalID,
+) (ReviewSnapshot, error) {
+	if s == nil || s.host == nil {
+		return ReviewSnapshot{}, validationError(CodeInvalidPlan, "host", "authority host is unavailable")
+	}
+	current, err := s.host.Load(ctx, noteID)
+	if err != nil {
+		return ReviewSnapshot{}, err
+	}
+	return InspectNoteReview(current, s.registry)
+}
+
+func (s *AuthorityService) PlanReviewEdit(
+	ctx context.Context,
+	principal Principal,
+	request ReviewEditPlanRequest,
+) (PlannedReview, error) {
+	if s == nil || s.host == nil {
+		return PlannedReview{}, validationError(CodeInvalidPlan, "host", "authority host is unavailable")
+	}
+	current, err := s.host.Load(ctx, request.NoteID)
+	if err != nil {
+		return PlannedReview{}, err
+	}
+	currentHash, err := SemanticHash(current)
+	if err != nil {
+		return PlannedReview{}, err
+	}
+	if request.Base != currentHash {
+		return PlannedReview{}, validationError(CodeBaseMismatch, "base", "Note semantic base hash is stale")
+	}
+	result, err := NormalizeNoteReviewEdit(current, request.Edited, request.Lineage, s.registry)
+	if err != nil {
+		return PlannedReview{}, err
+	}
+	operation, err := s.Plan(ctx, principal, PlanRequest{
+		Protocol: ChangePlanProtocol, OperationID: request.OperationID,
+		Command: "note.review.update",
+		Base:    []BaseRef{{LogicalID: request.NoteID, SemanticHash: request.Base}},
+		Writes:  []WriteInput{{LogicalID: request.NoteID, After: result.After}},
+	})
+	if err != nil {
+		return PlannedReview{}, err
+	}
+	return PlannedReview{
+		Operation: operation, Snapshot: result.Snapshot,
+	}, nil
 }
 
 type ReviewMaterializeRequest struct {
