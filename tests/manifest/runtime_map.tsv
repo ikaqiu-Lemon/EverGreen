@@ -215,6 +215,7 @@ tests/_staged/internal/store/state_write_style_test.go	internal/store/state_writ
 tests/_staged/internal/store/state_write_test.go	internal/store/state_write_test.go	evergreen	unit	go
 tests/_staged/internal/store/state_write_validation_test.go	internal/store/state_write_validation_test.go	evergreen	unit	go
 tests/_staged/internal/store/store_test.go	internal/store/store_test.go	evergreen	unit	go
+tests/_staged/internal/store/sy_host_test.go	internal/store/sy_host_test.go	evergreen	unit	go
 tests/_staged/internal/store/updated_at_test.go	internal/store/updated_at_test.go	evergreen	unit	go
 tests/_staged/internal/store/writers_test.go	internal/store/writers_test.go	evergreen	unit	go
 tests/_staged/internal/txn/commit_test.go	internal/txn/commit_test.go	evergreen	unit	go

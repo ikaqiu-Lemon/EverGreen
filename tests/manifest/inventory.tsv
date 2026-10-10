@@ -215,6 +215,7 @@ tests/_staged/internal/store/state_write_style_test.go	unit	go	storage-markdown	
 tests/_staged/internal/store/state_write_test.go	unit	go	storage-markdown	unit.internal.store	5	9424
 tests/_staged/internal/store/state_write_validation_test.go	unit	go	storage-markdown	unit.internal.store	13	19721
 tests/_staged/internal/store/store_test.go	unit	go	storage-markdown	unit.internal.store	20	29137
+tests/_staged/internal/store/sy_host_test.go	unit	go	storage-markdown	unit.internal.store	1	2101
 tests/_staged/internal/store/updated_at_test.go	unit	go	storage-markdown	unit.internal.store	8	13056
 tests/_staged/internal/store/writers_test.go	unit	go	storage-markdown	unit.internal.store	15	21240
 tests/_staged/internal/txn/commit_test.go	unit	go	txn-atomicity	unit.internal.txn	10	16520
