@@ -75,7 +75,10 @@ func TestClientReturnsStableDiagnostics(t *testing.T) {
 		})
 	}))
 	defer server.Close()
-	client, err := New(Options{BaseURL: server.URL, Caller: CallerAgent, HTTPClient: server.Client()})
+	client, err := New(Options{
+		BaseURL: server.URL, Caller: CallerAgent, AgentID: "agent-1",
+		RequestReason: "test diagnostics", HTTPClient: server.Client(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

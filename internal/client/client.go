@@ -23,6 +23,9 @@ const (
 	CallerCLI   = "cli"
 	CallerAgent = "agent"
 	CallerUI    = "ui"
+
+	AgentIDEnv       = "EG_AGENT_ID"
+	RequestReasonEnv = "EG_REQUEST_REASON"
 )
 
 var ErrKernelUnavailable = errors.New("Evergreen kernel endpoint is not configured")
@@ -31,14 +34,18 @@ type Client struct {
 	baseURL string
 	token   string
 	caller  string
+	agentID string
+	reason  string
 	http    *http.Client
 }
 
 type Options struct {
-	BaseURL    string
-	Token      string
-	Caller     string
-	HTTPClient *http.Client
+	BaseURL       string
+	Token         string
+	Caller        string
+	AgentID       string
+	RequestReason string
+	HTTPClient    *http.Client
 }
 
 func New(options Options) (*Client, error) {
@@ -52,12 +59,18 @@ func New(options Options) (*Client, error) {
 	default:
 		return nil, fmt.Errorf("invalid Evergreen caller %q", options.Caller)
 	}
+	if options.Caller == CallerAgent &&
+		(strings.TrimSpace(options.AgentID) == "" || strings.TrimSpace(options.RequestReason) == "") {
+		return nil, errors.New("agent transport requires AgentID and RequestReason")
+	}
 	httpClient := options.HTTPClient
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second}
 	}
 	return &Client{
-		baseURL: base, token: options.Token, caller: options.Caller, http: httpClient,
+		baseURL: base, token: options.Token, caller: options.Caller,
+		agentID: strings.TrimSpace(options.AgentID), reason: strings.TrimSpace(options.RequestReason),
+		http: httpClient,
 	}, nil
 }
 
@@ -70,9 +83,11 @@ func FromEnvironment(caller string) (*Client, error) {
 		return nil, ErrKernelUnavailable
 	}
 	return New(Options{
-		BaseURL: endpoint,
-		Token:   os.Getenv(KernelTokenEnv),
-		Caller:  caller,
+		BaseURL:       endpoint,
+		Token:         os.Getenv(KernelTokenEnv),
+		Caller:        caller,
+		AgentID:       os.Getenv(AgentIDEnv),
+		RequestReason: os.Getenv(RequestReasonEnv),
 	})
 }
 
@@ -146,6 +161,10 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any)
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("X-Evergreen-Caller", c.caller)
+	if c.caller == CallerAgent {
+		request.Header.Set("X-Evergreen-Agent-ID", c.agentID)
+		request.Header.Set("X-Evergreen-Request-Reason", c.reason)
+	}
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

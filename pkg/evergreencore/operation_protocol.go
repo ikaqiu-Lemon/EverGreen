@@ -49,24 +49,32 @@ func CurrentCapabilities() Capabilities {
 }
 
 type SchemaCatalog struct {
-	APIVersion string           `json:"api_version"`
-	Document   SchemaRef        `json:"document"`
-	Block      SchemaRef        `json:"block"`
-	Kinds      []KindDescriptor `json:"kinds"`
-	Edges      []SchemaRef      `json:"edges"`
+	APIVersion string                 `json:"api_version"`
+	Document   SchemaRef              `json:"document"`
+	Block      SchemaRef              `json:"block"`
+	Kinds      []KindSchemaDescriptor `json:"kinds"`
+	Edges      []SchemaRef            `json:"edges"`
+}
+
+type KindSchemaDescriptor struct {
+	Kind               ClaimKind   `json:"kind"`
+	Schema             SchemaRef   `json:"schema"`
+	AllowedStatuses    []string    `json:"allowed_statuses"`
+	AllowedEdgeSchemas []SchemaRef `json:"allowed_edge_schemas"`
 }
 
 func CurrentSchemas(registry *Registry) SchemaCatalog {
 	if registry == nil {
 		registry = DefaultRegistry()
 	}
-	kinds := make([]KindDescriptor, 0, len(registry.byKind))
+	kinds := make([]KindSchemaDescriptor, 0, len(registry.byKind))
 	registry.mu.RLock()
 	for _, descriptor := range registry.byKind {
-		descriptor.ValidateKindData = nil
-		descriptor.AllowedStatuses = append([]string(nil), descriptor.AllowedStatuses...)
-		descriptor.AllowedEdgeSchemas = append([]SchemaRef(nil), descriptor.AllowedEdgeSchemas...)
-		kinds = append(kinds, descriptor)
+		kinds = append(kinds, KindSchemaDescriptor{
+			Kind: descriptor.Kind, Schema: descriptor.Schema,
+			AllowedStatuses:    append([]string(nil), descriptor.AllowedStatuses...),
+			AllowedEdgeSchemas: append([]SchemaRef(nil), descriptor.AllowedEdgeSchemas...),
+		})
 	}
 	registry.mu.RUnlock()
 	sort.Slice(kinds, func(i, j int) bool { return kinds[i].Kind < kinds[j].Kind })
