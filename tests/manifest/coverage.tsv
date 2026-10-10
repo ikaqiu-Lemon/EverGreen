@@ -1,6 +1,5 @@
 capability	unit	integration	e2e	contract	perf	total
 arch-boundary	0	2	2	16	0	20
-assets_review	1	0	0	0	0	1
 authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
 card-query	27	0	4	0	0	31
@@ -10,11 +9,10 @@ core	8	0	0	0	0	8
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2
-embedded	1	0	0	0	0	1
 git-integrity	3	0	0	0	0	3
-importer	1	0	0	0	0	1
+importer	2	0	0	0	0	2
 index-search	13	0	9	0	0	22
-inventory	1	0	0	0	0	1
+inventory	2	0	0	0	0	2
 lifecycle	0	2	8	0	0	10
 migration	1	0	0	0	0	1
 note-review	0	0	3	0	0	3

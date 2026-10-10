@@ -63,9 +63,10 @@ def build() -> dict[str, list[list[str]]]:
                                    "tests").splitlines() if f})
     # 自身派生物不进盘点，避免自指漂移。suites.yaml 同样在列：它由 tests/tools/suites.py
     # 从本表派生，若把它的字节数记进本表，`suites.py --write` 一执行就必然让
-    # `inventory.py --check` 变红（实测），形成"两张表互相把对方判红"的死循环。
+    # inventory.py --check` 变红（实测），形成"两张表互相把对方判红"的死循环。
     derived = {"tests/manifest/inventory.tsv", "tests/manifest/coverage.tsv",
-               "tests/manifest/runtime_map.tsv", "tests/manifest/suites.yaml"}
+               "tests/manifest/runtime_map.tsv", "tests/manifest/suites.yaml",
+               "tests/manifest/traceability.tsv"}
 
     # ---- inventory
     inv = []
@@ -181,6 +182,10 @@ def infer_cap(rel: str) -> str:
     if rel.startswith("tests/_staged/") and rel.endswith("_test.go"):
         if parts[2:4] == ["pkg", "evergreencore"]:
             return "core"
+        if parts[2:4] == ["internal", "migrate"]:
+            return "inventory"
+        if parts[2:4] == ["internal", "segment"]:
+            return "importer"
         return parts[-1][:-len("_test.go")].split(".")[0]
     return "-"
 

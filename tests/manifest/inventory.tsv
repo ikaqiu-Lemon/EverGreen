@@ -113,7 +113,7 @@ tests/_staged/internal/mdfile/mdfile_test.go	unit	go	storage-markdown	unit.inter
 tests/_staged/internal/mdfile/note_review_roundtrip_test.go	unit	go	storage-markdown	unit.internal.mdfile	11	25723
 tests/_staged/internal/mdfile/opinion_sections_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	13802
 tests/_staged/internal/mdfile/plain_export_test.go	unit	go	storage-markdown	unit.internal.mdfile	4	3007
-tests/_staged/internal/migrate/assets_review_test.go	unit	go	assets_review	unit.internal.migrate	1	4145
+tests/_staged/internal/migrate/assets_review_test.go	unit	go	inventory	unit.internal.migrate	1	4145
 tests/_staged/internal/migrate/inventory_test.go	unit	go	inventory	unit.internal.migrate	2	6688
 tests/_staged/internal/model/frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	1	4202
 tests/_staged/internal/model/model_test.go	unit	go	storage-markdown	unit.internal.model	20	19030
@@ -199,7 +199,7 @@ tests/_staged/internal/report/report_m3_test.go	unit	go	ops-diagnostics	unit.int
 tests/_staged/internal/report/report_test.go	unit	go	ops-diagnostics	unit.internal.report	21	27470
 tests/_staged/internal/report/support_check_test.go	unit	go	ops-diagnostics	unit.internal.report	6	7672
 tests/_staged/internal/rules/rules_test.go	unit	go	capture-ingest	unit.internal.rules	9	6136
-tests/_staged/internal/segment/embedded_test.go	unit	go	embedded	unit.internal.segment	1	3713
+tests/_staged/internal/segment/embedded_test.go	unit	go	importer	unit.internal.segment	1	3717
 tests/_staged/internal/segment/importer_test.go	unit	go	importer	unit.internal.segment	2	6154
 tests/_staged/internal/store/atomic_test.go	unit	go	storage-markdown	unit.internal.store	7	8528
 tests/_staged/internal/store/b3_authorization_test.go	unit	go	storage-markdown	unit.internal.store	1	2883
@@ -467,7 +467,6 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	28002
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568
@@ -477,7 +476,7 @@ tests/run.sh	-	shell	-	-	0	2535
 tests/runner/materialize.py	runner	python	-	-	0	26774
 tests/runner/run.py	runner	python	-	-	0	27315
 tests/tools/check_migration.py	tools	python	-	-	0	6977
-tests/tools/inventory.py	tools	python	-	-	0	13053
+tests/tools/inventory.py	tools	python	-	-	0	13263
 tests/tools/legacy_gates.py	tools	python	-	-	0	13312
 tests/tools/scale_ratchet.py	tools	python	-	-	0	10602
 tests/tools/suites.py	tools	python	-	-	0	18027

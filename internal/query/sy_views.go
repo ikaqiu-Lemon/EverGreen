@@ -68,7 +68,7 @@ func ContextSY(ctx context.Context, repository core.Repository, registry *core.R
 					if key == "" {
 						key = string(candidate.CandidateID)
 					}
-					status := "unmaterialized"
+					status := "draft"
 					if candidate.Metadata.MaterializedClaimID != "" {
 						status = "materialized"
 					}
