@@ -230,6 +230,7 @@ tests/_staged/internal/txn/opinion_path_test.go	unit	go	txn-atomicity	unit.inter
 tests/_staged/internal/txn/recover_test.go	unit	go	txn-atomicity	unit.internal.txn	16	27823
 tests/_staged/internal/txn/safedir_test.go	unit	go	txn-atomicity	unit.internal.txn	2	6427
 tests/_staged/internal/version/version_test.go	unit	go	dist-install	unit.internal.version	5	3945
+tests/_staged/pkg/evergreencore/core_test.go	unit	go	core	unit.pkg.evergreencore	8	14025
 tests/_staged/scripts/migrate-storage-v3/migration_test.go	unit	go	migration	unit.scripts.migrate-storage-v3	4	9000
 tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534
@@ -450,7 +451,7 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	27230
+tests/manifest/traceability.tsv	manifest	data	-	-	0	27276
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568

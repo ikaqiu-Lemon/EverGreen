@@ -4,6 +4,7 @@ authorization	0	0	1	0	0	1
 capture-ingest	1	2	4	0	0	7
 card-query	27	0	4	0	0	31
 cli-core	84	0	6	0	0	90
+core	1	0	0	0	0	1
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2

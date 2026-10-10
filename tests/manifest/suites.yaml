@@ -1997,6 +1997,25 @@ suites:
   not_run_when: null
   issue: null
   exclude_cases: []
+- id: unit.pkg.evergreencore
+  layer: unit
+  capability: core
+  kind: go
+  target: ./pkg/evergreencore
+  source: tests/_staged/pkg/evergreencore/*_test.go
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-003
+  profiles:
+  - unit
+  - full
+  - race
+  timeout_s: 1200
+  min_cases: 8
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+  exclude_cases: []
 - id: unit.scripts.migrate-storage-v3
   layer: unit
   capability: migration

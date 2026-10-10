@@ -230,6 +230,7 @@ tests/_staged/internal/txn/opinion_path_test.go	internal/txn/opinion_path_test.g
 tests/_staged/internal/txn/recover_test.go	internal/txn/recover_test.go	evergreen	unit	go
 tests/_staged/internal/txn/safedir_test.go	internal/txn/safedir_test.go	evergreen	unit	go
 tests/_staged/internal/version/version_test.go	internal/version/version_test.go	evergreen	unit	go
+tests/_staged/pkg/evergreencore/core_test.go	pkg/evergreencore/core_test.go	evergreen	unit	go
 tests/_staged/scripts/migrate-storage-v3/migration_test.go	scripts/migrate-storage-v3/migration_test.go	evergreen	unit	go
 tests/_staged/skill/skill_test.go	skill/skill_test.go	evergreen	unit	go
 tests/_staged/test/e2e/index_symbol_judge_test.go	test/e2e/index_symbol_judge_test.go	evergreen	e2e	go
