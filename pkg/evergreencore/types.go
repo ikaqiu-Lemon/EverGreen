@@ -16,6 +16,7 @@ import (
 const (
 	DocumentSpec        SchemaRef = "evergreen.sy/v1"
 	BlockSpec           SchemaRef = "evergreen.block/v1"
+	NoteReviewSpec      SchemaRef = "evergreen.note-review/v1"
 	ClaimSchema         SchemaRef = "evergreen.claim/v1"
 	KnowledgeKindSchema SchemaRef = "evergreen.claim-kind.knowledge/v1"
 	OpinionKindSchema   SchemaRef = "evergreen.claim-kind.opinion/v1"
@@ -39,6 +40,14 @@ const (
 	CodeInvalidEnvelope      = "EG_INVALID_ENVELOPE"
 	CodeInvalidBlock         = "EG_INVALID_BLOCK"
 	CodeInvalidPlan          = "EG_INVALID_CHANGEPLAN"
+	CodeCoverageMissing      = "EG_COVERAGE_MISSING"
+	CodeCoverageDuplicate    = "EG_COVERAGE_DUPLICATE"
+	CodeCoverageInvalid      = "EG_COVERAGE_INVALID"
+	CodeCandidateStale       = "EG_CANDIDATE_STALE"
+	CodeCandidateMissing     = "EG_CANDIDATE_MISSING"
+	CodeCandidatePayload     = "EG_CANDIDATE_PAYLOAD_MISMATCH"
+	CodeReviewUnresolved     = "EG_REVIEW_UNRESOLVED"
+	CodeSegmentLineage       = "EG_SEGMENT_LINEAGE_INVALID"
 )
 
 type SchemaRef string
@@ -132,15 +141,27 @@ type DocumentEnvelope struct {
 type NoteReview struct {
 	Spec     SchemaRef        `json:"spec"`
 	Coverage []CoverageModule `json:"coverage"`
+	Lineage  []SegmentLineage `json:"lineage,omitempty"`
 	Extra    RawObject        `json:"-"`
 }
 
 type CoverageModule struct {
-	ModuleID    LogicalID   `json:"module_id"`
-	Disposition string      `json:"disposition"`
-	SegmentRefs []LogicalID `json:"segment_refs"`
-	CandidateID LogicalID   `json:"candidate_id,omitempty"`
-	Reason      string      `json:"reason,omitempty"`
+	ModuleID     LogicalID   `json:"module_id"`
+	Disposition  string      `json:"disposition"`
+	SegmentRefs  []LogicalID `json:"segment_refs"`
+	CandidateID  LogicalID   `json:"candidate_id,omitempty"`
+	CandidateIDs []LogicalID `json:"candidate_ids,omitempty"`
+	Reason       string      `json:"reason,omitempty"`
+	Extra        RawObject   `json:"-"`
+}
+
+// SegmentLineage records review-aware identity changes. Move operations do
+// not create lineage because the stable segment and block identities survive.
+type SegmentLineage struct {
+	EventID     LogicalID   `json:"event_id"`
+	Mutation    string      `json:"mutation"`
+	PreviousIDs []LogicalID `json:"previous_ids"`
+	NextIDs     []LogicalID `json:"next_ids"`
 	Extra       RawObject   `json:"-"`
 }
 
@@ -156,8 +177,15 @@ type BlockEnvelope struct {
 type SegmentMetadata struct {
 	SegmentID      LogicalID     `json:"segment_id"`
 	SourceRef      SourceLocator `json:"source_ref"`
+	Annotation     *Annotation   `json:"annotation,omitempty"`
 	NormalizedHash string        `json:"normalized_hash"`
 	Extra          RawObject     `json:"-"`
+}
+
+type Annotation struct {
+	Kind  string    `json:"kind"`
+	Label string    `json:"label,omitempty"`
+	Extra RawObject `json:"-"`
 }
 
 type SourceLocator struct {
@@ -176,9 +204,14 @@ type CandidateMetadata struct {
 	CandidateID         LogicalID            `json:"candidate_id"`
 	ClaimKind           ClaimKind            `json:"claim_kind"`
 	KindSchema          SchemaRef            `json:"kind_schema"`
+	Title               string               `json:"title,omitempty"`
+	LogicalSlug         string               `json:"logical_slug,omitempty"`
 	SegmentRefs         []LogicalID          `json:"segment_refs"`
 	PayloadHash         string               `json:"payload_hash"`
 	RefHashes           map[LogicalID]string `json:"ref_hashes"`
+	Relation            string               `json:"relation,omitempty"`
+	Reason              string               `json:"reason,omitempty"`
+	Tags                []string             `json:"tags,omitempty"`
 	State               string               `json:"state"`
 	MaterializedClaimID LogicalID            `json:"materialized_claim_id,omitempty"`
 	Extra               RawObject            `json:"-"`
@@ -335,6 +368,9 @@ func validateOpinionData(raw json.RawMessage) error {
 }
 
 func ValidateDocument(envelope *DocumentEnvelope, registry *Registry) error {
+	if registry == nil {
+		registry = DefaultRegistry()
+	}
 	if envelope == nil {
 		return validationError(CodeInvalidEnvelope, "Evergreen", "document envelope is required")
 	}
@@ -363,6 +399,14 @@ func ValidateDocument(envelope *DocumentEnvelope, registry *Registry) error {
 		}
 	} else if envelope.Claim != nil {
 		return validationError(CodeInvalidClaim, "Evergreen.claim", "claim metadata is only valid on claim entities")
+	}
+	if envelope.Review != nil {
+		if envelope.Entity.EntityType != EntityNote {
+			return validationError(CodeInvalidEnvelope, "Evergreen.review", "note review is only valid on note entities")
+		}
+		if err := validateNoteReviewEnvelope(envelope.Review); err != nil {
+			return err
+		}
 	}
 	for index, provenance := range envelope.Provenance {
 		path := fmt.Sprintf("Evergreen.provenance[%d]", index)
@@ -486,6 +530,9 @@ func validateEdges(envelope *DocumentEnvelope, registry *Registry) error {
 }
 
 func ValidateBlock(envelope *BlockEnvelope, registry *Registry) error {
+	if registry == nil {
+		registry = DefaultRegistry()
+	}
 	if envelope == nil {
 		return validationError(CodeInvalidBlock, "Evergreen", "block envelope is required")
 	}
@@ -493,19 +540,28 @@ func ValidateBlock(envelope *BlockEnvelope, registry *Registry) error {
 		return err
 	}
 	switch envelope.Role {
-	case "note_segment":
+	case "note_segment", "agent_annotation":
 		if envelope.Segment == nil || envelope.Candidate != nil {
-			return validationError(CodeInvalidBlock, "Evergreen", "note_segment requires segment metadata only")
+			return validationError(CodeInvalidBlock, "Evergreen", "managed segment requires segment metadata only")
 		}
 		segment := envelope.Segment
 		if !hasLogicalPrefix(segment.SegmentID, "seg-") {
 			return validationError(CodeInvalidBlock, "Evergreen.segment.segment_id", "segment ID must use seg-")
 		}
-		if !hasLogicalPrefix(segment.SourceRef.SourceID, "s-") ||
-			strings.TrimSpace(segment.SourceRef.Locator.Kind) == "" ||
-			strings.TrimSpace(segment.SourceRef.Locator.Value) == "" ||
-			strings.TrimSpace(segment.NormalizedHash) == "" {
-			return validationError(CodeInvalidBlock, "Evergreen.segment", "segment source locator and normalized hash are required")
+		if strings.TrimSpace(segment.NormalizedHash) == "" {
+			return validationError(CodeInvalidBlock, "Evergreen.segment.normalized_hash", "segment normalized hash is required")
+		}
+		if envelope.Role == "note_segment" {
+			if !hasLogicalPrefix(segment.SourceRef.SourceID, "s-") ||
+				strings.TrimSpace(segment.SourceRef.Locator.Kind) == "" ||
+				strings.TrimSpace(segment.SourceRef.Locator.Value) == "" ||
+				segment.Annotation != nil {
+				return validationError(CodeInvalidBlock, "Evergreen.segment", "source segment requires a source locator only")
+			}
+		} else if segment.Annotation == nil ||
+			strings.TrimSpace(segment.Annotation.Kind) == "" ||
+			segment.SourceRef.SourceID != "" {
+			return validationError(CodeInvalidBlock, "Evergreen.segment", "agent annotation requires annotation metadata and no source locator")
 		}
 	case "candidate":
 		if envelope.Candidate == nil || envelope.Segment != nil {
@@ -523,6 +579,9 @@ func ValidateBlock(envelope *BlockEnvelope, registry *Registry) error {
 			strings.TrimSpace(candidate.State) == "" {
 			return validationError(CodeInvalidBlock, "Evergreen.candidate", "candidate refs, payload hash, and state are required")
 		}
+		if !containsString([]string{"draft", "confirmed", "stale", "materialized", "discarded"}, candidate.State) {
+			return validationError(CodeInvalidBlock, "Evergreen.candidate.state", fmt.Sprintf("unsupported candidate state %q", candidate.State))
+		}
 		for _, segmentID := range candidate.SegmentRefs {
 			if !hasLogicalPrefix(segmentID, "seg-") || strings.TrimSpace(candidate.RefHashes[segmentID]) == "" {
 				return validationError(CodeInvalidBlock, "Evergreen.candidate.ref_hashes", "every candidate segment requires a captured hash")
@@ -530,6 +589,74 @@ func ValidateBlock(envelope *BlockEnvelope, registry *Registry) error {
 		}
 	default:
 		return validationError(CodeInvalidBlock, "Evergreen.role", fmt.Sprintf("unsupported managed block role %q", envelope.Role))
+	}
+	return nil
+}
+
+func validateNoteReviewEnvelope(review *NoteReview) error {
+	if review == nil {
+		return nil
+	}
+	if err := requireCurrentSchema(review.Spec, NoteReviewSpec, "Evergreen.review.spec"); err != nil {
+		return err
+	}
+	modules := map[LogicalID]struct{}{}
+	for index, module := range review.Coverage {
+		path := fmt.Sprintf("Evergreen.review.coverage[%d]", index)
+		if strings.TrimSpace(string(module.ModuleID)) == "" {
+			return validationError(CodeCoverageInvalid, path+".module_id", "coverage module ID is required")
+		}
+		if _, duplicate := modules[module.ModuleID]; duplicate {
+			return validationError(CodeDuplicateID, path+".module_id", "duplicate coverage module ID")
+		}
+		modules[module.ModuleID] = struct{}{}
+		if len(module.SegmentRefs) == 0 {
+			return validationError(CodeCoverageInvalid, path+".segment_refs", "coverage module requires segment references")
+		}
+		switch module.Disposition {
+		case "candidate":
+			if len(module.CandidateIDs) == 0 && module.CandidateID == "" {
+				return validationError(CodeCoverageInvalid, path+".candidate_ids", "candidate coverage requires at least one candidate")
+			}
+			if strings.TrimSpace(module.Reason) != "" {
+				return validationError(CodeCoverageInvalid, path+".reason", "candidate coverage may not carry a reason")
+			}
+		case "note_only", "unresolved":
+			if module.CandidateID != "" || len(module.CandidateIDs) != 0 {
+				return validationError(CodeCoverageInvalid, path+".candidate_ids", "non-candidate coverage may not reference candidates")
+			}
+			if strings.TrimSpace(module.Reason) == "" {
+				return validationError(CodeCoverageInvalid, path+".reason", "note_only and unresolved coverage require a reason")
+			}
+		default:
+			return validationError(CodeCoverageInvalid, path+".disposition", fmt.Sprintf("unsupported coverage disposition %q", module.Disposition))
+		}
+	}
+	events := map[LogicalID]struct{}{}
+	for index, event := range review.Lineage {
+		path := fmt.Sprintf("Evergreen.review.lineage[%d]", index)
+		if strings.TrimSpace(string(event.EventID)) == "" {
+			return validationError(CodeSegmentLineage, path+".event_id", "lineage event ID is required")
+		}
+		if _, duplicate := events[event.EventID]; duplicate {
+			return validationError(CodeDuplicateID, path+".event_id", "duplicate lineage event ID")
+		}
+		events[event.EventID] = struct{}{}
+		validShape := false
+		switch event.Mutation {
+		case "edit":
+			validShape = len(event.PreviousIDs) == 1 && len(event.NextIDs) == 1 &&
+				event.PreviousIDs[0] == event.NextIDs[0]
+		case "split":
+			validShape = len(event.PreviousIDs) == 1 && len(event.NextIDs) >= 2
+		case "merge":
+			validShape = len(event.PreviousIDs) >= 2 && len(event.NextIDs) == 1
+		case "delete":
+			validShape = len(event.PreviousIDs) >= 1 && len(event.NextIDs) == 0
+		}
+		if !validShape {
+			return validationError(CodeSegmentLineage, path, fmt.Sprintf("invalid %q lineage shape", event.Mutation))
+		}
 	}
 	return nil
 }

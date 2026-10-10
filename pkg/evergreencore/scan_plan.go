@@ -118,7 +118,7 @@ func scanBlocks(
 				return validateErr
 			}
 			switch envelope.Role {
-			case "note_segment":
+			case "note_segment", "agent_annotation":
 				err = addLogicalLocation(index, LogicalLocation{
 					LogicalID:  envelope.Segment.SegmentID,
 					EntityType: "segment",
