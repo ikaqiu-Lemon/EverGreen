@@ -541,6 +541,47 @@ func (s *AuthorityService) InspectReview(
 	return InspectNoteReview(current, s.registry)
 }
 
+func (s *AuthorityService) InspectReviewByDocumentID(
+	ctx context.Context,
+	documentID string,
+) (ReviewSnapshot, error) {
+	if s == nil || s.host == nil {
+		return ReviewSnapshot{}, validationError(CodeInvalidPlan, "host", "authority host is unavailable")
+	}
+	if strings.TrimSpace(documentID) == "" {
+		return ReviewSnapshot{}, validationError(CodeInvalidPlan, "document_id", "SiYuan document ID is required")
+	}
+	ids, err := s.host.List(ctx)
+	if err != nil {
+		return ReviewSnapshot{}, err
+	}
+	for _, id := range ids {
+		raw, loadErr := s.host.Load(ctx, id)
+		if loadErr != nil {
+			return ReviewSnapshot{}, loadErr
+		}
+		document, decodeErr := DecodeSY(raw, s.registry)
+		if decodeErr != nil || document.Envelope == nil ||
+			document.Envelope.Entity.EntityType != EntityNote ||
+			document.Envelope.Review == nil {
+			continue
+		}
+		root, decodeErr := decodeRawObject(raw)
+		if decodeErr != nil {
+			return ReviewSnapshot{}, decodeErr
+		}
+		var physicalID string
+		if decodeErr = json.Unmarshal(root["ID"], &physicalID); decodeErr != nil {
+			return ReviewSnapshot{}, decodeErr
+		}
+		if physicalID == documentID {
+			return InspectNoteReview(raw, s.registry)
+		}
+	}
+	return ReviewSnapshot{}, validationError(
+		CodeInvalidEnvelope, "document_id", fmt.Sprintf("managed Evergreen Note %q was not found", documentID))
+}
+
 func (s *AuthorityService) PlanReviewEdit(
 	ctx context.Context,
 	principal Principal,

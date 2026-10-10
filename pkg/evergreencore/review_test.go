@@ -253,6 +253,11 @@ func TestReviewPlanAndDeterministicMaterializationRecoverAtomically(t *testing.T
 	}
 	service := NewAuthorityService(authority, allowAllAuthorizer{}, nil)
 	principal := Principal{Type: PrincipalUser, ID: "reviewer"}
+	byDocument, err := service.InspectReviewByDocumentID(
+		context.Background(), "20261010120000-note001")
+	if err != nil || byDocument.NoteID != "n-review" {
+		t.Fatalf("inspect by document ID = %+v err=%v", byDocument, err)
+	}
 	noteRaw := readFile(t, root, notePath)
 	noteHash, _ := SemanticHash(noteRaw)
 	request := ReviewMaterializeRequest{
