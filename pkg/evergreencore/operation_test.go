@@ -308,7 +308,7 @@ func TestFilesystemAuthorityRecoversAfterGitBeforeJournalAdvance(t *testing.T) {
 func TestFilesystemAuthorityEventFailureMarksDerivedStale(t *testing.T) {
 	root := t.TempDir()
 	writeSYFixture(t, root, "box/a.sy", "c-a", "first")
-	derived := &recordingIndexSink{err: errors.New("injected event failure")}
+	derived := &recordingIndexSink{root: root, err: errors.New("injected event failure")}
 	authority, err := NewFilesystemAuthority(FilesystemAuthorityOptions{
 		Root: root, Committer: newRecordingCommitter(), IndexSink: derived,
 	})
@@ -336,6 +336,13 @@ func TestFilesystemAuthorityEventFailureMarksDerivedStale(t *testing.T) {
 	}
 	if len(recovered) != 1 || recovered[0].DerivedStale {
 		t.Fatalf("derived recovery = %+v", recovered)
+	}
+	scanned, err := authority.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebuilt := derived.Rebuilt(); !reflect.DeepEqual(rebuilt, scanned) {
+		t.Fatalf("rebuilt derived IDs = %v, full .sy scan = %v", rebuilt, scanned)
 	}
 }
 
@@ -481,7 +488,9 @@ func (c *recordingCommitter) Count(operationID string) int {
 
 type recordingIndexSink struct {
 	mu      sync.Mutex
+	root    string
 	invalid []LogicalID
+	rebuilt []LogicalID
 	err     error
 }
 
@@ -489,7 +498,23 @@ func (s *recordingIndexSink) Invalidate(_ context.Context, ids []LogicalID) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.invalid = append(s.invalid, ids...)
-	return s.err
+	if s.err != nil {
+		return s.err
+	}
+	if s.root != "" {
+		index, err := ScanFS(os.DirFS(s.root), DefaultRegistry())
+		if err != nil {
+			return err
+		}
+		s.rebuilt = SortedLogicalIDs(index)
+	}
+	return nil
+}
+
+func (s *recordingIndexSink) Rebuilt() []LogicalID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]LogicalID(nil), s.rebuilt...)
 }
 
 type oneShotFault struct {
