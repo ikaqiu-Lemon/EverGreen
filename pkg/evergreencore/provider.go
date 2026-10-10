@@ -200,7 +200,7 @@ func NewClaimsAVProvider(repository Repository, planner AVPlanner, registry *Reg
 }
 
 func (p *ClaimsAVProvider) Describe(_ context.Context, viewID string) (AVViewSchema, error) {
-	definition, err := claimsViewDefinition(viewID)
+	definition, err := p.registry.ViewDefinition(viewID)
 	if err != nil {
 		return AVViewSchema{}, err
 	}
@@ -250,13 +250,27 @@ func claimsViewDefinition(viewID string) (AVViewDefinition, error) {
 }
 
 func (p *ClaimsAVProvider) Query(ctx context.Context, viewID string, query AVQuery) (AVPage, error) {
-	definition, err := claimsViewDefinition(viewID)
+	definition, err := p.registry.ViewDefinition(viewID)
 	if err != nil {
 		return AVPage{}, err
 	}
 	snapshot, err := p.currentSnapshot(ctx)
 	if err != nil {
 		return AVPage{}, err
+	}
+	for _, record := range snapshot.claims {
+		_, available := p.registry.Descriptor(record.document.Envelope.Claim.ClaimKind)
+		if (!available && !record.document.ReadOnly) ||
+			(available && record.document.ReadOnly && onlyKindUnavailable(record.document.Diagnostics)) {
+			if _, err = p.Rebuild(ctx); err != nil {
+				return AVPage{}, err
+			}
+			snapshot, err = p.currentSnapshot(ctx)
+			if err != nil {
+				return AVPage{}, err
+			}
+			break
+		}
 	}
 	if stale, verifyErr := p.snapshotStale(ctx, snapshot); verifyErr != nil {
 		return AVPage{}, verifyErr
@@ -282,6 +296,18 @@ func (p *ClaimsAVProvider) Query(ctx context.Context, viewID string, query AVQue
 	rows := make([]AVRow, 0, len(ids))
 	for _, id := range ids {
 		row := projectClaimRow(snapshot, id)
+		if _, available := p.registry.Descriptor(snapshot.claims[id].document.Envelope.Claim.ClaimKind); !available {
+			row.ReadOnly = true
+		}
+		for _, column := range definition.Columns {
+			if strings.HasPrefix(column.Binding.Field, "claim.kind_data.") {
+				cell, projectErr := projectBinding(row, column.Binding)
+				if projectErr != nil {
+					return AVPage{}, projectErr
+				}
+				row.Cells[column.ID] = cell
+			}
+		}
 		if matchesAVFilters(row, query.Filters) {
 			rows = append(rows, row)
 		}
@@ -575,7 +601,16 @@ func (p *ClaimsAVProvider) planScalarPatch(
 		document.Envelope.Claim.Status = patch.Value.Text
 	case "claim.tags":
 		document.Envelope.Claim.Tags = append([]string(nil), patch.Value.Texts...)
-	case "claim.kind_data.validation":
+	default:
+		const prefix = "claim.kind_data."
+		if !strings.HasPrefix(patch.Column.Field, prefix) {
+			return PlannedOperation{}, validationError(CodeInvalidPlan, "column.field", fmt.Sprintf("field %q is read-only or unknown", patch.Column.Field))
+		}
+		field := strings.TrimPrefix(patch.Column.Field, prefix)
+		descriptor, _ := p.registry.Descriptor(document.Envelope.Claim.ClaimKind)
+		if _, exists := descriptor.KindDataSchema.Properties[field]; !exists {
+			return PlannedOperation{}, validationError(CodeInvalidPlan, "column.field", "field is not declared by the kind schema")
+		}
 		var kindData map[string]json.RawMessage
 		if err = json.Unmarshal(document.Envelope.Claim.KindData, &kindData); err != nil {
 			return PlannedOperation{}, validationError(CodeInvalidClaim, "claim.kind_data", err.Error())
@@ -586,13 +621,18 @@ func (p *ClaimsAVProvider) planScalarPatch(
 		if !json.Valid(patch.Value.JSON) {
 			return PlannedOperation{}, validationError(CodeInvalidClaim, "claim.kind_data.validation", "validation JSON is invalid")
 		}
-		kindData["validation"] = append(json.RawMessage(nil), patch.Value.JSON...)
+		kindData[field] = append(json.RawMessage(nil), patch.Value.JSON...)
 		document.Envelope.Claim.KindData, err = json.Marshal(kindData)
 		if err != nil {
 			return PlannedOperation{}, err
 		}
-	default:
-		return PlannedOperation{}, validationError(CodeInvalidPlan, "column.field", fmt.Sprintf("field %q is read-only or unknown", patch.Column.Field))
+	}
+	before, err := DecodeSY(raw, p.registry)
+	if err != nil {
+		return PlannedOperation{}, err
+	}
+	if err = AuthorizeClaimChange(principal, before.Envelope, document.Envelope, p.registry); err != nil {
+		return PlannedOperation{}, err
 	}
 	document.Envelope.Entity.SemanticRevision++
 	after, err := EncodeSY(raw, document.Envelope, p.registry)
@@ -829,6 +869,7 @@ func projectClaimRow(snapshot *claimsAVSnapshot, id LogicalID) AVRow {
 			"status":     {Kind: "text", Text: claim.Status},
 			"tags":       {Kind: "tags", Texts: append([]string(nil), claim.Tags...)},
 			"validation": {Kind: "json", Text: validationStatus, JSON: validationJSON},
+			"kind_data":  {Kind: "json", JSON: append(json.RawMessage(nil), claim.KindData...)},
 			"provenance": {
 				Kind: "provenance", Provenance: append([]Provenance(nil), envelope.Provenance...),
 			},
@@ -856,6 +897,20 @@ func projectBinding(row AVRow, binding AVColumnBinding) (AVCellValue, error) {
 		edges := filterProjectedEdges(cell.Edges, binding)
 		return relationCell(edges), nil
 	}
+	if strings.HasPrefix(binding.Field, "claim.kind_data.") {
+		value := kindDataField(row.Cells["kind_data"].JSON, strings.TrimPrefix(binding.Field, "claim.kind_data."))
+		if len(value) == 0 {
+			return AVCellValue{Kind: "empty"}, nil
+		}
+		var text string
+		if json.Unmarshal(value, &text) != nil {
+			text = string(value)
+		}
+		if binding.Field == "claim.kind_data.validation" {
+			text = row.Cells["validation"].Text
+		}
+		return AVCellValue{Kind: "json", JSON: value, Text: text}, nil
+	}
 	key := ""
 	switch binding.Field {
 	case "claim.body.title":
@@ -868,6 +923,8 @@ func projectBinding(row AVRow, binding AVColumnBinding) (AVCellValue, error) {
 		key = "status"
 	case "claim.tags":
 		key = "tags"
+	case "claim.kind_data":
+		key = "kind_data"
 	case "claim.kind_data.validation":
 		key = "validation"
 	case "claim.provenance":

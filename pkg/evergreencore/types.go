@@ -256,11 +256,19 @@ func validationError(code, path, message string) error {
 }
 
 type KindDescriptor struct {
-	Kind               ClaimKind
-	Schema             SchemaRef
-	AllowedStatuses    []string
-	AllowedEdgeSchemas []SchemaRef
-	ValidateKindData   func(json.RawMessage) error
+	Kind                 ClaimKind
+	Schema               SchemaRef
+	AllowedStatuses      []string
+	AllowedEdgeSchemas   []SchemaRef
+	ValidateKindData     func(json.RawMessage) error
+	KindDataSchema       JSONSchema
+	RequiredCapabilities CapabilityMatrix
+	DefaultStatus        string
+	DefaultKindData      json.RawMessage
+	RequireProvenance    bool
+	MaterializerRef      string
+	Materialize          KindMaterializer
+	ViewHints            KindViewHints
 }
 
 type Registry struct {
@@ -279,20 +287,8 @@ func DefaultRegistry() *Registry {
 			panic(err)
 		}
 	}
-	mustRegister(KindDescriptor{
-		Kind:               KnowledgeKind,
-		Schema:             KnowledgeKindSchema,
-		AllowedStatuses:    []string{"active", "deprecated", "superseded", "archived"},
-		AllowedEdgeSchemas: []SchemaRef{ArgumentSchema, MaterialSchema, ReplacementSchema},
-		ValidateKindData:   validateJSONObject,
-	})
-	mustRegister(KindDescriptor{
-		Kind:               OpinionKind,
-		Schema:             OpinionKindSchema,
-		AllowedStatuses:    []string{"active", "deprecated", "superseded", "archived"},
-		AllowedEdgeSchemas: []SchemaRef{ArgumentSchema, MaterialSchema, ReplacementSchema},
-		ValidateKindData:   validateOpinionData,
-	})
+	mustRegister(builtinKindDescriptor(KnowledgeKind))
+	mustRegister(builtinKindDescriptor(OpinionKind))
 	return registry
 }
 
@@ -320,12 +316,29 @@ func (r *Registry) Register(descriptor KindDescriptor) error {
 			return fmt.Errorf("invalid or duplicate claim status %q", status)
 		}
 	}
+	if err := validateSchemaDefinition(descriptor.KindDataSchema); err != nil {
+		return err
+	}
+	if descriptor.DefaultStatus != "" && !containsString(statuses, descriptor.DefaultStatus) {
+		return errors.New("default status must be an allowed status")
+	}
+	if len(descriptor.DefaultKindData) > 0 {
+		if err := validateSchemaValue(descriptor.KindDataSchema, descriptor.DefaultKindData, "kind_data"); err != nil {
+			return err
+		}
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.byKind[descriptor.Kind]; exists {
 		return fmt.Errorf("claim kind %q is already registered", descriptor.Kind)
 	}
-	r.byKind[descriptor.Kind] = descriptor
+	for _, registered := range r.byKind {
+		if registered.Schema == descriptor.Schema ||
+			(descriptor.ViewHints.ViewID != "" && registered.ViewHints.ViewID == descriptor.ViewHints.ViewID) {
+			return errors.New("kind schema and dedicated view ID must be globally unique")
+		}
+	}
+	r.byKind[descriptor.Kind] = cloneKindDescriptor(descriptor)
 	return nil
 }
 
@@ -336,7 +349,7 @@ func (r *Registry) Descriptor(kind ClaimKind) (KindDescriptor, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	descriptor, ok := r.byKind[kind]
-	return descriptor, ok
+	return cloneKindDescriptor(descriptor), ok
 }
 
 func validateJSONObject(raw json.RawMessage) error {
@@ -449,6 +462,9 @@ func validateClaim(envelope *DocumentEnvelope, registry *Registry) error {
 			"Evergreen.claim.status",
 			fmt.Sprintf("status %q is not allowed for claim kind %q", claim.Status, claim.ClaimKind),
 		)
+	}
+	if err := validateSchemaValue(descriptor.KindDataSchema, nonNilRaw(claim.KindData), "Evergreen.claim.kind_data"); err != nil {
+		return err
 	}
 	if descriptor.ValidateKindData != nil {
 		if err := descriptor.ValidateKindData(claim.KindData); err != nil {
