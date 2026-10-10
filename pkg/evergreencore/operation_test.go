@@ -237,6 +237,73 @@ func TestFilesystemAuthorityGitFailureBlocksNewWritesAndRetryCommitsOnce(t *test
 	}
 }
 
+func TestFilesystemAuthorityApplyCASRejectsPostPlanEdit(t *testing.T) {
+	root := t.TempDir()
+	writeSYFixture(t, root, "box/a.sy", "c-a", "first")
+	commits := newRecordingCommitter()
+	authority, err := NewFilesystemAuthority(FilesystemAuthorityOptions{Root: root, Committer: commits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewAuthorityService(authority, allowAllAuthorizer{}, nil)
+	principal := Principal{Type: PrincipalUser, ID: "user-1"}
+	planned, err := service.Plan(context.Background(), principal,
+		planFixture(t, root, "op-cas", map[LogicalID]string{"c-a": "planned"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := mutateSYFixture(t, readFile(t, root, "box/a.sy"), "external edit")
+	writeFile(t, root, "box/a.sy", external)
+	if _, err = service.Apply(context.Background(), principal, ApplyRequest{Operation: planned}); !HasDiagnostic(err, CodeBaseMismatch) {
+		t.Fatalf("apply CAS error = %v", err)
+	}
+	assertFileEquals(t, root, "box/a.sy", external)
+	if commits.Count("op-cas") != 0 {
+		t.Fatalf("stale apply commits = %d, want 0", commits.Count("op-cas"))
+	}
+	if _, err = os.Stat(filepath.Join(root, filepath.FromSlash(RuntimeDirName), TransactionsDirName, "op-cas")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale apply created a journal: %v", err)
+	}
+}
+
+func TestFilesystemAuthorityRecoversAfterGitBeforeJournalAdvance(t *testing.T) {
+	root := t.TempDir()
+	writeSYFixture(t, root, "box/a.sy", "c-a", "first")
+	commits := newRecordingCommitter()
+	faults := &oneShotFault{point: FaultAfterGit, index: -1}
+	authority, err := NewFilesystemAuthority(FilesystemAuthorityOptions{
+		Root: root, Committer: commits, Faults: faults,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewAuthorityService(authority, allowAllAuthorizer{}, nil)
+	principal := Principal{Type: PrincipalUser, ID: "user-1"}
+	planned, err := service.Plan(context.Background(), principal,
+		planFixture(t, root, "op-after-git", map[LogicalID]string{"c-a": "after"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Apply(context.Background(), principal, ApplyRequest{Operation: planned}); err == nil {
+		t.Fatal("after-Git fault did not stop journal advancement")
+	}
+	pending, err := service.Operation(context.Background(), "op-after-git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.State != OperationFilesApplied || commits.Count("op-after-git") != 1 {
+		t.Fatalf("pending record=%+v commits=%d", pending, commits.Count("op-after-git"))
+	}
+	recovered, err := service.Recover(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 1 || recovered[0].State != OperationCompleted ||
+		commits.Count("op-after-git") != 1 {
+		t.Fatalf("recovered=%+v commits=%d", recovered, commits.Count("op-after-git"))
+	}
+}
+
 func TestFilesystemAuthorityEventFailureMarksDerivedStale(t *testing.T) {
 	root := t.TempDir()
 	writeSYFixture(t, root, "box/a.sy", "c-a", "first")
