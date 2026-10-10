@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -38,7 +39,9 @@ func (p *Prepared) migrateAssets(root string) error {
 		entity := &p.Manifest.Entities[index]
 		raw := p.Images[entity.Path]
 		var node any
-		if err := json.Unmarshal(raw, &node); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&node); err != nil {
 			return err
 		}
 		referenced := map[string]Asset{}
@@ -109,6 +112,30 @@ func (p *Prepared) migrateAssets(root string) error {
 			changed, err = refreshImportedHashes(changed)
 			if err != nil {
 				return err
+			}
+			snapshot, err := core.InspectNoteReview(changed, core.ApplicationRegistry())
+			if err != nil {
+				return err
+			}
+			for reviewIndex := range p.Manifest.Reviews {
+				review := &p.Manifest.Reviews[reviewIndex]
+				if review.NoteID != entity.LogicalID {
+					continue
+				}
+				for index := range review.Segments {
+					for _, segment := range snapshot.Segments {
+						if review.Segments[index].SegmentID == segment.SegmentID {
+							review.Segments[index].Hash = segment.StoredHash
+						}
+					}
+				}
+				for index := range review.Candidates {
+					for _, candidate := range snapshot.Candidates {
+						if review.Candidates[index].CandidateID == candidate.CandidateID {
+							review.Candidates[index].PayloadHash = candidate.Metadata.PayloadHash
+						}
+					}
+				}
 			}
 		}
 		p.Images[entity.Path] = changed

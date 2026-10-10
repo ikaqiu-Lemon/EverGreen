@@ -269,6 +269,20 @@ printf 'S=$(python3 m.py --json | python3 -c "import json,sys;print(json.load(sy
   || bad "判据失效：引用 ${KEY} 的消费方未被抓住"
 rm -rf "${probe_dir}"
 
+sec "步骤9：worktree 的 .git 文件不得把 staging 指回源仓库"
+WT="${WORK}/source-worktree"
+git -C "${REPO_ROOT}" worktree add --detach "${WT}" HEAD >"${WORK}/wt.log" 2>&1
+before_head="$(git -C "${WT}" rev-parse HEAD)"
+python3 "${WT}/tests/runner/materialize.py" --source-mode walk --run-id worktree-walk --json \
+  >"${WORK}/wt.json" 2>"${WORK}/wt.err"
+WT_STAGE="$(jq_get stage <"${WORK}/wt.json")/evergreen"
+[ -d "${WT_STAGE}/.git" ] && pass "walk staging 创建独立 .git 目录" || bad "walk staging 未隔离 Git 元数据"
+[ "$(git -C "${WT}" rev-parse HEAD)" = "${before_head}" ] && pass "源 worktree HEAD 不变" || bad "walk 物化提交污染源 worktree"
+git -C "${WT_STAGE}" -c user.name=probe -c user.email=probe@example.invalid -c commit.gpgsign=false \
+  commit --allow-empty -qm 'independent staging probe'
+[ "$(git -C "${WT}" rev-parse HEAD)" = "${before_head}" ] && pass "staging commit 不影响源 HEAD" || bad "staging commit 泄漏至源"
+git -C "${REPO_ROOT}" worktree remove --force "${WT}"
+
 printf '\n'
 [ "${FAIL}" -eq 0 ] || { printf '[FAIL] materializer 安全性 / 可分发性门禁未通过\n' >&2; exit 1; }
 printf '[PASS] materializer 安全性 / 可分发性门禁通过（D10 无 .git 可运行 + D3.6 四条安全约束 + D3.7 残骸自恢复与字段合同）\n'

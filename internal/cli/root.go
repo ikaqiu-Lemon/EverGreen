@@ -498,6 +498,7 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 		fs.String("backend", "markdown", "authority backend: markdown or sy")
 		if cmd.Name == "materialize" {
 			fs.String("request", "", "shared core materialization request JSON")
+			fs.Bool("dry-run", false, "preview shared core materialization")
 		}
 	}
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {

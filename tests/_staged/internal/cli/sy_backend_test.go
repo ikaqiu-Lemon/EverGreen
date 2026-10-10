@@ -30,6 +30,16 @@ func TestSYCLISearchContextShowRelationsUseAuthorityAndOnlineTransport(t *testin
 	if err = os.WriteFile(filepath.Join(root, "cli.sy"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	sourceRaw, err := core.NewMarkdownDocument("s-cli", "CLI source", []byte("Source evidence.\n"),
+		&core.DocumentEnvelope{Spec: core.DocumentSpec,
+			Entity:    core.Entity{LogicalID: "s-cli", EntityType: core.EntitySource, Schema: "evergreen.source/v1", SemanticRevision: 1},
+			Relations: core.Relations{Outgoing: []core.TypedEdge{}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "source.sy"), sourceRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	repository, err := core.NewSYReadRepository(root, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +63,7 @@ func TestSYCLISearchContextShowRelationsUseAuthorityAndOnlineTransport(t *testin
 		{"search", "Evidence", "--kind", "all", "--limit", "0"},
 		{"card", "show", "k-cli"},
 		{"rel", "k-cli"},
-		{"context", "--source", "k-cli"},
+		{"context", "--source", "s-cli"},
 	} {
 		t.Setenv("EG_KERNEL_URL", "")
 		offline := runSYCLI(t, root, args)

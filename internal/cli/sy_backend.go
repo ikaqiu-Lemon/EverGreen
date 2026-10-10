@@ -2,13 +2,13 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/user"
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/client"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/migrate"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
 	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
 )
@@ -69,11 +69,18 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 		if id == "" {
 			id = inv.String("source")
 		}
-		data, err := core.ContextWorkspace(ctx, repository, registry, core.LogicalID(id))
+		data, err := query.ContextSY(ctx, repository, registry, core.LogicalID(id), inv.String("domain"))
 		if err != nil {
 			return nil, syError(err)
 		}
-		return &Result{Data: map[string]interface{}{"context": data}}, nil
+		native, err := core.ContextWorkspace(ctx, repository, registry, core.LogicalID(id))
+		if err != nil {
+			return nil, syError(err)
+		}
+		return &Result{Data: map[string]interface{}{"context": native, "domain": data.Domain, "source": data.Source,
+			"notes": data.Notes, "cards": data.Cards, "draft_candidates": data.DraftCandidates,
+			"knowledge_candidates": data.KnowledgeCandidates, "opinion_candidates": data.OpinionCandidates,
+			"base": data.Base}}, nil
 	case "search":
 		if len(inv.Args) != 1 {
 			return nil, &UsageError{Msg: "search requires one query"}
@@ -107,10 +114,38 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 				if err != nil {
 					return nil, syError(err)
 				}
-				return &Result{Data: map[string]interface{}{"claim": item, "relations": edges}}, nil
+				page, err := pageSpecFrom(inv)
+				if err != nil {
+					return nil, err
+				}
+				relations, err := query.RelSY(ctx, repository, registry, query.RelRequest{ID: model.RelationEndpoint(item.ID),
+					Page: page, IncludeDeprecated: inv.String("include-deprecated") == "true"})
+				if err != nil {
+					return nil, syError(err)
+				}
+				body, err := core.MarkdownText(item.Body)
+				if err != nil {
+					return nil, syError(err)
+				}
+				detail, err := query.ClaimDetailSY(item, relations)
+				if err != nil {
+					return nil, syError(err)
+				}
+				markers, err := cardMarkerState(detail)
+				if err != nil {
+					return nil, err
+				}
+				card := query.WithUnreviewed(detail.Card, markers.Unreviewed)
+				return &Result{Data: map[string]interface{}{"claim": item, "relations": edges, "id": item.ID,
+					"title": item.Title, "body": string(body), "status": item.Envelope.Claim.Status, "tags": item.Envelope.Claim.Tags,
+					"sources": query.SYSourceRefs(item.Envelope), "relations_out": relations.Data.RelationsOut,
+					"relations_in": relations.Data.RelationsIn, "domain": card.Domain, "created_at": card.CreatedAt,
+					"updated_at": card.UpdatedAt, "sections": card.Sections, "unknown_sections": card.UnknownSections,
+					"deprecated": card.Deprecated, "deleted": card.Deleted, "unreviewed": card.Unreviewed, "markers": card.Markers},
+					Warnings: queryDiagnostics(relations.Diagnostics)}, nil
 			}
 		}
-		return nil, syError(fmt.Errorf("Claim does not exist"))
+		return nil, &UsageError{Msg: "Claim does not exist"}
 	case "rel":
 		if inv.Sub != "" {
 			return nil, &UsageError{Msg: "use eg apply --backend sy for owner-side typed-edge writes"}
@@ -118,11 +153,19 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 		if len(inv.Args) != 1 {
 			return nil, &UsageError{Msg: "rel requires a logical Claim ID"}
 		}
-		edges, err := core.RelationsWorkspace(ctx, repository, registry, core.LogicalID(inv.Args[0]))
+		page, err := pageSpecFrom(inv)
 		if err != nil {
-			return nil, syError(err)
+			return nil, err
 		}
-		return &Result{Data: map[string]interface{}{"relations": edges, "total": len(edges)}}, nil
+		data, err := query.RelSY(ctx, repository, registry, query.RelRequest{ID: model.RelationEndpoint(inv.Args[0]),
+			To: inv.String("to"), Page: page, IncludeDeprecated: inv.String("include-deprecated") == "true",
+			ReplacedBy: inv.String(query.ReplacedByFlag) == "true"})
+		if err != nil {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+		return &Result{Data: map[string]interface{}{"id": data.Data.ID, "relations_out": data.Data.RelationsOut,
+			"relations_in": data.Data.RelationsIn, "total": data.Page.Total},
+			Warnings: queryDiagnostics(data.Diagnostics)}, nil
 	case "materialize":
 		if !inv.UserRequest {
 			return nil, syError(&core.DiagnosticError{Diagnostics: []core.Diagnostic{{

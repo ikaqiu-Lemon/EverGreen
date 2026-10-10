@@ -68,7 +68,7 @@ limit 条条目，**不会**因为有两个列表而给到 2×limit 条；截断
 			// 找一个注定不是知识卡的 o-*。在 Validate 阶段就退 1 并显式改派到 `eg opinion show`，
 			// 零文件变化、零 commit（其它 k-id / 形态非法串行为不变：仍落到 runCardShow 的
 			// query 层，由 ErrInvalidCardID / ErrCardNotFound 判定）。
-			if model.OpinionID(inv.Args[0]).Valid() {
+			if !usesSYBackend(inv) && model.OpinionID(inv.Args[0]).Valid() {
 				return &UsageError{Msg: fmt.Sprintf(
 					"%q 是观点 ID（o-*），不是知识卡：请改用 eg opinion show %s（card show 只查知识卡）",
 					inv.Args[0], inv.Args[0])}

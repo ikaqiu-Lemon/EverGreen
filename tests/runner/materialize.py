@@ -48,7 +48,7 @@ RUN_LOCK = ".materialize.lock"
 # 文件系统列举时的忽略规则（walk 模式；与 .gitignore 的最小等价闭集）。
 IGNORE_DIRS = {".git", STAGE_DIRNAME, ".index", "node_modules", "bin", "dist", ".idea", ".vscode"}
 IGNORE_SUFFIX = (".test", ".out", ".prof", ".iml")
-IGNORE_NAMES = {".DS_Store"}
+IGNORE_NAMES = {".DS_Store", ".git"}
 IGNORE_PREFIXES = ("tests/_report/",)
 
 
@@ -83,7 +83,8 @@ def walk_ls(repo: Path, *paths: str) -> list[str]:
     out: list[str] = []
     for root in roots:
         if root.is_file():
-            out.append(str(root.relative_to(repo)))
+            if root.name not in IGNORE_NAMES:
+                out.append(str(root.relative_to(repo)))
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = sorted(d for d in dirnames if d not in IGNORE_DIRS)
@@ -482,12 +483,20 @@ def main() -> int:
     staging_git = False
     if shutil.which("git"):
         try:
-            subprocess.run(["git", "init", "-q", str(ev)], check=True, capture_output=True)
-            subprocess.run(["git", "-C", str(ev), "add", "-A"], check=True, capture_output=True)
+            git_env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("GIT_")}
+            if (ev / ".git").exists():
+                die("D3.6 staging contains source Git metadata before initialization")
+            subprocess.run(["git", "init", "-q", str(ev)], check=True, capture_output=True, env=git_env)
+            actual_git = subprocess.run(["git", "-C", str(ev), "rev-parse", "--absolute-git-dir"],
+                                        check=True, capture_output=True, text=True, env=git_env)
+            if Path(actual_git.stdout.strip()).resolve() != (ev / ".git").resolve():
+                die("D3.6 staging Git directory is not independent")
+            subprocess.run(["git", "-C", str(ev), "add", "-A"], check=True, capture_output=True, env=git_env)
             subprocess.run(["git", "-C", str(ev), "-c", "user.name=eg-staging",
                             "-c", "user.email=eg-staging@example.com", "-c", "commit.gpgsign=false",
                             "commit", "-q", "-m", f"staging baseline {args.run_id}"],
-                           check=True, capture_output=True)
+                           check=True, capture_output=True, env=git_env)
             staging_git = True
         except subprocess.CalledProcessError as e:
             die(f"staging 内 git 初始化失败：{(e.stderr or b'').decode(errors='replace')[:200]}")

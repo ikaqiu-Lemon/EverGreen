@@ -80,6 +80,7 @@ tests/_staged/internal/cli/search_test.go	unit	go	cli-core	unit.internal.cli	13	
 tests/_staged/internal/cli/skill_test.go	unit	go	cli-core	unit.internal.cli	14	50745
 tests/_staged/internal/cli/storage_v3_cli_test.go	unit	go	cli-core	unit.internal.cli	10	29550
 tests/_staged/internal/cli/sy_backend_test.go	unit	go	cli-core	unit.internal.cli	1	3409
+tests/_staged/internal/cli/sy_parity_test.go	unit	go	cli-core	unit.internal.cli	2	10269
 tests/_staged/internal/cli/t061_final_review_test.go	unit	go	cli-core	unit.internal.cli	3	5144
 tests/_staged/internal/cli/undelete_test.go	unit	go	cli-core	unit.internal.cli	4	10339
 tests/_staged/internal/cli/undelete_transaction_test.go	unit	go	cli-core	unit.internal.cli	5	20086
@@ -112,7 +113,8 @@ tests/_staged/internal/mdfile/mdfile_test.go	unit	go	storage-markdown	unit.inter
 tests/_staged/internal/mdfile/note_review_roundtrip_test.go	unit	go	storage-markdown	unit.internal.mdfile	11	25723
 tests/_staged/internal/mdfile/opinion_sections_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	13802
 tests/_staged/internal/mdfile/plain_export_test.go	unit	go	storage-markdown	unit.internal.mdfile	4	3007
-tests/_staged/internal/migrate/inventory_test.go	unit	go	inventory	unit.internal.migrate	2	6226
+tests/_staged/internal/migrate/assets_review_test.go	unit	go	assets_review	unit.internal.migrate	1	4145
+tests/_staged/internal/migrate/inventory_test.go	unit	go	inventory	unit.internal.migrate	2	6688
 tests/_staged/internal/model/frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	1	4202
 tests/_staged/internal/model/model_test.go	unit	go	storage-markdown	unit.internal.model	20	19030
 tests/_staged/internal/model/opinion_frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	4	5158
@@ -280,7 +282,7 @@ tests/contract/resource-limits/limits.sh	contract	shell	arch-boundary	contract.r
 tests/contract/runner-semantics/runner_negatives.sh	contract	shell	arch-boundary	contract.runner-semantics.runner_negatives	42	20137
 tests/contract/scale-ratchet/negatives.sh	contract	shell	arch-boundary	contract.scale-ratchet.negatives	36	11042
 tests/contract/staging-isolation/isolation.sh	contract	shell	arch-boundary	contract.staging-isolation.isolation	0	7560
-tests/contract/staging-isolation/materialize_safety.sh	contract	shell	arch-boundary	contract.staging-isolation.materialize_safety	4	17058
+tests/contract/staging-isolation/materialize_safety.sh	contract	shell	arch-boundary	contract.staging-isolation.materialize_safety	4	18087
 tests/contract/static-boundaries/assertion_presence.sh	contract	shell	arch-boundary	contract.static-boundaries.assertion_presence	0	7079
 tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	contract	shell	arch-boundary	contract.static-boundaries.exit_codes_and_diagnostics	0	12686
 tests/contract/static-boundaries/symbol_locality.sh	contract	shell	arch-boundary	contract.static-boundaries.symbol_locality	0	6416
@@ -464,14 +466,14 @@ tests/manifest/legacy_gates.tsv	manifest	data	-	-	0	7056
 tests/manifest/migration.tsv	manifest	data	-	-	0	65994
 tests/manifest/requirements.tsv	manifest	data	-	-	0	2076
 tests/manifest/scale_baseline.tsv	manifest	data	-	-	0	1840
-tests/manifest/traceability.tsv	manifest	data	-	-	0	27276
+tests/manifest/traceability.tsv	manifest	data	-	-	0	27969
 tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568
 tests/perf/corpus_gen.go	perf	go	perf	perf.bench-p95	0	10652
 tests/perf/thresholds.yaml	perf	data	perf	-	0	2620
 tests/run.sh	-	shell	-	-	0	2535
-tests/runner/materialize.py	runner	python	-	-	0	26076
+tests/runner/materialize.py	runner	python	-	-	0	26774
 tests/runner/run.py	runner	python	-	-	0	27315
 tests/tools/check_migration.py	tools	python	-	-	0	6977
 tests/tools/inventory.py	tools	python	-	-	0	13053

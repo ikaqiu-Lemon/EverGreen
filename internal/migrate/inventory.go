@@ -16,6 +16,7 @@ import (
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/segment"
 	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
+	"gopkg.in/yaml.v3"
 )
 
 const ManifestSpec = "evergreen.migration-manifest/v1"
@@ -136,6 +137,26 @@ func Inventory(root string) (Prepared, error) {
 		if parseErr = doc.DecodeFM(&meta); parseErr != nil {
 			return parseErr
 		}
+		// YAML 日期在通用 map 中会变成 time.Time；保留原标量，以免查询日期和时区漂移。
+		var yamlRoot yaml.Node
+		if parseErr = doc.DecodeFM(&yamlRoot); parseErr != nil {
+			return parseErr
+		}
+		var preserveStamps func(*yaml.Node)
+		preserveStamps = func(node *yaml.Node) {
+			if node.Tag == "!!timestamp" {
+				node.Tag = "!!str"
+			}
+			for _, child := range node.Content {
+				preserveStamps(child)
+			}
+		}
+		preserveStamps(&yamlRoot)
+		if len(yamlRoot.Content) > 0 {
+			if parseErr = yamlRoot.Decode(&meta); parseErr != nil {
+				return parseErr
+			}
+		}
 		id := core.LogicalID(text(meta["id"]))
 		if id == "" {
 			return nil
@@ -182,6 +203,15 @@ func Inventory(root string) (Prepared, error) {
 			}
 		}
 		if item.kind == "note" {
+			embedded, candidateErr := mdfile.ParseCandidates(raw)
+			if candidateErr != nil {
+				return candidateErr
+			}
+			if len(embedded) > 0 {
+				record.Candidates, _ = json.Marshal(embedded)
+				result.Manifest.Counts["legacy_candidates"] += len(embedded)
+				result.quarantine("EG_MIGRATION_EMBEDDED_REVIEW", rel, "embedded Candidate review requires an explicit block mapping")
+			}
 			if body, exists := doc.Section(mdfile.SecNoteBody); exists {
 				if review, reviewErr := mdfile.ParseReviewNote(raw[body.Body:body.End]); reviewErr == nil {
 					record.Review, _ = json.Marshal(review)
@@ -203,6 +233,14 @@ func Inventory(root string) (Prepared, error) {
 	if err != nil {
 		return result, err
 	}
+	for noteID, workspace := range workspaces {
+		if note, exists := legacy[noteID]; !exists || note.kind != "note" {
+			result.quarantine("EG_MIGRATION_REVIEW_UNMAPPABLE", workspace.path, "workspace parent Note is missing")
+		}
+	}
+	sort.Slice(result.Manifest.Quarantine, func(i, j int) bool {
+		return result.Manifest.Quarantine[i].Path < result.Manifest.Quarantine[j].Path
+	})
 	fileJSON, _ := json.Marshal(result.Manifest.Files)
 	result.Manifest.SourceHash = hashBytes(fileJSON)
 	ids := make([]core.LogicalID, 0, len(legacy))
@@ -231,6 +269,18 @@ func Inventory(root string) (Prepared, error) {
 				result.Manifest.Counts["coverage"] += imported.Inventory.CoverageCount
 				decoded, _ := core.DecodeSY(imported.SY, nil)
 				decoded.Envelope.Extra = envelope.Extra
+				workspaceExtra := map[string]any{}
+				for key, value := range workspace.meta {
+					if !knownLegacyKey(key) {
+						workspaceExtra[key] = value
+					}
+				}
+				if len(workspaceExtra) > 0 {
+					if decoded.Envelope.Review.Extra == nil {
+						decoded.Envelope.Review.Extra = core.RawObject{}
+					}
+					decoded.Envelope.Review.Extra["legacy_workspace_fields"], _ = json.Marshal(workspaceExtra)
+				}
 				documents[id], err = core.EncodeSY(imported.SY, decoded.Envelope, nil)
 				if err != nil {
 					return result, err
@@ -284,6 +334,7 @@ func Inventory(root string) (Prepared, error) {
 			// 旧材料关系只给 Note 级上下文，保守映射为完整 Note 范围，显式记录 scope。
 			provenance := core.Provenance{SourceID: sourceID, NoteID: noteID,
 				SegmentRefs: append([]core.LogicalID(nil), refs...), Reason: text(source["reason"])}
+			provenance.Extra = legacyExtra(source, "source", "note", "rel", "reason")
 			envelope.Provenance = append(envelope.Provenance, provenance)
 			edge := legacyEdge(id, "material", index, source, core.MaterialSchema, sourceID, text(source["rel"]))
 			edge.Target.EntityType = core.EntitySource
@@ -410,9 +461,14 @@ func Inventory(root string) (Prepared, error) {
 func baseEnvelope(item legacyEntity) *core.DocumentEnvelope {
 	extra := map[string]any{}
 	for key, value := range item.meta {
-		switch key {
-		case "id", "status", "tags", "validation", "sources", "relations", "replaced_by":
+		if key == "id" {
 			continue
+		}
+		if item.kind == "knowledge" || item.kind == "opinion" {
+			switch key {
+			case "status", "tags", "validation", "sources", "relations", "replaced_by":
+				continue
+			}
 		}
 		extra[key] = value
 	}
@@ -464,7 +520,27 @@ func legacyEdge(owner core.LogicalID, family string, index int, metadata map[str
 		ID:     core.EdgeID("edge-" + strings.TrimPrefix(core.StablePhysicalID(fmt.Sprintf("%s/%s/%d/%s", owner, family, index, seed)), "20000101000000-")),
 		Schema: schema, Target: core.EntityRef{LogicalID: target, EntityType: core.EntityClaim},
 		Type: kind, Reason: text(metadata["reason"]),
+		CreatedAt: text(metadata["created_at"]), UpdatedAt: text(metadata["updated_at"]),
+		Extra: legacyExtra(metadata, "source", "note", "rel", "reason", "target", "type", "created_at", "updated_at"),
 	}
+}
+
+func legacyExtra(metadata map[string]any, mapped ...string) core.RawObject {
+	ignored := map[string]bool{}
+	for _, key := range mapped {
+		ignored[key] = true
+	}
+	fields := map[string]any{}
+	for key, value := range metadata {
+		if !ignored[key] {
+			fields[key] = value
+		}
+	}
+	extra := core.RawObject{}
+	if len(fields) > 0 {
+		extra["legacy_fields"], _ = json.Marshal(fields)
+	}
+	return extra
 }
 
 func (p *Prepared) quarantine(code, path, reason string) {
@@ -526,7 +602,7 @@ func claimKind(document *core.SYDocument) string {
 }
 
 func knownLegacyKey(key string) bool {
-	return strings.Contains("|id|source|title|url|saved_at|status|tags|created_at|updated_at|validation|sources|relations|replaced_by|deleted_at|deleted_reason|reviewed_at|", "|"+key+"|")
+	return strings.Contains("|id|source|title|url|saved_at|status|tags|created_at|updated_at|validation|sources|relations|replaced_by|deleted_at|deleted_reason|reviewed_at|note|note_hash|schema|", "|"+key+"|")
 }
 
 // Repository 的查询只从 .sy 读取，manifest 不作为运行时索引。

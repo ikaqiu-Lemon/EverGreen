@@ -16,7 +16,7 @@ import (
 func TestColdImportDeterministicManifestParityAndFailClosed(t *testing.T) {
 	source := t.TempDir()
 	fixtures := map[string]string{
-		"sources/s-one.md":                "---\nid: s-one\ntitle: Source\nurl: https://example.org/source\nsaved_at: 2026-10-10T12:00:00Z\n---\n# Source\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```go\nfmt.Println(1)\n```\n",
+		"sources/s-one.md":                "---\nid: s-one\ntitle: Source\nurl: https://example.org/source\nstatus: archived\ntags: [original]\nvalidation: source-specific\nsaved_at: 2026-10-10T12:00:00Z\n---\n# Source\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```go\nfmt.Println(1)\n```\n",
 		"domains/test/notes/n-one.md":     "---\nid: n-one\nsource: s-one\ncreated_at: 2026-10-10\nupdated_at: 2026-10-10T12:00:00Z\n---\n# Note\n\n## 整理正文\nText.\n\n## 存疑与待验证\n\n## 用户补充\n",
 		"domains/test/knowledge/k-one.md": "---\nid: k-one\nstatus: active\ncreated_at: 2026-10-10\nupdated_at: 2026-10-10T12:00:00Z\ntags: [b, a]\ncustom_future: {enabled: true}\nsources:\n  - source: s-one\n    note: n-one\n    rel: support\n    reason: Source establishes the claim\nrelations:\n  - type: supports\n    target: o-two\n    reason: Shared evidence supports the argument\n---\n# Knowledge\n\n## 知识内容\nA fact.\n\n## 解释与依据\nA reason.\n\n## 条件与边界\nA bound.\n\n## 用户补充\nUser bytes.\n\n## 理解自检\nAn open question?\n",
 		"domains/test/opinions/o-two.md":  "---\nid: o-two\nstatus: active\nvalidation: pending\ncreated_at: 2026-10-10\nupdated_at: 2026-10-10T12:00:00Z\nsources:\n  - source: s-one\n    note: n-one\n    rel: context\n    reason: Source gives context\n---\n# Opinion\n\n## 观点\nA view.\n\n## 论据与推理\nAn argument.\n\n## 条件与反例\nA counter.\n\n## 用户补充\n\n## 待验证\nTest it.\n",
@@ -80,6 +80,16 @@ func TestColdImportDeterministicManifestParityAndFailClosed(t *testing.T) {
 		if entity.LogicalID == "s-one" && (!strings.Contains(string(entity.Document), "NodeTable") ||
 			!strings.Contains(string(entity.Document), "NodeCodeBlock")) {
 			t.Fatal("source assets flattened")
+		}
+		if entity.LogicalID == "s-one" {
+			var metadata map[string]any
+			if err := json.Unmarshal(document.Envelope.Extra["legacy_metadata"], &metadata); err != nil {
+				t.Fatal(err)
+			}
+			if metadata["status"] != "archived" || metadata["validation"] != "source-specific" ||
+				!reflect.DeepEqual(metadata["tags"], []any{"original"}) {
+				t.Fatalf("Source metadata lost: %+v", metadata)
+			}
 		}
 	}
 	if !reflect.DeepEqual(kinds, []string{"knowledge", "opinion"}) {
