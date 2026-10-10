@@ -785,8 +785,10 @@ func (t *reviewTree) snapshot(raw []byte) ReviewSnapshot {
 	snapshot := ReviewSnapshot{
 		NoteID: t.document.Envelope.Entity.LogicalID, DocumentID: documentID,
 		SemanticHash: hash, Revision: t.document.Envelope.Entity.SemanticRevision,
-		Coverage: cloneCoverage(t.document.Envelope.Review.Coverage),
-		Lineage:  append([]SegmentLineage(nil), t.document.Envelope.Review.Lineage...),
+		Segments:   []ReviewSegment{},
+		Candidates: []ReviewCandidate{},
+		Coverage:   cloneCoverage(t.document.Envelope.Review.Coverage),
+		Lineage:    append([]SegmentLineage(nil), t.document.Envelope.Review.Lineage...),
 	}
 	for _, item := range t.segments {
 		snapshot.Segments = append(snapshot.Segments, ReviewSegment{
@@ -799,7 +801,7 @@ func (t *reviewTree) snapshot(raw []byte) ReviewSnapshot {
 	}
 	for _, item := range t.candidates {
 		currentRefs := map[LogicalID]string{}
-		var staleRefs []LogicalID
+		staleRefs := []LogicalID{}
 		for _, id := range item.envelope.Candidate.SegmentRefs {
 			if segment, ok := t.segmentByID[id]; ok {
 				currentRefs[id] = segment.currentHash
