@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -335,6 +336,65 @@ func TestFilesystemAuthorityEventFailureMarksDerivedStale(t *testing.T) {
 	}
 	if len(recovered) != 1 || recovered[0].DerivedStale {
 		t.Fatalf("derived recovery = %+v", recovered)
+	}
+}
+
+func TestFilesystemAuthorityCreatesOneSelectedGitCommit(t *testing.T) {
+	root := initGitFixture(t)
+	writeSYFixture(t, root, "box/a.sy", "c-a", "first")
+	writeSYFixture(t, root, "box/b.sy", "c-b", "second")
+	writeFile(t, root, "unrelated.txt", []byte("before\n"))
+	gitCommand(t, root, "add", ".")
+	gitCommand(t, root, "commit", "-m", "initial")
+
+	committer, err := NewLocalGitCommitter(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := NewFilesystemAuthority(FilesystemAuthorityOptions{Root: root, Committer: committer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewAuthorityService(authority, allowAllAuthorizer{}, nil)
+	principal := Principal{
+		Type: PrincipalAgent, ID: "agent-1", AuthSource: "api-token",
+		RequestReason: "apply reviewed claims",
+	}
+	planned, err := service.Plan(context.Background(), principal,
+		planFixture(t, root, "op-integrated-git", map[LogicalID]string{"c-a": "after-a", "c-b": "after-b"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "unrelated.txt", []byte("user dirty change\n"))
+	record, err := service.Apply(context.Background(), principal, ApplyRequest{Operation: planned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != OperationCompleted || record.GitCommit == "" {
+		t.Fatalf("operation record = %+v", record)
+	}
+	if count := strings.TrimSpace(gitCommand(t, root, "rev-list", "--count", "HEAD")); count != "2" {
+		t.Fatalf("total commit count = %s, want initial + one operation", count)
+	}
+	files := strings.Fields(gitCommand(t, root, "show", "--pretty=format:", "--name-only", record.GitCommit))
+	if strings.Join(files, " ") != "box/a.sy box/b.sy" {
+		t.Fatalf("operation commit files = %v", files)
+	}
+	status := gitCommand(t, root, "status", "--porcelain")
+	if !strings.Contains(status, "unrelated.txt") {
+		t.Fatalf("unrelated user change was absorbed:\n%s", status)
+	}
+	message := gitCommand(t, root, "show", "-s", "--format=%B", record.GitCommit)
+	for _, trailer := range []string{
+		"Evergreen-Operation-ID: op-integrated-git",
+		"Evergreen-Principal: agent:agent-1",
+		"Evergreen-Auth-Source: api-token",
+		"Evergreen-Request-Reason: apply reviewed claims",
+		"Evergreen-Plan-Hash: " + planned.PlanHash,
+	} {
+		if !strings.Contains(message, trailer) {
+			t.Fatalf("operation commit missing trailer %q:\n%s", trailer, message)
+		}
 	}
 }
 
