@@ -400,7 +400,7 @@ func (p *ClaimsAVProvider) planEdgePatch(
 		if _, found := findEdge(edges, edge.ID); found {
 			return PlannedOperation{}, validationError(CodeDuplicateID, "edge.edge_id", "edge ID already exists")
 		}
-		if err = p.validateEdgeTarget(ctx, edge); err != nil {
+		if err = p.validateEdgeTarget(ctx, edge, patch.Column); err != nil {
 			return PlannedOperation{}, err
 		}
 		edges = append(edges, edge)
@@ -417,10 +417,28 @@ func (p *ClaimsAVProvider) planEdgePatch(
 		if edge.CreatedAt == "" {
 			edge.CreatedAt = current.CreatedAt
 		}
+		if edge.UpdatedAt == "" {
+			edge.UpdatedAt = current.UpdatedAt
+		}
+		if edge.Extension == nil {
+			edge.Extension = current.Extension
+		}
+		if edge.Extra == nil {
+			edge.Extra = current.Extra
+		}
+		if edge.Target.Extra == nil {
+			edge.Target.Extra = current.Target.Extra
+		}
+		if edge.Context.Data == nil {
+			edge.Context.Data = current.Context.Data
+		}
+		if edge.Context.Extra == nil {
+			edge.Context.Extra = current.Context.Extra
+		}
 		if err = validateEdgeBinding(edge, patch.Column); err != nil {
 			return PlannedOperation{}, err
 		}
-		if err = p.validateEdgeTarget(ctx, edge); err != nil {
+		if err = p.validateEdgeTarget(ctx, edge, patch.Column); err != nil {
 			return PlannedOperation{}, err
 		}
 		edges[index] = edge
@@ -443,7 +461,9 @@ func (p *ClaimsAVProvider) planEdgePatch(
 		return PlannedOperation{}, validationError(CodeInvalidPlan, "edge.action", fmt.Sprintf("unknown edge action %q", patch.Edge.Action))
 	}
 	document.Envelope.Relations.Outgoing = edges
-	document.Envelope.Entity.SemanticRevision++
+	if patch.Edge.Action != AVEdgeReorder {
+		document.Envelope.Entity.SemanticRevision++
+	}
 	after, err := EncodeSY(raw, document.Envelope, p.registry)
 	if err != nil {
 		return PlannedOperation{}, err
@@ -534,7 +554,11 @@ func (p *ClaimsAVProvider) loadWritableClaim(
 	return raw, document, hash, nil
 }
 
-func (p *ClaimsAVProvider) validateEdgeTarget(ctx context.Context, edge TypedEdge) error {
+func (p *ClaimsAVProvider) validateEdgeTarget(
+	ctx context.Context,
+	edge TypedEdge,
+	binding AVColumnBinding,
+) error {
 	if edge.Schema == BasicSchema && edge.Target.LogicalID == "" {
 		return nil
 	}
@@ -548,6 +572,19 @@ func (p *ClaimsAVProvider) validateEdgeTarget(ctx context.Context, edge TypedEdg
 	}
 	if document.Envelope == nil || document.Envelope.Entity.EntityType != edge.Target.EntityType {
 		return validationError(CodeInvalidEdge, "edge.target", "target entity type does not match authority document")
+	}
+	if binding.TargetKind != "" {
+		targetKind := ClaimKind("")
+		if document.Envelope.Claim != nil {
+			targetKind = document.Envelope.Claim.ClaimKind
+		}
+		if targetKind != binding.TargetKind {
+			return validationError(CodeInvalidEdge, "edge.target", fmt.Sprintf(
+				"target claim kind %q does not match column target kind %q",
+				targetKind,
+				binding.TargetKind,
+			))
+		}
 	}
 	return nil
 }

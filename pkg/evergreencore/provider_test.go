@@ -167,6 +167,12 @@ func TestClaimsAVProviderPlansOwnerSideTypedEdgeMutations(t *testing.T) {
 	if first.Type != "supports" || second.Type != "limits" || second.Context.QuoteHash != "sha256:updated" {
 		t.Fatalf("edge-level update changed the wrong fact: first=%#v second=%#v", first, second)
 	}
+	if second.CreatedAt != "2026-10-10T12:00:00Z" || second.UpdatedAt != "2026-10-10T12:30:00Z" ||
+		string(second.Extension["com.example.edge/v1"]) != `{"kept":true}` ||
+		string(second.Extra["future_edge_field"]) != `"preserved"` ||
+		string(second.Context.Data["future_context"]) != `"preserved"` {
+		t.Fatalf("edge update lost source-only metadata: %#v", second)
+	}
 
 	if _, err = provider.PlanPatch(ctx, Principal{Type: PrincipalUser, ID: "user-1"}, AVPatch{
 		OperationID: "op-stale",
@@ -282,6 +288,13 @@ func TestClaimsAVProviderAddDeleteReorderAndSchemaValidation(t *testing.T) {
 	if got := afterReorder.Envelope.Relations.Outgoing[0].ID; got != "edge-duplicate-2" {
 		t.Fatalf("first reordered edge = %q", got)
 	}
+	reorderedHash, err := SemanticHash(planner.lastRequest.Writes[0].After)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reorderedHash != alpha.Ref.SemanticHash || afterReorder.Envelope.Entity.SemanticRevision != 7 {
+		t.Fatalf("display-only reorder changed semantic identity: hash=%s revision=%d", reorderedHash, afterReorder.Envelope.Entity.SemanticRevision)
+	}
 
 	_, err = provider.PlanPatch(ctx, Principal{Type: PrincipalUser, ID: "user-1"}, AVPatch{
 		OperationID: "op-invalid",
@@ -301,6 +314,26 @@ func TestClaimsAVProviderAddDeleteReorderAndSchemaValidation(t *testing.T) {
 	})
 	if !HasDiagnostic(err, CodeInvalidEdge) {
 		t.Fatalf("invalid edge type error = %v", err)
+	}
+
+	_, err = provider.PlanPatch(ctx, Principal{Type: PrincipalUser, ID: "user-1"}, AVPatch{
+		OperationID: "op-invalid-target-kind",
+		RowID:       "k-alpha",
+		Base:        BaseRef{LogicalID: "k-alpha", SemanticHash: alpha.Ref.SemanticHash},
+		Column: AVColumnBinding{
+			Direction: EdgeDirectionOutgoing, EdgeSchema: ArgumentSchema, TargetKind: KnowledgeKind,
+		},
+		Edge: AVEdgePatch{
+			Action: AVEdgeAdd,
+			Edge: TypedEdge{
+				ID: "edge-invalid-kind", Schema: ArgumentSchema,
+				Target: EntityRef{EntityType: EntityClaim, LogicalID: "o-beta"},
+				Type:   "supports", Reason: "The target kind violates the column constraint.",
+			},
+		},
+	})
+	if !HasDiagnostic(err, CodeInvalidEdge) {
+		t.Fatalf("invalid target kind error = %v", err)
 	}
 }
 
@@ -413,7 +446,14 @@ func newClaimsAVProviderFixture(t *testing.T) (*ClaimsAVProvider, *claimsAVPlann
 					ID: "edge-duplicate-2", Schema: ArgumentSchema,
 					Target: EntityRef{EntityType: EntityClaim, LogicalID: "o-beta"},
 					Type:   "supports", Reason: "Second independent support.",
-					Context: EdgeContext{NoteID: "n-two", SegmentRefs: []LogicalID{"seg-two"}},
+					Context: EdgeContext{
+						NoteID: "n-two", SegmentRefs: []LogicalID{"seg-two"},
+						Data: RawObject{"future_context": json.RawMessage(`"preserved"`)},
+					},
+					Extension: RawObject{"com.example.edge/v1": json.RawMessage(`{"kept":true}`)},
+					CreatedAt: "2026-10-10T12:00:00Z",
+					UpdatedAt: "2026-10-10T12:30:00Z",
+					Extra:     RawObject{"future_edge_field": json.RawMessage(`"preserved"`)},
 				},
 			}),
 		"o-beta": claimAVFixture(t, "o-beta", OpinionKind, "Beta opinion", "active",
