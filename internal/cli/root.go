@@ -250,6 +250,8 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("materialize", r.runMaterialize)
 	_ = r.Wire("export", r.runExport)
 	_ = r.Wire("candidate", r.runCandidate)
+	_ = r.Wire("migrate", r.runMigrate)
+	_ = r.Wire("diff", r.runSemanticDiff)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。
@@ -491,6 +493,13 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 	if cmd.Flags != nil {
 		cmd.Flags(fs)
 	}
+	switch cmd.Name {
+	case "context", "search", "card", "rel", "materialize", "apply":
+		fs.String("backend", "markdown", "authority backend: markdown or sy")
+		if cmd.Name == "materialize" {
+			fs.String("request", "", "shared core materialization request JSON")
+		}
+	}
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		msg := strings.TrimSpace(buf.String())
 		if errors.Is(err, flag.ErrHelp) {
@@ -521,6 +530,13 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 	// 占位命令**先短路**：只写 stderr，不解析 vault、不读配置、不碰任何文件（零副作用）。
 	if cmd.Placeholder {
 		return inv.JSON, nil, placeholderError(cmd, sub)
+	}
+	if usesSYBackend(inv) {
+		res, err := r.runSYBackend(inv)
+		return inv.JSON, res, err
+	}
+	if backend := inv.String("backend"); backend != "" && backend != "markdown" {
+		return inv.JSON, nil, &UsageError{Msg: "unsupported backend"}
 	}
 	if cmd.Validate != nil {
 		if err := cmd.Validate(inv); err != nil {

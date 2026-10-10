@@ -146,6 +146,24 @@ func (c *Client) Recover(ctx context.Context) ([]evergreencore.OperationRecord, 
 	return response.Data, nil
 }
 
+func (c *Client) CanonicalExport(ctx context.Context) (evergreencore.CanonicalArchive, error) {
+	var response evergreencore.APIResponse[evergreencore.CanonicalArchive]
+	err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/workspace/export", struct{}{}, &response)
+	return response.Data, err
+}
+
+func (c *Client) InspectReview(ctx context.Context, id evergreencore.LogicalID) (evergreencore.ReviewSnapshot, error) {
+	var response evergreencore.APIResponse[evergreencore.ReviewSnapshot]
+	err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/review/get", map[string]any{"note_id": id}, &response)
+	return response.Data, err
+}
+
+func (c *Client) PlanReviewMaterialization(ctx context.Context, request evergreencore.ReviewMaterializeRequest) (evergreencore.PlannedMaterialization, error) {
+	var response evergreencore.APIResponse[evergreencore.PlannedMaterialization]
+	err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/review/plan-materialize", request, &response)
+	return response.Data, err
+}
+
 func (c *Client) do(ctx context.Context, method, path string, input, output any) error {
 	var body io.Reader
 	if input != nil {

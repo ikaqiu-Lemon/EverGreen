@@ -1121,6 +1121,10 @@ func (t *reviewTree) materializedClaim(
 	materialEdges := make([]TypedEdge, 0, len(sources))
 	for _, sourceID := range sources {
 		refs := provenanceBySource[sourceID]
+		relationType := candidate.envelope.Candidate.Relation
+		if relationType == "" {
+			relationType = "support"
+		}
 		provenance = append(provenance, Provenance{
 			SourceID: sourceID, NoteID: request.NoteID,
 			SegmentRefs: append([]LogicalID(nil), refs...), Reason: reason,
@@ -1129,7 +1133,7 @@ func (t *reviewTree) materializedClaim(
 			ID:     EdgeID(deterministicEdgeID(request.ClaimID, sourceID, refs)),
 			Schema: MaterialSchema,
 			Target: EntityRef{EntityType: EntitySource, LogicalID: sourceID},
-			Type:   "support", Reason: reason,
+			Type:   relationType, Reason: reason,
 			Context:   EdgeContext{NoteID: request.NoteID, SegmentRefs: append([]LogicalID(nil), refs...)},
 			CreatedAt: request.CreatedAt, UpdatedAt: request.CreatedAt,
 		})
