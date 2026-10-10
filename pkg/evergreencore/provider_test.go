@@ -337,6 +337,58 @@ func TestClaimsAVProviderAddDeleteReorderAndSchemaValidation(t *testing.T) {
 	}
 }
 
+func TestClaimsAVProviderMovesOpposingEdgeToCanonicalOwner(t *testing.T) {
+	repository := &claimsAVRepositoryStub{documents: map[LogicalID][]byte{
+		"c-a": claimAVFixture(t, "c-a", KnowledgeKind, "Canonical low", "active",
+			json.RawMessage(`{}`), nil, nil, nil),
+		"c-z": claimAVFixture(t, "c-z", KnowledgeKind, "Canonical high", "active",
+			json.RawMessage(`{}`), nil, nil, []TypedEdge{{
+				ID: "edge-move", Schema: ArgumentSchema,
+				Target: EntityRef{EntityType: EntityClaim, LogicalID: "c-a"},
+				Type:   "supports", Reason: "Starts as a directed edge.",
+			}}),
+	}}
+	planner := &claimsAVPlannerStub{}
+	provider := NewClaimsAVProvider(repository, planner, DefaultRegistry())
+	page, err := provider.Query(context.Background(), ClaimsViewID, AVQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	high := rowByID(t, page.Rows, "c-z")
+	planned, err := provider.PlanPatch(context.Background(), Principal{Type: PrincipalUser, ID: "user-1"}, AVPatch{
+		OperationID: "op-opposing-owner-move",
+		RowID:       "c-z",
+		Base:        BaseRef{LogicalID: "c-z", SemanticHash: high.Ref.SemanticHash},
+		Column:      AVColumnBinding{Direction: EdgeDirectionOutgoing, EdgeSchema: ArgumentSchema},
+		Edge: AVEdgePatch{
+			Action: AVEdgeUpdate,
+			Edge: TypedEdge{
+				ID: "edge-move", Schema: ArgumentSchema,
+				Target: EntityRef{EntityType: EntityClaim, LogicalID: "c-a"},
+				Type:   "opposing", Reason: "Opposition uses canonical ownership.",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(planned.Plan.Writes) != 2 {
+		t.Fatalf("opposing owner move writes = %#v", planned.Plan.Writes)
+	}
+	afterByID := map[LogicalID]*SYDocument{}
+	for _, write := range planner.lastRequest.Writes {
+		afterByID[write.LogicalID] = decodeClaimFixture(t, write.After)
+	}
+	if edges := afterByID["c-z"].Envelope.Relations.Outgoing; len(edges) != 0 {
+		t.Fatalf("old owner retained opposing edge: %#v", edges)
+	}
+	edges := afterByID["c-a"].Envelope.Relations.Outgoing
+	if len(edges) != 1 || edges[0].ID != "edge-move" || edges[0].Type != "opposing" ||
+		edges[0].Target.LogicalID != "c-z" {
+		t.Fatalf("canonical owner edge = %#v", edges)
+	}
+}
+
 func TestClaimsAVProviderRebuildIsSourceCompleteAndDeterministic(t *testing.T) {
 	provider, _ := newClaimsAVProviderFixture(t)
 	ctx := context.Background()

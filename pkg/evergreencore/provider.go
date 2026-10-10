@@ -403,6 +403,9 @@ func (p *ClaimsAVProvider) planEdgePatch(
 		if err = p.validateEdgeTarget(ctx, edge, patch.Column); err != nil {
 			return PlannedOperation{}, err
 		}
+		if opposingOwnerMoves(ownerID, edge) {
+			return p.planOpposingEdgeMove(ctx, principal, patch, raw, document, hash, edges, -1, edge)
+		}
 		edges = append(edges, edge)
 	case AVEdgeUpdate:
 		index, found := findEdge(edges, patch.Edge.Edge.ID)
@@ -441,6 +444,9 @@ func (p *ClaimsAVProvider) planEdgePatch(
 		if err = p.validateEdgeTarget(ctx, edge, patch.Column); err != nil {
 			return PlannedOperation{}, err
 		}
+		if opposingOwnerMoves(ownerID, edge) {
+			return p.planOpposingEdgeMove(ctx, principal, patch, raw, document, hash, edges, index, edge)
+		}
 		edges[index] = edge
 	case AVEdgeDelete:
 		index, found := findEdge(edges, patch.Edge.Edge.ID)
@@ -473,6 +479,77 @@ func (p *ClaimsAVProvider) planEdgePatch(
 		Base:   []BaseRef{{LogicalID: ownerID, SemanticHash: hash}},
 		Writes: []WriteInput{{LogicalID: ownerID, After: after}},
 	})
+}
+
+func opposingOwnerMoves(ownerID LogicalID, edge TypedEdge) bool {
+	return edge.Schema == ArgumentSchema && edge.Type == "opposing" &&
+		edge.Target.LogicalID != "" && ownerID > edge.Target.LogicalID
+}
+
+func (p *ClaimsAVProvider) planOpposingEdgeMove(
+	ctx context.Context,
+	principal Principal,
+	patch AVPatch,
+	currentRaw []byte,
+	current *SYDocument,
+	currentHash string,
+	currentEdges []TypedEdge,
+	currentIndex int,
+	edge TypedEdge,
+) (PlannedOperation, error) {
+	currentOwner := current.Envelope.Entity.LogicalID
+	newOwner := edge.Target.LogicalID
+	newRaw, newDocument, newHash, err := p.loadWritableClaim(ctx, newOwner)
+	if err != nil {
+		return PlannedOperation{}, err
+	}
+	if _, duplicate := findEdge(newDocument.Envelope.Relations.Outgoing, edge.ID); duplicate {
+		return PlannedOperation{}, validationError(CodeDuplicateID, "edge.edge_id", "edge ID already exists on canonical opposing owner")
+	}
+	moved := edge
+	moved.Target = EntityRef{EntityType: EntityClaim, LogicalID: currentOwner}
+	if err = validateEdgeBinding(moved, patch.Column); err != nil {
+		return PlannedOperation{}, err
+	}
+	if err = p.validateEdgeTarget(ctx, moved, patch.Column); err != nil {
+		return PlannedOperation{}, err
+	}
+
+	currentAfter := currentRaw
+	if currentIndex >= 0 {
+		current.Envelope.Relations.Outgoing = append(currentEdges[:currentIndex], currentEdges[currentIndex+1:]...)
+		current.Envelope.Entity.SemanticRevision++
+		currentAfter, err = EncodeSY(currentRaw, current.Envelope, p.registry)
+		if err != nil {
+			return PlannedOperation{}, err
+		}
+	}
+	newDocument.Envelope.Relations.Outgoing = append(newDocument.Envelope.Relations.Outgoing, moved)
+	newDocument.Envelope.Entity.SemanticRevision++
+	newAfter, err := EncodeSY(newRaw, newDocument.Envelope, p.registry)
+	if err != nil {
+		return PlannedOperation{}, err
+	}
+
+	type ownerWrite struct {
+		id    LogicalID
+		hash  string
+		after []byte
+	}
+	owners := []ownerWrite{
+		{id: currentOwner, hash: currentHash, after: currentAfter},
+		{id: newOwner, hash: newHash, after: newAfter},
+	}
+	sort.Slice(owners, func(i, j int) bool { return owners[i].id < owners[j].id })
+	request := PlanRequest{
+		Protocol: ChangePlanProtocol, OperationID: patch.OperationID, Command: "claim.edge.update",
+		Base: make([]BaseRef, 0, len(owners)), Writes: make([]WriteInput, 0, len(owners)),
+	}
+	for _, owner := range owners {
+		request.Base = append(request.Base, BaseRef{LogicalID: owner.id, SemanticHash: owner.hash})
+		request.Writes = append(request.Writes, WriteInput{LogicalID: owner.id, After: owner.after})
+	}
+	return p.planner.Plan(ctx, principal, request)
 }
 
 func (p *ClaimsAVProvider) planScalarPatch(
