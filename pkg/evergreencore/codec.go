@@ -281,20 +281,32 @@ func MarshalBlockEnvelope(envelope *BlockEnvelope) (json.RawMessage, error) {
 	}
 	fields := map[string]any{"spec": envelope.Spec, "role": envelope.Role}
 	if envelope.Segment != nil {
-		sourceRef, err := marshalObject(envelope.Segment.SourceRef.Extra, map[string]any{
-			"source_id": envelope.Segment.SourceRef.SourceID,
-			"locator": mustMarshalObject(envelope.Segment.SourceRef.Locator.Extra, map[string]any{
-				"kind": envelope.Segment.SourceRef.Locator.Kind, "value": envelope.Segment.SourceRef.Locator.Value,
-			}),
-		})
-		if err != nil {
-			return nil, err
-		}
-		segment, err := marshalObject(envelope.Segment.Extra, map[string]any{
+		segmentFields := map[string]any{
 			"segment_id":      envelope.Segment.SegmentID,
-			"source_ref":      sourceRef,
 			"normalized_hash": envelope.Segment.NormalizedHash,
-		})
+		}
+		if envelope.Segment.SourceRef.SourceID != "" {
+			sourceRef, err := marshalObject(envelope.Segment.SourceRef.Extra, map[string]any{
+				"source_id": envelope.Segment.SourceRef.SourceID,
+				"locator": mustMarshalObject(envelope.Segment.SourceRef.Locator.Extra, map[string]any{
+					"kind": envelope.Segment.SourceRef.Locator.Kind, "value": envelope.Segment.SourceRef.Locator.Value,
+				}),
+			})
+			if err != nil {
+				return nil, err
+			}
+			segmentFields["source_ref"] = sourceRef
+		}
+		if envelope.Segment.Annotation != nil {
+			annotation, err := marshalObject(envelope.Segment.Annotation.Extra, map[string]any{
+				"kind": envelope.Segment.Annotation.Kind, "label": envelope.Segment.Annotation.Label,
+			})
+			if err != nil {
+				return nil, err
+			}
+			segmentFields["annotation"] = annotation
+		}
+		segment, err := marshalObject(envelope.Segment.Extra, segmentFields)
 		if err != nil {
 			return nil, err
 		}
@@ -305,9 +317,14 @@ func MarshalBlockEnvelope(envelope *BlockEnvelope) (json.RawMessage, error) {
 			"candidate_id":          envelope.Candidate.CandidateID,
 			"claim_kind":            envelope.Candidate.ClaimKind,
 			"kind_schema":           envelope.Candidate.KindSchema,
+			"title":                 envelope.Candidate.Title,
+			"logical_slug":          envelope.Candidate.LogicalSlug,
 			"segment_refs":          nonNilLogicalIDs(envelope.Candidate.SegmentRefs),
 			"payload_hash":          envelope.Candidate.PayloadHash,
 			"ref_hashes":            nonNilRefHashes(envelope.Candidate.RefHashes),
+			"relation":              envelope.Candidate.Relation,
+			"reason":                envelope.Candidate.Reason,
+			"tags":                  nonNilStrings(envelope.Candidate.Tags),
 			"state":                 envelope.Candidate.State,
 			"materialized_claim_id": envelope.Candidate.MaterializedClaimID,
 		})
@@ -697,18 +714,34 @@ func marshalNoteReview(review NoteReview) (json.RawMessage, error) {
 	items := make([]json.RawMessage, 0, len(review.Coverage))
 	for _, module := range review.Coverage {
 		item, err := marshalObject(module.Extra, map[string]any{
-			"module_id":    module.ModuleID,
-			"disposition":  module.Disposition,
-			"segment_refs": nonNilLogicalIDs(module.SegmentRefs),
-			"candidate_id": module.CandidateID,
-			"reason":       module.Reason,
+			"module_id":     module.ModuleID,
+			"disposition":   module.Disposition,
+			"segment_refs":  nonNilLogicalIDs(module.SegmentRefs),
+			"candidate_id":  module.CandidateID,
+			"candidate_ids": nonNilLogicalIDs(module.CandidateIDs),
+			"reason":        module.Reason,
 		})
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
-	return marshalObject(review.Extra, map[string]any{"spec": review.Spec, "coverage": items})
+	lineage := make([]json.RawMessage, 0, len(review.Lineage))
+	for _, event := range review.Lineage {
+		item, err := marshalObject(event.Extra, map[string]any{
+			"event_id":     event.EventID,
+			"mutation":     event.Mutation,
+			"previous_ids": nonNilLogicalIDs(event.PreviousIDs),
+			"next_ids":     nonNilLogicalIDs(event.NextIDs),
+		})
+		if err != nil {
+			return nil, err
+		}
+		lineage = append(lineage, item)
+	}
+	return marshalObject(review.Extra, map[string]any{
+		"spec": review.Spec, "coverage": items, "lineage": lineage,
+	})
 }
 
 func unmarshalNoteReview(raw json.RawMessage) (NoteReview, error) {
@@ -734,7 +767,8 @@ func unmarshalNoteReview(raw json.RawMessage) (NoteReview, error) {
 		var module CoverageModule
 		for key, target := range map[string]any{
 			"module_id": &module.ModuleID, "disposition": &module.Disposition,
-			"segment_refs": &module.SegmentRefs, "candidate_id": &module.CandidateID, "reason": &module.Reason,
+			"segment_refs": &module.SegmentRefs, "candidate_id": &module.CandidateID,
+			"candidate_ids": &module.CandidateIDs, "reason": &module.Reason,
 		} {
 			if value, ok := moduleObject[key]; ok {
 				if decodeErr = json.Unmarshal(value, target); decodeErr != nil {
@@ -742,10 +776,37 @@ func unmarshalNoteReview(raw json.RawMessage) (NoteReview, error) {
 				}
 			}
 		}
-		module.Extra = unknownFields(moduleObject, "module_id", "disposition", "segment_refs", "candidate_id", "reason")
+		module.Extra = unknownFields(moduleObject,
+			"module_id", "disposition", "segment_refs", "candidate_id", "candidate_ids", "reason")
 		review.Coverage = append(review.Coverage, module)
 	}
-	review.Extra = unknownFields(object, "spec", "coverage")
+	if rawItems, ok := object["lineage"]; ok {
+		items = nil
+		if err = json.Unmarshal(rawItems, &items); err != nil {
+			return NoteReview{}, err
+		}
+		for _, item := range items {
+			eventObject, decodeErr := decodeRawObject(item)
+			if decodeErr != nil {
+				return NoteReview{}, decodeErr
+			}
+			var event SegmentLineage
+			for key, target := range map[string]any{
+				"event_id": &event.EventID, "mutation": &event.Mutation,
+				"previous_ids": &event.PreviousIDs, "next_ids": &event.NextIDs,
+			} {
+				if value, ok := eventObject[key]; ok {
+					if decodeErr = json.Unmarshal(value, target); decodeErr != nil {
+						return NoteReview{}, decodeErr
+					}
+				}
+			}
+			event.Extra = unknownFields(eventObject,
+				"event_id", "mutation", "previous_ids", "next_ids")
+			review.Lineage = append(review.Lineage, event)
+		}
+	}
+	review.Extra = unknownFields(object, "spec", "coverage", "lineage")
 	return review, nil
 }
 
@@ -762,34 +823,50 @@ func unmarshalSegment(raw json.RawMessage) (SegmentMetadata, error) {
 			return SegmentMetadata{}, err
 		}
 	}
-	sourceRaw, err := requiredRaw(object, "source_ref")
-	if err != nil {
-		return SegmentMetadata{}, err
+	if sourceRaw, ok := object["source_ref"]; ok {
+		sourceObject, sourceErr := decodeRawObject(sourceRaw)
+		if sourceErr != nil {
+			return SegmentMetadata{}, sourceErr
+		}
+		if err = decodeRequired(sourceObject, "source_id", &segment.SourceRef.SourceID); err != nil {
+			return SegmentMetadata{}, err
+		}
+		locatorRaw, locatorErr := requiredRaw(sourceObject, "locator")
+		if locatorErr != nil {
+			return SegmentMetadata{}, locatorErr
+		}
+		locatorObject, locatorErr := decodeRawObject(locatorRaw)
+		if locatorErr != nil {
+			return SegmentMetadata{}, locatorErr
+		}
+		if err = decodeRequired(locatorObject, "kind", &segment.SourceRef.Locator.Kind); err != nil {
+			return SegmentMetadata{}, err
+		}
+		if err = decodeRequired(locatorObject, "value", &segment.SourceRef.Locator.Value); err != nil {
+			return SegmentMetadata{}, err
+		}
+		segment.SourceRef.Locator.Extra = unknownFields(locatorObject, "kind", "value")
+		segment.SourceRef.Extra = unknownFields(sourceObject, "source_id", "locator")
 	}
-	sourceObject, err := decodeRawObject(sourceRaw)
-	if err != nil {
-		return SegmentMetadata{}, err
+	if annotationRaw, ok := object["annotation"]; ok {
+		annotationObject, annotationErr := decodeRawObject(annotationRaw)
+		if annotationErr != nil {
+			return SegmentMetadata{}, annotationErr
+		}
+		annotation := &Annotation{}
+		if err = decodeRequired(annotationObject, "kind", &annotation.Kind); err != nil {
+			return SegmentMetadata{}, err
+		}
+		if rawLabel, exists := annotationObject["label"]; exists {
+			if err = json.Unmarshal(rawLabel, &annotation.Label); err != nil {
+				return SegmentMetadata{}, err
+			}
+		}
+		annotation.Extra = unknownFields(annotationObject, "kind", "label")
+		segment.Annotation = annotation
 	}
-	if err = decodeRequired(sourceObject, "source_id", &segment.SourceRef.SourceID); err != nil {
-		return SegmentMetadata{}, err
-	}
-	locatorRaw, err := requiredRaw(sourceObject, "locator")
-	if err != nil {
-		return SegmentMetadata{}, err
-	}
-	locatorObject, err := decodeRawObject(locatorRaw)
-	if err != nil {
-		return SegmentMetadata{}, err
-	}
-	if err = decodeRequired(locatorObject, "kind", &segment.SourceRef.Locator.Kind); err != nil {
-		return SegmentMetadata{}, err
-	}
-	if err = decodeRequired(locatorObject, "value", &segment.SourceRef.Locator.Value); err != nil {
-		return SegmentMetadata{}, err
-	}
-	segment.SourceRef.Locator.Extra = unknownFields(locatorObject, "kind", "value")
-	segment.SourceRef.Extra = unknownFields(sourceObject, "source_id", "locator")
-	segment.Extra = unknownFields(object, "segment_id", "source_ref", "normalized_hash")
+	segment.Extra = unknownFields(object,
+		"segment_id", "source_ref", "annotation", "normalized_hash")
 	return segment, nil
 }
 
@@ -801,8 +878,10 @@ func unmarshalCandidate(raw json.RawMessage) (CandidateMetadata, error) {
 	var candidate CandidateMetadata
 	for key, target := range map[string]any{
 		"candidate_id": &candidate.CandidateID, "claim_kind": &candidate.ClaimKind,
-		"kind_schema": &candidate.KindSchema, "segment_refs": &candidate.SegmentRefs,
+		"kind_schema": &candidate.KindSchema, "title": &candidate.Title,
+		"logical_slug": &candidate.LogicalSlug, "segment_refs": &candidate.SegmentRefs,
 		"payload_hash": &candidate.PayloadHash, "ref_hashes": &candidate.RefHashes,
+		"relation": &candidate.Relation, "reason": &candidate.Reason, "tags": &candidate.Tags,
 		"state": &candidate.State, "materialized_claim_id": &candidate.MaterializedClaimID,
 	} {
 		if rawValue, ok := object[key]; ok {
@@ -812,8 +891,9 @@ func unmarshalCandidate(raw json.RawMessage) (CandidateMetadata, error) {
 		}
 	}
 	candidate.Extra = unknownFields(object,
-		"candidate_id", "claim_kind", "kind_schema", "segment_refs", "payload_hash",
-		"ref_hashes", "state", "materialized_claim_id")
+		"candidate_id", "claim_kind", "kind_schema", "title", "logical_slug",
+		"segment_refs", "payload_hash", "ref_hashes", "relation", "reason", "tags",
+		"state", "materialized_claim_id")
 	return candidate, nil
 }
 

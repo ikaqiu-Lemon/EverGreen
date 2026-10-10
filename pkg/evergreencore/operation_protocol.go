@@ -44,7 +44,12 @@ func CurrentCapabilities() Capabilities {
 		ChangePlanProtocols: []string{ChangePlanProtocol},
 		DocumentSpecs:       []SchemaRef{DocumentSpec},
 		BlockSpecs:          []SchemaRef{BlockSpec},
-		Commands:            []string{"claim.update", "claim.edge.update", "note.review.update"},
+		Commands: []string{
+			"claim.update",
+			"claim.edge.update",
+			"note.review.update",
+			"note.review.materialize",
+		},
 	}
 }
 
