@@ -40,7 +40,8 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		if document.ReadOnly {
+		if document.ReadOnly && (document.Envelope == nil ||
+			!onlyKindUnavailable(document.Diagnostics)) {
 			return fmt.Errorf("%s: %w", path, &DiagnosticError{Diagnostics: document.Diagnostics})
 		}
 		if document.Envelope == nil {
@@ -79,6 +80,18 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 	return index, nil
 }
 
+func onlyKindUnavailable(diagnostics []Diagnostic) bool {
+	if len(diagnostics) == 0 {
+		return false
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code != CodeClaimKindUnavailable {
+			return false
+		}
+	}
+	return true
+}
+
 func addLogicalLocation(index *LogicalIndex, location LogicalLocation) error {
 	if existing, ok := index.Locations[location.LogicalID]; ok {
 		return validationError(
@@ -114,7 +127,8 @@ func scanBlocks(
 			if decodeErr != nil {
 				return decodeErr
 			}
-			if validateErr := ValidateBlock(envelope, registry); validateErr != nil {
+			if validateErr := ValidateBlock(envelope, registry); validateErr != nil &&
+				!HasDiagnostic(validateErr, CodeClaimKindUnavailable) {
 				return validateErr
 			}
 			switch envelope.Role {

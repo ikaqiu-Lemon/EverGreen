@@ -621,15 +621,16 @@ func (s *AuthorityService) PlanReviewEdit(
 }
 
 type ReviewMaterializeRequest struct {
-	OperationID     string    `json:"operation_id"`
-	NoteID          LogicalID `json:"note_id"`
-	CandidateID     LogicalID `json:"candidate_id"`
-	NoteBase        string    `json:"note_base"`
-	ClaimID         LogicalID `json:"claim_id"`
-	ClaimBase       string    `json:"claim_base,omitempty"`
-	ClaimPath       string    `json:"claim_path,omitempty"`
-	ClaimDocumentID string    `json:"claim_document_id,omitempty"`
-	CreatedAt       string    `json:"created_at"`
+	OperationID     string          `json:"operation_id"`
+	NoteID          LogicalID       `json:"note_id"`
+	CandidateID     LogicalID       `json:"candidate_id"`
+	NoteBase        string          `json:"note_base"`
+	ClaimID         LogicalID       `json:"claim_id"`
+	ClaimBase       string          `json:"claim_base,omitempty"`
+	ClaimPath       string          `json:"claim_path,omitempty"`
+	ClaimDocumentID string          `json:"claim_document_id,omitempty"`
+	CreatedAt       string          `json:"created_at"`
+	KindData        json.RawMessage `json:"kind_data,omitempty"`
 }
 
 type PlannedMaterialization struct {
@@ -1068,7 +1069,15 @@ func (t *reviewTree) materializedClaim(
 		if err != nil {
 			return nil, false, err
 		}
+		if document.ReadOnly {
+			return nil, false, &DiagnosticError{Diagnostics: document.Diagnostics}
+		}
 		existingEnvelope = document.Envelope
+		if existingEnvelope == nil || existingEnvelope.Claim == nil ||
+			existingEnvelope.Claim.ClaimKind != candidate.envelope.Candidate.ClaimKind ||
+			existingEnvelope.Claim.KindSchema != candidate.envelope.Candidate.KindSchema {
+			return nil, false, validationError(CodeInvalidClaim, "claim_id", "materialization cannot change an existing Claim kind")
+		}
 		root, err = decodeRawObject(raw)
 		if err != nil {
 			return nil, false, err
@@ -1125,9 +1134,19 @@ func (t *reviewTree) materializedClaim(
 			CreatedAt: request.CreatedAt, UpdatedAt: request.CreatedAt,
 		})
 	}
-	kindData := json.RawMessage(`{}`)
-	if candidate.envelope.Candidate.ClaimKind == OpinionKind {
-		kindData = json.RawMessage(`{"validation":{"status":"pending"}}`)
+	descriptor, ok := t.registry.Descriptor(candidate.envelope.Candidate.ClaimKind)
+	if !ok || descriptor.Materialize == nil {
+		return nil, false, validationError(CodeClaimKindUnavailable, "claim_kind", "kind materializer is unavailable")
+	}
+	input := MaterializationInput{
+		Title: candidate.envelope.Candidate.Title, KindData: request.KindData, Provenance: provenance,
+	}
+	if existingEnvelope != nil {
+		input.Existing = existingEnvelope.Claim
+	}
+	materialized, err := descriptor.Materialize(input)
+	if err != nil {
+		return nil, false, err
 	}
 	relations := Relations{Outgoing: materialEdges}
 	revision := uint64(1)
@@ -1148,10 +1167,17 @@ func (t *reviewTree) materializedClaim(
 		Claim: &Claim{
 			ClaimKind:  candidate.envelope.Candidate.ClaimKind,
 			KindSchema: candidate.envelope.Candidate.KindSchema,
-			Status:     "active", Tags: append([]string(nil), candidate.envelope.Candidate.Tags...),
-			KindData: kindData,
+			Status:     materialized.Status, Tags: append([]string(nil), candidate.envelope.Candidate.Tags...),
+			KindData: materialized.KindData,
 		},
 		Provenance: provenance, Relations: relations,
+	}
+	if existingEnvelope != nil {
+		envelope.Extra = cloneRawObject(existingEnvelope.Extra)
+		envelope.Extension = cloneRawObject(existingEnvelope.Extension)
+		envelope.Claim.Extra = cloneRawObject(existingEnvelope.Claim.Extra)
+		envelope.Entity.Extra = cloneRawObject(existingEnvelope.Entity.Extra)
+		envelope.Relations.Extra = cloneRawObject(existingEnvelope.Relations.Extra)
 	}
 	envelopeRaw, err := MarshalDocumentEnvelope(envelope)
 	if err != nil {

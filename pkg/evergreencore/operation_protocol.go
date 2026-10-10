@@ -62,10 +62,17 @@ type SchemaCatalog struct {
 }
 
 type KindSchemaDescriptor struct {
-	Kind               ClaimKind   `json:"kind"`
-	Schema             SchemaRef   `json:"schema"`
-	AllowedStatuses    []string    `json:"allowed_statuses"`
-	AllowedEdgeSchemas []SchemaRef `json:"allowed_edge_schemas"`
+	Kind                 ClaimKind        `json:"kind"`
+	Schema               SchemaRef        `json:"schema"`
+	AllowedStatuses      []string         `json:"allowed_statuses"`
+	AllowedEdgeSchemas   []SchemaRef      `json:"allowed_edge_schemas"`
+	KindDataSchema       JSONSchema       `json:"kind_data_schema"`
+	RequiredCapabilities CapabilityMatrix `json:"required_capabilities,omitempty"`
+	DefaultStatus        string           `json:"default_status,omitempty"`
+	DefaultKindData      json.RawMessage  `json:"default_kind_data,omitempty"`
+	RequireProvenance    bool             `json:"require_provenance"`
+	Materializer         string           `json:"materializer,omitempty"`
+	ViewHints            KindViewHints    `json:"view_hints"`
 }
 
 func CurrentSchemas(registry *Registry) SchemaCatalog {
@@ -74,11 +81,17 @@ func CurrentSchemas(registry *Registry) SchemaCatalog {
 	}
 	kinds := make([]KindSchemaDescriptor, 0, len(registry.byKind))
 	registry.mu.RLock()
-	for _, descriptor := range registry.byKind {
+	for _, registered := range registry.byKind {
+		descriptor := cloneKindDescriptor(registered)
 		kinds = append(kinds, KindSchemaDescriptor{
 			Kind: descriptor.Kind, Schema: descriptor.Schema,
-			AllowedStatuses:    append([]string(nil), descriptor.AllowedStatuses...),
-			AllowedEdgeSchemas: append([]SchemaRef(nil), descriptor.AllowedEdgeSchemas...),
+			AllowedStatuses:      append([]string(nil), descriptor.AllowedStatuses...),
+			AllowedEdgeSchemas:   append([]SchemaRef(nil), descriptor.AllowedEdgeSchemas...),
+			KindDataSchema:       descriptor.KindDataSchema,
+			RequiredCapabilities: descriptor.RequiredCapabilities,
+			DefaultStatus:        descriptor.DefaultStatus, DefaultKindData: descriptor.DefaultKindData,
+			RequireProvenance: descriptor.RequireProvenance,
+			Materializer:      descriptor.MaterializerRef, ViewHints: descriptor.ViewHints,
 		})
 	}
 	registry.mu.RUnlock()
@@ -250,6 +263,7 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 		create := base.Expected == "absent"
 		var path string
 		var beforeHash string
+		var beforeEnvelope *DocumentEnvelope
 		switch {
 		case create && loadErr == nil:
 			return PlannedOperation{}, validationError(CodeBaseMismatch, fmt.Sprintf("base[%d]", index), "expected absent but entity exists")
@@ -272,6 +286,7 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 			if currentDocument.ReadOnly {
 				return PlannedOperation{}, &DiagnosticError{Diagnostics: currentDocument.Diagnostics}
 			}
+			beforeEnvelope = currentDocument.Envelope
 			beforeHash, decodeErr = SemanticHash(current)
 			if decodeErr != nil {
 				return PlannedOperation{}, decodeErr
@@ -304,6 +319,9 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 				fmt.Sprintf("writes[%d].after", index),
 				"after-image logical ID does not match planned write",
 			)
+		}
+		if err := AuthorizeClaimChange(principal, beforeEnvelope, document.Envelope, s.registry); err != nil {
+			return PlannedOperation{}, err
 		}
 		afterHash, hashErr := SemanticHash(after)
 		if hashErr != nil {
@@ -355,6 +373,30 @@ func (s *AuthorityService) Apply(ctx context.Context, principal Principal, reque
 	}
 	if err := s.authorizer.Authorize(ctx, principal, operation.Plan.Command, ids); err != nil {
 		return OperationRecord{}, validationError(CodeUnauthorized, "principal", err.Error())
+	}
+	for _, image := range operation.Images {
+		after, err := DecodeSY(image.Bytes, s.registry)
+		if err != nil {
+			return OperationRecord{}, err
+		}
+		var before *DocumentEnvelope
+		if !image.Create {
+			raw, loadErr := s.host.Load(ctx, image.LogicalID)
+			if loadErr != nil {
+				return OperationRecord{}, loadErr
+			}
+			document, decodeErr := DecodeSY(raw, s.registry)
+			if decodeErr != nil {
+				return OperationRecord{}, decodeErr
+			}
+			if document.ReadOnly {
+				return OperationRecord{}, &DiagnosticError{Diagnostics: document.Diagnostics}
+			}
+			before = document.Envelope
+		}
+		if err = AuthorizeClaimChange(principal, before, after.Envelope, s.registry); err != nil {
+			return OperationRecord{}, err
+		}
 	}
 	return s.host.ApplyOperation(ctx, operation)
 }
