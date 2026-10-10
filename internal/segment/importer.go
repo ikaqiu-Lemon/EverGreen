@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 	"github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
 )
@@ -55,13 +56,22 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 	if err != nil {
 		return ImportResult{}, err
 	}
-	_, segmentation, candidates, coverageState, _, err :=
-		store.ParseMaterializationWorkspace(noteRaw, workspaceRaw)
+	var segmentation model.NoteSegmentation
+	var candidates []store.Candidate
+	var coverageState store.CandidateCoverageState
+	if len(workspaceRaw) == 0 {
+		_, candidates, coverageState, _, err = store.ParseMaterializationNote(noteRaw)
+		segmentation = model.NoteSegmentation{Note: note.ID, NoteHash: store.ContentHash(noteRaw),
+			Title: string(note.ID), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt}
+		if title, ok := note.Extra["title"].(string); ok {
+			segmentation.Title = title
+		}
+	} else {
+		_, segmentation, candidates, coverageState, _, err =
+			store.ParseMaterializationWorkspace(noteRaw, workspaceRaw)
+	}
 	if err != nil {
 		return ImportResult{}, err
-	}
-	if coverageState.Finalized {
-		return ImportResult{}, fmt.Errorf("legacy finalized extraction is not a Candidate review workspace")
 	}
 	body, ok := noteDoc.Section(mdfile.SecNoteBody)
 	if !ok {
@@ -72,6 +82,18 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 		if manifest, found, manifestErr := mdfile.ParseNoteBlockManifest(workspaceRaw); manifestErr == nil && found {
 			review, err = mdfile.ParsePlainReviewNote(noteRaw[body.Body:body.End], manifest)
 		}
+		if err != nil {
+			return ImportResult{}, err
+		}
+	}
+	legacyCoverage, _ := json.Marshal(coverageState)
+	if len(workspaceRaw) == 0 {
+		candidates, coverageState, err = mapEmbeddedReview(review, candidates, coverageState)
+		if err != nil {
+			return ImportResult{}, err
+		}
+	} else if coverageState.Finalized {
+		coverageState, err = mapFinalCoverage(candidates, coverageState)
 		if err != nil {
 			return ImportResult{}, err
 		}
@@ -162,6 +184,23 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 	}
 
 	suffix, err := mdfile.PlainExport(noteRaw[body.End:])
+	if len(workspaceRaw) == 0 {
+		extraction, exists := noteDoc.Section(mdfile.SecExtraction)
+		if !exists {
+			return ImportResult{}, fmt.Errorf("embedded review has no extraction section")
+		}
+		// Candidate subtree 成为唯一 payload；候选之后的历史摘要仍保留为正文。
+		afterExtraction, exportErr := mdfile.PlainExport(noteRaw[extraction.End:])
+		if exportErr != nil {
+			return ImportResult{}, exportErr
+		}
+		tail, exportErr := mdfile.PlainExport(noteRaw[candidates[len(candidates)-1].End:extraction.End])
+		if exportErr != nil {
+			return ImportResult{}, exportErr
+		}
+		suffix = append(tail, afterExtraction...)
+		err = nil
+	}
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -257,7 +296,7 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 		}
 		module := evergreencore.CoverageModule{
 			ModuleID: evergreencore.LogicalID("coverage-" +
-				strings.TrimPrefix(evergreencore.StablePhysicalID(string(note.ID)+"/"+item.Module), "20000101000000-")),
+				strings.TrimPrefix(evergreencore.StablePhysicalID(string(note.ID)+"/"+item.Module+"/"+strings.Join(refs, ",")), "20000101000000-")),
 			Disposition: item.Disposition, SegmentRefs: segmentIDs,
 			Reason: item.Reason,
 			Extra:  evergreencore.RawObject{"legacy_module": jsonString(item.Module), "summary": jsonString(item.Summary)},
@@ -289,9 +328,22 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			Spec: evergreencore.NoteReviewSpec, Coverage: coverage,
 		},
 	}
+	if len(workspaceRaw) == 0 {
+		documentEnvelope.Review.Extra = evergreencore.RawObject{"legacy_source_coverage": legacyCoverage}
+	}
+	if coverageState.Finalized {
+		final, _ := json.Marshal(coverageState.Final)
+		if documentEnvelope.Review.Extra == nil {
+			documentEnvelope.Review.Extra = evergreencore.RawObject{}
+		}
+		documentEnvelope.Review.Extra["legacy_final_coverage"] = final
+	}
 	if len(review.Omissions) > 0 {
 		raw, _ := json.Marshal(review.Omissions)
-		documentEnvelope.Review.Extra = evergreencore.RawObject{"source_omissions": raw}
+		if documentEnvelope.Review.Extra == nil {
+			documentEnvelope.Review.Extra = evergreencore.RawObject{}
+		}
+		documentEnvelope.Review.Extra["source_omissions"] = raw
 	}
 	envelopeRaw, err := evergreencore.MarshalDocumentEnvelope(documentEnvelope)
 	if err != nil {

@@ -210,7 +210,12 @@ func Inventory(root string) (Prepared, error) {
 			if len(embedded) > 0 {
 				record.Candidates, _ = json.Marshal(embedded)
 				result.Manifest.Counts["legacy_candidates"] += len(embedded)
-				result.quarantine("EG_MIGRATION_EMBEDDED_REVIEW", rel, "embedded Candidate review requires an explicit block mapping")
+				coverage, coverageErr := mdfile.ParseCandidateCoverageState(raw)
+				if coverageErr != nil {
+					return coverageErr
+				}
+				record.Coverage, _ = json.Marshal(coverage)
+				result.Manifest.Counts["legacy_coverage"] += len(coverage.Draft) + len(coverage.Final)
 			}
 			if body, exists := doc.Section(mdfile.SecNoteBody); exists {
 				if review, reviewErr := mdfile.ParseReviewNote(raw[body.Body:body.End]); reviewErr == nil {
@@ -257,7 +262,9 @@ func Inventory(root string) (Prepared, error) {
 		}
 		envelope := baseEnvelope(item)
 		if item.kind == "note" {
-			if workspace, exists := workspaces[id]; exists {
+			workspace, exists := workspaces[id]
+			embedded, _ := mdfile.ParseCandidates(item.raw)
+			if exists || len(embedded) > 0 {
 				imported, importErr := segment.ImportLegacyWorkspace(item.raw, workspace.raw)
 				if importErr != nil {
 					result.quarantine("EG_MIGRATION_REVIEW_UNMAPPABLE", item.path, importErr.Error())
