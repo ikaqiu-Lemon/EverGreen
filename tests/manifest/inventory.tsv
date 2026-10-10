@@ -246,7 +246,7 @@ tests/_staged/pkg/evergreencore/operation_test.go	unit	go	core	unit.pkg.evergree
 tests/_staged/pkg/evergreencore/provider_test.go	unit	go	core	unit.pkg.evergreencore	8	20870
 tests/_staged/pkg/evergreencore/review_payload_test.go	unit	go	core	unit.pkg.evergreencore	1	2128
 tests/_staged/pkg/evergreencore/review_test.go	unit	go	core	unit.pkg.evergreencore	6	18609
-tests/_staged/pkg/evergreencore/semantic_export_test.go	unit	go	core	unit.pkg.evergreencore	2	3611
+tests/_staged/pkg/evergreencore/semantic_export_test.go	unit	go	core	unit.pkg.evergreencore	3	4166
 tests/_staged/scripts/migrate-storage-v3/migration_test.go	unit	go	migration	unit.scripts.migrate-storage-v3	4	9000
 tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534

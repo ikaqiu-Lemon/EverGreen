@@ -93,3 +93,20 @@ func TestMarkdownCreatesNativeRenderableBlocksAndDeterministicIDs(t *testing.T) 
 		t.Fatal("native superblock syntax missing")
 	}
 }
+
+func TestMarkdownExportDoesNotInsertSpacesAtTextMarkBoundaries(t *testing.T) {
+	body := []byte("**Library**：约束边界。\n\n`PreToolUse`与`PostToolUse`。\n")
+	nodes, err := MarkdownChildren(body, "spacing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(nodes)
+	exported, err := MarkdownText(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(exported), "**Library**：") ||
+		!strings.Contains(string(exported), "`PreToolUse`与`PostToolUse`") {
+		t.Fatalf("export inserted presentation spacing: %s", exported)
+	}
+}

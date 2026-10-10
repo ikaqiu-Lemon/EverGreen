@@ -82,6 +82,7 @@ func MarkdownText(children json.RawMessage) ([]byte, error) {
 		return nil, err
 	}
 	engine := lute.New()
+	engine.SetAutoSpace(false)
 	tree, err := dataparser.ParseJSONWithoutFix(root, engine.ParseOptions)
 	if err != nil {
 		return nil, err
