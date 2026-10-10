@@ -90,6 +90,7 @@ tests/_staged/internal/client/client_test.go	unit	go	client	unit.internal.client
 tests/_staged/internal/git/exitcode_test.go	unit	go	git-integrity	unit.internal.git	1	1048
 tests/_staged/internal/git/git_test.go	unit	go	git-integrity	unit.internal.git	12	12460
 tests/_staged/internal/git/log_test.go	unit	go	git-integrity	unit.internal.git	4	6849
+tests/_staged/internal/git/pipe_wait_test.go	unit	go	git-integrity	unit.internal.git	2	1350
 tests/_staged/internal/index/blocks_test.go	unit	go	index-search	unit.internal.index	3	6688
 tests/_staged/internal/index/build_test.go	unit	go	index-search	unit.internal.index	10	15709
 tests/_staged/internal/index/consistency_rowlevel_test.go	unit	go	index-search	unit.internal.index	4	15156

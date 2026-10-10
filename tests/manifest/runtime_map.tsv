@@ -90,6 +90,7 @@ tests/_staged/internal/client/client_test.go	internal/client/client_test.go	ever
 tests/_staged/internal/git/exitcode_test.go	internal/git/exitcode_test.go	evergreen	unit	go
 tests/_staged/internal/git/git_test.go	internal/git/git_test.go	evergreen	unit	go
 tests/_staged/internal/git/log_test.go	internal/git/log_test.go	evergreen	unit	go
+tests/_staged/internal/git/pipe_wait_test.go	internal/git/pipe_wait_test.go	evergreen	unit	go
 tests/_staged/internal/index/blocks_test.go	internal/index/blocks_test.go	evergreen	unit	go
 tests/_staged/internal/index/build_test.go	internal/index/build_test.go	evergreen	unit	go
 tests/_staged/internal/index/consistency_rowlevel_test.go	internal/index/consistency_rowlevel_test.go	evergreen	unit	go
