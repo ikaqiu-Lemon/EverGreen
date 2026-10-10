@@ -94,12 +94,17 @@ var contractUnregisteredFlags = map[string]string{
 	// （rejected/validated → pending 复议边）与 §6.2「回到 pending（复议）复用 eg opinion validate
 	// --reopen，避免再加命令」。本判据只读 M1~M3 的四份冻结合同，观点 schema 设计不在其中，
 	// 故与 include-deleted / include-deprecated / kind 同例具名登记，不整体放宽其余参数的逐字可查判据。
-	"reopen": "观点 schema v2 设计 §6.1 状态机复议边 + §6.2「复用 eg opinion validate --reopen」（M1~M3 冻结合同表未给出参数名）",
-	"all":    "Storage v3 正式合同 D6.1：eg materialize --all",
-	"output": "Storage v3 正式合同 D6.1：eg export --output <dir>",
-	"plain":  "Storage v3 正式合同 D6.1：eg export --plain",
-	"file":   "Candidate review workflow 合同 §3：eg candidate apply --file <review.json>",
-	"rebase": "Note segmentation workspace 合同 §7：eg candidate apply --rebase",
+	"reopen":    "观点 schema v2 设计 §6.1 状态机复议边 + §6.2「复用 eg opinion validate --reopen」（M1~M3 冻结合同表未给出参数名）",
+	"all":       "Storage v3 正式合同 D6.1：eg materialize --all",
+	"output":    "Storage v3 正式合同 D6.1：eg export --output <dir>",
+	"plain":     "Storage v3 正式合同 D6.1：eg export --plain",
+	"file":      "Candidate review workflow 合同 §3：eg candidate apply --file <review.json>",
+	"rebase":    "Note segmentation workspace 合同 §7：eg candidate apply --rebase",
+	"canonical": "Frozen .sy 合同第 13/16 节：canonical export",
+	"manifest":  "Frozen .sy 合同第 16 节：固定迁移映射",
+	"target":    "Frozen .sy 合同第 16 节：隔离目标 workspace",
+	"before":    "Frozen .sy 合同第 13 节：semantic diff before archive",
+	"after":     "Frozen .sy 合同第 13 节：semantic diff after archive",
 }
 
 // 命令展示名（S1 九命令按合同 §1 表格行序，之后是 M3 的三条用户显式状态命令，T-…-039）。
@@ -148,6 +153,8 @@ var wantCommands = []string{
 	"export",
 	// Candidate review workflow：完整候选状态 show/apply。
 	"candidate show|apply|migrate",
+	"migrate inventory|import|parity",
+	"diff",
 }
 
 // wantCommandCount 是注册命令总数：S1 九条 + M3 状态三条（deprecate / restore / replaced-by）
@@ -172,7 +179,7 @@ var wantCommands = []string{
 // **原样保留**在 TestCommandCountTwentyTwo 里（它改证「摘掉 opinion 后恰 22」，结论不删）。
 // + Storage v3 B4 两条（materialize / export）：23 → 25。
 // + Candidate review 一条（candidate）：25 → 26。
-const wantCommandCount = 26
+const wantCommandCount = 28
 
 // 每个命令的 flag 集合（逐项对齐合同 §1.1–§1.9；全局 flag 另计）。
 var wantFlags = map[string][]string{
@@ -242,8 +249,10 @@ var wantFlags = map[string][]string{
 	// delete / proposal / capture 同源；--reopen 的合同出处为观点 schema v2 设计 §6.1/§6.2。
 	"opinion":     {"domain", "tag", "since", "until", "include-deleted", "include-deprecated", "limit", "offset", "reason", "reopen"},
 	"materialize": {"note", "candidate", "all", "strict"},
-	"export":      {"plain", "output"},
+	"export":      {"plain", "canonical", "output"},
 	"candidate":   {"note", "file", "rebase", "strict"},
+	"migrate":     {"output", "manifest", "target"},
+	"diff":        {"before", "after"},
 }
 
 var globalFlagNames = []string{"json", "vault", "help", "h"}
@@ -1129,7 +1138,7 @@ func TestCommandCountNineteen(t *testing.T) {
 	if len(m3Baseline) != 18 {
 		t.Fatalf("M3 基线清单写错了：%d 条，M3 收口时恰 18 条", len(m3Baseline))
 	}
-	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1 + 1 + 1 + 1; want != wantCommandCount {
+	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2; want != wantCommandCount {
 		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）+ 1（006-B1a 的 %s）+ 1（Storage v3 的 %s）+ 1（Storage v3 的 %s）+ 1（candidate review 的 %s）= %d，"+
 			"但 wantCommandCount = %d",
 			len(m3Baseline), m4AddedCount, m4LaterAdded, m5LaterAdded, m5LaterAdded2,
@@ -1138,9 +1147,9 @@ func TestCommandCountNineteen(t *testing.T) {
 	}
 
 	got := New().Commands()
-	if len(got)-7 != 19 {
+	if len(got)-9 != 19 {
 		t.Fatalf("摘掉七条后来新增命令后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
-			len(got)-7)
+			len(got)-9)
 	}
 
 	// ③ 前 18 条逐字等于 M3 基线（次序与名称都不许动）。
@@ -1160,7 +1169,7 @@ func TestCommandCountNineteen(t *testing.T) {
 		if base[c.Name] || c.Name == m4LaterAdded || c.Name == m5LaterAdded ||
 			c.Name == m5LaterAdded2 || c.Name == m5LaterAdded3 ||
 			c.Name == storageV3LaterAdded1 || c.Name == storageV3LaterAdded2 ||
-			c.Name == candidateReviewLaterAdded {
+			c.Name == candidateReviewLaterAdded || c.Name == "migrate" || c.Name == "diff" {
 			continue
 		}
 		added = append(added, c.Name)
@@ -1217,7 +1226,7 @@ func TestCommandCountTwenty(t *testing.T) {
 	// M5 期新增命令名：本用例只负责 M4 收口那一条等式，摘掉后再复算 20。
 	// T-…-068 追加 `bench`、T-…-006-B1a 追加 `opinion` 后这份清单从一条变三条 ——
 	// **20 这个 M4 收口结论一个字不删**。
-	m5Added := []string{"index", "bench", "opinion", "materialize", "export", "candidate"}
+	m5Added := []string{"index", "bench", "opinion", "materialize", "export", "candidate", "migrate", "diff"}
 
 	want := len(m3Baseline) + len(m4Added)
 	if want != 20 {

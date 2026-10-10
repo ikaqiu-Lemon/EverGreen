@@ -179,6 +179,8 @@ def infer_cap(rel: str) -> str:
     if rel.startswith("tests/perf/"):
         return "perf"
     if rel.startswith("tests/_staged/") and rel.endswith("_test.go"):
+        if parts[2:4] == ["pkg", "evergreencore"]:
+            return "core"
         return parts[-1][:-len("_test.go")].split(".")[0]
     return "-"
 

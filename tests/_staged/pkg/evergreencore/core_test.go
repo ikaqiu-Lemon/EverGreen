@@ -354,7 +354,7 @@ func TestScanFSBuildsDocumentAndBlockMap(t *testing.T) {
 					"segment_refs":["seg-01"],
 					"payload_hash":"sha256:payload",
 					"ref_hashes":{"seg-01":"sha256:segment"},
-					"state":"reviewable"
+					"state":"draft"
 				}
 			}
 		}]

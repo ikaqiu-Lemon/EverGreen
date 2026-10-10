@@ -47,11 +47,11 @@ jq_get() { python3 -c 'import json,sys;print(json.load(sys.stdin)[sys.argv[1]])'
 sec "步骤0：构造无 .git 的源码分发副本（D10 前提）"
 DIST="${WORK}/dist"
 mkdir -p "${DIST}"
-if [ -d "${REPO_ROOT}/.git" ]; then
+if git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "${REPO_ROOT}" ls-files -z | tar -C "${REPO_ROOT}" --null -T - -cf - | tar -C "${DIST}" -xf -
 else
   # 本身已是分发包：直接整树复制（排除运行期产物）
-  tar -C "${REPO_ROOT}" --exclude='./.tests-staging' --exclude='./tests/_report' -cf - . | tar -C "${DIST}" -xf -
+  tar -C "${REPO_ROOT}" --exclude='./.git' --exclude='./.tests-staging' --exclude='./tests/_report' -cf - . | tar -C "${DIST}" -xf -
 fi
 [ ! -e "${DIST}/.git" ] && pass "分发副本内无 .git（source_mode 必须走 walk）" || bad "分发副本仍含 .git，D10 前提不成立"
 [ -f "${DIST}/tests/runner/materialize.py" ] && pass "分发副本含 materializer" || bad "分发副本缺 materializer"

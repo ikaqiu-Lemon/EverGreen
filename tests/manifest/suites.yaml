@@ -1680,7 +1680,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 11
+  min_cases: 12
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1700,7 +1700,26 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 509
+  min_cases: 511
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+  exclude_cases: []
+- id: unit.internal.client
+  layer: unit
+  capability: client
+  kind: go
+  target: ./internal/client
+  source: tests/_staged/internal/client/*_test.go
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-003
+  profiles:
+  - unit
+  - full
+  - race
+  timeout_s: 1200
+  min_cases: 3
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1760,6 +1779,25 @@ suites:
   - race
   timeout_s: 1200
   min_cases: 143
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+  exclude_cases: []
+- id: unit.internal.migrate
+  layer: unit
+  capability: inventory
+  kind: go
+  target: ./internal/migrate
+  source: tests/_staged/internal/migrate/*_test.go
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-003
+  profiles:
+  - unit
+  - full
+  - race
+  timeout_s: 1200
+  min_cases: 2
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -1938,6 +1976,25 @@ suites:
   not_run_when: null
   issue: null
   exclude_cases: []
+- id: unit.internal.segment
+  layer: unit
+  capability: importer
+  kind: go
+  target: ./internal/segment
+  source: tests/_staged/internal/segment/*_test.go
+  origin: inventory
+  owner_task: T-evergreen.system_assurance-158614-003
+  profiles:
+  - unit
+  - full
+  - race
+  timeout_s: 1200
+  min_cases: 2
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
+  exclude_cases: []
 - id: unit.internal.store
   layer: unit
   capability: storage-markdown
@@ -2010,7 +2067,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 8
+  min_cases: 44
   required: true
   platform_required: linux/amd64
   not_run_when: null

@@ -244,6 +244,32 @@ var txnForbiddenDeps = []string{"cli", "query", "index", "report", "reconcile"}
 // （手法与 proposal / reconcile / index 三个 stage 逐字相同）。
 var stage5Consumers = map[string]bool{"cli": true}
 
+// Frozen .sy 合同引入的 host adapter 集合，必须逐名登记并维持单向依赖。
+var syPackages = []string{"client", "segment", "migrate"}
+
+func syAdapterAllowed(pkg, dep string) bool {
+	return pkg == "cli" && (dep == "client" || dep == "segment" || dep == "migrate")
+}
+
+func TestSYAdapterDependencyBoundary(t *testing.T) {
+	allowed := map[string]map[string]bool{
+		"client":  {},
+		"segment": {"mdfile": true, "store": true},
+		"migrate": {"mdfile": true, "segment": true},
+	}
+	for pkg, dependencies := range allowed {
+		direct, ok := directDeps(t, pkg)
+		if !ok {
+			t.Fatalf("cannot inspect dependency boundary for %s", pkg)
+		}
+		for dep := range direct {
+			if !dependencies[dep] {
+				t.Errorf("%s imports forbidden internal dependency %s", pkg, dep)
+			}
+		}
+	}
+}
+
 // S1–S5 都不得存在的包：**空集**（见 stage4Packages 的重钉说明）。
 // 保留这一格与遍历它的反证代码：下一次「某能力被判为永不落地」时直接在此登记即可。
 var forbiddenPackages = []string{}
@@ -459,7 +485,8 @@ func allPackages() []string {
 	out = append(out, stage2Packages...)
 	out = append(out, stage3Packages...)
 	out = append(out, stage4Packages...)
-	return append(out, stage5Packages...)
+	out = append(out, stage5Packages...)
+	return append(out, syPackages...)
 }
 
 // TestDocGoFirstLineDeclaresStage 断言 ① 首行阶段标注。
@@ -834,7 +861,7 @@ func TestActualDepsWithinDeclared(t *testing.T) {
 		}
 		for dep := range direct {
 			if stage2Allowed(pkg, dep) || stage3Allowed(pkg, dep) ||
-				stage4Allowed(pkg, dep) || stage5Allowed(pkg, dep) {
+				stage4Allowed(pkg, dep) || stage5Allowed(pkg, dep) || syAdapterAllowed(pkg, dep) {
 				continue
 			}
 			if !declared[dep] {
@@ -849,7 +876,7 @@ func TestActualDepsWithinDeclared(t *testing.T) {
 		closure := declaredClosure(t, pkg, table)
 		for dep := range actual {
 			if stage2Allowed(pkg, dep) || stage3Allowed(pkg, dep) ||
-				stage4Allowed(pkg, dep) || stage5Allowed(pkg, dep) {
+				stage4Allowed(pkg, dep) || stage5Allowed(pkg, dep) || syAdapterAllowed(pkg, dep) {
 				continue
 			}
 			if !closure[dep] {

@@ -112,7 +112,7 @@ func TestCommandCountTwentyThree(t *testing.T) {
 		"reconcile", "check", "index", "bench",
 	}
 	added := []string{"opinion"} // T-…-006 批次 B1a：读路径 opinion 命令。
-	laterAdded := []string{"materialize", "export", "candidate"}
+	laterAdded := []string{"materialize", "export", "candidate", "migrate", "diff"}
 
 	if len(m5Terminal) != 22 {
 		t.Fatalf("M5 终值清单写错了：%d 条，M5 收口时恰 22 条", len(m5Terminal))
