@@ -159,6 +159,113 @@ func CandidateSubtreeHash(payload json.RawMessage) (string, error) {
 	return candidatePayloadHash(container), nil
 }
 
+// RefreshNoteReview is the native-editor save hook. It updates changed
+// segment hashes and marks affected Candidates stale in the same .sy image.
+// Documents without a managed Note review pass through unchanged.
+func RefreshNoteReview(data []byte, registry *Registry) ([]byte, bool, error) {
+	document, err := DecodeSY(data, registry)
+	if err != nil {
+		return nil, false, err
+	}
+	if document.Envelope == nil || document.Envelope.Entity.EntityType != EntityNote ||
+		document.Envelope.Review == nil {
+		return data, false, nil
+	}
+	tree, err := parseReviewTree(data, registry)
+	if err != nil {
+		return nil, false, err
+	}
+	changed := false
+	for _, segment := range tree.segments {
+		if segment.envelope.Segment.NormalizedHash == segment.currentHash {
+			continue
+		}
+		tree.document.Envelope.Review.Lineage = append(
+			tree.document.Envelope.Review.Lineage,
+			SegmentLineage{
+				EventID: deterministicLineageID(
+					"edit",
+					[]LogicalID{segment.envelope.Segment.SegmentID},
+					[]LogicalID{segment.envelope.Segment.SegmentID},
+					segment.currentHash,
+				),
+				Mutation:    "edit",
+				PreviousIDs: []LogicalID{segment.envelope.Segment.SegmentID},
+				NextIDs:     []LogicalID{segment.envelope.Segment.SegmentID},
+			},
+		)
+		segment.envelope.Segment.NormalizedHash = segment.currentHash
+		if err = segment.writeEnvelope(); err != nil {
+			return nil, false, err
+		}
+		changed = true
+	}
+
+	missing := map[LogicalID]struct{}{}
+	for _, module := range tree.document.Envelope.Review.Coverage {
+		for _, id := range module.SegmentRefs {
+			if _, exists := tree.segmentByID[id]; !exists {
+				missing[id] = struct{}{}
+			}
+		}
+	}
+	for _, candidate := range tree.candidates {
+		for _, id := range candidate.envelope.Candidate.SegmentRefs {
+			if _, exists := tree.segmentByID[id]; !exists {
+				missing[id] = struct{}{}
+			}
+		}
+		if candidate.envelope.Candidate.State != "discarded" &&
+			candidate.isStale(tree.segmentByID) &&
+			candidate.envelope.Candidate.State != "stale" {
+			candidate.envelope.Candidate.State = "stale"
+			if err = candidate.writeEnvelope(); err != nil {
+				return nil, false, err
+			}
+			changed = true
+		}
+	}
+	recordedDeleted := map[LogicalID]bool{}
+	for _, event := range tree.document.Envelope.Review.Lineage {
+		if event.Mutation == "delete" {
+			for _, id := range event.PreviousIDs {
+				recordedDeleted[id] = true
+			}
+		}
+	}
+	deleted := make([]LogicalID, 0, len(missing))
+	for id := range missing {
+		if !recordedDeleted[id] {
+			deleted = append(deleted, id)
+		}
+	}
+	sort.Slice(deleted, func(i, j int) bool { return deleted[i] < deleted[j] })
+	for _, id := range deleted {
+		tree.document.Envelope.Review.Lineage = append(
+			tree.document.Envelope.Review.Lineage,
+			SegmentLineage{
+				EventID:     deterministicLineageID("delete", []LogicalID{id}, nil, ""),
+				Mutation:    "delete",
+				PreviousIDs: []LogicalID{id},
+				NextIDs:     []LogicalID{},
+			},
+		)
+		changed = true
+	}
+	if !changed {
+		return data, false, nil
+	}
+	tree.document.Envelope.Entity.SemanticRevision++
+	if err = tree.writeDocumentEnvelope(); err != nil {
+		return nil, false, err
+	}
+	encoded, err := tree.encode()
+	if err != nil {
+		return nil, false, err
+	}
+	return encoded, true, nil
+}
+
 // NormalizeNoteReviewEdit reconciles a native SiYuan block edit with
 // Evergreen hashes and stale state. Move keeps identity and emits no lineage;
 // content edits retain the segment ID and emit edit lineage. Split, merge and

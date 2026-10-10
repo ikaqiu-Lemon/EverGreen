@@ -61,6 +61,36 @@ func TestNoteReviewRoundTripCoverageAndRebase(t *testing.T) {
 	}
 }
 
+func TestRefreshNoteReviewUpdatesHashesAndStaleInOneImage(t *testing.T) {
+	raw := reviewSYFixture(t)
+	edited := mutateReviewSegment(t, raw, "seg-01", "native editor change")
+	refreshed, changed, err := RefreshNoteReview(edited, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("native editor change was not refreshed")
+	}
+	snapshot, err := InspectNoteReview(refreshed, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Segments[0].StoredHash != snapshot.Segments[0].CurrentHash ||
+		!snapshot.Candidates[0].Stale ||
+		snapshot.Candidates[0].Metadata.State != "stale" ||
+		len(snapshot.Lineage) != 1 ||
+		snapshot.Lineage[0].Mutation != "edit" {
+		t.Fatalf("refreshed snapshot = %+v", snapshot)
+	}
+	repeated, changed, err := RefreshNoteReview(refreshed, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed || !reflect.DeepEqual(repeated, refreshed) {
+		t.Fatal("review refresh is not idempotent")
+	}
+}
+
 func TestNoteReviewCoverageFailsClosed(t *testing.T) {
 	t.Run("missing and duplicate", func(t *testing.T) {
 		raw := mutateReviewEnvelope(t, reviewSYFixture(t), func(review *NoteReview) {
