@@ -23,6 +23,15 @@ func TestNoteReviewRoundTripCoverageAndRebase(t *testing.T) {
 		snapshot.Candidates[0].CurrentPayloadHash == "" {
 		t.Fatalf("physical identity or payload hash missing: %+v", snapshot)
 	}
+	var payload []map[string]any
+	if err = json.Unmarshal(snapshot.Candidates[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) != 1 ||
+		payload[0]["ID"] != "20261010121001-payload" ||
+		payload[0]["Data"] != "A self-contained reviewed claim." {
+		t.Fatalf("candidate payload = %+v", payload)
+	}
 
 	edited := mutateReviewSegment(t, raw, "seg-01", "edited source body")
 	normalized, err := NormalizeNoteReviewEdit(raw, edited, nil, nil)

@@ -33,6 +33,7 @@ type ReviewCandidate struct {
 	CandidateID        LogicalID            `json:"candidate_id"`
 	BlockID            string               `json:"block_id"`
 	Metadata           CandidateMetadata    `json:"metadata"`
+	Payload            json.RawMessage      `json:"payload"`
 	CurrentPayloadHash string               `json:"current_payload_hash"`
 	CurrentRefHashes   map[LogicalID]string `json:"current_ref_hashes"`
 	Stale              bool                 `json:"stale"`
@@ -119,7 +120,7 @@ func InspectNoteReview(data []byte, registry *Registry) (ReviewSnapshot, error) 
 	if err != nil {
 		return ReviewSnapshot{}, err
 	}
-	return tree.snapshot(data), nil
+	return tree.snapshot(data)
 }
 
 func ValidateReviewForMaterialization(snapshot ReviewSnapshot) error {
@@ -660,7 +661,10 @@ func (s *AuthorityService) PlanReviewMaterialization(
 	if err != nil {
 		return PlannedMaterialization{}, err
 	}
-	snapshot := tree.snapshot(noteRaw)
+	snapshot, err := tree.snapshot(noteRaw)
+	if err != nil {
+		return PlannedMaterialization{}, err
+	}
 	if err = ValidateReviewForMaterialization(snapshot); err != nil {
 		return PlannedMaterialization{}, err
 	}
@@ -819,7 +823,7 @@ func parseReviewTree(data []byte, registry *Registry) (*reviewTree, error) {
 	return tree, nil
 }
 
-func (t *reviewTree) snapshot(raw []byte) ReviewSnapshot {
+func (t *reviewTree) snapshot(raw []byte) (ReviewSnapshot, error) {
 	hash, _ := SemanticHash(raw)
 	var documentID string
 	_ = json.Unmarshal(t.root.object["ID"], &documentID)
@@ -855,9 +859,14 @@ func (t *reviewTree) snapshot(raw []byte) ReviewSnapshot {
 		}
 		stale := item.envelope.Candidate.State == "stale" ||
 			item.envelope.Candidate.PayloadHash != item.payloadHash || len(staleRefs) > 0
+		payload, err := candidatePayload(item.node)
+		if err != nil {
+			return ReviewSnapshot{}, err
+		}
 		snapshot.Candidates = append(snapshot.Candidates, ReviewCandidate{
 			CandidateID: item.envelope.Candidate.CandidateID, BlockID: item.blockID,
 			Metadata:           *cloneCandidateMetadata(item.envelope.Candidate),
+			Payload:            payload,
 			CurrentPayloadHash: item.payloadHash, CurrentRefHashes: currentRefs,
 			Stale: stale, StaleRefs: staleRefs, Order: item.order,
 		})
@@ -884,7 +893,7 @@ func (t *reviewTree) snapshot(raw []byte) ReviewSnapshot {
 			break
 		}
 	}
-	return snapshot
+	return snapshot, nil
 }
 
 func (t *reviewTree) appendCoverageDiagnostics(snapshot *ReviewSnapshot) {
@@ -1245,6 +1254,22 @@ func candidatePayloadHash(node *reviewNode) string {
 		children = append(children, nodeSemanticValue(child, true))
 	}
 	return canonicalValueHash(children)
+}
+
+func candidatePayload(node *reviewNode) (json.RawMessage, error) {
+	children := make([]json.RawMessage, 0, len(node.children))
+	for _, child := range node.children {
+		raw, err := child.encode()
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, raw)
+	}
+	raw, err := json.Marshal(children)
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func nodeSemanticValue(node *reviewNode, includeSelf bool) any {
