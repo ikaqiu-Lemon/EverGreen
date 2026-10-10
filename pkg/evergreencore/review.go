@@ -1075,13 +1075,13 @@ func (t *reviewTree) materializedClaim(
 		}
 	}
 
-	children := make([]json.RawMessage, 0, len(candidate.node.children))
-	for _, child := range candidate.node.children {
-		raw, err := child.encode()
-		if err != nil {
-			return nil, false, err
-		}
-		children = append(children, raw)
+	var claimDocumentID string
+	if err := json.Unmarshal(root["ID"], &claimDocumentID); err != nil {
+		return nil, false, err
+	}
+	children, err := materializedPayload(candidate.node.children, claimDocumentID)
+	if err != nil {
+		return nil, false, err
 	}
 	root["Children"], _ = json.Marshal(children)
 	properties := map[string]any{"title": candidate.envelope.Candidate.Title}
