@@ -92,6 +92,8 @@ func (c *LocalGitCommitter) Commit(ctx context.Context, request CommitRequest) (
 	body := strings.Join([]string{
 		"Evergreen-Operation-ID: " + request.OperationID,
 		"Evergreen-Principal: " + string(request.Principal.Type) + ":" + request.Principal.ID,
+		"Evergreen-Auth-Source: " + request.Principal.AuthSource,
+		"Evergreen-Request-Reason: " + request.Principal.RequestReason,
 		"Evergreen-Plan-Hash: " + request.PlanHash,
 	}, "\n")
 	if _, stderr, err = runGit(ctx, c.root, env, "commit", "--no-verify", "-m", subject, "-m", body); err != nil {

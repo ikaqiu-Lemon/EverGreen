@@ -160,8 +160,10 @@ const (
 )
 
 type Principal struct {
-	Type PrincipalType `json:"type"`
-	ID   string        `json:"id"`
+	Type          PrincipalType `json:"type"`
+	ID            string        `json:"id"`
+	AuthSource    string        `json:"auth_source,omitempty"`
+	RequestReason string        `json:"request_reason,omitempty"`
 }
 
 type BaseRef struct {

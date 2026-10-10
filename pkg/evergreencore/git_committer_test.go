@@ -29,8 +29,11 @@ func TestLocalGitCommitterCommitsOnlyOperationPathsAndIsIdempotent(t *testing.T)
 	}
 	request := CommitRequest{
 		OperationID: "op-git-real",
-		Principal:   Principal{Type: PrincipalAgent, ID: "agent-1"},
-		Command:     "claim.update", PlanHash: "sha256:plan",
+		Principal: Principal{
+			Type: PrincipalAgent, ID: "agent-1", AuthSource: "api-token",
+			RequestReason: "materialize reviewed candidate",
+		},
+		Command: "claim.update", PlanHash: "sha256:plan",
 		ExpectedParent: parent, Paths: []string{"box/b.sy", "box/a.sy"},
 	}
 	sha, err := committer.Commit(context.Background(), request)
@@ -52,6 +55,8 @@ func TestLocalGitCommitterCommitsOnlyOperationPathsAndIsIdempotent(t *testing.T)
 	for _, want := range []string{
 		"Evergreen-Operation-ID: op-git-real",
 		"Evergreen-Principal: agent:agent-1",
+		"Evergreen-Auth-Source: api-token",
+		"Evergreen-Request-Reason: materialize reviewed candidate",
 		"Evergreen-Plan-Hash: sha256:plan",
 	} {
 		if !strings.Contains(message, want) {
