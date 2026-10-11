@@ -235,7 +235,8 @@ README_LINE="$(grep -n '`eg report --last`' "${REPO_ROOT}/README.md" | head -1 |
 printf '%s\n' "${README_LINE}" | grep -q "capture" || {
   printf '  README：%s\n' "${README_LINE}"; E_FAIL=1; }
 run_eg report --help
-printf '%s' "$(cat "${WORK}/out.txt")" | grep -q -- "--last" || die "eg report --help 未打印 --last 参数行"
+[ "${RC}" = "0" ] || die "eg report --help 应退 0，实得 ${RC}"
+grep -q -- "--last" "${WORK}/out.txt" || die "eg report --help 未打印 --last 参数行"
 grep -q "capture" "${WORK}/out.txt" || { sed -n '1,20p' "${WORK}/out.txt"; E_FAIL=1; }
 SKILL_LINE="$(grep -n '^`eg report --last` 只读复现' "${REPO_ROOT}/skill/SKILL.md" | head -1 || true)"
 [ -n "${SKILL_LINE}" ] || die "skill/SKILL.md 里找不到 report --last 的说明行"

@@ -289,7 +289,7 @@ tests/contract/static-boundaries/assertion_presence.sh	contract	shell	arch-bound
 tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	contract	shell	arch-boundary	contract.static-boundaries.exit_codes_and_diagnostics	0	12686
 tests/contract/static-boundaries/symbol_locality.sh	contract	shell	arch-boundary	contract.static-boundaries.symbol_locality	0	6416
 tests/e2e/authorization/authorization.sh	e2e	shell	authorization	e2e.authorization.authorization	54	22732
-tests/e2e/capture-ingest/c2_report_last_after_capture.sh	e2e	shell	capture-ingest	e2e.capture-ingest.c2_report_last_after_capture	36	16194
+tests/e2e/capture-ingest/c2_report_last_after_capture.sh	e2e	shell	capture-ingest	e2e.capture-ingest.c2_report_last_after_capture	37	16239
 tests/e2e/capture-ingest/convergence.sh	e2e	shell	capture-ingest	e2e.capture-ingest.convergence	51	14461
 tests/e2e/capture-ingest/ppe_replay.sh	e2e	shell	capture-ingest	e2e.capture-ingest.ppe_replay	68	18333
 tests/e2e/capture-ingest/real_article.sh	e2e	shell	capture-ingest	e2e.capture-ingest.real_article	70	18748
