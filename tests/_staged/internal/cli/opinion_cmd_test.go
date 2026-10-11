@@ -79,14 +79,14 @@ func TestOpinionSubcommandsExactlyFour(t *testing.T) {
 	}
 }
 
-// —— ② 当前 --help 恰列 26 条，且 opinion 恰一行 ——
+// —— ② 当前 --help 恰列 28 条，且 opinion 恰一行 ——
 
 func TestOpinionAppearsInHelpExactlyOnce(t *testing.T) {
 	r := New()
 	help := r.Usage()
 	block := helpCommandBlock(t, help)
-	if len(block) != 26 {
-		t.Fatalf("--help 命令区 = %d 行，期望 26（25 + candidate review 一条）", len(block))
+	if len(block) != 28 {
+		t.Fatalf("--help 命令区 = %d 行，期望 28（26 + migrate + diff）", len(block))
 	}
 	n := 0
 	for _, line := range block {

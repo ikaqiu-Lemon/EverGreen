@@ -1165,12 +1165,13 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 
 **Storage v3 起是 25 个顶层命令**：在 23 条基础上追加 `eg materialize` 与 `eg export`。
 **Candidate review workflow 起是 26 个顶层命令**：再追加 `eg candidate`。
+**SiYuan 迁移起是 28 个顶层命令**：再追加 `eg migrate` 与 `eg diff`。
 
-**当前 26 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
+**当前 28 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
 `eg init`、`eg config`、`eg capture`、`eg context`、`eg apply`、`eg search`、`eg card show`、
 `eg rel`、`eg report --last`、`eg deprecate`、`eg restore`、`eg replaced-by`、`eg proposal`、
 `eg delete`、`eg undelete`、`eg mark-reviewed`、`eg unreviewed`、`eg edit`、`eg reconcile`、`eg check`、
-`eg index`、`eg bench`、`eg opinion`、`eg materialize`、`eg export`、`eg candidate`。
+`eg index`、`eg bench`、`eg opinion`、`eg materialize`、`eg export`、`eg candidate`、`eg migrate`、`eg diff`。
 
 ### 8.1 三个正交维度：改一个绝不碰另两个
 
@@ -1580,8 +1581,8 @@ M6（S5）**不新增任何顶层命令**（M6 收口时命令总量为 **22**�
 
 > **post-M6 / current truth（现态，勿被历史断言误判）**：读路径拆分批次新增了顶层命令 `eg opinion`，
 > Storage v3 又新增 `eg materialize` / `eg export`，candidate review workflow 新增
-> `eg candidate`；**当前顶层命令为 26 个**
->（见 §8.2 的「当前 26 命令一览」），不再是 M6 收口时的 22。
+> `eg candidate`，SiYuan 迁移新增 `eg migrate` / `eg diff`；**当前顶层命令为 28 个**
+>（见 §8 的「当前 28 命令一览」），不再是 M6 收口时的 22。
 > 同时 **`W21` 现已启用**：它是 v2 审阅式 Note 的**非 strict 启发式 warning**（§4.3「来源块数显著少于原文章节数」），
 > **strict 下不升级为 error**，也**不能替代来源保真（§3.8）与「缺漏 = 0」**。历史文档里「M6 命令数 22 / W21 不分配」
 > 描述的是 M6 收口时点的事实，与现态并不矛盾——现态以本段为准。

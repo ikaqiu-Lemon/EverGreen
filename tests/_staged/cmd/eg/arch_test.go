@@ -253,8 +253,9 @@ func syAdapterAllowed(pkg, dep string) bool {
 
 func TestSYAdapterDependencyBoundary(t *testing.T) {
 	allowed := map[string]map[string]bool{
-		"client":  {},
-		"segment": {"mdfile": true, "store": true},
+		"client": {},
+		// 单次迁移读取旧 NoteSegmentation 类型；新 runtime 语义仍只由 shared core 解释。
+		"segment": {"mdfile": true, "store": true, "model": true},
 		"migrate": {"mdfile": true, "segment": true},
 	}
 	for pkg, dependencies := range allowed {

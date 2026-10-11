@@ -1699,7 +1699,7 @@ suites:
   - unit
   - full
   - race
-  timeout_s: 1200
+  timeout_s: 2400
   min_cases: 513
   required: true
   platform_required: linux/amd64
@@ -1797,7 +1797,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 3
+  min_cases: 4
   required: true
   platform_required: linux/amd64
   not_run_when: null
@@ -2067,7 +2067,7 @@ suites:
   - full
   - race
   timeout_s: 1200
-  min_cases: 45
+  min_cases: 46
   required: true
   platform_required: linux/amd64
   not_run_when: null

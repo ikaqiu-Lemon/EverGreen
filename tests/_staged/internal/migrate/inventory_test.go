@@ -129,6 +129,41 @@ func TestMissingEdgeReasonQuarantinesAndBlocksAllImport(t *testing.T) {
 	}
 }
 
+func TestInventoryBindsOnlyItsOwnGitWorktree(t *testing.T) {
+	source := t.TempDir()
+	writeFixture(t, source, "sources/s-one.md", []byte("---\nid: s-one\n---\n# Source\n"))
+	gitTest(t, source, "init", "-q")
+	gitTest(t, source, "add", ".")
+	gitTest(t, source, "-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "fixture")
+	subdir := filepath.Join(source, "nested")
+	if err := os.Mkdir(subdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inventory(subdir); err == nil || !strings.Contains(err.Error(), "Git worktree root") {
+		t.Fatalf("nested directory inherited its parent revision: %v", err)
+	}
+	other := t.TempDir()
+	t.Setenv("GIT_DIR", filepath.Join(source, ".git"))
+	t.Setenv("GIT_WORK_TREE", source)
+	if _, err := Inventory(other); err == nil {
+		t.Fatal("caller Git environment forged the migration source")
+	}
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	gitTest(t, source, "worktree", "add", "--detach", worktree, "HEAD")
+	t.Cleanup(func() { gitTest(t, source, "worktree", "remove", "--force", worktree) })
+	first, err := Inventory(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Inventory(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("worktree Git pointer changed the content inventory or mapping")
+	}
+}
+
 func writeFixture(t *testing.T, root, rel string, raw []byte) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

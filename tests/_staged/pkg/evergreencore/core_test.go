@@ -311,6 +311,37 @@ func TestSemanticHashCanonicalization(t *testing.T) {
 	}
 }
 
+func TestClaimSnapshotJSONPreservesUnknownEnvelopeFields(t *testing.T) {
+	envelope := claimEnvelope("c-transport", KnowledgeKind, KnowledgeKindSchema, json.RawMessage(`{}`))
+	future := RawObject{"future": json.RawMessage(`{"integer":9007199254740993,"empty":null,"values":[1,2]}`)}
+	envelope.Extra = future
+	envelope.Entity.Extra = future
+	envelope.Claim.Extra = future
+	envelope.Provenance[0].Extra = future
+	envelope.Relations.Extra = future
+	envelope.Relations.Outgoing = []TypedEdge{{
+		ID: "edge-transport", Schema: ArgumentSchema, Type: "supports", Reason: "transport",
+		Target:  EntityRef{EntityType: EntityClaim, LogicalID: "c-target", Extra: future},
+		Context: EdgeContext{NoteID: "n-note", Extra: future}, Extra: future,
+	}}
+	want, err := MarshalDocumentEnvelope(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := json.Marshal(ClaimSnapshot{Envelope: envelope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot ClaimSnapshot
+	if err = json.Unmarshal(wire, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	got, err := MarshalDocumentEnvelope(snapshot.Envelope)
+	if err != nil || !bytes.Equal(want, got) {
+		t.Fatalf("snapshot JSON changed unknown metadata: want=%s got=%s err=%v", want, got, err)
+	}
+}
+
 func TestScanFSBuildsDocumentAndBlockMap(t *testing.T) {
 	registry := DefaultRegistry()
 	note := &DocumentEnvelope{

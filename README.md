@@ -766,7 +766,7 @@ content to fill it.
 
 ## Command reference
 
-The CLI exposes 26 top-level commands（顶层命令共 26 个）. Run `eg <command> --help` for the
+The CLI exposes 28 top-level commands（顶层命令共 28 个）. Run `eg <command> --help` for the
 authoritative argument list — every help page documents its own exit codes.
 
 **Setup**
@@ -786,7 +786,11 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg candidate show\|apply` | Export or atomically apply a complete candidate review spec |
 | `eg materialize` | User-initiated deterministic Note candidate materialization |
 | `eg export --plain` | Export data Markdown without Evergreen-specific protocol syntax |
+| `eg migrate inventory\|import\|parity` | Bind a frozen Git worktree to a stable manifest, import into a new `.sy` workspace, and verify semantic parity |
+| `eg diff --before <archive> --after <archive>` | Read-only entity, field, body, edge, and coverage comparison of canonical exports |
 | `eg report --last` | Read-only replay of the last report-producing write (`eg apply` or `eg capture`) |
+
+The `.sy` backend is selected with `--backend sy`. Online requests use the kernel; offline requests use the same core and workspace lock. `eg export --canonical` produces a read-only archive for review and diff. Migration requires the source vault itself to be a Git worktree root and preserves current file hashes separately from its committed revision.
 
 **Reading**
 

@@ -34,6 +34,8 @@
 from __future__ import annotations
 
 import argparse
+import atexit
+import fcntl
 import json
 import os
 import platform
@@ -248,6 +250,10 @@ def materialize(run_id: str) -> Path:
     stage = Path(json.loads(out.stdout)["stage"])
     if not (stage / "evergreen").is_dir():
         die(f"物化报告的 stage 不可用：{stage}")
+    # materializer 退出后由 runner 接管活跃锁；嵌套物化不能淘汰正在执行的源码和 scratch。
+    holder = (stage / ".materialize.lock").open("r+")
+    fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    atexit.register(holder.close)
     return stage
 
 

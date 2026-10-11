@@ -99,7 +99,24 @@ func Inventory(root string) (Prepared, error) {
 			Reviews: []segment.LegacyParityInventory{}, Quarantine: []Quarantine{}},
 		Images: map[string][]byte{},
 	}
-	revision, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	sourceRoot, err := filepath.Abs(root)
+	if err != nil {
+		return result, err
+	}
+	sourceRoot, err = filepath.EvalSymlinks(sourceRoot)
+	if err != nil {
+		return result, err
+	}
+	gitRoot, err := sourceGit(sourceRoot, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return result, fmt.Errorf("source vault must be a Git worktree root: %w", err)
+	}
+	canonicalGitRoot, err := filepath.EvalSymlinks(strings.TrimSpace(string(gitRoot)))
+	if err != nil || canonicalGitRoot != sourceRoot {
+		return result, fmt.Errorf("source vault must be a Git worktree root, not a directory inside another repository")
+	}
+	root = sourceRoot
+	revision, err := sourceGit(root, "rev-parse", "HEAD")
 	if err != nil {
 		return result, fmt.Errorf("source vault must have an immutable Git revision: %w", err)
 	}
@@ -112,6 +129,9 @@ func Inventory(root string) (Prepared, error) {
 		}
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
+		if rel == ".git" && !entry.IsDir() {
+			return nil
+		}
 		if entry.IsDir() {
 			if strings.HasPrefix(entry.Name(), ".") && rel != "." {
 				return filepath.SkipDir
@@ -463,6 +483,16 @@ func Inventory(root string) (Prepared, error) {
 	}
 	result.Manifest.Hash = manifestHash(result.Manifest)
 	return result, nil
+}
+
+func sourceGit(root string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "GIT_") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	return cmd.Output()
 }
 
 func baseEnvelope(item legacyEntity) *core.DocumentEnvelope {
