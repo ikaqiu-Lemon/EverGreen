@@ -105,16 +105,12 @@ func (p indexProbe) freshness() index.Freshness {
 // （合同 §6.1），走查权威目录失败时也只保守判为「不可用于本次读」。
 func probeIndex(root string, deps IndexDeps) indexProbe {
 	p := indexProbe{root: root, dir: index.DirPath(root)}
-	p.diag = index.Inspect(p.dir)
 	present, err := statCardFiles(root)
 	if err != nil {
 		// 连扫描面都走查不动：这次读证不出索引新鲜（扫描后端会在读字节时把同一个错误如实上抛）。
 		return p.unverifiableBecause(fmt.Sprintf("权威目录走查失败：%v", err))
 	}
 	p.present = present
-	if !p.diag.Usable() {
-		return p // 库不可用时无从比对新鲜度（Freshness 由 diag 决定为 unusable）。
-	}
 	indexed, err := index.ReadFiles(p.dir)
 	if err != nil {
 		return p.unverifiableBecause(fmt.Sprintf("索引 files 表读不出来：%v", err))
@@ -140,13 +136,16 @@ func probeIndex(root string, deps IndexDeps) indexProbe {
 		return p.unverifiableBecause(fmt.Sprintf("权威 Markdown 读不动，无法算权威卡投影：%v", err))
 	}
 	// 三态结论**只从这一处来**：与 `eg index status`（默认快路径）同一个 index.Check。
+	// Check 自身完整执行 Inspect（含 SQLite / FTS integrity_check），因此这里不先
+	// 重复体检。无法组装现态的路径由 unverifiableBecause 完整体检一次；每条路径仍
+	// 检查目录、reserved entries、schema、integrity 和水位线，健康度从未沿用缓存。
 	p.con = index.Check(p.dir, index.Current{Head: deps.Head(), Files: files, Cards: cards})
+	p.diag = p.con.Diagnosis
 	if p.con.Unusable() {
 		// 行级核对把一个「结构合法、水位线一致」的库判成了不可用（W24 /
 		// row_level_divergence）：让探测结论整体以 con.Diagnosis 为准 —— freshness() 与
 		// SelectBackend 都读 p.diag，据此把本次读整体降级为全量扫描并留痕 W24 + Q5
 		// （合同 §5.2 / §6.3）。不在这里「半索引半扫描」地带病用索引。
-		p.diag = p.con.Diagnosis
 		return p
 	}
 	p.stale = p.con.Stale()
@@ -159,6 +158,9 @@ func probeIndex(root string, deps IndexDeps) indexProbe {
 // 刻意**不**标成陈旧：陈旧是对索引的一项事实断言（「它落后了」），而这里的事实是
 // 「本次读没法证明它跟得上」——两者不是同一件事，混用会让 W22 变成一个含义模糊的码。
 func (p indexProbe) unverifiableBecause(why string) indexProbe {
+	if p.diag.Health == "" {
+		p.diag = index.Inspect(p.dir)
+	}
 	p.unverifiable, p.unverifiableWhy = true, why
 	return p
 }
