@@ -284,7 +284,7 @@ tests/contract/resource-limits/limits.sh	contract	shell	arch-boundary	contract.r
 tests/contract/runner-semantics/runner_negatives.sh	contract	shell	arch-boundary	contract.runner-semantics.runner_negatives	45	21604
 tests/contract/scale-ratchet/negatives.sh	contract	shell	arch-boundary	contract.scale-ratchet.negatives	36	11042
 tests/contract/staging-isolation/isolation.sh	contract	shell	arch-boundary	contract.staging-isolation.isolation	0	7560
-tests/contract/staging-isolation/materialize_safety.sh	contract	shell	arch-boundary	contract.staging-isolation.materialize_safety	4	18087
+tests/contract/staging-isolation/materialize_safety.sh	contract	shell	arch-boundary	contract.staging-isolation.materialize_safety	4	18112
 tests/contract/static-boundaries/assertion_presence.sh	contract	shell	arch-boundary	contract.static-boundaries.assertion_presence	0	7079
 tests/contract/static-boundaries/exit_codes_and_diagnostics.sh	contract	shell	arch-boundary	contract.static-boundaries.exit_codes_and_diagnostics	0	12686
 tests/contract/static-boundaries/symbol_locality.sh	contract	shell	arch-boundary	contract.static-boundaries.symbol_locality	0	6416

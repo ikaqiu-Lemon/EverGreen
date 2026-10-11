@@ -28,11 +28,12 @@ bad()  { printf '  [FAIL] %s\n' "$1" >&2; FAIL=1; }
 sec()  { printf '\n=== %s ===\n' "$1"; }
 
 WORK="$(eg_scratch eg-mat-safety)"
-# 步骤 1 用固定 run-id `safety-git` 在真实仓落一份 stage 做等量对比（--no-cleanup），
+# 步骤 1 用当前进程专属 run-id 在真实仓落一份 stage 做等量对比（--no-cleanup），
 # 因此退出时自己收走，别把生成物留在开发者仓里。
 # 注：D3.7 落地后，残骸已不会再卡死后续同名物化（无主残骸自动回收），
 # 这里的清理只是卫生，不再是"能否继续跑"的前提。只清本门禁自己命名的 run-id。
-OWN_STAGE="${REPO_ROOT}/.tests-staging/safety-git"
+OWN_RUN="safety-git-$$"
+OWN_STAGE="${REPO_ROOT}/.tests-staging/${OWN_RUN}"
 cleanup() {
   chmod -R u+w "${WORK}" 2>/dev/null || true; rm -rf "${WORK}"
   chmod -R u+w "${OWN_STAGE}" 2>/dev/null || true; rm -rf "${OWN_STAGE}"
@@ -59,7 +60,7 @@ fi
 # ---------------------------------------------------------------- 1. D10：分发包可物化 + 等量
 sec "步骤1：D10 无 .git 分发包物化，且与 git 模式逐项等量"
 git_json="${WORK}/git.json"; dist_json="${WORK}/dist.json"
-( cd "${REPO_ROOT}" && python3 tests/runner/materialize.py --run-id safety-git --no-cleanup --json ) \
+( cd "${REPO_ROOT}" && python3 tests/runner/materialize.py --run-id "${OWN_RUN}" --no-cleanup --json ) \
   >"${git_json}" 2>"${WORK}/git.err" || bad "真实仓物化失败：$(head -2 "${WORK}/git.err")"
 ( cd "${DIST}" && python3 tests/runner/materialize.py --run-id safety-dist --json ) \
   >"${dist_json}" 2>"${WORK}/dist.err" || bad "分发包物化失败（D10 未兑现）：$(head -2 "${WORK}/dist.err")"
