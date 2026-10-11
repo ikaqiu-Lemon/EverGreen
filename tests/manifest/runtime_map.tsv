@@ -245,6 +245,8 @@ tests/_staged/pkg/evergreencore/authorization_lossless_test.go	pkg/evergreencore
 tests/_staged/pkg/evergreencore/claim_kinds_test.go	pkg/evergreencore/claim_kinds_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/core_test.go	pkg/evergreencore/core_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/git_committer_test.go	pkg/evergreencore/git_committer_test.go	evergreen	unit	go
+tests/_staged/pkg/evergreencore/materialization_authorization_test.go	pkg/evergreencore/materialization_authorization_test.go	evergreen	unit	go
+tests/_staged/pkg/evergreencore/operation_authorization_test.go	pkg/evergreencore/operation_authorization_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/operation_test.go	pkg/evergreencore/operation_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/provider_test.go	pkg/evergreencore/provider_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/review_payload_test.go	pkg/evergreencore/review_payload_test.go	evergreen	unit	go

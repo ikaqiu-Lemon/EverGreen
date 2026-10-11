@@ -367,8 +367,19 @@ func TestFilesystemAuthorityCreatesOneSelectedGitCommit(t *testing.T) {
 		Type: PrincipalAgent, ID: "agent-1", AuthSource: "api-token",
 		RequestReason: "apply reviewed claims",
 	}
-	planned, err := service.Plan(context.Background(), principal,
-		planFixture(t, root, "op-integrated-git", map[LogicalID]string{"c-a": "after-a", "c-b": "after-b"}))
+	request := planFixture(t, root, "op-integrated-git", map[LogicalID]string{"c-a": "first", "c-b": "second"})
+	for index := range request.Writes {
+		document, decodeErr := DecodeSY(request.Writes[index].After, nil)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		document.Envelope.Claim.Tags = []string{"reviewed"}
+		request.Writes[index].After, err = EncodeSY(request.Writes[index].After, document.Envelope, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	planned, err := service.Plan(context.Background(), principal, request)
 	if err != nil {
 		t.Fatal(err)
 	}

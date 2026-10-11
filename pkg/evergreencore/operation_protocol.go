@@ -396,6 +396,9 @@ func (s *AuthorityService) validateOperation(ctx context.Context, operation Plan
 	if err := s.authorizer.Authorize(ctx, principal, operation.Plan.Command, ids); err != nil {
 		return validationError(CodeUnauthorized, "principal", err.Error())
 	}
+	if err := s.authorizeOperationChanges(operation, beforeImages); err != nil {
+		return err
+	}
 	for index, image := range operation.Images {
 		after, err := DecodeSY(image.Bytes, s.registry)
 		if err != nil {

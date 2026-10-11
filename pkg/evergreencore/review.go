@@ -1045,6 +1045,7 @@ func (t *reviewTree) materializedClaim(
 	var root RawObject
 	create := request.ClaimBase == ""
 	var existingEnvelope *DocumentEnvelope
+	var existingRoot *reviewNode
 	if create {
 		if strings.TrimSpace(request.ClaimPath) == "" || strings.TrimSpace(request.ClaimDocumentID) == "" {
 			return nil, false, validationError(CodeInvalidPlan, "claim_path", "new claim requires claim path and document ID")
@@ -1082,6 +1083,10 @@ func (t *reviewTree) materializedClaim(
 		if err != nil {
 			return nil, false, err
 		}
+		existingRoot, err = parseReviewNode(raw)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 
 	var claimDocumentID string
@@ -1092,8 +1097,18 @@ func (t *reviewTree) materializedClaim(
 	if err != nil {
 		return nil, false, err
 	}
+	children, err = preserveMaterializedUserSections(existingRoot, children)
+	if err != nil {
+		return nil, false, err
+	}
 	root["Children"], _ = json.Marshal(children)
-	properties := map[string]any{"title": candidate.envelope.Candidate.Title}
+	properties := RawObject{}
+	if raw, exists := root["Properties"]; exists {
+		if properties, err = decodeRawObject(raw); err != nil {
+			return nil, false, err
+		}
+	}
+	properties["title"], _ = json.Marshal(candidate.envelope.Candidate.Title)
 	root["Properties"], _ = json.Marshal(properties)
 
 	provenanceBySource := map[LogicalID][]LogicalID{}
@@ -1177,11 +1192,38 @@ func (t *reviewTree) materializedClaim(
 		Provenance: provenance, Relations: relations,
 	}
 	if existingEnvelope != nil {
+		envelope.Spec = existingEnvelope.Spec
+		envelope.Entity.Schema = existingEnvelope.Entity.Schema
 		envelope.Extra = cloneRawObject(existingEnvelope.Extra)
 		envelope.Extension = cloneRawObject(existingEnvelope.Extension)
 		envelope.Claim.Extra = cloneRawObject(existingEnvelope.Claim.Extra)
 		envelope.Entity.Extra = cloneRawObject(existingEnvelope.Entity.Extra)
 		envelope.Relations.Extra = cloneRawObject(existingEnvelope.Relations.Extra)
+		for index := range envelope.Provenance {
+			for _, old := range existingEnvelope.Provenance {
+				next := &envelope.Provenance[index]
+				if old.SourceID == next.SourceID && old.NoteID == next.NoteID {
+					next.Extra = cloneRawObject(old.Extra)
+					break
+				}
+			}
+		}
+		for index := range envelope.Relations.Outgoing {
+			next := &envelope.Relations.Outgoing[index]
+			if next.Schema != MaterialSchema {
+				continue
+			}
+			for _, old := range existingEnvelope.Relations.Outgoing {
+				if old.ID == next.ID && old.Schema == next.Schema {
+					next.Extra = cloneRawObject(old.Extra)
+					next.Extension = cloneRawObject(old.Extension)
+					next.Target.Extra = cloneRawObject(old.Target.Extra)
+					next.Context.Extra = cloneRawObject(old.Context.Extra)
+					next.Context.Data = cloneRawObject(old.Context.Data)
+					break
+				}
+			}
+		}
 	}
 	envelopeRaw, err := MarshalDocumentEnvelope(envelope)
 	if err != nil {
