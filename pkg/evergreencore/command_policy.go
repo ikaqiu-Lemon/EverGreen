@@ -20,6 +20,11 @@ func (CommandPolicy) Authorize(_ context.Context, principal Principal, command s
 		return validationError(CodeUnauthorized, "principal", "agent requires authorization source and request reason")
 	}
 	switch command {
+	case NativeEditCommand:
+		if principal.Type != PrincipalUser {
+			return validationError(CodeUnauthorized, "principal", "native editing requires a user")
+		}
+		return nil
 	case "claim.update", "claim.edge.update", "note.review.update", "note.review.materialize":
 		return nil
 	default:

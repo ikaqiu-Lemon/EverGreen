@@ -31,6 +31,10 @@ func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation,
 			}
 		}
 		switch operation.Plan.Command {
+		case NativeEditCommand:
+			if err = s.authorizeNativeEdit(operation, before[index], after[index], image.Create); err != nil {
+				return err
+			}
 		case "claim.update", "claim.edge.update":
 			if after[index].Envelope.Entity.EntityType != EntityClaim ||
 				(operation.Plan.Command == "claim.edge.update" && image.Create) {

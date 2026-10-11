@@ -58,6 +58,7 @@ type operationManifest struct {
 	Record         OperationRecord  `json:"record"`
 	ExpectedParent string           `json:"expected_git_parent,omitempty"`
 	Files          []journalFile    `json:"files"`
+	NativeEditor   bool             `json:"native_editor,omitempty"`
 }
 
 type journalFile struct {
@@ -301,6 +302,7 @@ func (a *FilesystemAuthority) createManifest(ctx context.Context, operation Plan
 		JournalVersion: operationJournalVersion,
 		Operation:      operation,
 		ExpectedParent: expectedParent,
+		NativeEditor:   operation.nativeEditor,
 		Record: OperationRecord{
 			OperationID: operation.Plan.OperationID,
 			State:       OperationPlanned,
@@ -767,6 +769,10 @@ func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID stri
 		len(manifest.Files) != len(manifest.Operation.Images) {
 		return nil, validationError(CodeTransactionBlocked, "manifest", "operation manifest plan hash or file count mismatch")
 	}
+	if manifest.NativeEditor != (manifest.Operation.Plan.Command == NativeEditCommand) {
+		return nil, validationError(CodeTransactionBlocked, "manifest", "native operation admission is invalid")
+	}
+	manifest.Operation.nativeEditor = manifest.NativeEditor
 	switch manifest.Record.State {
 	case OperationPlanned, OperationPrepared, OperationFilesApplied, OperationGitCommitted, OperationCompleted:
 	default:

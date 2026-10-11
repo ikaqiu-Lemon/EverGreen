@@ -118,6 +118,8 @@ type PlanRequest struct {
 	Command     string       `json:"command"`
 	Base        []BaseRef    `json:"base"`
 	Writes      []WriteInput `json:"writes"`
+
+	nativeEditor bool
 }
 
 type AfterImage struct {
@@ -133,6 +135,8 @@ type PlannedOperation struct {
 	Plan     ChangePlan   `json:"plan"`
 	Images   []AfterImage `json:"images"`
 	PlanHash string       `json:"plan_hash"`
+
+	nativeEditor bool
 }
 
 type ApplyRequest struct {
@@ -359,7 +363,7 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 	if err := ValidateChangePlan(plan); err != nil {
 		return PlannedOperation{}, err
 	}
-	planned := PlannedOperation{Plan: plan, Images: images}
+	planned := PlannedOperation{Plan: plan, Images: images, nativeEditor: request.nativeEditor}
 	planned.PlanHash = ComputePlanHash(planned.Plan, planned.Images)
 	if err := ValidatePlannedOperation(planned, s.registry); err != nil {
 		return PlannedOperation{}, err
@@ -372,6 +376,9 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 
 func (s *AuthorityService) Apply(ctx context.Context, principal Principal, request ApplyRequest) (OperationRecord, error) {
 	operation := request.Operation
+	if operation.Plan.Command == NativeEditCommand && !operation.nativeEditor {
+		return OperationRecord{}, validationError(CodeUnauthorized, "command", "native editing requires host admission")
+	}
 	if err := ValidatePlannedOperation(operation, s.registry); err != nil {
 		return OperationRecord{}, err
 	}
