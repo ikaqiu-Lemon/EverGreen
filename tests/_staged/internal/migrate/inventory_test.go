@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +61,29 @@ func TestColdImportDeterministicManifestParityAndFailClosed(t *testing.T) {
 	}
 	if err = ColdImport(source, target, first.Manifest); err == nil || !strings.Contains(err.Error(), "EG_MIGRATION_TARGET") {
 		t.Fatalf("existing target must be preserved: %v", err)
+	}
+	failedTarget := filepath.Join(t.TempDir(), "data")
+	publishErr := errors.New("fixture publish failure")
+	var retainedStage string
+	err = coldImportWithPublisher(source, failedTarget, first.Manifest, func(stage, requestedTarget string) error {
+		retainedStage = stage
+		if filepath.Base(requestedTarget) != "data" {
+			t.Fatalf("unexpected publish target: %s", requestedTarget)
+		}
+		return publishErr
+	})
+	if !errors.Is(err, publishErr) || !strings.Contains(err.Error(), "unpublished staging retained at") {
+		t.Fatalf("failed publication lost its cause or retained path: %v", err)
+	}
+	if _, statErr := os.Stat(failedTarget); !os.IsNotExist(statErr) {
+		t.Fatalf("failed publication made target visible: %v", statErr)
+	}
+	if _, parityErr := Parity(source, retainedStage, first.Manifest); parityErr != nil {
+		t.Fatalf("failed publication removed or damaged staging evidence: %v", parityErr)
+	}
+	sourceAfterFailure, inventoryErr := Inventory(source)
+	if inventoryErr != nil || !reflect.DeepEqual(first, sourceAfterFailure) {
+		t.Fatalf("failed publication changed source: %v", inventoryErr)
 	}
 	archive, err := Export(target)
 	if err != nil {

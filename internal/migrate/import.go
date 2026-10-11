@@ -11,8 +11,12 @@ import (
 	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
 )
 
-// ColdImport 只发布完整暂存 workspace；中断或校验失败时目标保持不存在。
+// ColdImport 只发布完整暂存 workspace；失败时保留未发布目录用于核查，不清理已有权威。
 func ColdImport(source, target string, manifest Manifest) error {
+	return coldImportWithPublisher(source, target, manifest, os.Rename)
+}
+
+func coldImportWithPublisher(source, target string, manifest Manifest, publish func(string, string) error) (err error) {
 	if manifest.Spec != ManifestSpec || manifest.TargetSpec != core.DocumentSpec ||
 		manifest.Hash != manifestHash(manifest) {
 		return fmt.Errorf("EG_MIGRATION_MANIFEST: invalid manifest or checksum")
@@ -56,7 +60,13 @@ func ColdImport(source, target string, manifest Manifest) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(stage)
+	defer func() {
+		if err != nil {
+			if _, statErr := os.Lstat(stage); statErr == nil {
+				err = fmt.Errorf("%w; unpublished staging retained at %s", err, stage)
+			}
+		}
+	}()
 	lease, err := core.AcquireOfflineLease(stage, "migration")
 	if err != nil {
 		return err
@@ -91,7 +101,7 @@ func ColdImport(source, target string, manifest Manifest) error {
 	if err = syncDirectories(stage); err != nil {
 		return err
 	}
-	if err = os.Rename(stage, targetReal); err != nil {
+	if err = publish(stage, targetReal); err != nil {
 		return err
 	}
 	return syncDirectory(parent)
