@@ -11,15 +11,12 @@ import (
 // SYReadRepository 是一次请求的只读扫描快照；计划与提交必须重新校验权威。
 type SYReadRepository struct {
 	root      string
+	storage   DocumentStorage
 	locations map[LogicalID]LogicalLocation
 }
 
 func NewSYReadRepository(root string, registry *Registry) (*SYReadRepository, error) {
-	index, err := ScanFS(os.DirFS(root), registry)
-	if err != nil {
-		return nil, err
-	}
-	return &SYReadRepository{root: root, locations: index.Locations}, nil
+	return NewSYReadRepositoryWithStorage(context.Background(), plainDocumentStorage{root}, registry)
 }
 
 func (r *SYReadRepository) List(_ context.Context) ([]LogicalID, error) {
@@ -33,10 +30,21 @@ func (r *SYReadRepository) List(_ context.Context) ([]LogicalID, error) {
 	return ids, nil
 }
 
-func (r *SYReadRepository) Load(_ context.Context, id LogicalID) ([]byte, error) {
+func (r *SYReadRepository) Load(ctx context.Context, id LogicalID) ([]byte, error) {
 	location, exists := r.locations[id]
 	if !exists {
 		return nil, fs.ErrNotExist
+	}
+	if r.storage != nil {
+		session, err := r.storage.Open(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer session.Close()
+		if err = session.Allow(location.Path); err != nil {
+			return nil, err
+		}
+		return fs.ReadFile(session.Filesystem(), location.Path)
 	}
 	return os.ReadFile(filepath.Join(r.root, filepath.FromSlash(location.Path)))
 }
