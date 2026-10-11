@@ -123,12 +123,13 @@ type PlanRequest struct {
 }
 
 type AfterImage struct {
-	LogicalID    LogicalID `json:"logical_id"`
-	Path         string    `json:"path"`
-	Bytes        []byte    `json:"bytes"`
-	SemanticHash string    `json:"semantic_hash"`
-	ContentHash  string    `json:"content_hash"`
-	Create       bool      `json:"create,omitempty"`
+	LogicalID    LogicalID               `json:"logical_id"`
+	Path         string                  `json:"path"`
+	Bytes        []byte                  `json:"bytes"`
+	SemanticHash string                  `json:"semantic_hash"`
+	ContentHash  string                  `json:"content_hash"`
+	Create       bool                    `json:"create,omitempty"`
+	Native       *NativePhysicalDocument `json:"native,omitempty"`
 }
 
 type PlannedOperation struct {
@@ -407,6 +408,9 @@ func (s *AuthorityService) validateOperation(ctx context.Context, operation Plan
 		return err
 	}
 	for index, image := range operation.Images {
+		if image.Native != nil {
+			continue // 普通文档由可信原生写集验证，不进入 Claim 字段授权。
+		}
 		after, err := DecodeSY(image.Bytes, s.registry)
 		if err != nil {
 			return err
@@ -481,7 +485,11 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 		if document.ReadOnly {
 			return &DiagnosticError{Diagnostics: document.Diagnostics}
 		}
-		if document.Envelope == nil || document.Envelope.Entity.LogicalID != image.LogicalID {
+		if image.Native != nil {
+			if err = validateNativePhysicalImage(operation, image, document); err != nil {
+				return err
+			}
+		} else if document.Envelope == nil || document.Envelope.Entity.LogicalID != image.LogicalID {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d].bytes", index), "after-image logical ID mismatch")
 		}
 		root, err := decodeRawObject(image.Bytes)
@@ -515,11 +523,12 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 
 func ComputePlanHash(plan ChangePlan, images []AfterImage) string {
 	type imageDigest struct {
-		LogicalID    LogicalID `json:"logical_id"`
-		Path         string    `json:"path"`
-		SemanticHash string    `json:"semantic_hash"`
-		ContentHash  string    `json:"content_hash"`
-		Create       bool      `json:"create"`
+		LogicalID    LogicalID               `json:"logical_id"`
+		Path         string                  `json:"path"`
+		SemanticHash string                  `json:"semantic_hash"`
+		ContentHash  string                  `json:"content_hash"`
+		Create       bool                    `json:"create"`
+		Native       *NativePhysicalDocument `json:"native,omitempty"`
 	}
 	digests := make([]imageDigest, 0, len(images))
 	for _, image := range images {
@@ -529,7 +538,7 @@ func ComputePlanHash(plan ChangePlan, images []AfterImage) string {
 		}
 		digests = append(digests, imageDigest{
 			LogicalID: image.LogicalID, Path: image.Path, SemanticHash: image.SemanticHash,
-			ContentHash: hash, Create: image.Create,
+			ContentHash: hash, Create: image.Create, Native: image.Native,
 		})
 	}
 	payload, _ := json.Marshal(struct {

@@ -101,6 +101,22 @@ func NewFilesystemAuthority(options FilesystemAuthorityOptions) (*FilesystemAuth
 
 func (a *FilesystemAuthority) Root() string { return a.root }
 
+// LoadPhysicalDocument 只读取本次认证范围内的普通物理路径，不允许通过符号链接越界。
+func (a *FilesystemAuthority) LoadPhysicalDocument(ctx context.Context, path string) ([]byte, error) {
+	_, session, close, err := a.openStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer close()
+	if err = session.Allow(path); err != nil {
+		return nil, err
+	}
+	if err = a.verifyAuthorityLocation(path); err != nil {
+		return nil, err
+	}
+	return fs.ReadFile(session.Filesystem(), path)
+}
+
 func (a *FilesystemAuthority) Load(ctx context.Context, logicalID LogicalID) ([]byte, error) {
 	ctx, session, close, err := a.openStorage(ctx)
 	if err != nil {
@@ -432,7 +448,13 @@ func (a *FilesystemAuthority) authorityBeforeImages(ctx context.Context, operati
 	before := make([][]byte, len(operation.Images))
 	for index, write := range operation.Plan.Writes {
 		image := operation.Images[index]
-		current, err := a.Load(ctx, write.LogicalID)
+		var current []byte
+		var err error
+		if image.Native != nil {
+			current, err = a.LoadPhysicalDocument(ctx, image.Path)
+		} else {
+			current, err = a.Load(ctx, write.LogicalID)
+		}
 		if image.Create {
 			if err == nil {
 				return nil, validationError(CodeBaseMismatch, image.Path, "create target already exists")
@@ -455,12 +477,18 @@ func (a *FilesystemAuthority) authorityBeforeImages(ctx context.Context, operati
 		if hash != write.Before {
 			return nil, validationError(CodeBaseMismatch, image.Path, fmt.Sprintf("semantic base hash %q does not match current %q", write.Before, hash))
 		}
-		location, err := a.Resolve(ctx, write.LogicalID)
-		if err != nil {
-			return nil, err
-		}
-		if location.Path != image.Path {
-			return nil, validationError(CodeBaseMismatch, image.Path, fmt.Sprintf("logical ID moved to %s after planning", location.Path))
+		if image.Native != nil {
+			if err = authorizeNativePhysicalChange(image, current); err != nil {
+				return nil, err
+			}
+		} else {
+			location, err := a.Resolve(ctx, write.LogicalID)
+			if err != nil {
+				return nil, err
+			}
+			if location.Path != image.Path {
+				return nil, validationError(CodeBaseMismatch, image.Path, fmt.Sprintf("logical ID moved to %s after planning", location.Path))
+			}
 		}
 		before[index] = current
 	}
@@ -477,6 +505,9 @@ func (a *FilesystemAuthority) CheckCreate(ctx context.Context, image AfterImage)
 	}
 	defer close()
 	if err = session.Allow(image.Path); err != nil {
+		return err
+	}
+	if err = a.verifyAuthorityLocation(image.Path); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(a.authorityPath(image.Path)); !errors.Is(err, fs.ErrNotExist) {
@@ -615,6 +646,9 @@ type stagedAuthorityFile struct {
 func (a *FilesystemAuthority) applyAfterImages(manifest *operationManifest) error {
 	staged := make([]stagedAuthorityFile, 0, len(manifest.Files))
 	for index, file := range manifest.Files {
+		if err := a.verifyAuthorityLocation(file.Path); err != nil {
+			return err
+		}
 		after, err := os.ReadFile(filepath.Join(a.operationDir(manifest.Record.OperationID), file.AfterRef))
 		if err != nil {
 			return err
@@ -681,12 +715,29 @@ func (a *FilesystemAuthority) verifyAllAfter(manifest *operationManifest) error 
 
 func (a *FilesystemAuthority) completeDerived(ctx context.Context, manifest *operationManifest) {
 	ids := make([]LogicalID, 0, len(manifest.Files))
-	for _, file := range manifest.Files {
-		ids = append(ids, file.LogicalID)
+	refs := make([]AuthorityDocumentRef, 0, len(manifest.Files))
+	hasNative := false
+	for index, file := range manifest.Files {
+		image := manifest.Operation.Images[index]
+		ref := AuthorityDocumentRef{LogicalID: file.LogicalID, Path: file.Path}
+		if image.Native != nil {
+			hasNative = true
+			ref.LogicalID = ""
+			ref.DocumentID = image.Native.DocumentID
+		} else {
+			ids = append(ids, file.LogicalID)
+		}
+		refs = append(refs, ref)
 	}
 	err := a.fire(FaultBeforeEvent, -1)
 	if err == nil && a.indexSink != nil {
-		err = a.indexSink.Invalidate(ctx, ids)
+		if sink, ok := a.indexSink.(documentIndexSink); ok {
+			err = sink.InvalidateDocuments(ctx, refs)
+		} else if hasNative {
+			err = errors.New("index sink cannot refresh the complete native document write set")
+		} else {
+			err = a.indexSink.Invalidate(ctx, ids)
+		}
 	}
 	if err != nil {
 		manifest.Record.DerivedStale = true
@@ -913,6 +964,27 @@ func imageContentHash(image AfterImage) string {
 
 func (a *FilesystemAuthority) authorityPath(rel string) string {
 	return filepath.Join(a.root, filepath.FromSlash(rel))
+}
+
+func (a *FilesystemAuthority) verifyAuthorityLocation(rel string) error {
+	if err := validateAuthorityPath(rel); err != nil {
+		return validationError(CodeInvalidPlan, rel, err.Error())
+	}
+	current := a.root
+	for _, component := range strings.Split(rel, "/") {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return validationError(CodeInvalidPlan, rel, "authority path crosses a symlink")
+		}
+	}
+	return nil
 }
 
 func (a *FilesystemAuthority) transactionsDir() string {
