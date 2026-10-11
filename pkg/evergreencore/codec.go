@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -388,10 +389,8 @@ func UnmarshalBlockEnvelope(data []byte) (*BlockEnvelope, error) {
 }
 
 func SemanticHash(data []byte) (string, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var root any
-	if err := decoder.Decode(&root); err != nil {
+	root, err := decodeJSONValue(data)
+	if err != nil {
 		return "", err
 	}
 	normalizeSemanticValue(root, false)
@@ -401,6 +400,25 @@ func SemanticHash(data []byte) (string, error) {
 	}
 	sum := sha256.Sum256(canonical)
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+// decodeJSONValue keeps JSON numbers exact in nested objects and arrays.
+// Authorization and all semantic hashes must use the same lossless parser.
+func decodeJSONValue(data []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("expected a single JSON value")
+		}
+		return nil, err
+	}
+	return value, nil
 }
 
 func normalizeSemanticValue(value any, inEvergreen bool) {

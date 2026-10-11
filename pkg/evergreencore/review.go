@@ -1310,8 +1310,7 @@ func nodeSemanticValue(node *reviewNode, includeSelf bool) any {
 			case "ID", "Evergreen", "Updated", "Created", "Hash", "Children":
 				continue
 			}
-			var value any
-			if json.Unmarshal(raw, &value) == nil {
+			if value, err := decodeJSONValue(raw); err == nil {
 				object[key] = value
 			}
 		}

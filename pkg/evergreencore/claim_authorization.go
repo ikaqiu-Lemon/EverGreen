@@ -17,6 +17,9 @@ func AuthorizeClaimChange(principal Principal, before, after *DocumentEnvelope, 
 		}
 		return nil
 	}
+	if registry == nil {
+		registry = DefaultRegistry()
+	}
 	descriptor, ok := registry.Descriptor(after.Claim.ClaimKind)
 	if !ok {
 		return validationError(CodeClaimKindUnavailable, "claim.claim_kind", "kind descriptor is unavailable")
@@ -38,20 +41,55 @@ func AuthorizeClaimChange(principal Principal, before, after *DocumentEnvelope, 
 		}
 		return nil
 	}
-	if before.Entity.LogicalID != after.Entity.LogicalID || before.Entity.EntityType != after.Entity.EntityType ||
+	if before.Spec != after.Spec || before.Entity.LogicalID != after.Entity.LogicalID ||
+		before.Entity.EntityType != after.Entity.EntityType || before.Entity.Schema != after.Entity.Schema ||
 		before.Claim.ClaimKind != after.Claim.ClaimKind || before.Claim.KindSchema != after.Claim.KindSchema {
 		return validationError(CodeUnauthorized, "claim.claim_kind", "Claim identity and kind require an explicit migration")
+	}
+	// Unknown metadata has no editable contract. Ordinary Claim commands must
+	// retain it; registered migrations can define changes to these partitions.
+	for _, protected := range []struct {
+		field string
+		left  RawObject
+		right RawObject
+	}{
+		{"entity", before.Entity.Extra, after.Entity.Extra},
+		{"claim", before.Claim.Extra, after.Claim.Extra},
+		{"Evergreen", before.Extra, after.Extra},
+		{"extension", before.Extension, after.Extension},
+	} {
+		if !semanticValuesEqual(protected.left, protected.right) {
+			return validationError(CodeUnauthorized, protected.field, "unknown metadata must be preserved")
+		}
+	}
+	// The domain structs omit nested Extra from ordinary json.Marshal. Compare
+	// the lossless envelope representation, including provenance and every edge
+	// partition, rather than serializing those structs independently.
+	left, err := claimAuthorizationFields(before)
+	if err != nil {
+		return err
+	}
+	right, err := claimAuthorizationFields(after)
+	if err != nil {
+		return err
+	}
+	var leftClaim, rightClaim RawObject
+	if err = json.Unmarshal(left["claim"], &leftClaim); err != nil {
+		return err
+	}
+	if err = json.Unmarshal(right["claim"], &rightClaim); err != nil {
+		return err
 	}
 	changed := []struct {
 		field string
 		left  any
 		right any
 	}{
-		{"claim.status", before.Claim.Status, after.Claim.Status},
-		{"claim.tags", before.Claim.Tags, after.Claim.Tags},
-		{"claim.kind_data", before.Claim.KindData, after.Claim.KindData},
-		{"claim.provenance", before.Provenance, after.Provenance},
-		{"claim.relations", before.Relations, after.Relations},
+		{"claim.status", leftClaim["status"], rightClaim["status"]},
+		{"claim.tags", leftClaim["tags"], rightClaim["tags"]},
+		{"claim.kind_data", leftClaim["kind_data"], rightClaim["kind_data"]},
+		{"claim.provenance", left["provenance"], right["provenance"]},
+		{"claim.relations", left["relations"], right["relations"]},
 	}
 	for _, change := range changed {
 		if !semanticValuesEqual(change.left, change.right) && !fieldAllowed(descriptor, principal.Type, change.field) {
@@ -82,12 +120,30 @@ func AuthorizeClaimChange(principal Principal, before, after *DocumentEnvelope, 
 	return nil
 }
 
+func claimAuthorizationFields(envelope *DocumentEnvelope) (RawObject, error) {
+	raw, err := MarshalDocumentEnvelope(envelope)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRawObject(raw)
+}
+
 func semanticValuesEqual(left, right any) bool {
-	leftRaw, _ := json.Marshal(left)
-	rightRaw, _ := json.Marshal(right)
-	var leftValue, rightValue any
-	if json.Unmarshal(leftRaw, &leftValue) != nil || json.Unmarshal(rightRaw, &rightValue) != nil {
-		return bytes.Equal(leftRaw, rightRaw)
+	leftRaw, err := json.Marshal(left)
+	if err != nil {
+		return false
+	}
+	rightRaw, err := json.Marshal(right)
+	if err != nil {
+		return false
+	}
+	leftValue, err := decodeJSONValue(leftRaw)
+	if err != nil {
+		return false
+	}
+	rightValue, err := decodeJSONValue(rightRaw)
+	if err != nil {
+		return false
 	}
 	leftRaw, _ = json.Marshal(leftValue)
 	rightRaw, _ = json.Marshal(rightValue)
