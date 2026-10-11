@@ -67,6 +67,8 @@ func commands() []*Command {
 		materializeCommand(),
 		exportCommand(),
 		candidateCommand(),
+		migrateCommand(),
+		diffCommand(),
 	}
 }
 

@@ -184,10 +184,22 @@ func TestS1NineCommandsAreImplemented(t *testing.T) {
 	// wantCommandCount = 23 与 opinion_cmd_test.go 的 TestCommandCountTwentyThree）。M5 收口值 22
 	// 那一格原样保留在 TestCommandCountTwentyTwo（它改证「摘掉 opinion 后恰 22」）。数字变了是
 	// **事实变了**（`eg opinion` 已真实注册），「全部非占位 + 全部已挂载」两条判据依旧一格未放宽。
-	if len(cmds) != 25 {
-		t.Fatalf("命令数应为 25（既有 23 条 + Storage v3 materialize / export），实际 %d", len(cmds))
+	// 当前 28 条：Storage v3 materialize/export/candidate 与 .sy migrate/diff 各在册。
+	// 精确核对名称和顺序，避免只改数字后漏注册一条、用另一条重复命令凑总数。
+	want := []string{
+		"init", "config", "capture", "context", "apply", "search", "card", "rel", "report",
+		"deprecate", "restore", "replaced-by", "proposal", "delete", "undelete",
+		"mark-reviewed", "unreviewed", "edit", "reconcile", "check", "index", "bench",
+		"opinion", "materialize", "export", "candidate", "migrate", "diff",
 	}
-	for _, c := range cmds {
+	if len(cmds) != len(want) {
+		t.Fatalf("命令数应为 %d（既有 23 条 + materialize/export/candidate/migrate/diff），实际 %d",
+			len(want), len(cmds))
+	}
+	for i, c := range cmds {
+		if c.Name != want[i] {
+			t.Fatalf("第 %d 条命令为 %q，预期 %q", i+1, c.Name, want[i])
+		}
 		if c.Placeholder {
 			t.Fatalf("命令 %q 仍被标为占位（M2 判据 1 要求九命令全部具备真实实现）", c.Display)
 		}

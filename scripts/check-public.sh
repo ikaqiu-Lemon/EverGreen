@@ -13,6 +13,7 @@ check() {
   shift 2
 
   if grep -RInE \
+    --exclude=.git \
     --exclude-dir=.git \
     --exclude-dir=.venv \
     --exclude-dir=.tests-staging \

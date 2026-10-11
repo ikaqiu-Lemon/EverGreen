@@ -149,8 +149,25 @@ func TestLegacyParitySyntheticStateMatrix(t *testing.T) {
 		if err := json.Unmarshal(root["Children"], &children); err != nil {
 			t.Fatal(err)
 		}
-		// B3 is referenced by cand-harness-production-five-capabilities.
-		children[2]["Data"], _ = json.Marshal("edited after legacy import")
+		// B3 的受管容器通过逻辑身份定位，前言块不影响编辑目标。
+		found := false
+		for _, child := range children {
+			raw, ok := child["Evergreen"]
+			if !ok {
+				continue
+			}
+			envelope, err := evergreencore.UnmarshalBlockEnvelope(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Segment != nil && envelope.Segment.SegmentID == snapshot.Segments[2].SegmentID {
+				child["Data"], _ = json.Marshal("edited after legacy import")
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("B3 managed container not found")
+		}
 		root["Children"], _ = json.Marshal(children)
 		edited, _ := json.Marshal(root)
 		normalized, err := evergreencore.NormalizeNoteReviewEdit(

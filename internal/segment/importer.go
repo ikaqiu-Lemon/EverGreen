@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/store"
 	"github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
 )
@@ -55,13 +56,22 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 	if err != nil {
 		return ImportResult{}, err
 	}
-	_, segmentation, candidates, coverageState, _, err :=
-		store.ParseMaterializationWorkspace(noteRaw, workspaceRaw)
+	var segmentation model.NoteSegmentation
+	var candidates []store.Candidate
+	var coverageState store.CandidateCoverageState
+	if len(workspaceRaw) == 0 {
+		_, candidates, coverageState, _, err = store.ParseMaterializationNote(noteRaw)
+		segmentation = model.NoteSegmentation{Note: note.ID, NoteHash: store.ContentHash(noteRaw),
+			Title: string(note.ID), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt}
+		if title, ok := note.Extra["title"].(string); ok {
+			segmentation.Title = title
+		}
+	} else {
+		_, segmentation, candidates, coverageState, _, err =
+			store.ParseMaterializationWorkspace(noteRaw, workspaceRaw)
+	}
 	if err != nil {
 		return ImportResult{}, err
-	}
-	if coverageState.Finalized {
-		return ImportResult{}, fmt.Errorf("legacy finalized extraction is not a Candidate review workspace")
 	}
 	body, ok := noteDoc.Section(mdfile.SecNoteBody)
 	if !ok {
@@ -69,15 +79,35 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 	}
 	review, err := mdfile.ParseReviewNote(noteRaw[body.Body:body.End])
 	if err != nil {
-		if _, found, manifestErr := mdfile.ParseNoteBlockManifest(workspaceRaw); manifestErr == nil && found {
-			return ImportResult{}, fmt.Errorf(
-				"anchorless Note import requires the exported review block payloads: %w", err)
+		if manifest, found, manifestErr := mdfile.ParseNoteBlockManifest(workspaceRaw); manifestErr == nil && found {
+			review, err = mdfile.ParsePlainReviewNote(noteRaw[body.Body:body.End], manifest)
 		}
-		return ImportResult{}, err
+		if err != nil {
+			return ImportResult{}, err
+		}
+	}
+	legacyCoverage, _ := json.Marshal(coverageState)
+	if len(workspaceRaw) == 0 {
+		candidates, coverageState, err = mapEmbeddedReview(review, candidates, coverageState)
+		if err != nil {
+			return ImportResult{}, err
+		}
+	} else if coverageState.Finalized {
+		coverageState, err = mapFinalCoverage(candidates, coverageState)
+		if err != nil {
+			return ImportResult{}, err
+		}
 	}
 	noteRefs := make(map[string]evergreencore.LogicalID, len(review.Blocks))
 	hashes := make(map[evergreencore.LogicalID]string, len(review.Blocks))
-	var children []json.RawMessage
+	prefix, err := mdfile.PlainExport(noteRaw[noteDoc.BodyFrom:body.Body])
+	if err != nil {
+		return ImportResult{}, err
+	}
+	children, err := evergreencore.MarkdownChildren(prefix, string(note.ID)+"/prefix")
+	if err != nil {
+		return ImportResult{}, err
+	}
 	inventory := LegacyParityInventory{
 		NoteID:      evergreencore.LogicalID(note.ID),
 		WorkspaceID: string(segmentation.ID),
@@ -104,8 +134,28 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 				Kind: block.Annotation, Label: block.Label,
 			}
 		}
+		visible, renderErr := mdfile.RenderPlainReviewNote([]mdfile.ReviewBlock{block}, nil)
+		if block.Role == mdfile.ReviewRoleAgent {
+			label, labelErr := mdfile.ResolveAgentLabel(block.Annotation, block.Label)
+			if labelErr != nil {
+				return ImportResult{}, labelErr
+			}
+			visible = []byte("> **[Agent " + label + "]** " + strings.ReplaceAll(string(block.Body), "\n", "\n> ") + "\n")
+			if block.Heading != "" {
+				visible = append([]byte("### "+block.Heading+"\n\n"), visible...)
+			}
+			renderErr = nil
+		}
+		if renderErr != nil {
+			return ImportResult{}, renderErr
+		}
+		nested, renderErr := evergreencore.MarkdownChildren(visible, blockID)
+		if renderErr != nil {
+			return ImportResult{}, renderErr
+		}
 		node := map[string]any{
-			"ID": blockID, "Type": "NodeParagraph", "Data": string(block.Body),
+			"ID": blockID, "Type": "NodeSuperBlock", "Children": evergreencore.SuperBlockChildren(nested),
+			"Properties": map[string]string{"id": blockID},
 		}
 		nodeRaw, _ := json.Marshal(node)
 		metadata.NormalizedHash, err = evergreencore.NormalizedSegmentHash(nodeRaw)
@@ -133,8 +183,39 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 		inventory.Segments = append(inventory.Segments, parity)
 	}
 
+	suffix, err := mdfile.PlainExport(noteRaw[body.End:])
+	if len(workspaceRaw) == 0 {
+		extraction, exists := noteDoc.Section(mdfile.SecExtraction)
+		if !exists {
+			return ImportResult{}, fmt.Errorf("embedded review has no extraction section")
+		}
+		// Candidate subtree 成为唯一 payload；候选之后的历史摘要仍保留为正文。
+		afterExtraction, exportErr := mdfile.PlainExport(noteRaw[extraction.End:])
+		if exportErr != nil {
+			return ImportResult{}, exportErr
+		}
+		tail, exportErr := mdfile.PlainExport(noteRaw[candidates[len(candidates)-1].End:extraction.End])
+		if exportErr != nil {
+			return ImportResult{}, exportErr
+		}
+		suffix = append(tail, afterExtraction...)
+		err = nil
+	}
+	if err != nil {
+		return ImportResult{}, err
+	}
+	trailing, err := evergreencore.MarkdownChildren(suffix, string(note.ID)+"/suffix")
+	if err != nil {
+		return ImportResult{}, err
+	}
+	children = append(children, trailing...)
+	candidateIDs := map[string]evergreencore.LogicalID{}
+	for _, candidate := range candidates {
+		candidateIDs[candidate.Key] = evergreencore.LogicalID("cand-" +
+			strings.TrimPrefix(evergreencore.StablePhysicalID(string(note.ID)+"/"+candidate.Key), "20000101000000-"))
+	}
 	for index, candidate := range candidates {
-		candidateID := evergreencore.LogicalID(candidate.Key)
+		candidateID := candidateIDs[candidate.Key]
 		blockID := legacyPhysicalID(string(note.ID), "candidate", index)
 		refs := candidate.Anchor.NoteRefs
 		if len(refs) == 0 {
@@ -144,14 +225,16 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 		if err != nil {
 			return ImportResult{}, fmt.Errorf("candidate %s: %w", candidate.Key, err)
 		}
-		payloadNode := map[string]any{
-			"ID":         legacyPhysicalID(candidate.Key, "payload", 0),
-			"Type":       "NodeCodeBlock",
-			"Data":       string(candidate.Raw(workspaceRaw)),
-			"Properties": map[string]any{"language": "markdown"},
+		var markdown strings.Builder
+		for _, section := range candidate.Sections {
+			markdown.WriteString("## " + section.Name + "\n")
+			markdown.Write(section.Payload)
 		}
-		payloadRaw, _ := json.Marshal(payloadNode)
-		payload := []json.RawMessage{payloadRaw}
+		payload, err := evergreencore.MarkdownChildren([]byte(markdown.String()), string(candidateID))
+		if err != nil {
+			return ImportResult{}, err
+		}
+		payload = evergreencore.SuperBlockChildren(payload)
 		payloadJSON, _ := json.Marshal(payload)
 		payloadHash, err := evergreencore.CandidateSubtreeHash(payloadJSON)
 		if err != nil {
@@ -167,7 +250,7 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			state = "materialized"
 		}
 		if inventory.Stale {
-			state = "stale"
+			state = evergreencore.CandidateStateStale
 		}
 		metadata := &evergreencore.CandidateMetadata{
 			CandidateID: candidateID, ClaimKind: kind, KindSchema: kindSchema,
@@ -176,6 +259,9 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			Relation: candidate.Anchor.Rel, Reason: candidate.Anchor.Reason,
 			Tags: append([]string(nil), candidate.Anchor.Tags...), State: state,
 			MaterializedClaimID: evergreencore.LogicalID(candidate.Anchor.Output),
+			Extra: evergreencore.RawObject{
+				"legacy_key": jsonString(candidate.Key),
+			},
 		}
 		envelopeRaw, err := evergreencore.MarshalBlockEnvelope(&evergreencore.BlockEnvelope{
 			Spec: evergreencore.BlockSpec, Role: "candidate", Candidate: metadata,
@@ -186,6 +272,7 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 		node := map[string]any{
 			"ID": blockID, "Type": "NodeSuperBlock",
 			"Evergreen": json.RawMessage(envelopeRaw), "Children": payload,
+			"Properties": map[string]string{"id": blockID},
 		}
 		nodeRaw, _ := json.Marshal(node)
 		children = append(children, nodeRaw)
@@ -198,7 +285,7 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 	}
 
 	coverage := make([]evergreencore.CoverageModule, 0, len(coverageState.Draft))
-	for index, item := range coverageState.Draft {
+	for _, item := range coverageState.Draft {
 		refs := item.NoteRefs
 		if len(refs) == 0 {
 			refs = item.SourceRefs
@@ -208,14 +295,15 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			return ImportResult{}, fmt.Errorf("coverage %s: %w", item.Module, err)
 		}
 		module := evergreencore.CoverageModule{
-			ModuleID: evergreencore.LogicalID(
-				fmt.Sprintf("coverage-legacy-%03d", index+1)),
+			ModuleID: evergreencore.LogicalID("coverage-" +
+				strings.TrimPrefix(evergreencore.StablePhysicalID(string(note.ID)+"/"+item.Module+"/"+strings.Join(refs, ",")), "20000101000000-")),
 			Disposition: item.Disposition, SegmentRefs: segmentIDs,
 			Reason: item.Reason,
+			Extra:  evergreencore.RawObject{"legacy_module": jsonString(item.Module), "summary": jsonString(item.Summary)},
 		}
 		for _, key := range item.Candidates {
 			module.CandidateIDs = append(module.CandidateIDs,
-				evergreencore.LogicalID(key))
+				candidateIDs[key])
 		}
 		if len(module.CandidateIDs) == 1 {
 			module.CandidateID = module.CandidateIDs[0]
@@ -240,6 +328,23 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			Spec: evergreencore.NoteReviewSpec, Coverage: coverage,
 		},
 	}
+	if len(workspaceRaw) == 0 {
+		documentEnvelope.Review.Extra = evergreencore.RawObject{"legacy_source_coverage": legacyCoverage}
+	}
+	if coverageState.Finalized {
+		final, _ := json.Marshal(coverageState.Final)
+		if documentEnvelope.Review.Extra == nil {
+			documentEnvelope.Review.Extra = evergreencore.RawObject{}
+		}
+		documentEnvelope.Review.Extra["legacy_final_coverage"] = final
+	}
+	if len(review.Omissions) > 0 {
+		raw, _ := json.Marshal(review.Omissions)
+		if documentEnvelope.Review.Extra == nil {
+			documentEnvelope.Review.Extra = evergreencore.RawObject{}
+		}
+		documentEnvelope.Review.Extra["source_omissions"] = raw
+	}
 	envelopeRaw, err := evergreencore.MarshalDocumentEnvelope(documentEnvelope)
 	if err != nil {
 		return ImportResult{}, err
@@ -251,7 +356,11 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 		"Evergreen":  json.RawMessage(envelopeRaw), "Children": children,
 	}
 	result := ImportResult{Inventory: inventory}
-	result.SY, err = json.Marshal(root)
+	base, err := json.Marshal(root)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	result.SY, err = evergreencore.EncodeSY(base, documentEnvelope, nil)
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -267,6 +376,11 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			snapshot.Summary.CandidateCount, len(inventory.Candidates))
 	}
 	return result, nil
+}
+
+func jsonString(value string) json.RawMessage {
+	raw, _ := json.Marshal(value)
+	return raw
 }
 
 func mapLegacyRefs(

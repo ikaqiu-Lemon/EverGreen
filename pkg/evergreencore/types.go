@@ -67,6 +67,10 @@ const (
 	OpinionKind   ClaimKind = "opinion"
 )
 
+// CandidateStateStale belongs to the managed review lifecycle, independently
+// of legacy frontmatter keys and derived index freshness.
+const CandidateStateStale = "stale"
+
 type RawObject map[string]json.RawMessage
 
 type Entity struct {
@@ -595,7 +599,7 @@ func ValidateBlock(envelope *BlockEnvelope, registry *Registry) error {
 			strings.TrimSpace(candidate.State) == "" {
 			return validationError(CodeInvalidBlock, "Evergreen.candidate", "candidate refs, payload hash, and state are required")
 		}
-		if !containsString([]string{"draft", "confirmed", "stale", "materialized", "discarded"}, candidate.State) {
+		if !containsString([]string{"draft", "confirmed", CandidateStateStale, "materialized", "discarded"}, candidate.State) {
 			return validationError(CodeInvalidBlock, "Evergreen.candidate.state", fmt.Sprintf("unsupported candidate state %q", candidate.State))
 		}
 		for _, segmentID := range candidate.SegmentRefs {

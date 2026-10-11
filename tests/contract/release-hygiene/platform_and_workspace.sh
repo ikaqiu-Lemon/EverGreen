@@ -22,12 +22,18 @@ step() { STEP=$((STEP + 1)); printf '\n=== [%02d] %s ===\n' "${STEP}" "$1"; }
 ok()   { PASS=$((PASS + 1)); printf '  [ok] %s\n' "$1"; }
 die()  { printf '  [FAIL] %s\n' "$1" >&2; exit 1; }
 
-step "平台证据：当前仓内原生执行证据只对应 linux/amd64"
+step "平台身份：原生 Go 工具链必须对应实际宿主，不能用交叉编译环境冒充运行证据"
 GO_NATIVE="$(go env GOOS)/$(go env GOARCH)"
 UNAME="$(uname -srm)"
-[ "${GO_NATIVE}" = "linux/amd64" ] || die "本 suite 当前只登记 linux/amd64 原生证据，实测 go env=${GO_NATIVE}"
+HOST_NATIVE="$(python3 - <<'PY'
+import platform
+arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+print(platform.system().lower() + "/" + arch)
+PY
+)"
+[ "${GO_NATIVE}" = "${HOST_NATIVE}" ] || die "Go 环境 ${GO_NATIVE} 与实际宿主 ${HOST_NATIVE} 不符，不能登记为原生运行证据"
 printf '  uname=%s; go-native=%s\n' "${UNAME}" "${GO_NATIVE}"
-ok "原生执行环境与文档已验证平台集合一致：linux/amd64"
+ok "工具链与实际宿主一致；已完成全量验收的平台集合继续由文档证据约束"
 
 step "支持范围文档：三支非本机目标必须标为未原生验证"
 grep -qF '| `linux/amd64` | Fully exercised by the original acceptance suite |' INSTALL.md \

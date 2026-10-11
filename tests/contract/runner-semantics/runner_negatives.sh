@@ -48,7 +48,8 @@ BEFORE_REPO_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 run_in_sb() {
   local suites="$1" profile="$2"; shift 2
   local c=0
-  ( cd "${SB}" && bash tests/run.sh --profile "${profile}" --suites-file "${suites}" "$@" ) \
+  # 探针仓的单仓前提必须独立于调用方的真实 Teamwork 映射。
+  ( cd "${SB}" && env -u EG_TEAMWORK_ROOT bash tests/run.sh --profile "${profile}" --suites-file "${suites}" "$@" ) \
     >"${WORK}/out.txt" 2>&1 || c=$?
   echo "${c}"
 }
@@ -427,6 +428,32 @@ C="$(run_in_sb 'tests/manifest/_neg_done.yaml' contract --plan-only)"
 [ "${C}" != "0" ] || { cat "${WORK}/out.txt"; die "N9d：非法 done_re 正则必须在自检阶段非零"; }
 want_out "不是合法正则"
 ok "N9d 非法正则 → 清单自检非零（坏声明进不了执行面）"
+
+# ---------------------------------------------------------------- 9. runner 活跃 staging 保护
+step "N10：嵌套物化清理旧 run 时，真实 runner 持有的 staging 必须存活"
+cat >"${SB}/tests/_neg/probe_live_stage.sh" <<'SH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[ -d "${EG_STAGED_ROOT}" ]
+python3 tests/runner/materialize.py --run-id nested-cleanup --keep 1 --json >"${TMPDIR}/nested.json"
+[ -f "${EG_STAGED_ROOT}/go.mod" ]
+echo "  [ok] runner 源码 staging 在嵌套清理后仍完整"
+[ -s "${TMPDIR}/nested.json" ]
+echo "  [ok] runner scratch 在嵌套清理后仍完整"
+echo "[PASS] 活跃 runner staging 与 scratch 均保留"
+SH
+python3 - "${SB}/tests/manifest/_neg_green.yaml" "${SB}/tests/manifest/_neg_live.yaml" <<'PY'
+import pathlib, sys
+raw = pathlib.Path(sys.argv[1]).read_text()
+raw = raw.replace("neg.shell-pass", "neg.live-stage").replace("probe_pass.sh", "probe_live_stage.sh")
+pathlib.Path(sys.argv[2]).write_text(raw)
+PY
+git -C "${SB}" add -A
+( cd "${SB}" && python3 tests/tools/inventory.py --write >/dev/null ) || die "副本内重算派生表失败"
+C="$(run_in_sb 'tests/manifest/_neg_live.yaml' contract)"
+[ "${C}" = "0" ] || { cat "${WORK}/out.txt"; die "真实 runner 的 staging 被嵌套清理删除"; }
+want_out "PASS 1 / FAIL 0"
+ok "N10 真实 runner 在嵌套 materializer 额度清理后完成并生成报告"
 
 # ---------------------------------------------------------------- 9. 零污染自查
 step "真实仓库零污染自查"

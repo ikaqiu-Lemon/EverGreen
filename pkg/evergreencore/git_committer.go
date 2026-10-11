@@ -185,10 +185,27 @@ func runGit(ctx context.Context, root string, extraEnv []string, args ...string)
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = root
 	command.Env = append(os.Environ(), extraEnv...)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	err := command.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
+	stdout, err := os.CreateTemp("", "eg-git-stdout-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+	stderr, err := os.CreateTemp("", "eg-git-stderr-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+	command.Stdout, command.Stderr = stdout, stderr
+	runErr := command.Run()
+	out, outErr := os.ReadFile(stdout.Name())
+	errOut, errErr := os.ReadFile(stderr.Name())
+	if runErr != nil {
+		return out, errOut, runErr
+	}
+	if outErr != nil {
+		return out, errOut, outErr
+	}
+	return out, errOut, errErr
 }

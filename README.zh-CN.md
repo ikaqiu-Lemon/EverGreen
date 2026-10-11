@@ -716,7 +716,7 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 
 ## 命令参考
 
-顶层命令共 26 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
+顶层命令共 28 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
 
 **初始化**
 
@@ -735,6 +735,8 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 | `eg candidate show\|apply` | 导出或原子应用完整 candidate review spec |
 | `eg materialize` | 用户显式触发的 Note candidate 确定性物化 |
 | `eg export --plain` | 导出不含 Evergreen 专有协议的纯 Markdown |
+| `eg migrate inventory\|import\|parity` | 将旧 vault 绑定到固定 manifest，并在独立新 `.sy` workspace 冷导入和逐项对账 |
+| `eg diff` | 只读比较 canonical export 的 entity、field、body、edge 和 coverage 语义差异 |
 | `eg report --last` | 只读复现最近一次产出报告体的写命令（`eg apply` 或 `eg capture`） |
 
 **读路径**

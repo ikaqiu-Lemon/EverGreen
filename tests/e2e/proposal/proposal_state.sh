@@ -69,7 +69,7 @@ grep -E '^[[:space:]]+Status[A-Za-z]+[[:space:]]+Status[[:space:]]+=[[:space:]]+
   "${SRC}" | sed 's/.*"\(.*\)".*/\1/' >"${WORK}/states.txt"
 printf '%s\n' pending approved rejected superseded >"${WORK}/want_states.txt"
 diff -u "${WORK}/want_states.txt" "${WORK}/states.txt" || die "四态集合与合同 §2.1 不逐字相等"
-[ "$(wc -l <"${WORK}/states.txt")" = "4" ] || die "status 取值不是恰 4 个"
+[ "$(wc -l <"${WORK}/states.txt" | tr -d ' ')" = "4" ] || die "status 取值不是恰 4 个"
 # 第五态候选词在产品代码里零出现（注释里的反例说明只允许出现在 _test.go）。
 for bad in draft applied candidate; do
   n=$( { grep -rn "Status *= *\"${bad}\"\|StatusDraft\|StatusApplied\|StatusCandidate" \

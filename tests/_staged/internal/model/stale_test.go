@@ -90,13 +90,15 @@ func TestParseStaleReason_RejectsFourthValue(t *testing.T) {
 // Storage v3 sidecar 又增加第三个独立语义：`BlockHealthStale` 表示 candidate sidecar
 // 与权威 Note 投影不一致。它既不是 frontmatter 键，也不是 SQLite freshness；三者必须
 // 各自持有字面量，禁止跨域借常量。
+// .sy 迁移 inventory 的 bool `stale` 又是独立 JSON 字段；只允许具名 Stale 字段的完整
+// bool/tag 声明。Candidate 状态值引用 shared core 的 CandidateStateStale，不借用键名常量。
 //
 // 因此本判据从「单一所有者恰 1 次」重钉为封闭的具名所有者集合：
 //
 //	① 每个字面量在 internal/ 非测试代码里的总出现次数恰等于其所有者条数；
 //	② 逐个所有者文件**各自恰 1 次**（不允许某个所有者写 2 次而另一个写 0 次来凑总数）；
 //	③ 所有者名单**之外**的任何文件里出现即判红（这一格与原判据完全等强）；
-//	④ 每个所有者那一行必须是**该具名常量的声明**（`FMKeyStale` / `FreshnessStale` 在场），
+//	④ 每个所有者那一行必须是**该具名常量或 inventory 字段的声明**，
 //	   杜绝「随便某处写个 "stale" 也算所有者」。
 //
 // 一句话：所有者名单是**封闭枚举 + 精确计数**，不是「允许出现任意多处」。
@@ -109,6 +111,7 @@ func TestStaleKeyLiteralsAppearOnce(t *testing.T) {
 			"model/frontmatter.go": "FMKeyStale",     // frontmatter 键名语义
 			"index/consistency.go": "FreshnessStale", // 索引新鲜度令牌语义
 			"index/blocks.go":      "BlockHealthStale",
+			"segment/importer.go":  "Stale", // 迁移 inventory 的 JSON 字段，独立于状态取值。
 		},
 		reasonLit: {
 			"model/frontmatter.go": "FMKeyStaleReason",
@@ -171,7 +174,13 @@ func TestStaleKeyLiteralsAppearOnce(t *testing.T) {
 					"名单登记了就必须真在场（否则名单造假）", rel, lit, perFile[lit][rel])
 			}
 			// ④ 那一行必须是该具名常量的声明。
-			if !strings.Contains(declLine[lit][rel], constName) {
+			if rel == "segment/importer.go" {
+				if !strings.Contains(declLine[lit][rel], "Stale") ||
+					!strings.Contains(declLine[lit][rel], "bool") ||
+					!strings.Contains(declLine[lit][rel], "`json:"+lit+"`") {
+					t.Fatalf("%s 的迁移 inventory 必须恰含一个 bool stale 字段：%q", rel, declLine[lit][rel])
+				}
+			} else if !strings.Contains(declLine[lit][rel], constName) {
 				t.Fatalf("%s 里 %s 所在行未声明具名常量 %s：%q",
 					rel, lit, constName, declLine[lit][rel])
 			}

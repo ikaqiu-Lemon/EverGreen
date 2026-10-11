@@ -170,7 +170,10 @@ ok "无标记的超限等待为 0；已登记豁免 ${n_exempt}/${EXEMPT_CAP} �
 # ---------------------------------------------------------------- A8 反例七连
 # 反例全部走 A7 用的同一个扫描器（${SCANNER}），因此下面证明的是真实判据面本身。
 step "A8-1 反例：真实会执行的 sleep 300 必须被 A7 判 OVER"
-cp -a "${REPO_ROOT}/tests" "${WORK}/tests"
+# 报告和 scratch 是并发运行的产物，不属于反例源码；复制时必须排除，避免读取正在
+# 清理的 mutation 沙箱，同时保留全部真实测试、扫描器和清单。
+mkdir -p "${WORK}/tests"
+tar -C "${EG_TESTS_ROOT}" --exclude='./_report' -cf - . | tar -C "${WORK}/tests" -xf -
 mkdir -p "${WORK}/tests/e2e/_d7probe"
 # 注意：下面写出的探针文件里 \n 会展开成真实换行，probe.sh 的 sleep 位于**可执行位置**，
 # 而本行的字面量在单引号字符串内（不会等待）。

@@ -10,16 +10,19 @@ import (
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/migrate"
 )
 
 func exportCommand() *Command {
 	return &Command{
-		Name:     "export",
-		Display:  "export",
-		Summary:  "将权威 Markdown 导出为不含 Evergreen 专有协议的 plain Markdown",
-		Owner:    "T-evergreen.block_boundary_materialization-158614-005",
-		ReadOnly: true,
+		Name:           "export",
+		Display:        "export",
+		Summary:        "将权威 Markdown 导出为不含 Evergreen 专有协议的 plain Markdown",
+		Owner:          "T-evergreen.block_boundary_materialization-158614-005",
+		ReadOnly:       true,
+		SkipVaultGuard: true,
 		Usage: `eg export --plain --output <dir> [--json]
+eg export --canonical --vault <siyuan-data-dir> --output <new-archive.json> [--json]
 
 参数：
   --plain          是；输出 plain Markdown
@@ -33,6 +36,7 @@ candidate 标题属性和 L2 candidate 围栏行。
 `,
 		Flags: func(fs *flagSet) {
 			fs.Bool("plain", false, "导出 plain Markdown")
+			fs.Bool("canonical", false, "只读 .sy canonical archive")
 			fs.String("output", "", "vault 外输出目录")
 		},
 		Validate: validateExportArgs,
@@ -44,8 +48,12 @@ func validateExportArgs(inv *Invocation) error {
 		return err
 	}
 	plain, err := strconv.ParseBool(inv.String("plain"))
-	if err != nil || !plain {
-		return &UsageError{Msg: "eg export 必须显式给出 --plain"}
+	canonical, _ := strconv.ParseBool(inv.String("canonical"))
+	if err != nil || plain == canonical {
+		return &UsageError{Msg: "eg export requires exactly one of --plain or --canonical"}
+	}
+	if canonical && inv.VaultFlag == "" {
+		return &UsageError{Msg: "canonical export requires explicit --vault"}
 	}
 	if strings.TrimSpace(inv.String("output")) == "" {
 		return &UsageError{Msg: "eg export 缺必填参数 --output <dir>"}
@@ -59,6 +67,23 @@ type plainExportFile struct {
 }
 
 func (r *Root) runExport(inv *Invocation) (*Result, error) {
+	if inv.String("canonical") == "true" {
+		archive, err := migrate.Export(inv.VaultFlag)
+		if err != nil {
+			return nil, &ValidationError{Msg: err.Error()}
+		}
+		if err = ensurePlainOutputStillSafe(inv.VaultFlag, inv.String("output")); err != nil {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+		if err = writeNewJSON(inv.String("output"), archive); err != nil {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+		return &Result{Data: map[string]interface{}{"count": len(archive.Entities), "spec": archive.Spec},
+			Summary: []string{"canonical archive exported; .sy remains the authority"}}, nil
+	}
+	if err := r.guard(inv); err != nil {
+		return nil, err
+	}
 	output, err := validatePlainExportOutput(inv.VaultRoot, inv.String("output"))
 	if err != nil {
 		return nil, &UsageError{Msg: err.Error()}

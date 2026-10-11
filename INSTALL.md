@@ -224,7 +224,7 @@ transaction journal（事务日志）. `W21` remains unassigned（不分配）.
 
 ## Command roster
 
-Evergreen exposes 26 top-level commands（顶层命令共 26 条）. Run `eg <command> --help`
+Evergreen exposes 28 top-level commands（顶层命令共 28 条）. Run `eg <command> --help`
 for the authoritative flags and exit codes; the table below is the post-install
 roster you can verify against `eg --help`.
 
@@ -236,6 +236,8 @@ roster you can verify against `eg --help`.
 | `eg context` | Read-only processing context (`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + base hashes) |
 | `eg apply` | Apply a ChangePlan |
 | `eg candidate` | `show`/`apply` the complete user-reviewable candidate state |
+| `eg migrate` | `inventory`/`import`/`parity` for manifest-bound migration into a new `.sy` workspace |
+| `eg diff` | Compare canonical exports without changing the workspace |
 | `eg search` | Ranked, paginated card search |
 | `eg card` | `eg card show <k-id>`: single card view |
 | `eg rel` | Argument relationships (and `--replaced-by` pointers) |

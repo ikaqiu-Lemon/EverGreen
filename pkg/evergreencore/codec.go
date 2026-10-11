@@ -150,6 +150,19 @@ func InjectEnvelopeJSON(data []byte, envelope json.RawMessage) ([]byte, error) {
 	return json.Marshal(root)
 }
 
+func (envelope DocumentEnvelope) MarshalJSON() ([]byte, error) {
+	return MarshalDocumentEnvelope(&envelope)
+}
+
+func (envelope *DocumentEnvelope) UnmarshalJSON(data []byte) error {
+	decoded, err := UnmarshalDocumentEnvelope(data)
+	if err != nil {
+		return err
+	}
+	*envelope = *decoded
+	return nil
+}
+
 func MarshalDocumentEnvelope(envelope *DocumentEnvelope) (json.RawMessage, error) {
 	if envelope == nil {
 		return nil, validationError(CodeInvalidEnvelope, "Evergreen", "document envelope is required")

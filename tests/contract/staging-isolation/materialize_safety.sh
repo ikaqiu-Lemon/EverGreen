@@ -28,11 +28,12 @@ bad()  { printf '  [FAIL] %s\n' "$1" >&2; FAIL=1; }
 sec()  { printf '\n=== %s ===\n' "$1"; }
 
 WORK="$(eg_scratch eg-mat-safety)"
-# 步骤 1 用固定 run-id `safety-git` 在真实仓落一份 stage 做等量对比（--no-cleanup），
+# 步骤 1 用当前进程专属 run-id 在真实仓落一份 stage 做等量对比（--no-cleanup），
 # 因此退出时自己收走，别把生成物留在开发者仓里。
 # 注：D3.7 落地后，残骸已不会再卡死后续同名物化（无主残骸自动回收），
 # 这里的清理只是卫生，不再是"能否继续跑"的前提。只清本门禁自己命名的 run-id。
-OWN_STAGE="${REPO_ROOT}/.tests-staging/safety-git"
+OWN_RUN="safety-git-$$"
+OWN_STAGE="${REPO_ROOT}/.tests-staging/${OWN_RUN}"
 cleanup() {
   chmod -R u+w "${WORK}" 2>/dev/null || true; rm -rf "${WORK}"
   chmod -R u+w "${OWN_STAGE}" 2>/dev/null || true; rm -rf "${OWN_STAGE}"
@@ -47,11 +48,11 @@ jq_get() { python3 -c 'import json,sys;print(json.load(sys.stdin)[sys.argv[1]])'
 sec "步骤0：构造无 .git 的源码分发副本（D10 前提）"
 DIST="${WORK}/dist"
 mkdir -p "${DIST}"
-if [ -d "${REPO_ROOT}/.git" ]; then
+if git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "${REPO_ROOT}" ls-files -z | tar -C "${REPO_ROOT}" --null -T - -cf - | tar -C "${DIST}" -xf -
 else
   # 本身已是分发包：直接整树复制（排除运行期产物）
-  tar -C "${REPO_ROOT}" --exclude='./.tests-staging' --exclude='./tests/_report' -cf - . | tar -C "${DIST}" -xf -
+  tar -C "${REPO_ROOT}" --exclude='./.git' --exclude='./.tests-staging' --exclude='./tests/_report' -cf - . | tar -C "${DIST}" -xf -
 fi
 [ ! -e "${DIST}/.git" ] && pass "分发副本内无 .git（source_mode 必须走 walk）" || bad "分发副本仍含 .git，D10 前提不成立"
 [ -f "${DIST}/tests/runner/materialize.py" ] && pass "分发副本含 materializer" || bad "分发副本缺 materializer"
@@ -59,7 +60,7 @@ fi
 # ---------------------------------------------------------------- 1. D10：分发包可物化 + 等量
 sec "步骤1：D10 无 .git 分发包物化，且与 git 模式逐项等量"
 git_json="${WORK}/git.json"; dist_json="${WORK}/dist.json"
-( cd "${REPO_ROOT}" && python3 tests/runner/materialize.py --run-id safety-git --no-cleanup --json ) \
+( cd "${REPO_ROOT}" && python3 tests/runner/materialize.py --run-id "${OWN_RUN}" --no-cleanup --json ) \
   >"${git_json}" 2>"${WORK}/git.err" || bad "真实仓物化失败：$(head -2 "${WORK}/git.err")"
 ( cd "${DIST}" && python3 tests/runner/materialize.py --run-id safety-dist --json ) \
   >"${dist_json}" 2>"${WORK}/dist.err" || bad "分发包物化失败（D10 未兑现）：$(head -2 "${WORK}/dist.err")"
@@ -268,6 +269,20 @@ printf 'S=$(python3 m.py --json | python3 -c "import json,sys;print(json.load(sy
   && pass "反例：引用 ${KEY} 的消费方被判据抓住" \
   || bad "判据失效：引用 ${KEY} 的消费方未被抓住"
 rm -rf "${probe_dir}"
+
+sec "步骤9：worktree 的 .git 文件不得把 staging 指回源仓库"
+WT="${WORK}/source-worktree"
+git -C "${REPO_ROOT}" worktree add --detach "${WT}" HEAD >"${WORK}/wt.log" 2>&1
+before_head="$(git -C "${WT}" rev-parse HEAD)"
+python3 "${WT}/tests/runner/materialize.py" --source-mode walk --run-id worktree-walk --json \
+  >"${WORK}/wt.json" 2>"${WORK}/wt.err"
+WT_STAGE="$(jq_get stage <"${WORK}/wt.json")/evergreen"
+[ -d "${WT_STAGE}/.git" ] && pass "walk staging 创建独立 .git 目录" || bad "walk staging 未隔离 Git 元数据"
+[ "$(git -C "${WT}" rev-parse HEAD)" = "${before_head}" ] && pass "源 worktree HEAD 不变" || bad "walk 物化提交污染源 worktree"
+git -C "${WT_STAGE}" -c user.name=probe -c user.email=probe@example.invalid -c commit.gpgsign=false \
+  commit --allow-empty -qm 'independent staging probe'
+[ "$(git -C "${WT}" rev-parse HEAD)" = "${before_head}" ] && pass "staging commit 不影响源 HEAD" || bad "staging commit 泄漏至源"
+git -C "${REPO_ROOT}" worktree remove --force "${WT}"
 
 printf '\n'
 [ "${FAIL}" -eq 0 ] || { printf '[FAIL] materializer 安全性 / 可分发性门禁未通过\n' >&2; exit 1; }

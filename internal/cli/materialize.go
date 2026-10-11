@@ -49,6 +49,9 @@ func materializeCommand() *Command {
 }
 
 func validateMaterializeArgs(inv *Invocation) error {
+	if inv.Set("request") || inv.Set("dry-run") {
+		return &UsageError{Msg: "--request and --dry-run require --backend sy"}
+	}
 	if err := noPositionalArgs(inv); err != nil {
 		return err
 	}

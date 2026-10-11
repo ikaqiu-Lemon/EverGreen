@@ -34,11 +34,30 @@ func (r *Repo) Root() string { return r.root }
 func execGit(dir string, args ...string) ([]byte, []byte, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
+	// 直接文件描述符不需要 os/exec 的管道复制协程，后台 Git 子进程不会延长 Wait。
+	stdout, err := os.CreateTemp("", "eg-git-stdout-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+	stderr, err := os.CreateTemp("", "eg-git-stderr-")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	runErr := cmd.Run()
+	out, outErr := os.ReadFile(stdout.Name())
+	errOut, errErr := os.ReadFile(stderr.Name())
+	if runErr != nil {
+		return out, errOut, runErr
+	}
+	if outErr != nil {
+		return out, errOut, outErr
+	}
+	return out, errOut, errErr
 }
 
 // Init 初始化仓库并保证 .gitignore 存在（内容 `.index/`）。已有仓库时幂等。
