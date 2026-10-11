@@ -281,7 +281,7 @@ tests/contract/dep-direction/dep_gate_double_sided.sh	contract	shell	arch-bounda
 tests/contract/e2e-hygiene/hygiene.sh	contract	shell	arch-boundary	contract.e2e-hygiene.hygiene	12	11621
 tests/contract/release-hygiene/platform_and_workspace.sh	contract	shell	arch-boundary	contract.release-hygiene.platform_and_workspace	22	5458
 tests/contract/resource-limits/limits.sh	contract	shell	arch-boundary	contract.resource-limits.limits	51	16948
-tests/contract/runner-semantics/runner_negatives.sh	contract	shell	arch-boundary	contract.runner-semantics.runner_negatives	45	21499
+tests/contract/runner-semantics/runner_negatives.sh	contract	shell	arch-boundary	contract.runner-semantics.runner_negatives	45	21604
 tests/contract/scale-ratchet/negatives.sh	contract	shell	arch-boundary	contract.scale-ratchet.negatives	36	11042
 tests/contract/staging-isolation/isolation.sh	contract	shell	arch-boundary	contract.staging-isolation.isolation	0	7560
 tests/contract/staging-isolation/materialize_safety.sh	contract	shell	arch-boundary	contract.staging-isolation.materialize_safety	4	18087

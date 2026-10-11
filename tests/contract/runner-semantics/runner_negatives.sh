@@ -48,7 +48,8 @@ BEFORE_REPO_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 run_in_sb() {
   local suites="$1" profile="$2"; shift 2
   local c=0
-  ( cd "${SB}" && bash tests/run.sh --profile "${profile}" --suites-file "${suites}" "$@" ) \
+  # 探针仓的单仓前提必须独立于调用方的真实 Teamwork 映射。
+  ( cd "${SB}" && env -u EG_TEAMWORK_ROOT bash tests/run.sh --profile "${profile}" --suites-file "${suites}" "$@" ) \
     >"${WORK}/out.txt" 2>&1 || c=$?
   echo "${c}"
 }
