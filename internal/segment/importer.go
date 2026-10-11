@@ -250,7 +250,7 @@ func ImportLegacyWorkspace(noteRaw, workspaceRaw []byte) (ImportResult, error) {
 			state = "materialized"
 		}
 		if inventory.Stale {
-			state = "stale"
+			state = evergreencore.CandidateStateStale
 		}
 		metadata := &evergreencore.CandidateMetadata{
 			CandidateID: candidateID, ClaimKind: kind, KindSchema: kindSchema,

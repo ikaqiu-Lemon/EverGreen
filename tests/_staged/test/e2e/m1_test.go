@@ -22,6 +22,7 @@
 package e2e
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,6 +48,8 @@ import (
 func vaultKindOf(path string) mdfile.Kind {
 	sep := string(filepath.Separator)
 	switch {
+	case strings.Contains(path, sep+"note-segments"+sep):
+		return mdfile.KindNoteSegmentation
 	case strings.Contains(path, sep+"notes"+sep):
 		return mdfile.KindNote
 	case strings.Contains(path, sep+"opinions"+sep):
@@ -447,6 +450,8 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		t.Fatalf("第一篇 apply 退出码 %d，期望 0：%s", code1, env1.raw)
 	}
 	rep1 := env1.report(t)
+	noteA1Path := filepath.Join(vault, "domains", domain, "notes", noteA1+".md")
+	noteBeforeMaterialize := readFile(t, noteA1Path)
 	outputs1 := materializeSample(t, vault, noteA1)
 	cardA1ID := outputs1["cand-search-learning"]
 	opinionA1ID := outputs1["cand-long-term"]
@@ -459,6 +464,7 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		for _, rel := range []string{
 			filepath.Join("sources", srcArticle1+".md"),
 			filepath.Join("domains", domain, "notes", noteA1+".md"),
+			filepath.Join("domains", domain, "note-segments", "ns-"+strings.TrimPrefix(noteA1, "n-")+".md"),
 			filepath.Join("domains", domain, "knowledge", cardA1ID+".md"),
 			filepath.Join("domains", domain, "opinions", opinionA1ID+".md"),
 			filepath.Join("domains", domain, "opinions", opinionA2ID+".md"),
@@ -467,22 +473,29 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 				t.Fatalf("产物缺失 %s：%v", rel, err)
 			}
 		}
-		note := readFile(t, filepath.Join(vault, "domains", domain, "notes", noteA1+".md"))
-		// **Schema v2 · T-…-003 重钉（事实变了，判据形态不变）**：v1 的「产出知识卡」
-		// 在契约 §3.2 里更名扩展为「提取结果」（同时列 Knowledge 与 Opinion 两组）。
-		// 判据没放宽：仍要求笔记里能逐字读到本次产出的卡 ID，且旧分区名不得再出现。
-		if !strings.Contains(note, "## "+mdfile.SecExtraction) || !strings.Contains(note, cardA1ID) {
-			t.Fatalf("笔记「%s」未列出该卡 ID：\n%s", mdfile.SecExtraction, note)
+		note := readFile(t, noteA1Path)
+		if note != noteBeforeMaterialize {
+			t.Fatal("materialize 改写了干净 Note 的正文或元数据")
 		}
-		if !strings.Contains(note, opinionA1ID) || !strings.Contains(note, opinionA2ID) {
-			t.Fatalf("物化后的笔记「%s」未同时列出两条观点 %s / %s：\n%s",
-				mdfile.SecExtraction, opinionA1ID, opinionA2ID, note)
+		assertCleanNote(t, note)
+		// 当前 SKILL v3 将候选、output 映射与覆盖迁入 ns-*「划分结果」。
+		// 保留全部产物/覆盖断言，并核对 workspace 绑定的父 Note 版本。
+		workspace := readNoteWorkspace(t, vault, noteA1, note)
+		candidates, err := mdfile.ParseCandidates([]byte(workspace))
+		if err != nil || len(candidates) != len(outputs1) {
+			t.Fatalf("workspace 候选不可解析或数量漂移：%d / %v", len(candidates), err)
 		}
-		if !strings.Contains(note, "覆盖矩阵") {
-			t.Fatalf("v2 笔记缺「覆盖矩阵」提炼覆盖表：\n%s", note)
+		for _, candidate := range candidates {
+			if candidate.Anchor.Output == "" || candidate.Anchor.Output != outputs1[candidate.Key] {
+				t.Fatalf("workspace 候选 %s 的 output=%q 与真实物化回执 %q 不一致",
+					candidate.Key, candidate.Anchor.Output, outputs1[candidate.Key])
+			}
 		}
-		if strings.Contains(note, "## "+mdfile.SecOutputCards) {
-			t.Fatalf("v2 笔记不得再出现 v1 分区名「%s」：\n%s", mdfile.SecOutputCards, note)
+		if !strings.Contains(workspace, "### 候选覆盖") {
+			t.Fatalf("workspace 缺「候选覆盖」提炼覆盖表：\n%s", workspace)
+		}
+		if strings.Contains(workspace, "## "+mdfile.SecOutputCards) {
+			t.Fatalf("workspace 不得再出现 v1 分区名「%s」：\n%s", mdfile.SecOutputCards, workspace)
 		}
 		card := readFile(t, filepath.Join(vault, "domains", domain, "knowledge", cardA1ID+".md"))
 		for _, four := range []string{"source: '" + srcArticle1 + "'", "note: '" + noteA1 + "'", "rel: 'support'", "reason: '"} {
@@ -578,19 +591,55 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 	// 判据本体已按 post-M6 / current truth 加严——从 v1 的「coverage_gaps 枚举透传两形态可见」
 	// 升级为「v2 提炼覆盖矩阵两形态可见 + outputs/note_only 双处置真实出现 + 不得残留 v1 枚举名」。
 	t.Run("coverage_gap_visible_in_both_forms", func(t *testing.T) {
-		note := readFile(t, filepath.Join(vault, "domains", domain, "notes", noteA1+".md"))
-		if !strings.Contains(note, "覆盖矩阵") {
-			t.Fatalf("笔记缺提炼覆盖矩阵：\n%s", note)
+		note := readFile(t, noteA1Path)
+		assertCleanNote(t, note)
+		workspace := readNoteWorkspace(t, vault, noteA1, note)
+		if !strings.Contains(workspace, "### 候选覆盖") {
+			t.Fatalf("workspace 缺提炼覆盖矩阵：\n%s", workspace)
 		}
-		if !strings.Contains(note, "| 模块 | 来源范围 | 语义模块 | 处置 |") {
-			t.Fatalf("覆盖矩阵表头缺失（四列：模块/来源范围/语义模块/处置）：\n%s", note)
+		if !strings.Contains(workspace, "| 模块 | Note 块 | 语义模块 | 草稿处置 |") {
+			t.Fatalf("覆盖矩阵表头缺失（四列：模块/Note 块/语义模块/草稿处置）：\n%s", workspace)
 		}
-		// outputs 处置：至少一模块指向本次产出的卡；note_only 处置：至少一模块只随正文保真、不立卡。
-		if !strings.Contains(note, cardA1ID) {
-			t.Fatalf("覆盖矩阵未把任一模块指向本次产出的卡 %s：\n%s", cardA1ID, note)
+		// ns-* 保留 Candidate identity，output 由其锚点映射，不能要求 base64 JSON 的
+		// 原始字节包含明文 ID。结构化核对全部三条映射和九行覆盖，无缺口、无重叠。
+		coverage, err := mdfile.ParseCandidateCoverageState([]byte(workspace))
+		if err != nil || coverage.Finalized || len(coverage.Draft) != 9 {
+			t.Fatalf("样例 ① workspace 覆盖必须恰九行草稿：%+v / %v", coverage, err)
 		}
-		if !strings.Contains(note, "Note-only") {
-			t.Fatalf("覆盖矩阵缺 note_only 处置（应有模块随正文保真、不单独立卡）：\n%s", note)
+		refs, found, err := mdfile.NoteBlockManifestVocabulary([]byte(workspace))
+		if err != nil || !found || len(refs) == 0 {
+			t.Fatalf("workspace Note block manifest 不可读：%v", err)
+		}
+		covered, outputs := map[string]int{}, map[string]bool{}
+		for _, item := range coverage.Draft {
+			if len(item.SourceRefs) != 0 || len(item.NoteRefs) == 0 {
+				t.Fatalf("workspace coverage 必须只用 Note refs：%+v", item)
+			}
+			for _, ref := range item.NoteRefs {
+				if !refs[ref] {
+					t.Fatalf("coverage 引用不存在的 Note block %s", ref)
+				}
+				covered[ref]++
+			}
+			for _, key := range item.Candidates {
+				if outputs1[key] == "" || !strings.Contains(workspace, "`"+key+"`") {
+					t.Fatalf("coverage candidate %s 无真实 output 或可见处置", key)
+				}
+				outputs[outputs1[key]] = true
+			}
+		}
+		for ref := range refs {
+			if covered[ref] != 1 {
+				t.Fatalf("Note block %s 被覆盖 %d 次，必须恰一次", ref, covered[ref])
+			}
+		}
+		for _, id := range outputs1 {
+			if !outputs[id] {
+				t.Fatalf("物化 output %s 未被覆盖矩阵引用", id)
+			}
+		}
+		if !strings.Contains(workspace, "Note-only") {
+			t.Fatalf("覆盖矩阵缺 note_only 处置（应有模块随正文保真、不单独立卡）：\n%s", workspace)
 		}
 		// v2 few-shot 不再走 coverage_gaps 英文枚举透传：报告两种形态都不应出现受控枚举名。
 		if hit := firstGapName(env1.raw); hit != "" {
@@ -767,22 +816,27 @@ func TestM1RealArticleZeroIntervention(t *testing.T) {
 		if errs := env2.errorDiags(t); len(errs) != 0 {
 			t.Fatalf("样例 ② 正式 apply 必须零 error（结构化读 data.errors），实际 %d 条：%+v", len(errs), errs)
 		}
-		// 回读草稿 Note：candidate H3 与草稿覆盖先落盘，尚无最终 output。
+		// 回读草稿 Note 与独立 workspace：候选/覆盖落入 ns-*，尚无最终 output。
 		notePath := filepath.Join(vault, "domains", domain, "notes", noteSLL+".md")
 		if _, err := os.Stat(notePath); err != nil {
 			t.Fatalf("样例 ② 的 Note 未落盘 %s：%v", noteSLL, err)
 		}
 		noteSLLBody := readFile(t, notePath)
-		if !strings.Contains(noteSLLBody, "## "+mdfile.SecExtraction) ||
-			!strings.Contains(noteSLLBody, "### 候选覆盖") ||
-			!strings.Contains(noteSLLBody, "cand-scaling-preconditions") {
-			t.Fatalf("样例 ② 的 Note 缺 candidate/候选覆盖：\n%s", noteSLLBody)
+		assertCleanNote(t, noteSLLBody)
+		workspace := readNoteWorkspace(t, vault, noteSLL, noteSLLBody)
+		if !strings.Contains(workspace, "## "+mdfile.SecSegmentation) ||
+			!strings.Contains(workspace, "### 候选覆盖") ||
+			!strings.Contains(workspace, "cand-scaling-preconditions") {
+			t.Fatalf("样例 ② 的 workspace 缺 candidate/候选覆盖：\n%s", workspace)
 		}
-		if strings.Contains(noteSLLBody, "\n### Knowledge\n") {
-			t.Fatalf("样例 ② 在 materialize 前提前出现最终 Knowledge 清单：\n%s", noteSLLBody)
+		if strings.Contains(workspace, "\n### Knowledge\n") {
+			t.Fatalf("样例 ② 在 materialize 前提前出现最终 Knowledge 清单：\n%s", workspace)
 		}
 
 		outputs2 := materializeSample(t, vault, noteSLL)
+		if got := readFile(t, notePath); got != noteSLLBody {
+			t.Fatal("样例 ② materialize 改写了干净 Note")
+		}
 		cardSLL := outputs2["cand-scaling-preconditions"]
 		if cardSLL == "" || len(outputs2) != 1 {
 			t.Fatalf("样例 ② materialize 映射不完整：%v", outputs2)
@@ -1260,6 +1314,33 @@ func TestM1PlaceholderCommandsStayPlaceholders(t *testing.T) {
 }
 
 // ---------- 断言辅助 ----------
+
+func assertCleanNote(t *testing.T, note string) {
+	t.Helper()
+	for _, forbidden := range []string{
+		"## " + mdfile.SecExtraction, "## " + mdfile.SecOutputCards,
+		"覆盖矩阵", "### 候选覆盖", "data-candidate", "<!-- eg:",
+	} {
+		if strings.Contains(note, forbidden) {
+			t.Fatalf("干净 Note 不得含候选/覆盖或机器锚点 %q", forbidden)
+		}
+	}
+}
+
+func readNoteWorkspace(t *testing.T, vault, noteID, note string) string {
+	t.Helper()
+	workspaceID := "ns-" + strings.TrimPrefix(noteID, "n-")
+	raw := readFile(t, filepath.Join(vault, "domains", domain, "note-segments", workspaceID+".md"))
+	_, workspace, err := mdfile.ParseNoteSegmentation([]byte(raw))
+	if err != nil {
+		t.Fatalf("workspace %s 不可解析：%v", workspaceID, err)
+	}
+	if string(workspace.ID) != workspaceID || string(workspace.Note) != noteID ||
+		workspace.NoteHash != fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(note))) {
+		t.Fatalf("workspace 身份/父 Note/版本绑定错误：%+v", workspace)
+	}
+	return raw
+}
 
 // sectionBytes 取某个 H2 分区的正文字节（不含标题行）。
 func sectionBytes(t *testing.T, doc, name string) string {

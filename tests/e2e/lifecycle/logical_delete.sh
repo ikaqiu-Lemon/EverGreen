@@ -352,7 +352,9 @@ MD_ATT="$(grep -E "^[[:space:]]*attempted_at:" "${VAULT}/${PROP_REL}" | head -1 
   die "报告投影与权威 Markdown 不一致：报告「${ATT}」≠ Markdown「${MD_ATT}」"
 # 运行窗口：不早于本脚本启动时刻的当天，且不晚于此刻（挡住写死的历史常量）。
 NOW_EPOCH="$(date +%s)"
-ATT_EPOCH="$(date -d "${ATT}" +%s 2>/dev/null || echo 0)"
+# Python 是正式 runner 的必需依赖；避免 GNU date -d 在 macOS BSD date 上不可用。
+ATT_EPOCH="$(python3 -c 'import datetime, sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "${ATT}")" ||
+  die "attempted_at 无法被解析成时刻：${ATT}"
 [ "${ATT_EPOCH}" != "0" ] || die "attempted_at 无法被解析成时刻：${ATT}"
 [ "${ATT_EPOCH}" -le "$((NOW_EPOCH + 60))" ] ||
   die "attempted_at 落在未来（${ATT}），不可能是本次尝试时刻"
