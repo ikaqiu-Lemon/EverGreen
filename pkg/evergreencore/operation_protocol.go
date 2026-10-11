@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sort"
 	"strings"
 )
@@ -174,12 +175,18 @@ type FaultInjector interface {
 	Fail(point string, index int) error
 }
 
+// OperationValidator receives the complete authority before-images in write
+// order. Hosts must invoke it while holding their writer gate, before journal
+// creation or resuming a validated journal.
+type OperationValidator func(context.Context, PlannedOperation, [][]byte) error
+
 type AuthorityHost interface {
 	Repository
 	Resolve(context.Context, LogicalID) (LogicalLocation, error)
-	ApplyOperation(context.Context, PlannedOperation) (OperationRecord, error)
+	CheckCreate(context.Context, AfterImage) error
+	ApplyOperation(context.Context, PlannedOperation, OperationValidator) (OperationRecord, error)
 	Operation(context.Context, string) (OperationRecord, error)
-	RecoverOperations(context.Context) ([]OperationRecord, error)
+	RecoverOperations(context.Context, OperationValidator) ([]OperationRecord, error)
 }
 
 type AuthorityService struct {
@@ -243,7 +250,7 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 		Writes:      make([]PlannedWrite, 0, len(writes)),
 	}
 	images := make([]AfterImage, 0, len(writes))
-	ids := make([]LogicalID, 0, len(writes))
+	beforeImages := make([][]byte, 0, len(writes))
 	seen := make(map[LogicalID]struct{}, len(writes))
 	for index, write := range writes {
 		if write.LogicalID == "" {
@@ -253,7 +260,6 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 			return PlannedOperation{}, validationError(CodeDuplicateID, fmt.Sprintf("writes[%d].logical_id", index), "duplicate planned write")
 		}
 		seen[write.LogicalID] = struct{}{}
-		ids = append(ids, write.LogicalID)
 
 		base, hasBase := baseByID[write.LogicalID]
 		if !hasBase {
@@ -263,11 +269,13 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 		create := base.Expected == "absent"
 		var path string
 		var beforeHash string
-		var beforeEnvelope *DocumentEnvelope
 		switch {
 		case create && loadErr == nil:
 			return PlannedOperation{}, validationError(CodeBaseMismatch, fmt.Sprintf("base[%d]", index), "expected absent but entity exists")
 		case create:
+			if !errors.Is(loadErr, fs.ErrNotExist) {
+				return PlannedOperation{}, loadErr
+			}
 			path = write.Path
 			if err := validateAuthorityPath(path); err != nil {
 				return PlannedOperation{}, validationError(CodeInvalidPlan, fmt.Sprintf("writes[%d].path", index), err.Error())
@@ -286,7 +294,6 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 			if currentDocument.ReadOnly {
 				return PlannedOperation{}, &DiagnosticError{Diagnostics: currentDocument.Diagnostics}
 			}
-			beforeEnvelope = currentDocument.Envelope
 			beforeHash, decodeErr = SemanticHash(current)
 			if decodeErr != nil {
 				return PlannedOperation{}, decodeErr
@@ -320,9 +327,6 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 				"after-image logical ID does not match planned write",
 			)
 		}
-		if err := AuthorizeClaimChange(principal, beforeEnvelope, document.Envelope, s.registry); err != nil {
-			return PlannedOperation{}, err
-		}
 		afterHash, hashErr := SemanticHash(after)
 		if hashErr != nil {
 			return PlannedOperation{}, hashErr
@@ -335,24 +339,34 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 			ContentHash:  contentHash(after),
 			Create:       create,
 		}
+		if create {
+			if err := s.host.CheckCreate(ctx, image); err != nil {
+				return PlannedOperation{}, err
+			}
+		}
 		plan.Base = append(plan.Base, base)
 		plan.Writes = append(plan.Writes, PlannedWrite{LogicalID: write.LogicalID, Before: beforeHash, After: afterHash})
 		images = append(images, image)
+		if create {
+			beforeImages = append(beforeImages, nil)
+		} else {
+			beforeImages = append(beforeImages, current)
+		}
 	}
 	if len(baseByID) != len(writes) {
 		return PlannedOperation{}, validationError(CodeInvalidPlan, "base", "base contains entities outside the write set")
-	}
-	if s.authorizer == nil {
-		return PlannedOperation{}, validationError(CodeUnauthorized, "principal", "no authorizer is configured")
-	}
-	if err := s.authorizer.Authorize(ctx, principal, request.Command, ids); err != nil {
-		return PlannedOperation{}, validationError(CodeUnauthorized, "principal", err.Error())
 	}
 	if err := ValidateChangePlan(plan); err != nil {
 		return PlannedOperation{}, err
 	}
 	planned := PlannedOperation{Plan: plan, Images: images}
 	planned.PlanHash = ComputePlanHash(planned.Plan, planned.Images)
+	if err := ValidatePlannedOperation(planned, s.registry); err != nil {
+		return PlannedOperation{}, err
+	}
+	if err := s.validateOperation(ctx, planned, beforeImages); err != nil {
+		return PlannedOperation{}, err
+	}
 	return planned, nil
 }
 
@@ -364,41 +378,50 @@ func (s *AuthorityService) Apply(ctx context.Context, principal Principal, reque
 	if operation.Plan.Principal != principal {
 		return OperationRecord{}, validationError(CodeUnauthorized, "principal", "authenticated principal does not match planned principal")
 	}
+	return s.host.ApplyOperation(ctx, operation, s.validateOperation)
+}
+
+func (s *AuthorityService) validateOperation(ctx context.Context, operation PlannedOperation, beforeImages [][]byte) error {
+	if len(beforeImages) != len(operation.Images) {
+		return validationError(CodeInvalidPlan, "before", "authority before-image count does not match writes")
+	}
 	ids := make([]LogicalID, 0, len(operation.Plan.Writes))
 	for _, write := range operation.Plan.Writes {
 		ids = append(ids, write.LogicalID)
 	}
 	if s.authorizer == nil {
-		return OperationRecord{}, validationError(CodeUnauthorized, "principal", "no authorizer is configured")
+		return validationError(CodeUnauthorized, "principal", "no authorizer is configured")
 	}
+	principal := operation.Plan.Principal
 	if err := s.authorizer.Authorize(ctx, principal, operation.Plan.Command, ids); err != nil {
-		return OperationRecord{}, validationError(CodeUnauthorized, "principal", err.Error())
+		return validationError(CodeUnauthorized, "principal", err.Error())
 	}
-	for _, image := range operation.Images {
+	for index, image := range operation.Images {
 		after, err := DecodeSY(image.Bytes, s.registry)
 		if err != nil {
-			return OperationRecord{}, err
+			return err
 		}
 		var before *DocumentEnvelope
 		if !image.Create {
-			raw, loadErr := s.host.Load(ctx, image.LogicalID)
-			if loadErr != nil {
-				return OperationRecord{}, loadErr
+			if len(beforeImages[index]) == 0 {
+				return validationError(CodeInvalidPlan, "before", "update requires an authority before-image")
 			}
-			document, decodeErr := DecodeSY(raw, s.registry)
+			document, decodeErr := DecodeSY(beforeImages[index], s.registry)
 			if decodeErr != nil {
-				return OperationRecord{}, decodeErr
+				return decodeErr
 			}
 			if document.ReadOnly {
-				return OperationRecord{}, &DiagnosticError{Diagnostics: document.Diagnostics}
+				return &DiagnosticError{Diagnostics: document.Diagnostics}
 			}
 			before = document.Envelope
+		} else if len(beforeImages[index]) != 0 {
+			return validationError(CodeInvalidPlan, "before", "create requires an absent before-image")
 		}
 		if err = AuthorizeClaimChange(principal, before, after.Envelope, s.registry); err != nil {
-			return OperationRecord{}, err
+			return err
 		}
 	}
-	return s.host.ApplyOperation(ctx, operation)
+	return nil
 }
 
 func (s *AuthorityService) Operation(ctx context.Context, operationID string) (OperationRecord, error) {
@@ -406,7 +429,7 @@ func (s *AuthorityService) Operation(ctx context.Context, operationID string) (O
 }
 
 func (s *AuthorityService) Recover(ctx context.Context) ([]OperationRecord, error) {
-	return s.host.RecoverOperations(ctx)
+	return s.host.RecoverOperations(ctx, s.validateOperation)
 }
 
 func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) error {
@@ -419,6 +442,15 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 	if len(operation.Images) != len(operation.Plan.Writes) {
 		return validationError(CodeInvalidPlan, "images", "after-image count does not match planned writes")
 	}
+	if len(operation.Plan.Base) != len(operation.Images) || len(operation.Images) == 0 {
+		return validationError(CodeInvalidPlan, "base", "base must match the complete nonempty write set")
+	}
+	baseByID := map[LogicalID]BaseRef{}
+	for _, base := range operation.Plan.Base {
+		baseByID[base.LogicalID] = base
+	}
+	paths := map[string]bool{}
+	physicalIDs := map[string]bool{}
 	for index := range operation.Images {
 		image := operation.Images[index]
 		write := operation.Plan.Writes[index]
@@ -428,6 +460,10 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 		if err := validateAuthorityPath(image.Path); err != nil {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d].path", index), err.Error())
 		}
+		if paths[image.Path] || image.Create != (baseByID[image.LogicalID].Expected == "absent") {
+			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d]", index), "duplicate authority path or create/base mismatch")
+		}
+		paths[image.Path] = true
 		document, err := DecodeSY(image.Bytes, registry)
 		if err != nil {
 			return err
@@ -438,6 +474,18 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 		if document.Envelope == nil || document.Envelope.Entity.LogicalID != image.LogicalID {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d].bytes", index), "after-image logical ID mismatch")
 		}
+		root, err := decodeRawObject(image.Bytes)
+		if err != nil {
+			return err
+		}
+		var physicalID string
+		if err = json.Unmarshal(root["ID"], &physicalID); err != nil {
+			return err
+		}
+		if physicalIDs[physicalID] {
+			return validationError(CodeDuplicateID, fmt.Sprintf("images[%d].ID", index), "duplicate physical document ID in write set")
+		}
+		physicalIDs[physicalID] = true
 		semanticHash, err := SemanticHash(image.Bytes)
 		if err != nil {
 			return err

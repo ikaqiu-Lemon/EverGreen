@@ -240,6 +240,7 @@ tests/_staged/internal/txn/opinion_path_test.go	internal/txn/opinion_path_test.g
 tests/_staged/internal/txn/recover_test.go	internal/txn/recover_test.go	evergreen	unit	go
 tests/_staged/internal/txn/safedir_test.go	internal/txn/safedir_test.go	evergreen	unit	go
 tests/_staged/internal/version/version_test.go	internal/version/version_test.go	evergreen	unit	go
+tests/_staged/pkg/evergreencore/authority_validation_test.go	pkg/evergreencore/authority_validation_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/authorization_lossless_test.go	pkg/evergreencore/authorization_lossless_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/claim_kinds_test.go	pkg/evergreencore/claim_kinds_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/core_test.go	pkg/evergreencore/core_test.go	evergreen	unit	go
