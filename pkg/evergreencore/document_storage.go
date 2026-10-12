@@ -30,7 +30,7 @@ func (s plainDocumentStorage) Open(context.Context) (DocumentStorageSession, err
 
 func (s plainDocumentSession) Filesystem() fs.FS { return os.DirFS(s.root) }
 func (s plainDocumentSession) Allow(path string) error {
-	return validateAuthorityPath(path)
+	return ValidateTransactionFilePath(path)
 }
 func (s plainDocumentSession) Encode(path string, raw []byte) ([]byte, error) {
 	return raw, s.Allow(path)

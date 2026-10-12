@@ -5,7 +5,7 @@ capture-ingest	1	2	4	0	0	7
 card-query	27	0	4	0	0	31
 cli-core	87	0	6	0	0	93
 client	1	0	0	0	0	1
-core	15	0	0	0	0	15
+core	16	0	0	0	0	16
 dist-install	1	0	0	0	0	1
 docs-cli	1	0	6	0	0	7
 edit	0	0	2	0	0	2

@@ -41,7 +41,7 @@ func (s encryptedTestSession) Close() { s.storage.mu.RUnlock() }
 func (s encryptedTestSession) Filesystem() fs.FS {
 	return encryptedTestFS{s, os.DirFS(s.storage.root)}
 }
-func (s encryptedTestSession) Allow(path string) error { return validateAuthorityPath(path) }
+func (s encryptedTestSession) Allow(path string) error { return ValidateTransactionFilePath(path) }
 func (s encryptedTestSession) aead() cipher.AEAD {
 	block, _ := aes.NewCipher(s.storage.key)
 	aead, _ := cipher.NewGCM(block)

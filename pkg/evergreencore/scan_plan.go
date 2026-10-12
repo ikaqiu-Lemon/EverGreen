@@ -190,6 +190,7 @@ type PlannedWrite struct {
 	LogicalID LogicalID `json:"logical_id"`
 	Before    string    `json:"before,omitempty"`
 	After     string    `json:"after"`
+	Delete    bool      `json:"delete,omitempty"`
 }
 
 type ChangePlan struct {
@@ -257,7 +258,12 @@ func ValidateChangePlan(plan ChangePlan) error {
 			return validationError(CodeBaseMismatch, path+".before", fmt.Sprintf(
 				"write before hash %q does not match base %q", write.Before, base.SemanticHash))
 		}
-		if !strings.HasPrefix(write.After, "sha256:") {
+		if write.Delete {
+			if base.Expected == "absent" || write.After != "absent" || plan.Command != NativeEditCommand ||
+				plan.Principal.Type != PrincipalUser {
+				return validationError(CodeInvalidPlan, path+".after", "native delete requires an existing base and absent result")
+			}
+		} else if !strings.HasPrefix(write.After, "sha256:") {
 			return validationError(CodeInvalidPlan, path+".after", "sha256 after hash is required")
 		}
 	}

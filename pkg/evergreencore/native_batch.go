@@ -23,6 +23,7 @@ type NativeDocumentWrite struct {
 	Before []byte
 	After  []byte
 	Create bool
+	Delete bool
 }
 
 type nativePhysicalReader interface {
@@ -69,28 +70,38 @@ func (s *AuthorityService) PlanNativeBatch(
 		if err = validateAuthorityPath(write.Path); err != nil {
 			return PlannedOperation{}, validationError(CodeInvalidPlan, "path", err.Error())
 		}
-		document, err := DecodeSY(write.After, s.registry)
+		raw := write.After
+		if write.Delete {
+			if write.Create || len(write.After) != 0 {
+				return PlannedOperation{}, validationError(CodeInvalidPlan, "delete", "delete cannot create or contain after bytes")
+			}
+			raw = write.Before
+		}
+		document, err := DecodeSY(raw, s.registry)
 		if err != nil {
 			return PlannedOperation{}, err
 		}
-		root, err := decodeRawObject(write.After)
+		root, err := decodeRawObject(raw)
 		if err != nil {
 			return PlannedOperation{}, err
 		}
 		var id string
 		_ = json.Unmarshal(root["ID"], &id)
 		ref := nativePhysicalRef(id)
-		afterHash, err := SemanticHash(write.After)
-		if err != nil {
-			return PlannedOperation{}, err
+		afterHash := "absent"
+		if !write.Delete {
+			afterHash, err = SemanticHash(write.After)
+			if err != nil {
+				return PlannedOperation{}, err
+			}
 		}
 		image := AfterImage{
 			LogicalID: ref, Path: write.Path, Bytes: append([]byte(nil), write.After...), Create: write.Create,
 			SemanticHash: afterHash, ContentHash: contentHash(write.After),
-			Native: &NativePhysicalDocument{DocumentID: id},
+			Native: &NativePhysicalDocument{DocumentID: id}, Delete: write.Delete,
 		}
 		base := BaseRef{LogicalID: ref}
-		plannedWrite := PlannedWrite{LogicalID: ref, After: afterHash}
+		plannedWrite := PlannedWrite{LogicalID: ref, After: afterHash, Delete: write.Delete}
 		current, loadErr := reader.LoadPhysicalDocument(ctx, write.Path)
 		if write.Create {
 			if len(write.Before) != 0 || !errors.Is(loadErr, fs.ErrNotExist) {
@@ -163,6 +174,13 @@ func validateNativePhysicalImage(operation PlannedOperation, image AfterImage, d
 		(!image.Create && !strings.HasPrefix(identity.BeforeContentHash, "sha256:")) {
 		return validationError(CodeInvalidPlan, "native", "physical identity, path or base checksum is invalid")
 	}
+	if image.Delete {
+		if image.Create || len(image.Bytes) != 0 || image.SemanticHash != "absent" {
+			return validationError(CodeInvalidPlan, "delete", "physical delete must have an absent after-image")
+		}
+		// 删除前的身份及受管元数据必须在写锁内使用完整 before-image 再次认证。
+		return nil
+	}
 	root, err := decodeRawObject(image.Bytes)
 	if err != nil {
 		return err
@@ -202,6 +220,18 @@ func authorizeNativePhysicalChange(image AfterImage, before []byte) error {
 	if err = validateNativeNodeIdentity(previous); err != nil {
 		return err
 	}
+	if image.Delete {
+		root, err := decodeRawObject(before)
+		if err != nil {
+			return err
+		}
+		var id string
+		_ = json.Unmarshal(root["ID"], &id)
+		if id != image.Native.DocumentID {
+			return validationError(CodeBaseMismatch, image.Path, "deleted document physical identity mismatch")
+		}
+		return nil
+	}
 	a, err := decodeRawObject(before)
 	if err != nil {
 		return err
@@ -225,6 +255,8 @@ type AuthorityDocumentRef struct {
 	LogicalID  LogicalID
 	DocumentID string
 	Path       string
+	Delete     bool
+	Auxiliary  string
 }
 
 type documentIndexSink interface {

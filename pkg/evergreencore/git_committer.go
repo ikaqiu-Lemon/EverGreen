@@ -52,7 +52,7 @@ func (c *LocalGitCommitter) Commit(ctx context.Context, request CommitRequest) (
 		return "", errors.New("Git commit path set is empty")
 	}
 	for _, path := range paths {
-		if err := validateAuthorityPath(path); err != nil {
+		if err := ValidateTransactionFilePath(path); err != nil {
 			return "", fmt.Errorf("invalid Git path %q: %w", path, err)
 		}
 	}

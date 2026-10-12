@@ -2,7 +2,6 @@ package evergreencore
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -110,16 +109,15 @@ func initGitFixture(t *testing.T) string {
 	gitCommand(t, root, "init", "-q")
 	gitCommand(t, root, "config", "user.name", "Evergreen Test")
 	gitCommand(t, root, "config", "user.email", "evergreen@example.invalid")
+	gitCommand(t, root, "config", "core.hooksPath", ".git/hooks")
 	return root
 }
 
 func gitCommand(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = root
-	output, err := command.CombinedOutput()
+	output, stderr, err := runGit(context.Background(), root, nil, args...)
 	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+		t.Fatalf("git %s: %v\n%s\n%s", strings.Join(args, " "), err, output, stderr)
 	}
 	return string(output)
 }

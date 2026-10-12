@@ -13,6 +13,12 @@ func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation,
 	before := make([]*SYDocument, len(operation.Images))
 	after := make([]*SYDocument, len(operation.Images))
 	for index, image := range operation.Images {
+		if image.Auxiliary != nil {
+			if err := authorizeNativeFileChange(image, beforeImages[index]); err != nil {
+				return err
+			}
+			continue
+		}
 		if image.Native != nil {
 			if err := authorizeNativePhysicalChange(image, beforeImages[index]); err != nil {
 				return err

@@ -130,6 +130,8 @@ type AfterImage struct {
 	ContentHash  string                  `json:"content_hash"`
 	Create       bool                    `json:"create,omitempty"`
 	Native       *NativePhysicalDocument `json:"native,omitempty"`
+	Delete       bool                    `json:"delete,omitempty"`
+	Auxiliary    *NativeAuxiliaryFile    `json:"auxiliary,omitempty"`
 }
 
 type PlannedOperation struct {
@@ -138,6 +140,17 @@ type PlannedOperation struct {
 	PlanHash string       `json:"plan_hash"`
 
 	nativeEditor bool
+}
+
+// UnmarshalJSON 即使复用对象也清除宿主私有授权，传输数据不能继承内存中的 native admission。
+func (operation *PlannedOperation) UnmarshalJSON(raw []byte) error {
+	type wireOperation PlannedOperation
+	var decoded wireOperation
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*operation = PlannedOperation(decoded)
+	return nil
 }
 
 type ApplyRequest struct {
@@ -408,7 +421,7 @@ func (s *AuthorityService) validateOperation(ctx context.Context, operation Plan
 		return err
 	}
 	for index, image := range operation.Images {
-		if image.Native != nil {
+		if image.Native != nil || image.Auxiliary != nil {
 			continue // 普通文档由可信原生写集验证，不进入 Claim 字段授权。
 		}
 		after, err := DecodeSY(image.Bytes, s.registry)
@@ -471,18 +484,41 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 		if image.LogicalID != write.LogicalID {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d].logical_id", index), "after-image order does not match planned writes")
 		}
-		if err := validateAuthorityPath(image.Path); err != nil {
+		if err := ValidateTransactionFilePath(image.Path); err != nil {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d].path", index), err.Error())
 		}
-		if paths[image.Path] || image.Create != (baseByID[image.LogicalID].Expected == "absent") {
+		if paths[image.Path] || image.Create != (baseByID[image.LogicalID].Expected == "absent") ||
+			image.Delete != write.Delete || (image.Delete && image.Create) {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d]", index), "duplicate authority path or create/base mismatch")
 		}
 		paths[image.Path] = true
-		document, err := DecodeSY(image.Bytes, registry)
+		if image.Auxiliary != nil {
+			if err := validateNativeFileImage(operation, image); err != nil {
+				return err
+			}
+			hash := contentHash(image.Bytes)
+			if image.Delete {
+				hash = "absent"
+			}
+			if image.SemanticHash != hash || write.After != hash || image.ContentHash != contentHash(image.Bytes) {
+				return validationError(CodeInvalidPlan, image.Path, "auxiliary after-image hash mismatch")
+			}
+			continue
+		}
+		if err := validateAuthorityPath(image.Path); err != nil {
+			return validationError(CodeInvalidPlan, image.Path, err.Error())
+		}
+		var document *SYDocument
+		var err error
+		if !image.Delete {
+			document, err = DecodeSY(image.Bytes, registry)
+		} else if image.Native == nil {
+			return validationError(CodeUnauthorized, image.Path, "managed deletion requires a dedicated domain command")
+		}
 		if err != nil {
 			return err
 		}
-		if document.ReadOnly {
+		if document != nil && document.ReadOnly {
 			return &DiagnosticError{Diagnostics: document.Diagnostics}
 		}
 		if image.Native != nil {
@@ -492,19 +528,26 @@ func ValidatePlannedOperation(operation PlannedOperation, registry *Registry) er
 		} else if document.Envelope == nil || document.Envelope.Entity.LogicalID != image.LogicalID {
 			return validationError(CodeInvalidPlan, fmt.Sprintf("images[%d].bytes", index), "after-image logical ID mismatch")
 		}
-		root, err := decodeRawObject(image.Bytes)
-		if err != nil {
-			return err
-		}
 		var physicalID string
-		if err = json.Unmarshal(root["ID"], &physicalID); err != nil {
-			return err
+		if image.Delete {
+			physicalID = image.Native.DocumentID
+		} else {
+			root, err := decodeRawObject(image.Bytes)
+			if err != nil {
+				return err
+			}
+			if err = json.Unmarshal(root["ID"], &physicalID); err != nil {
+				return err
+			}
 		}
 		if physicalIDs[physicalID] {
 			return validationError(CodeDuplicateID, fmt.Sprintf("images[%d].ID", index), "duplicate physical document ID in write set")
 		}
 		physicalIDs[physicalID] = true
-		semanticHash, err := SemanticHash(image.Bytes)
+		semanticHash := "absent"
+		if !image.Delete {
+			semanticHash, err = SemanticHash(image.Bytes)
+		}
 		if err != nil {
 			return err
 		}
@@ -529,6 +572,8 @@ func ComputePlanHash(plan ChangePlan, images []AfterImage) string {
 		ContentHash  string                  `json:"content_hash"`
 		Create       bool                    `json:"create"`
 		Native       *NativePhysicalDocument `json:"native,omitempty"`
+		Delete       bool                    `json:"delete,omitempty"`
+		Auxiliary    *NativeAuxiliaryFile    `json:"auxiliary,omitempty"`
 	}
 	digests := make([]imageDigest, 0, len(images))
 	for _, image := range images {
@@ -538,7 +583,7 @@ func ComputePlanHash(plan ChangePlan, images []AfterImage) string {
 		}
 		digests = append(digests, imageDigest{
 			LogicalID: image.LogicalID, Path: image.Path, SemanticHash: image.SemanticHash,
-			ContentHash: hash, Create: image.Create, Native: image.Native,
+			ContentHash: hash, Create: image.Create, Native: image.Native, Delete: image.Delete, Auxiliary: image.Auxiliary,
 		})
 	}
 	payload, _ := json.Marshal(struct {
