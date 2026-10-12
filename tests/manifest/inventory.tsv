@@ -79,7 +79,7 @@ tests/_staged/internal/cli/root_help_contract_test.go	unit	go	cli-core	unit.inte
 tests/_staged/internal/cli/search_test.go	unit	go	cli-core	unit.internal.cli	13	21350
 tests/_staged/internal/cli/skill_test.go	unit	go	cli-core	unit.internal.cli	14	50745
 tests/_staged/internal/cli/storage_v3_cli_test.go	unit	go	cli-core	unit.internal.cli	10	29550
-tests/_staged/internal/cli/sy_backend_test.go	unit	go	cli-core	unit.internal.cli	2	6784
+tests/_staged/internal/cli/sy_backend_test.go	unit	go	cli-core	unit.internal.cli	2	8479
 tests/_staged/internal/cli/sy_parity_test.go	unit	go	cli-core	unit.internal.cli	2	10269
 tests/_staged/internal/cli/t061_final_review_test.go	unit	go	cli-core	unit.internal.cli	3	5144
 tests/_staged/internal/cli/undelete_test.go	unit	go	cli-core	unit.internal.cli	4	10339

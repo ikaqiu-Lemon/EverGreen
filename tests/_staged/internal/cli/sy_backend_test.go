@@ -54,6 +54,25 @@ func TestSYCLISearchContextShowRelationsUseAuthorityAndOnlineTransport(t *testin
 			_ = json.NewEncoder(w).Encode(core.APIResponse[core.Capabilities]{OK: true, Data: core.CurrentCapabilities()})
 		case "/api/evergreen/v1/workspace/export":
 			_ = json.NewEncoder(w).Encode(core.APIResponse[core.CanonicalArchive]{OK: true, Data: archive})
+		case "/api/evergreen/v1/sources/plan-capture":
+			if request.Header.Get("X-Evergreen-Caller") != "agent" ||
+				request.Header.Get("X-Evergreen-Agent-ID") != "test-agent" ||
+				request.Header.Get("X-Evergreen-Request-Reason") != "read authority parity" {
+				t.Fatalf("online capture identity headers = %v", request.Header)
+			}
+			var capture core.SourceCaptureRequest
+			if err := json.NewDecoder(request.Body).Decode(&capture); err != nil {
+				t.Fatal(err)
+			}
+			if capture.Body != "Online cleaned body.\n" || capture.Reason != "online capture" {
+				t.Fatalf("online capture request = %+v", capture)
+			}
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.PlannedSourceCapture]{
+				OK: true,
+				Data: core.PlannedSourceCapture{
+					SourceID: "s-remote", Path: "remote/source.sy", Deduped: true, MatchedBy: "url",
+				},
+			})
 		default:
 			http.NotFound(w, request)
 		}
@@ -74,6 +93,24 @@ func TestSYCLISearchContextShowRelationsUseAuthorityAndOnlineTransport(t *testin
 		if !reflect.DeepEqual(offline, online) {
 			t.Fatalf("online/offline differs for %v", args)
 		}
+	}
+	bodyPath := filepath.Join(t.TempDir(), "online.md")
+	if err = os.WriteFile(bodyPath, []byte("Online cleaned body.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeFiles, _ := filepath.Glob(filepath.Join(root, "*.sy"))
+	captured := runSYCLI(t, root, []string{
+		"capture", "--url", "https://example.com/remote", "--title", "Remote Source",
+		"--body-file", bodyPath, "--reason", "online capture",
+		"--captured-at", "2026-10-12T18:00:00+08:00",
+	})
+	data := captured["data"].(map[string]any)
+	if data["source_id"] != "s-remote" || data["deduped"] != true || data["operation"] != nil {
+		t.Fatalf("online capture result = %#v", data)
+	}
+	afterFiles, _ := filepath.Glob(filepath.Join(root, "*.sy"))
+	if !reflect.DeepEqual(beforeFiles, afterFiles) {
+		t.Fatalf("online capture wrote the local workspace: before=%v after=%v", beforeFiles, afterFiles)
 	}
 	t.Setenv("EG_KERNEL_URL", server.URL+"/unavailable")
 	var output bytes.Buffer
