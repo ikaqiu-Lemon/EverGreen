@@ -1,15 +1,20 @@
 package evergreencore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"strings"
+	"time"
 )
 
 // authorizeOperationChanges 从完整权威写集验证命令、实体与正文边界，不能由计划来源自证权限。
 func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation, beforeImages [][]byte) error {
+	if operation.Plan.Command == SourceCaptureCommand && len(operation.Images) != 1 {
+		return validationError(CodeUnauthorized, "writes", "Source capture requires exactly one Source write")
+	}
 	before := make([]*SYDocument, len(operation.Images))
 	after := make([]*SYDocument, len(operation.Images))
 	for index, image := range operation.Images {
@@ -45,6 +50,10 @@ func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation,
 		switch operation.Plan.Command {
 		case NativeEditCommand:
 			if err = s.authorizeNativeEdit(operation, before[index], after[index], image.Create); err != nil {
+				return err
+			}
+		case SourceCaptureCommand:
+			if err = authorizeSourceCaptureChange(before[index], after[index], image.Create, s.registry); err != nil {
 				return err
 			}
 		case "claim.update", "claim.edge.update":
@@ -250,6 +259,99 @@ func authorizeDocumentIdentity(before, after *SYDocument) error {
 	for _, key := range []string{"ID", "Type", "Spec"} {
 		if !semanticValuesEqual(a[key], b[key]) {
 			return validationError(CodeUnauthorized, key, "physical document identity must be preserved")
+		}
+	}
+	return nil
+}
+
+func authorizeSourceCaptureChange(before, after *SYDocument, create bool, registry *Registry) error {
+	if after == nil || after.Envelope == nil ||
+		after.Envelope.Entity.EntityType != EntitySource ||
+		after.Envelope.Entity.Schema != SourceSchema {
+		return validationError(CodeUnauthorized, "command", "Source capture requires a canonical Source target")
+	}
+	if create {
+		return authorizeSourceCreation(after, registry)
+	}
+	if before == nil || before.Envelope == nil || before.Envelope.Entity.EntityType != EntitySource {
+		return validationError(CodeUnauthorized, "command", "Source reason append requires an existing Source")
+	}
+	left, leftLocation, err := sourceMetadata(before.Envelope)
+	if err != nil {
+		return err
+	}
+	right, rightLocation, err := sourceMetadata(after.Envelope)
+	if err != nil {
+		return err
+	}
+	if leftLocation != rightLocation ||
+		after.Envelope.Entity.SemanticRevision != before.Envelope.Entity.SemanticRevision+1 ||
+		len(right.Reasons) != len(left.Reasons)+1 {
+		return validationError(CodeUnauthorized, "Evergreen.source.reasons", "duplicate capture may only append one reason")
+	}
+	for index := range left.Reasons {
+		if left.Reasons[index] != right.Reasons[index] {
+			return validationError(CodeUnauthorized, "Evergreen.source.reasons", "existing capture reasons are immutable")
+		}
+	}
+	appended := right.Reasons[len(right.Reasons)-1]
+	if strings.TrimSpace(appended) == "" {
+		return validationError(CodeUnauthorized, "Evergreen.source.reasons", "appended capture reason is required")
+	}
+	for _, existing := range left.Reasons {
+		if existing == appended {
+			return validationError(CodeUnauthorized, "Evergreen.source.reasons", "capture reason must not be duplicated")
+		}
+	}
+	normalized, err := setSourceReasons(after.Raw, left.Reasons, before.Envelope.Entity.SemanticRevision, registry)
+	if err != nil {
+		return err
+	}
+	if !semanticValuesEqual(json.RawMessage(before.Raw), json.RawMessage(normalized)) {
+		return validationError(
+			CodeUnauthorized, "source",
+			"duplicate capture must preserve Source identity, body, URL, title, and metadata",
+		)
+	}
+	return nil
+}
+
+func authorizeSourceCreation(after *SYDocument, registry *Registry) error {
+	envelope := after.Envelope
+	metadata, location, err := sourceMetadata(envelope)
+	if err != nil {
+		return err
+	}
+	if location != "native" || len(envelope.Extension) != 1 || len(metadata.Extra) != 0 ||
+		len(envelope.Entity.Extra) != 0 || len(envelope.Extra) != 0 ||
+		len(envelope.Relations.Extra) != 0 || envelope.Entity.SemanticRevision != 1 ||
+		envelope.Claim != nil || envelope.Review != nil || len(envelope.Provenance) != 0 ||
+		len(envelope.Relations.Outgoing) != 0 {
+		return validationError(CodeUnauthorized, "source", "new Source must use the canonical initial metadata shape")
+	}
+	if _, err = time.Parse(time.RFC3339, metadata.SavedAt); err != nil {
+		return validationError(CodeInvalidEnvelope, "Evergreen.extension.source.saved_at", "Source saved_at must be RFC3339")
+	}
+	if len(metadata.Reasons) != 1 || strings.TrimSpace(metadata.Reasons[0]) == "" {
+		return validationError(CodeInvalidEnvelope, "Evergreen.extension.source.reasons", "new Source requires one capture reason")
+	}
+	snapshot, err := sourceSnapshot(after.Raw, LogicalLocation{}, registry)
+	if err != nil {
+		return err
+	}
+	if NormalizeSourceURL(metadata.URL) == "" && NormalizeSourceTitle(snapshot.Title) == "" {
+		return validationError(CodeInvalidEnvelope, "source", "new Source requires a URL or title")
+	}
+	if len(bytes.TrimSpace(snapshot.Body)) < sourceBodyMinBytes {
+		return validationError(CodeInvalidEnvelope, "Children", "new Source body is empty or too short")
+	}
+	root, err := parseReviewNode(after.Raw)
+	if err != nil {
+		return err
+	}
+	for _, child := range root.children {
+		if child.containsManagedEnvelope() {
+			return validationError(CodeUnauthorized, "Children.Evergreen", "Source body cannot contain managed review metadata")
 		}
 	}
 	return nil

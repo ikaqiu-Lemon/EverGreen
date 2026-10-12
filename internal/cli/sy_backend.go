@@ -2,6 +2,9 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/user"
 	"strings"
@@ -64,6 +67,69 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 	}
 	registry := core.ApplicationRegistry()
 	switch inv.Cmd.Name {
+	case "capture":
+		if inv.Cmd.Validate != nil {
+			if err := inv.Cmd.Validate(inv); err != nil {
+				return nil, err
+			}
+		}
+		body, err := r.captureBody(inv)
+		if err != nil {
+			return nil, err
+		}
+		stamp, err := captureStamp(inv, r.now())
+		if err != nil {
+			return nil, err
+		}
+		sourceID := core.LogicalID(model.NewSourceID(
+			model.NewDate(stamp.Time()), captureSlugSeed(inv.String("title"), inv.String("url"))))
+		documentID := core.StablePhysicalID(string(sourceID) + "/document")
+		request := core.SourceCaptureRequest{
+			LogicalID: sourceID, DocumentID: documentID,
+			Path: "20000101000000-egvault/" + documentID + ".sy",
+			URL:  inv.String("url"), Title: inv.String("title"), Body: string(body),
+			Reason: inv.String("reason"), Domain: inv.String("domain"), Tags: captureTags(inv),
+			CapturedAt: stamp.String(), Reprocess: inv.Set("reprocess"),
+		}
+		request.OperationID = sourceCaptureOperationID(request)
+		principal, err := syPrincipal(inv)
+		if err != nil {
+			return nil, syError(err)
+		}
+		var planned core.PlannedSourceCapture
+		if online != nil {
+			planned, err = online.PlanSourceCapture(ctx, request)
+		} else {
+			host, hostErr := migrate.Repository(inv.VaultFlag)
+			if hostErr != nil {
+				return nil, syError(hostErr)
+			}
+			planned, err = core.NewAuthorityService(host, core.CommandPolicy{}, registry).
+				PlanSourceCapture(ctx, principal, request)
+		}
+		if err != nil {
+			return nil, syError(err)
+		}
+		result := &Result{Data: map[string]interface{}{
+			"source_id": planned.SourceID, "path": planned.Path, "deduped": planned.Deduped,
+			"has_note": planned.HasNote, "note_id": planned.NoteID, "operation": nil,
+		}}
+		for _, message := range titleWarnings(request.Title, request.URL) {
+			result.Warnings = append(result.Warnings, Diagnostic{
+				Level: LevelWarning, Path: "--title", OpIndex: NonOpDiagnostic, Message: message,
+			})
+		}
+		if planned.Operation == nil {
+			return result, nil
+		}
+		applied, applyErr := r.applySYOperation(inv, online, *planned.Operation)
+		if applied != nil {
+			result.Data["operation"] = applied.Data["operation"]
+		}
+		if applyErr != nil {
+			return result, applyErr
+		}
+		return result, nil
 	case "context":
 		id := inv.String("note")
 		if id == "" {
@@ -231,6 +297,13 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 		return r.applySYOperation(inv, online, operation)
 	}
 	return nil, &UsageError{Msg: "this command does not support the .sy backend"}
+}
+
+func sourceCaptureOperationID(request core.SourceCaptureRequest) string {
+	request.OperationID = ""
+	raw, _ := json.Marshal(request)
+	sum := sha256.Sum256(raw)
+	return "source-" + hex.EncodeToString(sum[:12])
 }
 
 func syPrincipal(inv *Invocation) (core.Principal, error) {

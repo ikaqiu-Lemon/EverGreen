@@ -46,6 +46,7 @@ func CurrentCapabilities() Capabilities {
 		DocumentSpecs:       []SchemaRef{DocumentSpec},
 		BlockSpecs:          []SchemaRef{BlockSpec},
 		Commands: []string{
+			SourceCaptureCommand,
 			"claim.update",
 			"claim.edge.update",
 			"note.review.update",
@@ -420,6 +421,9 @@ func (s *AuthorityService) validateOperation(ctx context.Context, operation Plan
 		return validationError(CodeUnauthorized, "principal", err.Error())
 	}
 	if err := s.authorizeOperationChanges(operation, beforeImages); err != nil {
+		return err
+	}
+	if err := s.authorizeSourceCaptureUniqueness(ctx, operation); err != nil {
 		return err
 	}
 	for index, image := range operation.Images {

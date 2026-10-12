@@ -86,6 +86,85 @@ func TestSYCLISearchContextShowRelationsUseAuthorityAndOnlineTransport(t *testin
 	}
 }
 
+func TestSYCLICaptureUsesSharedCoreOfflineAndDeduplicates(t *testing.T) {
+	setGitIdentity(t)
+	root := t.TempDir()
+	gitOut(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "seed.txt"), []byte("seed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, root, "add", ".")
+	gitOut(t, root, "commit", "-qm", "initial")
+	bodyDir := t.TempDir()
+	firstBody := filepath.Join(bodyDir, "first.md")
+	secondBody := filepath.Join(bodyDir, "second.md")
+	if err := os.WriteFile(firstBody, []byte("Original cleaned Source body.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondBody, []byte("Replacement body must not overwrite authority.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EG_KERNEL_URL", "")
+	t.Setenv("EG_AGENT_ID", "capture-agent")
+	t.Setenv("EG_REQUEST_REASON", "capture source through shared core")
+
+	first := runSYCLI(t, root, []string{
+		"capture", "--url", "https://EXAMPLE.com/article/?utm_source=test",
+		"--title", "Original title", "--body-file", firstBody, "--reason", "first reason",
+		"--domain", "systems", "--captured-at", "2026-10-12T10:00:00+08:00",
+	})
+	if first["ok"] != true {
+		t.Fatalf("first capture = %#v", first)
+	}
+	second := runSYCLI(t, root, []string{
+		"capture", "--url", "https://example.com/article", "--title", "Conflicting title",
+		"--body-file", secondBody, "--reason", "second reason", "--domain", "other",
+		"--captured-at", "2026-10-12T10:01:00+08:00",
+	})
+	if second["ok"] != true {
+		t.Fatalf("duplicate capture = %#v", second)
+	}
+	data := second["data"].(map[string]any)
+	if data["deduped"] != true || data["source_id"] != "s-20261012-original-title" {
+		t.Fatalf("duplicate capture data = %#v", data)
+	}
+	paths, err := filepath.Glob(filepath.Join(root, "20000101000000-egvault", "*.sy"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("Source files = %#v, err=%v", paths, err)
+	}
+	raw, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := core.DecodeSY(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		URL     string   `json:"url"`
+		Reasons []string `json:"reasons"`
+		Domain  string   `json:"domain"`
+	}
+	if err = json.Unmarshal(document.Envelope.Extension["source"], &metadata); err != nil {
+		t.Fatal(err)
+	}
+	rootObject := map[string]json.RawMessage{}
+	_ = json.Unmarshal(raw, &rootObject)
+	body, err := core.MarkdownText(rootObject["Children"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.URL != "https://EXAMPLE.com/article/?utm_source=test" ||
+		metadata.Domain != "systems" ||
+		!reflect.DeepEqual(metadata.Reasons, []string{"first reason", "second reason"}) ||
+		string(body) != "Original cleaned Source body.\n" {
+		t.Fatalf("duplicate capture rewrote Source: metadata=%+v body=%q", metadata, body)
+	}
+	if got := gitLogCount(t, root); got != 3 {
+		t.Fatalf("capture Git commits = %d, want initial + create + reason append", got)
+	}
+}
+
 func runSYCLI(t *testing.T, root string, args []string) map[string]any {
 	t.Helper()
 	var output bytes.Buffer

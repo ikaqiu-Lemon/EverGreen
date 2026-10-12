@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/mdfile"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
+	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
 )
 
 // ErrSourceIDRequired 缺原文 ID：ID 由上层按 (日期, 标题) 稳定生成后传入。
@@ -37,7 +37,7 @@ var ErrSourceIDRequired = errors.New("缺原文 ID")
 // TrackingParams 是 URL 规范化时剔除的跟踪参数前缀 / 全名（判重口径的一部分，
 // 集合封闭且只在这里定义一份）。
 func TrackingParams() []string {
-	return []string{"utm_", "spm", "fbclid", "gclid", "ref", "from", "source"}
+	return core.SourceTrackingParams()
 }
 
 // NormalizeURL 把 URL 归一成判重用的 `url_key`（EG-SRC-01）。
@@ -49,66 +49,15 @@ func TrackingParams() []string {
 // 注意作用域：折叠只发生在 **URL 的 scheme / host**（协议规定大小写不敏感），
 // 且只作为判重键使用——原文 frontmatter 里的 `url` 一律逐字落盘，不被规范化改写。
 func NormalizeURL(raw string) string {
-	s := trimSpace(raw)
-	if s == "" {
-		return ""
-	}
-	u, err := url.Parse(s)
-	if err != nil || u.Host == "" {
-		return s
-	}
-	u.Scheme = foldASCII(u.Scheme)
-	u.Host = foldASCII(u.Host)
-	if (u.Scheme == "http" && strings.HasSuffix(u.Host, ":80")) ||
-		(u.Scheme == "https" && strings.HasSuffix(u.Host, ":443")) {
-		u.Host = u.Host[:strings.LastIndex(u.Host, ":")]
-	}
-	u.Fragment = ""
-	u.RawFragment = ""
-	q := u.Query()
-	for key := range q {
-		if isTracking(key) {
-			q.Del(key)
-		}
-	}
-	u.RawQuery = q.Encode() // Encode 按键排序，天然确定性
-	if len(u.Path) > 1 {
-		u.Path = strings.TrimRight(u.Path, "/")
-	}
-	return u.String()
-}
-
-// foldASCII 把 ASCII 大写字母折成小写（纯字节处理：非 ASCII 字节逐字不动，
-// 不做 rune 迭代重建，非法 UTF-8 输入无损）。
-func foldASCII(s string) string {
-	src := []byte(s)
-	out := make([]byte, len(src))
-	for i := 0; i < len(src); i++ {
-		c := src[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		out[i] = c
-	}
-	return string(out)
+	return core.NormalizeSourceURL(raw)
 }
 
 // trimSpace 去首尾空白（字节级；只用于判重键与空值判定，不参与任何落盘字节）。
 func trimSpace(s string) string { return string(bytes.TrimSpace([]byte(s))) }
 
-func isTracking(key string) bool {
-	k := foldASCII(key)
-	for _, p := range TrackingParams() {
-		if k == p || (strings.HasSuffix(p, "_") && strings.HasPrefix(k, p)) {
-			return true
-		}
-	}
-	return false
-}
-
 // NormalizeTitle 把标题归一成判重用的 `title_key`：去首尾空白（**精确匹配**，
 // 不做大小写折叠与全半角归一——那会把不同标题误判成同一篇）。
-func NormalizeTitle(raw string) string { return trimSpace(raw) }
+func NormalizeTitle(raw string) string { return core.NormalizeSourceTitle(raw) }
 
 // sourceMeta 是原文 frontmatter 的只读投影：§4.4 四键 + 本工具附加的 reasons / tags。
 // 未列出的键落进 model.Source.Extra 由 mdfile 原样保留，本结构体只用于**读**。

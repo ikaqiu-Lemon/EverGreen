@@ -79,7 +79,7 @@ tests/_staged/internal/cli/root_help_contract_test.go	unit	go	cli-core	unit.inte
 tests/_staged/internal/cli/search_test.go	unit	go	cli-core	unit.internal.cli	13	21350
 tests/_staged/internal/cli/skill_test.go	unit	go	cli-core	unit.internal.cli	14	50745
 tests/_staged/internal/cli/storage_v3_cli_test.go	unit	go	cli-core	unit.internal.cli	10	29550
-tests/_staged/internal/cli/sy_backend_test.go	unit	go	cli-core	unit.internal.cli	1	3894
+tests/_staged/internal/cli/sy_backend_test.go	unit	go	cli-core	unit.internal.cli	2	6784
 tests/_staged/internal/cli/sy_parity_test.go	unit	go	cli-core	unit.internal.cli	2	10269
 tests/_staged/internal/cli/t061_final_review_test.go	unit	go	cli-core	unit.internal.cli	3	5144
 tests/_staged/internal/cli/undelete_test.go	unit	go	cli-core	unit.internal.cli	4	10339
@@ -257,6 +257,7 @@ tests/_staged/pkg/evergreencore/provider_test.go	unit	go	core	unit.pkg.evergreen
 tests/_staged/pkg/evergreencore/review_payload_test.go	unit	go	core	unit.pkg.evergreencore	1	2128
 tests/_staged/pkg/evergreencore/review_test.go	unit	go	core	unit.pkg.evergreencore	6	18609
 tests/_staged/pkg/evergreencore/semantic_export_test.go	unit	go	core	unit.pkg.evergreencore	3	4166
+tests/_staged/pkg/evergreencore/source_capture_test.go	unit	go	core	unit.pkg.evergreencore	4	11772
 tests/_staged/scripts/migrate-storage-v3/migration_test.go	unit	go	migration	unit.scripts.migrate-storage-v3	4	9000
 tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534
