@@ -44,12 +44,25 @@ type WorkspaceDoctorSnapshot struct {
 	Queries       map[string]AVPage       `json:"queries"`
 }
 
+type DerivedProjectionStatus struct {
+	Available         bool   `json:"available"`
+	Healthy           bool   `json:"healthy"`
+	ExpectedDocuments int    `json:"expected_documents"`
+	ExpectedBlocks    int    `json:"expected_blocks"`
+	ActualDocuments   int    `json:"actual_documents"`
+	ActualBlocks      int    `json:"actual_blocks"`
+	ExpectedDigest    string `json:"expected_digest,omitempty"`
+	ActualDigest      string `json:"actual_digest,omitempty"`
+}
+
 type WorkspaceDoctorReport struct {
-	Spec         string                  `json:"spec"`
-	RebuildIndex bool                    `json:"rebuild_index"`
-	Parity       bool                    `json:"parity"`
-	Before       WorkspaceDoctorSnapshot `json:"before"`
-	After        WorkspaceDoctorSnapshot `json:"after"`
+	Spec          string                  `json:"spec"`
+	RebuildIndex  bool                    `json:"rebuild_index"`
+	Parity        bool                    `json:"parity"`
+	Before        WorkspaceDoctorSnapshot `json:"before"`
+	After         WorkspaceDoctorSnapshot `json:"after"`
+	DerivedBefore DerivedProjectionStatus `json:"derived_before"`
+	DerivedAfter  DerivedProjectionStatus `json:"derived_after"`
 }
 
 // InspectWorkspaceDoctor derives every reported set from authority documents.
