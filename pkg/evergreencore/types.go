@@ -18,6 +18,7 @@ const (
 	BlockSpec           SchemaRef = "evergreen.block/v1"
 	NoteReviewSpec      SchemaRef = "evergreen.note-review/v1"
 	SourceSchema        SchemaRef = "evergreen.source/v1"
+	NoteSchema          SchemaRef = "evergreen.note/v1"
 	ClaimSchema         SchemaRef = "evergreen.claim/v1"
 	KnowledgeKindSchema SchemaRef = "evergreen.claim-kind.knowledge/v1"
 	OpinionKindSchema   SchemaRef = "evergreen.claim-kind.opinion/v1"

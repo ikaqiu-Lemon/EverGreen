@@ -132,6 +132,17 @@ func (c *Client) PlanSourceCapture(
 	return response.Data, nil
 }
 
+func (c *Client) PlanNoteCreate(
+	ctx context.Context,
+	request evergreencore.NoteCreateRequest,
+) (evergreencore.PlannedNoteCreate, error) {
+	var response evergreencore.APIResponse[evergreencore.PlannedNoteCreate]
+	if err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/notes/plan-create", request, &response); err != nil {
+		return response.Data, err
+	}
+	return response.Data, nil
+}
+
 func (c *Client) Apply(ctx context.Context, request evergreencore.ApplyRequest) (evergreencore.OperationRecord, error) {
 	var response evergreencore.APIResponse[evergreencore.OperationRecord]
 	if err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/apply", request, &response); err != nil {

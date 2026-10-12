@@ -252,6 +252,7 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("candidate", r.runCandidate)
 	_ = r.Wire("migrate", r.runMigrate)
 	_ = r.Wire("diff", r.runSemanticDiff)
+	_ = r.Wire("note", r.runNote)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。
@@ -494,11 +495,15 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 		cmd.Flags(fs)
 	}
 	switch cmd.Name {
-	case "capture", "context", "search", "card", "rel", "materialize", "apply":
+	case "capture", "context", "search", "card", "rel", "materialize", "apply", "note":
 		fs.String("backend", "markdown", "authority backend: markdown or sy")
 		if cmd.Name == "materialize" {
 			fs.String("request", "", "shared core materialization request JSON")
 			fs.Bool("dry-run", false, "preview shared core materialization")
+		}
+		if cmd.Name == "note" {
+			fs.String("request", "", "shared core Note create request JSON")
+			fs.Bool("dry-run", false, "preview shared core Note creation")
 		}
 	}
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {

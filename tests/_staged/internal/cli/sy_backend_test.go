@@ -202,6 +202,132 @@ func TestSYCLICaptureUsesSharedCoreOfflineAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestSYCLINoteCreateUsesSharedCoreOfflineAndOnlinePlanning(t *testing.T) {
+	setGitIdentity(t)
+	root := t.TempDir()
+	gitOut(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "seed.txt"), []byte("seed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, root, "add", ".")
+	gitOut(t, root, "commit", "-qm", "initial")
+	bodyPath := filepath.Join(t.TempDir(), "source.md")
+	if err := os.WriteFile(bodyPath, []byte("Source content for a managed Note.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EG_KERNEL_URL", "")
+	t.Setenv("EG_AGENT_ID", "note-cli-agent")
+	t.Setenv("EG_REQUEST_REASON", "create reviewed Note")
+	captured := runSYCLI(t, root, []string{
+		"capture", "--url", "https://example.com/note-cli", "--title", "CLI Note Source",
+		"--body-file", bodyPath, "--reason", "prepare Note",
+		"--captured-at", "2026-10-12T18:00:00+08:00",
+	})
+	sourceID := core.LogicalID(captured["data"].(map[string]any)["source_id"].(string))
+	request := core.NoteCreateRequest{
+		OperationID: "op-note-cli", LogicalID: "n-note-cli",
+		DocumentID: "20261012180100-note001", Path: "box/note.sy",
+		SourceID: sourceID, Title: "CLI reviewed Note",
+		Segments: []core.NoteCreateSegment{{
+			SegmentID: "seg-note-cli", Role: "note_segment",
+			Locator: &core.Locator{Kind: "source-lines", Value: "L1-L1"},
+			Content: json.RawMessage(`[
+				{"ID":"20261012180101-seg0001","Type":"NodeParagraph","Data":"Source content"}
+			]`),
+		}},
+		Candidates: []core.NoteCreateCandidate{{
+			CandidateID: "cand-note-cli", ClaimKind: core.KnowledgeKind,
+			Title: "CLI claim", SegmentRefs: []core.LogicalID{"seg-note-cli"},
+			Reason: "The selected source content supports this claim.",
+			Payload: json.RawMessage(`[
+				{"ID":"20261012180102-payload","Type":"NodeParagraph","Data":"CLI claim body"}
+			]`),
+		}},
+		Coverage: []core.CoverageModule{{
+			ModuleID: "coverage-note-cli", Disposition: "candidate",
+			SegmentRefs: []core.LogicalID{"seg-note-cli"}, CandidateID: "cand-note-cli",
+		}},
+	}
+	requestRaw, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestPath := filepath.Join(t.TempDir(), "note-create.json")
+	if err = os.WriteFile(requestPath, requestRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	created := runSYCLI(t, root, []string{"note", "create", "--request", requestPath})
+	data := created["data"].(map[string]any)
+	if data["note_id"] != string(request.LogicalID) ||
+		data["source_id"] != string(sourceID) ||
+		data["path"] != request.Path {
+		t.Fatalf("offline Note create = %#v", data)
+	}
+	repository, err := core.NewSYReadRepository(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteRaw, err := repository.Load(context.Background(), request.LogicalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := core.InspectNoteReview(noteRaw, nil)
+	if err != nil || !snapshot.CanMaterialize ||
+		snapshot.Candidates[0].Metadata.State != "draft" {
+		t.Fatalf("offline Note snapshot = %+v err=%v", snapshot, err)
+	}
+	if got := gitLogCount(t, root); got != 3 {
+		t.Fatalf("Note CLI Git commits = %d, want initial + Source + Note", got)
+	}
+
+	archive, err := core.CanonicalExport(context.Background(), repository, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var transported core.NoteCreateRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, httpRequest *http.Request) {
+		switch httpRequest.URL.Path {
+		case "/api/evergreen/v1/capabilities":
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.Capabilities]{
+				OK: true, Data: core.CurrentCapabilities(),
+			})
+		case "/api/evergreen/v1/workspace/export":
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.CanonicalArchive]{
+				OK: true, Data: archive,
+			})
+		case "/api/evergreen/v1/notes/plan-create":
+			if httpRequest.Header.Get("X-Evergreen-Caller") != "agent" ||
+				httpRequest.Header.Get("X-Evergreen-Agent-ID") != "online-note-agent" ||
+				httpRequest.Header.Get("X-Evergreen-Request-Reason") != "plan Note online" {
+				t.Fatalf("online Note identity headers = %v", httpRequest.Header)
+			}
+			if err := json.NewDecoder(httpRequest.Body).Decode(&transported); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.PlannedNoteCreate]{
+				OK: true,
+				Data: core.PlannedNoteCreate{
+					NoteID: request.LogicalID, SourceID: sourceID, Path: request.Path,
+				},
+			})
+		default:
+			http.NotFound(w, httpRequest)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("EG_KERNEL_URL", server.URL)
+	t.Setenv("EG_AGENT_ID", "online-note-agent")
+	t.Setenv("EG_REQUEST_REASON", "plan Note online")
+	planned := runSYCLI(t, root, []string{
+		"note", "create", "--request", requestPath, "--dry-run",
+	})
+	if planned["ok"] != true || transported.OperationID != request.OperationID ||
+		transported.SourceID != sourceID ||
+		transported.Candidates[0].CandidateID != "cand-note-cli" {
+		t.Fatalf("online Note request = %+v result=%#v", transported, planned)
+	}
+}
+
 func runSYCLI(t *testing.T, root string, args []string) map[string]any {
 	t.Helper()
 	var output bytes.Buffer

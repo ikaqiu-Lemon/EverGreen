@@ -128,6 +128,10 @@ compatibility/validation digest):
   `B1..Bn` vocabulary and provenance are stored by `eg:nb:1` in the linked
   `ns-*`. `eg export --plain --output <dir>`
   creates a read-only egress copy without Evergreen protocol anchors.
+- **Native Note creation.** `eg note create --request <note-create.json|-> --backend sy`
+  plans and applies a managed Note through the shared core. The request supplies
+  native segment/Candidate payloads and complete coverage; the core owns hashes,
+  initial draft state, Source binding, and materialized output.
 - **Candidate review.** `eg candidate show --note <n-id> --json` exports the
   complete editable draft state. Apply the edited `.data` object with
   `eg candidate apply --note <n-id> --file <review.json> --user-request`.
@@ -224,7 +228,7 @@ transaction journal（事务日志）. `W21` remains unassigned（不分配）.
 
 ## Command roster
 
-Evergreen exposes 28 top-level commands（顶层命令共 28 条）. Run `eg <command> --help`
+Evergreen exposes 29 top-level commands（顶层命令共 29 条）. Run `eg <command> --help`
 for the authoritative flags and exit codes; the table below is the post-install
 roster you can verify against `eg --help`.
 
@@ -236,6 +240,7 @@ roster you can verify against `eg --help`.
 | `eg context` | Read-only processing context (`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + base hashes) |
 | `eg apply` | Apply a ChangePlan |
 | `eg candidate` | `show`/`apply` the complete user-reviewable candidate state |
+| `eg note` | `create --request <file\|-> --backend sy` for a managed native Note |
 | `eg migrate` | `inventory`/`import`/`parity` for manifest-bound migration into a new `.sy` workspace |
 | `eg diff` | Compare canonical exports without changing the workspace |
 | `eg search` | Ranked, paginated card search |

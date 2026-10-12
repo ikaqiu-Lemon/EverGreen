@@ -130,6 +130,45 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 			return result, applyErr
 		}
 		return result, nil
+	case "note":
+		if inv.Cmd.Validate != nil {
+			if err := inv.Cmd.Validate(inv); err != nil {
+				return nil, err
+			}
+		}
+		var request core.NoteCreateRequest
+		if err := readJSON(inv.String("request"), &request); err != nil {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+		principal, err := syPrincipal(inv)
+		if err != nil {
+			return nil, syError(err)
+		}
+		var planned core.PlannedNoteCreate
+		if online != nil {
+			planned, err = online.PlanNoteCreate(ctx, request)
+		} else {
+			host, hostErr := migrate.Repository(inv.VaultFlag)
+			if hostErr != nil {
+				return nil, syError(hostErr)
+			}
+			planned, err = core.NewAuthorityService(host, core.CommandPolicy{}, registry).
+				PlanNoteCreate(ctx, principal, request)
+		}
+		if err != nil {
+			return nil, syError(err)
+		}
+		if inv.String("dry-run") == "true" {
+			return &Result{Data: map[string]interface{}{"plan": planned}}, nil
+		}
+		result, applyErr := r.applySYOperation(inv, online, planned.Operation)
+		if result != nil {
+			result.Data["note_id"] = planned.NoteID
+			result.Data["source_id"] = planned.SourceID
+			result.Data["path"] = planned.Path
+			result.Data["snapshot"] = planned.Snapshot
+		}
+		return result, applyErr
 	case "context":
 		id := inv.String("note")
 		if id == "" {

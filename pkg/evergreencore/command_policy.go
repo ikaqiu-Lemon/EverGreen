@@ -25,7 +25,7 @@ func (CommandPolicy) Authorize(_ context.Context, principal Principal, command s
 			return validationError(CodeUnauthorized, "principal", "native editing requires a user")
 		}
 		return nil
-	case SourceCaptureCommand, "claim.update", "claim.edge.update", "note.review.update", "note.review.materialize":
+	case SourceCaptureCommand, NoteCreateCommand, "claim.update", "claim.edge.update", "note.review.update", "note.review.materialize":
 		return nil
 	default:
 		return validationError(CodeUnauthorized, "command", "principal is not authorized for this command")

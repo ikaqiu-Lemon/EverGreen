@@ -766,7 +766,7 @@ content to fill it.
 
 ## Command reference
 
-The CLI exposes 28 top-level commands（顶层命令共 28 个）. Run `eg <command> --help` for the
+The CLI exposes 29 top-level commands（顶层命令共 29 个）. Run `eg <command> --help` for the
 authoritative argument list — every help page documents its own exit codes.
 
 **Setup**
@@ -783,6 +783,7 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg capture` | Store source material and add it to the inbox |
 | `eg context` | Read-only: `draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hashes |
 | `eg apply --plan <file\|->` | Validate and apply a ChangePlan |
+| `eg note create --request <file\|-> --backend sy` | Create a managed Note from native segments, Candidates, and complete coverage |
 | `eg candidate show\|apply` | Export or atomically apply a complete candidate review spec |
 | `eg materialize` | User-initiated deterministic Note candidate materialization |
 | `eg export --plain` | Export data Markdown without Evergreen-specific protocol syntax |

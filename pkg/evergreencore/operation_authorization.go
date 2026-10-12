@@ -15,6 +15,9 @@ func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation,
 	if operation.Plan.Command == SourceCaptureCommand && len(operation.Images) != 1 {
 		return validationError(CodeUnauthorized, "writes", "Source capture requires exactly one Source write")
 	}
+	if operation.Plan.Command == NoteCreateCommand && len(operation.Images) != 1 {
+		return validationError(CodeUnauthorized, "writes", "Note create requires exactly one Note write")
+	}
 	before := make([]*SYDocument, len(operation.Images))
 	after := make([]*SYDocument, len(operation.Images))
 	for index, image := range operation.Images {
@@ -54,6 +57,13 @@ func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation,
 			}
 		case SourceCaptureCommand:
 			if err = authorizeSourceCaptureChange(before[index], after[index], image.Create, s.registry); err != nil {
+				return err
+			}
+		case NoteCreateCommand:
+			if !image.Create {
+				return validationError(CodeUnauthorized, "command", "Note create requires an absent Note target")
+			}
+			if err = authorizeNoteCreation(after[index], s.registry); err != nil {
 				return err
 			}
 		case "claim.update", "claim.edge.update":

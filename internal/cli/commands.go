@@ -69,6 +69,7 @@ func commands() []*Command {
 		candidateCommand(),
 		migrateCommand(),
 		diffCommand(),
+		noteCommand(),
 	}
 }
 

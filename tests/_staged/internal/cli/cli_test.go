@@ -155,6 +155,7 @@ var wantCommands = []string{
 	"candidate show|apply|migrate",
 	"migrate inventory|import|parity",
 	"diff",
+	"note create",
 }
 
 // wantCommandCount 是注册命令总数：S1 九条 + M3 状态三条（deprecate / restore / replaced-by）
@@ -179,7 +180,8 @@ var wantCommands = []string{
 // **原样保留**在 TestCommandCountTwentyTwo 里（它改证「摘掉 opinion 后恰 22」，结论不删）。
 // + Storage v3 B4 两条（materialize / export）：23 → 25。
 // + Candidate review 一条（candidate）：25 → 26。
-const wantCommandCount = 28
+// + Native Note create 一条（note）：28 → 29。
+const wantCommandCount = 29
 
 // 每个命令的 flag 集合（逐项对齐合同 §1.1–§1.9；全局 flag 另计）。
 var wantFlags = map[string][]string{
@@ -253,6 +255,7 @@ var wantFlags = map[string][]string{
 	"candidate":   {"note", "file", "rebase", "strict"},
 	"migrate":     {"output", "manifest", "target"},
 	"diff":        {"before", "after"},
+	"note":        {},
 }
 
 var globalFlagNames = []string{"json", "vault", "help", "h"}
@@ -1134,22 +1137,23 @@ func TestCommandCountNineteen(t *testing.T) {
 	const storageV3LaterAdded1 = "materialize"
 	const storageV3LaterAdded2 = "export"
 	const candidateReviewLaterAdded = "candidate"
+	const noteCreateLaterAdded = "note"
 
 	if len(m3Baseline) != 18 {
 		t.Fatalf("M3 基线清单写错了：%d 条，M3 收口时恰 18 条", len(m3Baseline))
 	}
-	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2; want != wantCommandCount {
-		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）+ 1（006-B1a 的 %s）+ 1（Storage v3 的 %s）+ 1（Storage v3 的 %s）+ 1（candidate review 的 %s）= %d，"+
+	if want := len(m3Baseline) + m4AddedCount + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 3; want != wantCommandCount {
+		t.Fatalf("加法等式不成立：%d + %d（058）+ 1（059 的 %s）+ 1（065 的 %s）+ 1（068 的 %s）+ 1（006-B1a 的 %s）+ 1（Storage v3 的 %s）+ 1（Storage v3 的 %s）+ 1（candidate review 的 %s）+ 3（migrate/diff/%s）= %d，"+
 			"但 wantCommandCount = %d",
 			len(m3Baseline), m4AddedCount, m4LaterAdded, m5LaterAdded, m5LaterAdded2,
 			m5LaterAdded3, storageV3LaterAdded1, storageV3LaterAdded2,
-			candidateReviewLaterAdded, want, wantCommandCount)
+			candidateReviewLaterAdded, noteCreateLaterAdded, want, wantCommandCount)
 	}
 
 	got := New().Commands()
-	if len(got)-9 != 19 {
-		t.Fatalf("摘掉七条后来新增命令后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
-			len(got)-9)
+	if len(got)-10 != 19 {
+		t.Fatalf("摘掉十条后来新增命令后命令数 = %d，期望 19（M3 期 18 + T-…-058 新增 1）",
+			len(got)-10)
 	}
 
 	// ③ 前 18 条逐字等于 M3 基线（次序与名称都不许动）。
@@ -1169,16 +1173,17 @@ func TestCommandCountNineteen(t *testing.T) {
 		if base[c.Name] || c.Name == m4LaterAdded || c.Name == m5LaterAdded ||
 			c.Name == m5LaterAdded2 || c.Name == m5LaterAdded3 ||
 			c.Name == storageV3LaterAdded1 || c.Name == storageV3LaterAdded2 ||
-			c.Name == candidateReviewLaterAdded || c.Name == "migrate" || c.Name == "diff" {
+			c.Name == candidateReviewLaterAdded || c.Name == "migrate" || c.Name == "diff" ||
+			c.Name == noteCreateLaterAdded {
 			continue
 		}
 		added = append(added, c.Name)
 	}
 	if len(added) != m4AddedCount {
-		t.Fatalf("相对 M3 基线、摘掉 %q / %q / %q / %q / %q / %q / %q 后新增 %v（%d 条），期望恰 %d 条",
+		t.Fatalf("相对 M3 基线、摘掉 %q / %q / %q / %q / %q / %q / %q / migrate / diff / %q 后新增 %v（%d 条），期望恰 %d 条",
 			m4LaterAdded, m5LaterAdded, m5LaterAdded2, m5LaterAdded3,
 			storageV3LaterAdded1, storageV3LaterAdded2, candidateReviewLaterAdded,
-			added, len(added), m4AddedCount)
+			noteCreateLaterAdded, added, len(added), m4AddedCount)
 	}
 	if added[0] != m4Added {
 		t.Fatalf("新增命令名 = %q，期望逐字 %q", added[0], m4Added)
@@ -1226,7 +1231,7 @@ func TestCommandCountTwenty(t *testing.T) {
 	// M5 期新增命令名：本用例只负责 M4 收口那一条等式，摘掉后再复算 20。
 	// T-…-068 追加 `bench`、T-…-006-B1a 追加 `opinion` 后这份清单从一条变三条 ——
 	// **20 这个 M4 收口结论一个字不删**。
-	m5Added := []string{"index", "bench", "opinion", "materialize", "export", "candidate", "migrate", "diff"}
+	m5Added := []string{"index", "bench", "opinion", "materialize", "export", "candidate", "migrate", "diff", "note"}
 
 	want := len(m3Baseline) + len(m4Added)
 	if want != 20 {
