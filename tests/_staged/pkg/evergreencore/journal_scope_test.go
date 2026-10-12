@@ -165,6 +165,11 @@ func TestJournalGlobalGateAndScopedRecoveryKeepLockedIslands(t *testing.T) {
 			public := scopeAuthority(t, journalScopeStorage{storage, "public"}, storage.root, commits)
 			privateBefore := readFile(t, storage.root, "private/claim.sy")
 			publicBefore := readFile(t, storage.root, "public/claim.sy")
+			storage.open = false
+			if err := public.host.(*FilesystemAuthority).CheckBackgroundWrite(context.Background()); !HasDiagnostic(err, CodeTransactionBlocked) {
+				t.Fatalf("ordinary write gate required a private key or admitted an unfinished operation: %v", err)
+			}
+			storage.open = true
 			if _, err := public.Apply(context.Background(), user, ApplyRequest{Operation: publicPlan}); !HasDiagnostic(err, CodeTransactionBlocked) {
 				t.Fatalf("unfinished private operation did not globally block with a stable diagnostic: %v", err)
 			}
@@ -191,6 +196,10 @@ func TestJournalGlobalGateAndScopedRecoveryKeepLockedIslands(t *testing.T) {
 			}
 			if commits.Count("op-private") != 1 || commits.Count("op-public") != 1 {
 				t.Fatal("island recovery duplicated or omitted commits")
+			}
+			storage.open = false
+			if err := public.host.(*FilesystemAuthority).CheckBackgroundWrite(context.Background()); err != nil {
+				t.Fatalf("completed encrypted journal blocked an ordinary write without its key: %v", err)
 			}
 		})
 	}
@@ -260,6 +269,9 @@ func TestJournalCompletedOutOfScopeCorruptionStillBlocks(t *testing.T) {
 			public := scopeAuthority(t, journalScopeStorage{storage, "public"}, storage.root, commits)
 			if err := public.host.(*FilesystemAuthority).blockedByOtherOperation(context.Background(), "op-next"); !HasDiagnostic(err, CodeTransactionBlocked) {
 				t.Fatalf("unreadable completed journal was silently ignored: %v", err)
+			}
+			if err := public.host.(*FilesystemAuthority).CheckBackgroundWrite(context.Background()); !HasDiagnostic(err, CodeTransactionBlocked) {
+				t.Fatalf("ordinary write gate ignored corrupt journal evidence: %v", err)
 			}
 			if commits.Count("op-completed") != 1 {
 				t.Fatal("journal inspection produced a commit")

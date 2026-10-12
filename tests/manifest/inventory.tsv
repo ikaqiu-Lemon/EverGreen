@@ -246,7 +246,7 @@ tests/_staged/pkg/evergreencore/claim_kinds_test.go	unit	go	core	unit.pkg.evergr
 tests/_staged/pkg/evergreencore/core_test.go	unit	go	core	unit.pkg.evergreencore	9	15237
 tests/_staged/pkg/evergreencore/document_storage_test.go	unit	go	core	unit.pkg.evergreencore	3	10429
 tests/_staged/pkg/evergreencore/git_committer_test.go	unit	go	core	unit.pkg.evergreencore	4	8972
-tests/_staged/pkg/evergreencore/journal_scope_test.go	unit	go	core	unit.pkg.evergreencore	3	10160
+tests/_staged/pkg/evergreencore/journal_scope_test.go	unit	go	core	unit.pkg.evergreencore	3	10904
 tests/_staged/pkg/evergreencore/materialization_authorization_test.go	unit	go	core	unit.pkg.evergreencore	3	7549
 tests/_staged/pkg/evergreencore/native_batch_test.go	unit	go	core	unit.pkg.evergreencore	7	14606
 tests/_staged/pkg/evergreencore/native_edit_test.go	unit	go	core	unit.pkg.evergreencore	3	7504

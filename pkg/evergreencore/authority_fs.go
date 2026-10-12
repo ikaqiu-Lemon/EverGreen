@@ -102,6 +102,14 @@ func NewFilesystemAuthority(options FilesystemAuthorityOptions) (*FilesystemAuth
 
 func (a *FilesystemAuthority) Root() string { return a.root }
 
+// CheckBackgroundWrite 仅认证全局 journal，不读取或解密任何文档。
+// 宿主必须在同一工作区写门禁内检查并完成普通写入，避免检查后插入新的语义事务。
+func (a *FilesystemAuthority) CheckBackgroundWrite(ctx context.Context) error {
+	a.writeGate.Lock()
+	defer a.writeGate.Unlock()
+	return a.blockedByOtherOperation(ctx, "")
+}
+
 // LoadPhysicalDocument 只读取本次认证范围内的普通物理路径，不允许通过符号链接越界。
 func (a *FilesystemAuthority) LoadPhysicalDocument(ctx context.Context, path string) ([]byte, error) {
 	if err := validateAuthorityPath(path); err != nil {
