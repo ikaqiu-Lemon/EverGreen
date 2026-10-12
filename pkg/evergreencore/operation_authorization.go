@@ -99,7 +99,9 @@ func (s *AuthorityService) authorizeOperationChanges(operation PlannedOperation,
 			if image.Create || after[index].Envelope.Entity.EntityType != EntityNote {
 				return validationError(CodeUnauthorized, "command", "review update requires an existing Note")
 			}
-			if err := authorizeReviewChange(before[index], after[index], s.registry); err != nil {
+			if err := authorizeReviewChange(
+				operation.Plan.Principal, before[index], after[index], s.registry,
+			); err != nil {
 				return err
 			}
 			if err := authorizeNativeRoot(operation.Plan.Principal, before[index].Raw, after[index].Raw); err != nil {
@@ -663,7 +665,11 @@ func authorizeAgentEdges(principal Principal, before, after []*SYDocument) error
 	return nil
 }
 
-func authorizeReviewChange(before, after *SYDocument, registry *Registry) error {
+func authorizeReviewChange(
+	principal Principal,
+	before, after *SYDocument,
+	registry *Registry,
+) error {
 	a, err := nonReviewEnvelopeFields(before.Envelope)
 	if err != nil {
 		return err
@@ -702,6 +708,15 @@ func authorizeReviewChange(before, after *SYDocument, registry *Registry) error 
 				!semanticValuesEqual(old.envelope.Candidate.Extra, candidate.envelope.Candidate.Extra) {
 				return validationError(CodeUnauthorized, "candidate", "unknown Candidate metadata must be preserved")
 			}
+		}
+		if principal.Type != PrincipalUser && candidate.envelope.Candidate.State == "confirmed" &&
+			(!existed || oldState != "confirmed" ||
+				!authorityNodesEqual([]*reviewNode{old.node}, []*reviewNode{candidate.node})) {
+			return validationError(
+				CodeUnauthorized,
+				"candidate.state",
+				"Candidate confirmation requires an authenticated user",
+			)
 		}
 		if candidate.envelope.Candidate.MaterializedClaimID != oldOutput ||
 			(candidate.envelope.Candidate.State == "materialized" && oldState != "materialized") {
