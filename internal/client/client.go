@@ -191,6 +191,12 @@ func (c *Client) InspectReview(ctx context.Context, id evergreencore.LogicalID) 
 	return response.Data, err
 }
 
+func (c *Client) PlanReview(ctx context.Context, request evergreencore.ReviewPlanRequest) (evergreencore.PlannedReview, error) {
+	var response evergreencore.APIResponse[evergreencore.PlannedReview]
+	err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/review/plan", request, &response)
+	return response.Data, err
+}
+
 func (c *Client) PlanReviewMaterialization(ctx context.Context, request evergreencore.ReviewMaterializeRequest) (evergreencore.PlannedMaterialization, error) {
 	var response evergreencore.APIResponse[evergreencore.PlannedMaterialization]
 	err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/review/plan-materialize", request, &response)

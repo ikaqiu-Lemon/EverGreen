@@ -498,7 +498,7 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 		cmd.Flags(fs)
 	}
 	switch cmd.Name {
-	case "capture", "context", "search", "card", "rel", "materialize", "apply", "note", "recover", "doctor", "backup":
+	case "capture", "context", "search", "card", "rel", "materialize", "apply", "note", "candidate", "recover", "doctor", "backup":
 		fs.String("backend", "markdown", "authority backend: markdown or sy")
 		if cmd.Name == "materialize" {
 			fs.String("request", "", "shared core materialization request JSON")

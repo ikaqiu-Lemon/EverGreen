@@ -330,6 +330,21 @@ regenerate full coverage against those new blocks, then apply it with `--rebase 
 Hash-only rebases are rejected. Step 4 shows the later explicit materialization. A plain export is
 available independently:
 
+For the `.sy` backend, `candidate show` returns the shared-core review snapshot. Build a
+`ReviewPlanRequest` with its exact `note_id` and `semantic_hash`, then apply one explicit review
+action through the same command surface:
+
+```console
+$ eg candidate show --note n-20260915-bitter-lesson --backend sy --vault "$DATA" --json
+$ eg candidate apply --note n-20260915-bitter-lesson --file review-plan.json \
+    --backend sy --vault "$DATA" --user-request --json
+```
+
+The request command is one of `candidate.update`, `candidate.rebase`, `candidate.confirm`,
+`candidate.discard`, or `coverage.update`. Confirmation is user-only. Online mode calls the typed
+kernel review plan/apply endpoints and never falls back to local writes; offline mode uses the same
+core under the workspace writer lease.
+
 ```console
 $ eg export --plain --output ../evergreen-plain
 ```
@@ -784,7 +799,7 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg context` | Read-only: `draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hashes |
 | `eg apply --plan <file\|->` | Validate and apply a ChangePlan |
 | `eg note create --request <file\|-> --backend sy` | Create a managed Note from native segments, Candidates, and complete coverage |
-| `eg candidate show\|apply` | Export or atomically apply a complete candidate review spec |
+| `eg candidate show\|apply` | Review Candidates atomically; Markdown uses the complete review spec and `.sy` uses shared-core ReviewSnapshot/ReviewPlanRequest |
 | `eg materialize` | User-initiated deterministic Note candidate materialization |
 | `eg export --plain` | Export data Markdown without Evergreen-specific protocol syntax |
 | `eg migrate inventory\|import\|parity` | Bind a frozen Git worktree to a stable manifest, import into a new `.sy` workspace, and verify semantic parity |

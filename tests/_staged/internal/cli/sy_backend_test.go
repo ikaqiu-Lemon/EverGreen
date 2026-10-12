@@ -335,6 +335,209 @@ func TestSYCLINoteCreateUsesSharedCoreOfflineAndOnlinePlanning(t *testing.T) {
 	}
 }
 
+func TestSYCLICandidateReviewUsesSharedCoreOfflineAndOnline(t *testing.T) {
+	setGitIdentity(t)
+	root := t.TempDir()
+	gitOut(t, root, "init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "seed.txt"), []byte("seed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, root, "add", ".")
+	gitOut(t, root, "commit", "-qm", "initial")
+	bodyPath := filepath.Join(t.TempDir(), "source.md")
+	if err := os.WriteFile(bodyPath, []byte("Source content for Candidate review.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EG_KERNEL_URL", "")
+	t.Setenv("EG_AGENT_ID", "candidate-cli-agent")
+	t.Setenv("EG_REQUEST_REASON", "create Candidate review fixture")
+	captured := runSYCLI(t, root, []string{
+		"capture", "--url", "https://example.com/candidate-cli", "--title", "Candidate CLI Source",
+		"--body-file", bodyPath, "--reason", "prepare Candidate review",
+		"--captured-at", "2026-10-12T20:00:00+08:00",
+	})
+	sourceID := core.LogicalID(captured["data"].(map[string]any)["source_id"].(string))
+	noteID := core.LogicalID("n-20261012-candidate-cli")
+	noteRequest := core.NoteCreateRequest{
+		OperationID: "op-candidate-cli-note", LogicalID: noteID,
+		DocumentID: "20261012200100-note001", Path: "box/candidate-note.sy",
+		SourceID: sourceID, Title: "Candidate CLI reviewed Note",
+		Segments: []core.NoteCreateSegment{{
+			SegmentID: "seg-candidate-cli", Role: "note_segment",
+			Locator: &core.Locator{Kind: "source-lines", Value: "L1-L1"},
+			Content: json.RawMessage(`[
+				{"ID":"20261012200101-seg0001","Type":"NodeParagraph","Data":"Source content"}
+			]`),
+		}},
+		Candidates: []core.NoteCreateCandidate{{
+			CandidateID: "cand-candidate-cli", ClaimKind: core.KnowledgeKind,
+			Title: "CLI reviewed claim", SegmentRefs: []core.LogicalID{"seg-candidate-cli"},
+			Reason: "The selected Source content supports this Candidate.",
+			Payload: json.RawMessage(`[
+				{"ID":"20261012200102-payload","Type":"NodeParagraph","Data":"CLI reviewed claim body"}
+			]`),
+		}},
+		Coverage: []core.CoverageModule{{
+			ModuleID: "coverage-candidate-cli", Disposition: "candidate",
+			SegmentRefs: []core.LogicalID{"seg-candidate-cli"}, CandidateID: "cand-candidate-cli",
+		}},
+	}
+	noteRequestRaw, err := json.Marshal(noteRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteRequestPath := filepath.Join(t.TempDir(), "note-create.json")
+	if err = os.WriteFile(noteRequestPath, noteRequestRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runSYCLI(t, root, []string{"note", "create", "--request", noteRequestPath})
+
+	offlineShow := runSYCLI(t, root, []string{
+		"candidate", "show", "--note", string(noteID),
+	})
+	reviewData, ok := offlineShow["data"].(map[string]any)["review"].(map[string]any)
+	if !ok || reviewData["note_id"] != string(noteID) {
+		t.Fatalf("offline Candidate show = %#v", offlineShow)
+	}
+	var snapshot core.ReviewSnapshot
+	reviewRaw, _ := json.Marshal(reviewData)
+	if err = json.Unmarshal(reviewRaw, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	request := core.ReviewPlanRequest{
+		OperationID: "op-candidate-cli-confirm", NoteID: noteID,
+		Base: snapshot.SemanticHash,
+		Command: core.ReviewCommand{
+			Action: core.ReviewActionCandidateConfirm, CandidateID: "cand-candidate-cli",
+		},
+	}
+	requestRaw, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestPath := filepath.Join(t.TempDir(), "candidate-review.json")
+	if err = os.WriteFile(requestPath, requestRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commitsBeforeReview := gitLogCount(t, root)
+	var deniedOutput bytes.Buffer
+	deniedCode := New().Run([]string{
+		"candidate", "apply", "--note", string(noteID), "--file", requestPath,
+		"--backend", "sy", "--vault", root, "--json",
+	}, &deniedOutput, &deniedOutput)
+	if deniedCode != ExitValidation || gitLogCount(t, root) != commitsBeforeReview {
+		t.Fatalf("Candidate apply without user request = code %d commits %d->%d: %s",
+			deniedCode, commitsBeforeReview, gitLogCount(t, root), deniedOutput.String())
+	}
+
+	var transported core.ReviewPlanRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, httpRequest *http.Request) {
+		switch httpRequest.URL.Path {
+		case "/api/evergreen/v1/capabilities":
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.Capabilities]{
+				OK: true, Data: core.CurrentCapabilities(),
+			})
+		case "/api/evergreen/v1/review/get":
+			if httpRequest.Header.Get("X-Evergreen-Caller") != "agent" {
+				t.Fatalf("online Candidate show caller = %v", httpRequest.Header)
+			}
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.ReviewSnapshot]{
+				OK: true, Data: snapshot,
+			})
+		case "/api/evergreen/v1/review/plan":
+			if httpRequest.Header.Get("X-Evergreen-Caller") != "cli" {
+				t.Fatalf("online Candidate apply caller = %v", httpRequest.Header)
+			}
+			if err := json.NewDecoder(httpRequest.Body).Decode(&transported); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.PlannedReview]{
+				OK: true,
+				Data: core.PlannedReview{Operation: core.PlannedOperation{
+					Plan: core.ChangePlan{
+						Protocol: core.ChangePlanProtocol, OperationID: request.OperationID,
+						Principal: core.Principal{Type: core.PrincipalUser, ID: "online-owner"},
+						Command:   "note.review.update",
+						Base:      []core.BaseRef{{LogicalID: noteID, SemanticHash: snapshot.SemanticHash}},
+						Writes:    []core.PlannedWrite{{LogicalID: noteID, After: "sha256:after"}},
+					},
+					Images:   []core.AfterImage{},
+					PlanHash: "sha256:online-plan",
+				}},
+			})
+		case "/api/evergreen/v1/apply":
+			var apply core.ApplyRequest
+			if err := json.NewDecoder(httpRequest.Body).Decode(&apply); err != nil {
+				t.Fatal(err)
+			}
+			if apply.Operation.Plan.OperationID != request.OperationID {
+				t.Fatalf("online Candidate apply operation = %+v", apply.Operation.Plan)
+			}
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.OperationRecord]{
+				OK: true, Data: core.OperationRecord{
+					OperationID: request.OperationID, State: core.OperationCompleted,
+					PlanHash: apply.Operation.PlanHash, GitCommit: "online-commit",
+				},
+			})
+		default:
+			http.NotFound(w, httpRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("EG_KERNEL_URL", server.URL)
+	onlineShow := runSYCLI(t, root, []string{
+		"candidate", "show", "--note", string(noteID),
+	})
+	if !reflect.DeepEqual(offlineShow["data"], onlineShow["data"]) {
+		t.Fatalf("online/offline Candidate show differs: offline=%#v online=%#v",
+			offlineShow, onlineShow)
+	}
+	onlineApply := runSYCLI(t, root, []string{
+		"candidate", "apply", "--note", string(noteID),
+		"--file", requestPath, "--user-request",
+	})
+	if onlineApply["ok"] != true ||
+		transported.Command.Action != core.ReviewActionCandidateConfirm ||
+		transported.NoteID != noteID {
+		t.Fatalf("online Candidate review = %+v result=%#v", transported, onlineApply)
+	}
+	t.Setenv("EG_KERNEL_URL", server.URL+"/unavailable")
+	var unavailableOutput bytes.Buffer
+	unavailableCode := New().Run([]string{
+		"candidate", "show", "--note", string(noteID),
+		"--backend", "sy", "--vault", root, "--json",
+	}, &unavailableOutput, &unavailableOutput)
+	if unavailableCode == 0 || gitLogCount(t, root) != commitsBeforeReview {
+		t.Fatalf("failed online Candidate read fell back locally: code=%d commits=%d output=%s",
+			unavailableCode, gitLogCount(t, root), unavailableOutput.String())
+	}
+
+	t.Setenv("EG_KERNEL_URL", "")
+	offlineApply := runSYCLI(t, root, []string{
+		"candidate", "apply", "--note", string(noteID),
+		"--file", requestPath, "--user-request",
+	})
+	if offlineApply["ok"] != true {
+		t.Fatalf("offline Candidate apply = %#v", offlineApply)
+	}
+	repository, err := core.NewSYReadRepository(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noteRaw, err := repository.Load(context.Background(), noteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := core.InspectNoteReview(noteRaw, nil)
+	if err != nil ||
+		confirmed.Candidates[0].Metadata.State != "confirmed" {
+		t.Fatalf("offline Candidate authority = %+v err=%v", confirmed, err)
+	}
+	if got := gitLogCount(t, root); got != 4 {
+		t.Fatalf("Candidate CLI Git commits = %d, want initial + Source + Note + confirm", got)
+	}
+}
+
 func TestSYCLIMaintenanceRequiresEvidenceAndNeverFallsBackFromOnline(t *testing.T) {
 	root := t.TempDir()
 	raw := claimAVFixtureForCLI(t)

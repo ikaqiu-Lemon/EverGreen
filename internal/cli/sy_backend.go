@@ -44,6 +44,11 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 	if inv.Cmd.Name == "apply" && (inv.String("plan") == "" || inv.String("plan") == "-") {
 		return nil, &UsageError{Msg: ".sy apply requires --plan <operation.json>"}
 	}
+	if inv.Cmd.Name == "candidate" {
+		if err := validateSYCandidateArgs(inv); err != nil {
+			return nil, err
+		}
+	}
 	ctx := context.Background()
 	var online *client.Client
 	var err error
@@ -117,6 +122,68 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 			return nil, syError(err)
 		}
 		return &Result{Data: map[string]interface{}{"doctor": report}}, nil
+	case "candidate":
+		noteID := core.LogicalID(strings.TrimSpace(inv.String("note")))
+		if inv.Sub == subCandidateShow {
+			var snapshot core.ReviewSnapshot
+			if online != nil {
+				snapshot, err = online.InspectReview(ctx, noteID)
+			} else {
+				host, hostErr := migrate.Repository(inv.VaultFlag)
+				if hostErr != nil {
+					return nil, syError(hostErr)
+				}
+				snapshot, err = core.NewAuthorityService(
+					host, core.CommandPolicy{}, registry,
+				).InspectReview(ctx, noteID)
+			}
+			if err != nil {
+				return nil, syError(err)
+			}
+			return &Result{Data: map[string]interface{}{"review": snapshot}}, nil
+		}
+		if !inv.UserRequest {
+			return nil, syError(&core.DiagnosticError{Diagnostics: []core.Diagnostic{{
+				Code: core.CodeUnauthorized, Level: "error", Path: "user_request",
+				Message: "Candidate review apply requires a user request",
+			}}})
+		}
+		raw, readErr := readCandidateReviewFile(r.In, strings.TrimSpace(inv.String("file")))
+		if readErr != nil {
+			return nil, &UsageError{Msg: readErr.Error()}
+		}
+		var request core.ReviewPlanRequest
+		if err = json.Unmarshal(raw, &request); err != nil {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+		if request.NoteID != noteID {
+			return nil, &UsageError{Msg: "Candidate review request note_id does not match --note"}
+		}
+		principal, principalErr := syPrincipal(inv)
+		if principalErr != nil {
+			return nil, syError(principalErr)
+		}
+		var planned core.PlannedReview
+		if online != nil {
+			planned, err = online.PlanReview(ctx, request)
+		} else {
+			host, hostErr := migrate.Repository(inv.VaultFlag)
+			if hostErr != nil {
+				return nil, syError(hostErr)
+			}
+			planned, err = core.NewAuthorityService(
+				host, core.CommandPolicy{}, registry,
+			).PlanReview(ctx, principal, request)
+		}
+		if err != nil {
+			return nil, syError(err)
+		}
+		result, applyErr := r.applySYOperation(inv, online, planned.Operation)
+		if result != nil {
+			result.Data["review"] = planned.Snapshot
+			result.Data["diff"] = planned.Diff
+		}
+		return result, applyErr
 	}
 
 	var repository core.Repository
@@ -402,6 +469,32 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 		return r.applySYOperation(inv, online, operation)
 	}
 	return nil, &UsageError{Msg: "this command does not support the .sy backend"}
+}
+
+func validateSYCandidateArgs(inv *Invocation) error {
+	if err := noPositionalArgs(inv); err != nil {
+		return err
+	}
+	noteID := strings.TrimSpace(inv.String("note"))
+	if !strings.HasPrefix(noteID, "n-") || len(noteID) == 2 {
+		return &UsageError{Msg: ".sy candidate requires --note <n-id>"}
+	}
+	if inv.Set("rebase") || inv.Set(StrictFlag) {
+		return &UsageError{Msg: ".sy candidate uses the action in --file; legacy --rebase/--strict are not supported"}
+	}
+	switch inv.Sub {
+	case subCandidateShow:
+		if inv.Set("file") {
+			return &UsageError{Msg: ".sy candidate show does not accept --file"}
+		}
+	case subCandidateApply:
+		if strings.TrimSpace(inv.String("file")) == "" {
+			return &UsageError{Msg: ".sy candidate apply requires --file <review-plan.json|->"}
+		}
+	default:
+		return &UsageError{Msg: ".sy candidate supports only show and apply"}
+	}
+	return nil
 }
 
 func sourceCaptureOperationID(request core.SourceCaptureRequest) string {

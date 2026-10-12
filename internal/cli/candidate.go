@@ -32,6 +32,8 @@ func candidateCommand() *Command {
 		Usage: `eg candidate show --note <n-id> [--json]
 eg candidate apply --note <n-id> --file <review.json|-> --user-request [--rebase] [--strict] [--json]
 eg candidate migrate --note <n-id> --user-request [--strict] [--json]
+eg candidate show --note <n-id> --backend sy --vault <data-dir> [--json]
+eg candidate apply --note <n-id> --file <review-plan.json|-> --backend sy --vault <data-dir> --user-request [--json]
 
 参数：
   --note <n-id>        是；candidate 所属的 Note
@@ -46,6 +48,12 @@ Note 改动后，--rebase 必须提交能逐字重渲染当前正文的完整 no
 并同时提交覆盖全部新 B 引用的 coverage；CLI 重建 block manifest 后才推进 note_hash。migrate 把 legacy
 未物化内嵌候选原子拆成纯 n-* 与 ns-*；也可把已有 n/ns 对中的 Note 机器锚点原子迁入
 workspace。所有写入走 journal v1 与一次 Git commit。
+
+.sy backend 直接使用 shared-core ReviewSnapshot / ReviewPlanRequest：show 返回当前
+segment、Candidate、coverage、stale 与 semantic base；apply 的文件包含
+operation_id/note_id/base/command，并通过同一 online/offline plan/apply、journal 和 Git。
+.sy 不接受 legacy --rebase/--strict 或 migrate；rebase/confirm/discard/update/
+coverage action 写在 request.command 中。Candidate confirm 必须由 User 显式发起。
 退出码：0 成功 / 幂等 no-op | 1 参数非法 | 2 授权、spec 或结构校验失败（零写入） |
         3 原子提交已整体回滚 | 4 Git 提交失败（Markdown 已生效并保留） |
         5 写前安全复核失败（E15）/ run.lock 不可用（E16），两者均零权威写入
