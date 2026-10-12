@@ -261,6 +261,7 @@ tests/_staged/pkg/evergreencore/review_payload_test.go	pkg/evergreencore/review_
 tests/_staged/pkg/evergreencore/review_test.go	pkg/evergreencore/review_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/semantic_export_test.go	pkg/evergreencore/semantic_export_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/source_capture_test.go	pkg/evergreencore/source_capture_test.go	evergreen	unit	go
+tests/_staged/pkg/evergreencore/version_matrix_test.go	pkg/evergreencore/version_matrix_test.go	evergreen	unit	go
 tests/_staged/scripts/migrate-storage-v3/migration_test.go	scripts/migrate-storage-v3/migration_test.go	evergreen	unit	go
 tests/_staged/skill/skill_test.go	skill/skill_test.go	evergreen	unit	go
 tests/_staged/test/e2e/index_symbol_judge_test.go	test/e2e/index_symbol_judge_test.go	evergreen	e2e	go

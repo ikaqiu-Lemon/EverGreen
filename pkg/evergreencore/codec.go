@@ -103,7 +103,8 @@ func DecodeSY(data []byte, registry *Registry) (*SYDocument, error) {
 	}
 	document.Envelope = envelope
 	if err = ValidateDocument(envelope, registry); err != nil {
-		if HasDiagnostic(err, CodeClaimKindUnavailable) {
+		if HasDiagnostic(err, CodeClaimKindUnavailable) ||
+			HasDiagnostic(err, CodeSchemaTooNew) {
 			var diagnosticErr *DiagnosticError
 			if errorsAsDiagnostic(err, &diagnosticErr) {
 				document.ReadOnly = true
@@ -557,7 +558,8 @@ func validateBlockEnvelopes(root RawObject, registry *Registry) ([]Diagnostic, e
 						return withPath(decodeErr, path+".Evergreen")
 					}
 					if validateErr := ValidateBlock(envelope, registry); validateErr != nil {
-						if HasDiagnostic(validateErr, CodeClaimKindUnavailable) {
+						if HasDiagnostic(validateErr, CodeClaimKindUnavailable) ||
+							HasDiagnostic(validateErr, CodeSchemaTooNew) {
 							var diagnosticErr *DiagnosticError
 							if errorsAsDiagnostic(validateErr, &diagnosticErr) {
 								diagnostics = append(diagnostics, diagnosticErr.Diagnostics...)

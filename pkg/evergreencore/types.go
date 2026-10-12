@@ -456,10 +456,11 @@ func validateClaim(envelope *DocumentEnvelope, registry *Registry) error {
 		)
 	}
 	if claim.KindSchema != descriptor.Schema {
-		return validationError(
-			CodeInvalidClaim,
+		return requireRegisteredSchema(
+			claim.KindSchema,
+			descriptor.Schema,
 			"Evergreen.claim.kind_schema",
-			fmt.Sprintf("schema %q does not match registered schema %q", claim.KindSchema, descriptor.Schema),
+			CodeInvalidClaim,
 		)
 	}
 	if !containsString(descriptor.AllowedStatuses, claim.Status) {
@@ -594,8 +595,16 @@ func ValidateBlock(envelope *BlockEnvelope, registry *Registry) error {
 			return validationError(CodeInvalidBlock, "Evergreen.candidate.candidate_id", "candidate ID must use cand-")
 		}
 		descriptor, ok := registry.Descriptor(candidate.ClaimKind)
-		if !ok || descriptor.Schema != candidate.KindSchema {
+		if !ok {
 			return validationError(CodeClaimKindUnavailable, "Evergreen.candidate.claim_kind", "candidate claim kind is unavailable")
+		}
+		if candidate.KindSchema != descriptor.Schema {
+			return requireRegisteredSchema(
+				candidate.KindSchema,
+				descriptor.Schema,
+				"Evergreen.candidate.kind_schema",
+				CodeClaimKindUnavailable,
+			)
 		}
 		if len(candidate.SegmentRefs) == 0 || strings.TrimSpace(candidate.PayloadHash) == "" ||
 			strings.TrimSpace(candidate.State) == "" {
@@ -696,6 +705,43 @@ func requireCurrentSchema(got, current SchemaRef, path string) error {
 		return validationError(CodeInvalidEnvelope, path, fmt.Sprintf("schema %q requires an explicit migration to %q", got, current))
 	}
 	return nil
+}
+
+func requireRegisteredSchema(got, current SchemaRef, path, mismatchCode string) error {
+	gotMajor, err := schemaMajor(got)
+	if err != nil {
+		return validationError(mismatchCode, path, err.Error())
+	}
+	currentMajor, _ := schemaMajor(current)
+	gotFamily, currentFamily := schemaFamily(got), schemaFamily(current)
+	if gotFamily != currentFamily {
+		return validationError(
+			mismatchCode,
+			path,
+			fmt.Sprintf("schema %q does not match registered schema %q", got, current),
+		)
+	}
+	if gotMajor > currentMajor {
+		return validationError(
+			CodeSchemaTooNew,
+			path,
+			fmt.Sprintf("schema %q is newer than registered schema %q", got, current),
+		)
+	}
+	return validationError(
+		mismatchCode,
+		path,
+		fmt.Sprintf("schema %q requires an explicit migration to %q", got, current),
+	)
+}
+
+func schemaFamily(schema SchemaRef) string {
+	raw := string(schema)
+	index := strings.LastIndex(raw, "/v")
+	if index < 1 {
+		return raw
+	}
+	return raw[:index]
 }
 
 func schemaMajor(schema SchemaRef) (int, error) {

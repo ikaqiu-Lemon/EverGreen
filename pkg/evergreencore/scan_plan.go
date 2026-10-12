@@ -177,9 +177,11 @@ func scanBlocks(
 				if decodeErr != nil {
 					return decodeErr
 				}
-				if validateErr := ValidateBlock(envelope, registry); validateErr != nil &&
-					!HasDiagnostic(validateErr, CodeClaimKindUnavailable) {
-					return validateErr
+				if validateErr := ValidateBlock(envelope, registry); validateErr != nil {
+					if !HasDiagnostic(validateErr, CodeClaimKindUnavailable) &&
+						!HasDiagnostic(validateErr, CodeSchemaTooNew) {
+						return validateErr
+					}
 				}
 				switch envelope.Role {
 				case "note_segment", "agent_annotation":
