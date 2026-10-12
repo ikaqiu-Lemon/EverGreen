@@ -329,3 +329,44 @@ func TestNativeFilesOlderJournalVersionCannotAdmitDelete(t *testing.T) {
 		t.Fatal("unsupported journal version committed")
 	}
 }
+
+func TestNativeFilesAVDeleteEmptyAndMalformedImagesRemainFailClosed(t *testing.T) {
+	for _, action := range []string{"delete", "empty update", "empty create"} {
+		t.Run(action, func(t *testing.T) {
+			service, host, user, request, ordinary, files := nativeFileFixture(t)
+			file := files[0]
+			file.After = nil
+			switch action {
+			case "delete":
+				file.Delete = true
+			case "empty create":
+				file.Path = "storage/av/20261012150000-native5.json"
+				file.Create, file.Before = true, nil
+			}
+			planned, err := service.PlanNativeFiles(context.Background(), user, request, []NativeDocumentWrite{ordinary},
+				[]NativeFileWrite{file})
+			if action != "delete" {
+				if err == nil {
+					t.Fatal("empty AV authority was admitted")
+				}
+				if _, err = os.Stat(host.operationDir(request.OperationID)); !errors.Is(err, fs.ErrNotExist) {
+					t.Fatal("invalid AV authority created a journal")
+				}
+				assertFileEquals(t, host.Root(), files[0].Path, files[0].Before)
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			host.faults = &oneShotFault{point: FaultAfterPrepared, index: -1}
+			if _, err = service.Apply(context.Background(), user, ApplyRequest{Operation: planned}); err == nil {
+				t.Fatal("AV delete fault did not interrupt")
+			}
+			records, err := service.Recover(context.Background())
+			if err != nil || len(records) != 1 || records[0].DerivedStale {
+				t.Fatalf("AV delete recovery failed: %+v %v", records, err)
+			}
+			assertNativeFileResult(t, host, planned)
+		})
+	}
+}

@@ -170,10 +170,14 @@ func authorizeNativeFileChange(image AfterImage, before []byte) error {
 	switch image.Auxiliary.Kind {
 	case NativeFileAttributeView:
 		objects := make([]RawObject, 0, 2)
-		for _, raw := range [][]byte{before, image.Bytes} {
-			if raw == nil {
-				continue
-			}
+		raws := [][]byte{}
+		if !image.Create {
+			raws = append(raws, before)
+		}
+		if !image.Delete {
+			raws = append(raws, image.Bytes)
+		}
+		for _, raw := range raws {
 			object, err := decodeRawObject(raw)
 			if err != nil {
 				return err
