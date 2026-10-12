@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+type beforeGitRewriteFault struct {
+	path    string
+	content []byte
+	fired   bool
+}
+
+func (f *beforeGitRewriteFault) Fail(point string, _ int) error {
+	if !f.fired && point == FaultBeforeGit {
+		f.fired = true
+		return os.WriteFile(f.path, f.content, 0o644)
+	}
+	return nil
+}
+
 const ordinaryDocumentID = "20261010170000-native1"
 const ordinaryDocumentPath = "box/" + ordinaryDocumentID + ".sy"
 
@@ -100,6 +114,26 @@ func TestNativeBatchMixedCommitAndPartialRenameRecovery(t *testing.T) {
 				t.Fatalf("commit did not contain the complete write set: %s", got)
 			}
 		})
+	}
+}
+
+func TestNativeBatchCommitsJournalAfterImageDespiteLateWorktreeRewrite(t *testing.T) {
+	service, host, principal, request, ordinary := nativeBatchFixture(t)
+	host.faults = &beforeGitRewriteFault{
+		path: filepath.Join(host.Root(), filepath.FromSlash(ordinary.Path)), content: ordinary.Before,
+	}
+	planned, err := service.PlanNativeBatch(context.Background(), principal, request,
+		[]NativeDocumentWrite{ordinary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := service.Apply(context.Background(), principal, ApplyRequest{Operation: planned})
+	if err != nil || record.State != OperationCompleted {
+		t.Fatalf("late rewrite recovery failed: %+v %v", record, err)
+	}
+	assertFileEquals(t, host.Root(), ordinary.Path, ordinary.After)
+	if committed := []byte(gitCommand(t, host.Root(), "show", "HEAD:"+ordinary.Path)); !bytes.Equal(committed, ordinary.After) {
+		t.Fatalf("Git committed bytes outside the journal after-image:\n%s", committed)
 	}
 }
 

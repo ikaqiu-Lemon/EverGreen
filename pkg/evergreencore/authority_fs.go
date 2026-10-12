@@ -434,11 +434,22 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 			}
 			paths := make([]string, 0, len(manifest.Files))
 			var deletedPaths []string
+			afterImages := map[string][]byte{}
 			for _, file := range manifest.Files {
 				paths = append(paths, file.Path)
 				if file.Delete {
 					deletedPaths = append(deletedPaths, file.Path)
+					continue
 				}
+				after, readErr := os.ReadFile(filepath.Join(a.operationDir(manifest.Record.OperationID), file.AfterRef))
+				if readErr != nil {
+					return manifest.Record, readErr
+				}
+				if contentHash(after) != file.AfterContent {
+					return manifest.Record, validationError(CodeTransactionBlocked, file.AfterRef,
+						"journal after-image changed before Git commit")
+				}
+				afterImages[file.Path] = after
 			}
 			sha, err := a.committer.Commit(ctx, CommitRequest{
 				OperationID:    manifest.Record.OperationID,
@@ -448,6 +459,7 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 				ExpectedParent: manifest.ExpectedParent,
 				Paths:          paths,
 				DeletedPaths:   deletedPaths,
+				AfterImages:    afterImages,
 			})
 			if err != nil {
 				manifest.Record.Diagnostics = []Diagnostic{{
@@ -455,6 +467,13 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 				}}
 				_ = a.writeManifest(manifest)
 				return manifest.Record, &DiagnosticError{Diagnostics: manifest.Record.Diagnostics}
+			}
+			// Git 从 journal after-image 建树；提交后再次覆盖可能绕过门禁的旧异步写。
+			if err = a.applyAfterImages(manifest); err != nil {
+				return manifest.Record, err
+			}
+			if err = a.verifyAllAfter(manifest); err != nil {
+				return manifest.Record, err
 			}
 			if err := a.fire(FaultAfterGit, -1); err != nil {
 				return manifest.Record, err

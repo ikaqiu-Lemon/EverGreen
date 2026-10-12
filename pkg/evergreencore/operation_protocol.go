@@ -177,13 +177,14 @@ type OperationRecord struct {
 }
 
 type CommitRequest struct {
-	OperationID    string    `json:"operation_id"`
-	Principal      Principal `json:"principal"`
-	Command        string    `json:"command"`
-	PlanHash       string    `json:"plan_hash"`
-	ExpectedParent string    `json:"expected_parent,omitempty"`
-	Paths          []string  `json:"paths"`
-	DeletedPaths   []string  `json:"deleted_paths,omitempty"`
+	OperationID    string            `json:"operation_id"`
+	Principal      Principal         `json:"principal"`
+	Command        string            `json:"command"`
+	PlanHash       string            `json:"plan_hash"`
+	ExpectedParent string            `json:"expected_parent,omitempty"`
+	Paths          []string          `json:"paths"`
+	DeletedPaths   []string          `json:"deleted_paths,omitempty"`
+	AfterImages    map[string][]byte `json:"-"`
 }
 
 type OperationCommitter interface {

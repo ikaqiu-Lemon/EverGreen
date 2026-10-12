@@ -114,10 +114,42 @@ func (c *LocalGitCommitter) Commit(ctx context.Context, request CommitRequest) (
 			return "", fmt.Errorf("stage deleted paths in isolated index: %s: %w", strings.TrimSpace(string(stderr)), err)
 		}
 	}
-	if len(writes) > 0 {
-		addArgs := append([]string{"add", "--"}, writes...)
+	var worktreeWrites []string
+	for _, path := range writes {
+		content, exact := request.AfterImages[path]
+		if !exact {
+			if len(request.AfterImages) != 0 {
+				return "", fmt.Errorf("journal after-image missing for Git path %q", path)
+			}
+			worktreeWrites = append(worktreeWrites, path)
+			continue
+		}
+		stdout, hashStderr, hashErr := runGitInput(ctx, c.root, nil, content, "hash-object", "-w", "--stdin")
+		if hashErr != nil {
+			return "", fmt.Errorf("store journal after-image for %q: %s: %w",
+				path, strings.TrimSpace(string(hashStderr)), hashErr)
+		}
+		oid := strings.TrimSpace(string(stdout))
+		mode := "100644"
+		if info, statErr := os.Stat(filepath.Join(c.root, filepath.FromSlash(path))); statErr == nil &&
+			info.Mode()&0o111 != 0 {
+			mode = "100755"
+		}
+		if _, stderr, err = runGit(ctx, c.root, env, "update-index", "--add", "--cacheinfo", mode, oid, path); err != nil {
+			return "", fmt.Errorf("stage journal after-image for %q: %s: %w",
+				path, strings.TrimSpace(string(stderr)), err)
+		}
+		staged, inspectStderr, inspectErr := runGit(ctx, c.root, env, "show", ":"+path)
+		if inspectErr != nil || !bytes.Equal(staged, content) {
+			return "", fmt.Errorf("isolated Git index differs from journal after-image for %q: %s: %v",
+				path, strings.TrimSpace(string(inspectStderr)), inspectErr)
+		}
+	}
+	if len(worktreeWrites) > 0 {
+		addArgs := append([]string{"add", "--"}, worktreeWrites...)
 		if _, stderr, err = runGit(ctx, c.root, env, addArgs...); err != nil {
-			return "", fmt.Errorf("stage operation paths in isolated index: %s: %w", strings.TrimSpace(string(stderr)), err)
+			return "", fmt.Errorf("stage operation paths in isolated index: %s: %w",
+				strings.TrimSpace(string(stderr)), err)
 		}
 	}
 	_, stderr, diffErr := runGit(ctx, c.root, env, "diff", "--cached", "--quiet")
@@ -230,9 +262,16 @@ func (c *LocalGitCommitter) findOperation(ctx context.Context, operationID, plan
 }
 
 func runGit(ctx context.Context, root string, extraEnv []string, args ...string) ([]byte, []byte, error) {
+	return runGitInput(ctx, root, extraEnv, nil, args...)
+}
+
+func runGitInput(ctx context.Context, root string, extraEnv []string, input []byte, args ...string) ([]byte, []byte, error) {
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = root
 	command.Env = append(os.Environ(), extraEnv...)
+	if input != nil {
+		command.Stdin = bytes.NewReader(input)
+	}
 	stdout, err := os.CreateTemp("", "eg-git-stdout-")
 	if err != nil {
 		return nil, nil, err
