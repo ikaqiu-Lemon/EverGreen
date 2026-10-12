@@ -183,6 +183,7 @@ type CommitRequest struct {
 	PlanHash       string    `json:"plan_hash"`
 	ExpectedParent string    `json:"expected_parent,omitempty"`
 	Paths          []string  `json:"paths"`
+	DeletedPaths   []string  `json:"deleted_paths,omitempty"`
 }
 
 type OperationCommitter interface {

@@ -247,7 +247,7 @@ func (a *FilesystemAuthority) RecoverOperations(ctx context.Context, validate Op
 	if validate == nil {
 		return nil, validationError(CodeUnauthorized, "validator", "authority recovery requires a validator")
 	}
-	ctx, _, close, err := a.openStorage(ctx)
+	ctx, session, close, err := a.openStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +260,25 @@ func (a *FilesystemAuthority) RecoverOperations(ctx context.Context, validate Op
 	for _, manifest := range manifests {
 		if manifest.Record.State == OperationCompleted && !manifest.Record.DerivedStale {
 			continue
+		}
+		if scope, ok := session.(DocumentStorageScope); ok {
+			inScope := 0
+			for _, file := range manifest.Files {
+				if scope.InScope(file.Path) {
+					inScope++
+				}
+			}
+			if inScope == 0 {
+				continue
+			}
+			if inScope != len(manifest.Files) {
+				return records, validationError(CodeTransactionBlocked, "scope",
+					"recovery requires the complete authenticated operation scope")
+			}
+		}
+		manifest, err = a.loadManifest(ctx, manifest.Record.OperationID)
+		if err != nil {
+			return records, err
 		}
 		before, readErr := a.journalBeforeImages(ctx, manifest)
 		if readErr != nil {
@@ -406,8 +425,12 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 				return manifest.Record, err
 			}
 			paths := make([]string, 0, len(manifest.Files))
+			var deletedPaths []string
 			for _, file := range manifest.Files {
 				paths = append(paths, file.Path)
+				if file.Delete {
+					deletedPaths = append(deletedPaths, file.Path)
+				}
 			}
 			sha, err := a.committer.Commit(ctx, CommitRequest{
 				OperationID:    manifest.Record.OperationID,
@@ -416,6 +439,7 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 				PlanHash:       manifest.Record.PlanHash,
 				ExpectedParent: manifest.ExpectedParent,
 				Paths:          paths,
+				DeletedPaths:   deletedPaths,
 			})
 			if err != nil {
 				manifest.Record.Diagnostics = []Diagnostic{{
@@ -835,10 +859,13 @@ func (a *FilesystemAuthority) listManifests(ctx context.Context) ([]*operationMa
 	}
 	var manifests []*operationManifest
 	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 {
+			return nil, validationError(CodeTransactionBlocked, entry.Name(), "journal entry crosses a symlink")
+		}
 		if !entry.IsDir() || !operationIDPattern.MatchString(entry.Name()) {
 			continue
 		}
-		manifest, loadErr := a.loadManifest(ctx, entry.Name())
+		manifest, loadErr := a.readStoredManifest(entry.Name())
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -851,6 +878,39 @@ func (a *FilesystemAuthority) listManifests(ctx context.Context) ([]*operationMa
 }
 
 func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID string) (*operationManifest, error) {
+	manifest, err := a.readStoredManifest(operationID)
+	if err != nil {
+		return nil, err
+	}
+	_, session, close, err := a.openStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer close()
+	for index, file := range manifest.Files {
+		if err = session.Allow(file.Path); err != nil {
+			return nil, err
+		}
+		if manifest.JournalVersion >= 2 && !manifest.Operation.Images[index].Delete {
+			manifest.Operation.Images[index].Bytes, err = session.Decode(file.Path, file.StoredAfter)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err = ValidatePlannedOperation(manifest.Operation, a.registry); err != nil {
+		return nil, validationError(CodeTransactionBlocked, "manifest", "operation manifest failed validation: "+err.Error())
+	}
+	if manifest.Record.State != OperationPlanned {
+		if _, err = a.journalBeforeImages(ctx, manifest); err != nil {
+			return nil, err
+		}
+	}
+	return manifest, nil
+}
+
+// 全局门禁只校验存储字节和计划元数据，不取得其他认证作用域的密钥。
+func (a *FilesystemAuthority) readStoredManifest(operationID string) (*operationManifest, error) {
 	if err := verifyJournalRef(a.operationDir(operationID), "manifest.json"); err != nil {
 		return nil, err
 	}
@@ -873,8 +933,14 @@ func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID stri
 		return nil, validationError(CodeTransactionBlocked, "manifest", "operation manifest identity or version mismatch")
 	}
 	if manifest.Record.PlanHash != manifest.Operation.PlanHash ||
-		len(manifest.Files) != len(manifest.Operation.Images) {
+		len(manifest.Files) != len(manifest.Operation.Images) ||
+		len(manifest.Files) != len(manifest.Operation.Plan.Writes) ||
+		len(manifest.Files) != len(manifest.Operation.Plan.Base) {
 		return nil, validationError(CodeTransactionBlocked, "manifest", "operation manifest plan hash or file count mismatch")
+	}
+	if err = ValidateChangePlan(manifest.Operation.Plan); err != nil ||
+		ComputePlanHash(manifest.Operation.Plan, manifest.Operation.Images) != manifest.Record.PlanHash {
+		return nil, validationError(CodeTransactionBlocked, "manifest", "operation plan metadata checksum mismatch")
 	}
 	if manifest.NativeEditor != (manifest.Operation.Plan.Command == NativeEditCommand) {
 		return nil, validationError(CodeTransactionBlocked, "manifest", "native operation admission is invalid")
@@ -892,11 +958,6 @@ func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID stri
 	default:
 		return nil, validationError(CodeTransactionBlocked, "state", "operation manifest state is invalid")
 	}
-	_, session, close, err := a.openStorage(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer close()
 	if manifest.JournalVersion >= 2 {
 		for index, file := range manifest.Files {
 			image := &manifest.Operation.Images[index]
@@ -904,19 +965,7 @@ func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID stri
 				(image.Delete && len(file.StoredAfter) != 0) || contentHash(file.StoredAfter) != file.AfterContent {
 				return nil, validationError(CodeTransactionBlocked, "manifest", "invalid stored after-image")
 			}
-			if err = session.Allow(file.Path); err != nil {
-				return nil, err
-			}
-			if !image.Delete {
-				image.Bytes, err = session.Decode(file.Path, file.StoredAfter)
-				if err != nil {
-					return nil, err
-				}
-			}
 		}
-	}
-	if err := ValidatePlannedOperation(manifest.Operation, a.registry); err != nil {
-		return nil, validationError(CodeTransactionBlocked, "manifest", "operation manifest failed validation: "+err.Error())
 	}
 	if err := verifyJournalRef(a.operationDir(operationID), "state"); err != nil {
 		return nil, err
@@ -928,17 +977,26 @@ func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID stri
 	if OperationState(strings.TrimSpace(string(state))) != manifest.Record.State {
 		return nil, validationError(CodeTransactionBlocked, "state", "state file and manifest disagree")
 	}
+	baseByID := make(map[LogicalID]BaseRef, len(manifest.Operation.Plan.Base))
+	for _, base := range manifest.Operation.Plan.Base {
+		baseByID[base.LogicalID] = base
+	}
 	for index := range manifest.Files {
 		file := manifest.Files[index]
 		image := manifest.Operation.Images[index]
 		write := manifest.Operation.Plan.Writes[index]
+		if err = ValidateTransactionFilePath(file.Path); err != nil {
+			return nil, validationError(CodeTransactionBlocked, "manifest", "journal authority path is invalid")
+		}
 		expectedAfterRef := fmt.Sprintf("after/%04d", index)
 		expectedBeforeRef := ""
 		if !image.Create {
 			expectedBeforeRef = fmt.Sprintf("before/%04d", index)
 		}
-		if file.LogicalID != image.LogicalID || file.Path != image.Path || file.Create != image.Create ||
-			file.Delete != image.Delete ||
+		if file.LogicalID != image.LogicalID || file.LogicalID != write.LogicalID ||
+			file.Path != image.Path || file.Create != image.Create ||
+			file.Create != (baseByID[file.LogicalID].Expected == "absent") ||
+			file.Delete != image.Delete || file.Delete != write.Delete || file.AfterSemantic != write.After ||
 			file.AfterRef != expectedAfterRef || file.BeforeRef != expectedBeforeRef ||
 			(manifest.JournalVersion == 1 && file.AfterContent != imageContentHash(image)) || file.AfterSemantic != image.SemanticHash ||
 			file.BeforeSemantic != write.Before || (!image.Create && file.BeforeContent == "") ||
@@ -966,10 +1024,11 @@ func (a *FilesystemAuthority) loadManifest(ctx context.Context, operationID stri
 		if contentHash(after) != file.AfterContent || !bytes.Equal(after, expectedStored) {
 			return nil, validationError(CodeTransactionBlocked, file.AfterRef, "journal after-image checksum mismatch")
 		}
-	}
-	if manifest.Record.State != OperationPlanned {
-		if _, err = a.journalBeforeImages(ctx, &manifest); err != nil {
-			return nil, err
+		if file.BeforeRef != "" && manifest.Record.State != OperationPlanned {
+			before, readErr := os.ReadFile(filepath.Join(a.operationDir(operationID), file.BeforeRef))
+			if readErr != nil || contentHash(before) != file.BeforeContent {
+				return nil, validationError(CodeTransactionBlocked, file.BeforeRef, "journal before-image checksum mismatch")
+			}
 		}
 	}
 	return &manifest, nil

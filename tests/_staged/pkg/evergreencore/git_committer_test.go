@@ -2,6 +2,8 @@ package evergreencore
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -100,6 +102,120 @@ func TestLocalGitCommitterRejectsUnrelatedStagedPaths(t *testing.T) {
 	}
 	if head, _ := committer.Head(context.Background()); head != parent {
 		t.Fatalf("HEAD changed on staged-path rejection: %s -> %s", parent, head)
+	}
+}
+
+func TestLocalGitCommitterAuditsDeletedPathsRegardlessOfTracking(t *testing.T) {
+	for _, tracking := range []string{"tracked", "untracked", "staged creation"} {
+		for _, mixed := range []bool{false, true} {
+			t.Run(fmtGitDeleteCase(tracking, mixed), func(t *testing.T) {
+				root := initGitFixture(t)
+				deleted := "box/deleted.sy"
+				writeFile(t, root, "box/edited.sy", []byte("before\n"))
+				writeFile(t, root, "unrelated.txt", []byte("before\n"))
+				if tracking == "tracked" {
+					writeFile(t, root, deleted, []byte("deleted before\n"))
+				}
+				gitCommand(t, root, "add", ".")
+				gitCommand(t, root, "commit", "-m", "initial")
+				if tracking != "tracked" {
+					writeFile(t, root, deleted, []byte("deleted before\n"))
+				}
+				if tracking == "staged creation" {
+					gitCommand(t, root, "add", "--", deleted)
+				}
+				if err := os.Remove(filepath.Join(root, deleted)); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, root, "unrelated.txt", []byte("user dirty\n"))
+				paths := []string{deleted}
+				if mixed {
+					writeFile(t, root, "box/edited.sy", []byte("after\n"))
+					paths = append(paths, "box/edited.sy")
+				}
+				committer, err := NewLocalGitCommitter(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				parent, _ := committer.Head(context.Background())
+				request := CommitRequest{
+					OperationID: "op-deleted", Principal: Principal{Type: PrincipalUser, ID: "user"},
+					Command: NativeEditCommand, PlanHash: "sha256:delete-plan", ExpectedParent: parent,
+					Paths: paths, DeletedPaths: []string{deleted},
+				}
+				sha, err := committer.Commit(context.Background(), request)
+				if err != nil || sha == parent || sha == "" {
+					t.Fatalf("deleted path could not complete its audit commit: %s %v", sha, err)
+				}
+				tree := gitCommand(t, root, "ls-tree", "-r", "--name-only", sha)
+				if strings.Contains(tree, deleted) {
+					t.Fatal("deleted file remained in the committed tree")
+				}
+				if got := gitCommand(t, root, "show", sha+":box/edited.sy"); got != map[bool]string{true: "after\n", false: "before\n"}[mixed] {
+					t.Fatalf("mixed write omitted or invented: %q", got)
+				}
+				if got := gitCommand(t, root, "show", sha+":unrelated.txt"); got != "before\n" {
+					t.Fatal("audit absorbed an unrelated edit")
+				}
+				if status := gitCommand(t, root, "status", "--porcelain"); !strings.Contains(status, "unrelated.txt") ||
+					strings.Contains(status, deleted) || strings.Contains(status, "box/edited.sy") {
+					t.Fatalf("real index did not preserve the intended state: %s", status)
+				}
+				retried, err := committer.Commit(context.Background(), request)
+				if err != nil || retried != sha || gitCommand(t, root, "rev-list", "--count", "HEAD") != "2\n" {
+					t.Fatalf("deleted path audit duplicated on retry: %s %v", retried, err)
+				}
+				if message := gitCommand(t, root, "show", "-s", "--format=%B", sha); !strings.Contains(message,
+					"Evergreen-Operation-ID: op-deleted") || !strings.Contains(message, "Evergreen-Plan-Hash: sha256:delete-plan") {
+					t.Fatal("empty tree change lost its operation audit")
+				}
+			})
+		}
+	}
+}
+
+func fmtGitDeleteCase(tracking string, mixed bool) string {
+	if mixed {
+		return tracking + "/mixed"
+	}
+	return tracking + "/delete only"
+}
+
+func TestLocalGitCommitterRejectsInvalidDeletesAndAccidentalEmptyCommits(t *testing.T) {
+	for _, mode := range []string{"unchanged", "missing write", "delete outside write set", "delete still exists", "duplicate delete"} {
+		t.Run(mode, func(t *testing.T) {
+			root := initGitFixture(t)
+			writeFile(t, root, "box/a.sy", []byte("before\n"))
+			gitCommand(t, root, "add", ".")
+			gitCommand(t, root, "commit", "-m", "initial")
+			committer, err := NewLocalGitCommitter(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent, _ := committer.Head(context.Background())
+			request := CommitRequest{
+				OperationID: "op-invalid-delete", Principal: Principal{Type: PrincipalUser, ID: "user"},
+				Command: NativeEditCommand, PlanHash: "sha256:plan", ExpectedParent: parent, Paths: []string{"box/a.sy"},
+			}
+			switch mode {
+			case "missing write":
+				if err := os.Remove(filepath.Join(root, "box/a.sy")); err != nil {
+					t.Fatal(err)
+				}
+			case "delete outside write set":
+				request.DeletedPaths = []string{"box/missing.sy"}
+			case "delete still exists":
+				request.DeletedPaths = []string{"box/a.sy"}
+			case "duplicate delete":
+				request.DeletedPaths = []string{"box/a.sy", "box/a.sy"}
+			}
+			if _, err = committer.Commit(context.Background(), request); err == nil {
+				t.Fatal("invalid delete or empty write produced an audit commit")
+			}
+			if head, _ := committer.Head(context.Background()); head != parent {
+				t.Fatal("invalid deletion changed HEAD")
+			}
+		})
 	}
 }
 

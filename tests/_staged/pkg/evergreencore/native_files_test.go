@@ -126,6 +126,50 @@ func TestNativeFilesMixedDeleteAndAuxiliaryCrashRecovery(t *testing.T) {
 	}
 }
 
+func TestNativeFilesUntrackedDeletionCompletesAndRecoversExactlyOnce(t *testing.T) {
+	for _, fault := range []string{"", FaultBeforeGit, FaultAfterGit} {
+		t.Run(fault, func(t *testing.T) {
+			service, host, user, request, ordinary, files := nativeFileFixture(t)
+			gitCommand(t, host.Root(), "rm", "--cached", "--", ordinary.Path, files[1].Path)
+			gitCommand(t, host.Root(), "commit", "-m", "untracked native baseline")
+			writeFile(t, host.Root(), "user-untracked.txt", []byte("preserved user bytes"))
+			planned, err := service.PlanNativeFiles(context.Background(), user, request, []NativeDocumentWrite{ordinary}, files)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fault != "" {
+				host.faults = &oneShotFault{point: fault, index: -1}
+			}
+			record, err := service.Apply(context.Background(), user, ApplyRequest{Operation: planned})
+			if fault != "" {
+				if err == nil {
+					t.Fatal("fault did not interrupt untracked delete")
+				}
+				records, recoveryErr := service.Recover(context.Background())
+				if recoveryErr != nil || len(records) != 1 {
+					t.Fatalf("untracked deletion recovery failed: %+v %v", records, recoveryErr)
+				}
+				record = records[0]
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if record.State != OperationCompleted || record.DerivedStale {
+				t.Fatalf("untracked delete remained unfinished: %+v", record)
+			}
+			assertNativeFileResult(t, host, planned)
+			assertFileEquals(t, host.Root(), "user-untracked.txt", []byte("preserved user bytes"))
+			retry, err := service.Apply(context.Background(), user, ApplyRequest{Operation: planned})
+			if err != nil || retry.GitCommit != record.GitCommit ||
+				gitCommand(t, host.Root(), "rev-list", "--count", "HEAD") != "5\n" {
+				t.Fatalf("untracked delete produced duplicate commits: %+v %v", retry, err)
+			}
+			if got := gitCommand(t, host.Root(), "show", "-s", "--format=%B", record.GitCommit); !strings.Contains(got, "Evergreen-Operation-ID: "+request.OperationID) {
+				t.Fatal("untracked delete lost its journal audit")
+			}
+		})
+	}
+}
+
 func TestNativeFilesCASAdmissionAndDeletionCannotBeForged(t *testing.T) {
 	for _, attack := range []string{"auxiliary bytes", "delete bytes", "JSON admission", "Agent", "hash", "managed delete"} {
 		t.Run(attack, func(t *testing.T) {

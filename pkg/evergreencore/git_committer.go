@@ -51,10 +51,37 @@ func (c *LocalGitCommitter) Commit(ctx context.Context, request CommitRequest) (
 	if len(paths) == 0 {
 		return "", errors.New("Git commit path set is empty")
 	}
+	allowed := make(map[string]bool, len(paths))
 	for _, path := range paths {
 		if err := ValidateTransactionFilePath(path); err != nil {
 			return "", fmt.Errorf("invalid Git path %q: %w", path, err)
 		}
+		if allowed[path] {
+			return "", fmt.Errorf("duplicate Git path %q", path)
+		}
+		allowed[path] = true
+	}
+	deleted := make(map[string]bool, len(request.DeletedPaths))
+	for _, path := range request.DeletedPaths {
+		if !allowed[path] || deleted[path] {
+			return "", fmt.Errorf("deleted Git path is outside the write set or duplicated: %q", path)
+		}
+		deleted[path] = true
+	}
+	var writes, deletes []string
+	for _, path := range paths {
+		info, statErr := os.Lstat(filepath.Join(c.root, filepath.FromSlash(path)))
+		if deleted[path] {
+			if !errors.Is(statErr, os.ErrNotExist) {
+				return "", fmt.Errorf("deleted Git path is not absent: %q", path)
+			}
+			deletes = append(deletes, path)
+			continue
+		}
+		if statErr != nil || !info.Mode().IsRegular() {
+			return "", fmt.Errorf("Git write path is not an available regular file: %q", path)
+		}
+		writes = append(writes, path)
 	}
 	if err := c.rejectExternalStaged(ctx, paths); err != nil {
 		return "", err
@@ -80,12 +107,28 @@ func (c *LocalGitCommitter) Commit(ctx context.Context, request CommitRequest) (
 			return "", fmt.Errorf("prepare isolated Git index: %s: %w", strings.TrimSpace(string(stderr)), err)
 		}
 	}
-	addArgs := append([]string{"add", "--"}, paths...)
-	if _, stderr, err = runGit(ctx, c.root, env, addArgs...); err != nil {
-		return "", fmt.Errorf("stage operation paths in isolated index: %s: %w", strings.TrimSpace(string(stderr)), err)
+	// 删除路径可能从未进入 HEAD；从隔离索引移除仍必须保留唯一的操作审计。
+	if len(deletes) > 0 {
+		removeArgs := append([]string{"update-index", "--force-remove", "--"}, deletes...)
+		if _, stderr, err = runGit(ctx, c.root, env, removeArgs...); err != nil {
+			return "", fmt.Errorf("stage deleted paths in isolated index: %s: %w", strings.TrimSpace(string(stderr)), err)
+		}
 	}
-	if _, _, err = runGit(ctx, c.root, env, "diff", "--cached", "--quiet"); err == nil {
+	if len(writes) > 0 {
+		addArgs := append([]string{"add", "--"}, writes...)
+		if _, stderr, err = runGit(ctx, c.root, env, addArgs...); err != nil {
+			return "", fmt.Errorf("stage operation paths in isolated index: %s: %w", strings.TrimSpace(string(stderr)), err)
+		}
+	}
+	_, stderr, diffErr := runGit(ctx, c.root, env, "diff", "--cached", "--quiet")
+	if diffErr == nil && len(deletes) == 0 {
 		return "", errors.New("operation produced no Git diff")
+	}
+	if diffErr != nil {
+		var exit *exec.ExitError
+		if !errors.As(diffErr, &exit) || exit.ExitCode() != 1 {
+			return "", fmt.Errorf("inspect isolated Git diff: %s: %w", strings.TrimSpace(string(stderr)), diffErr)
+		}
 	}
 
 	subject := fmt.Sprintf("evergreen: %s (%s)", request.Command, request.OperationID)
@@ -96,7 +139,12 @@ func (c *LocalGitCommitter) Commit(ctx context.Context, request CommitRequest) (
 		"Evergreen-Request-Reason: " + request.Principal.RequestReason,
 		"Evergreen-Plan-Hash: " + request.PlanHash,
 	}, "\n")
-	if _, stderr, err = runGit(ctx, c.root, env, "commit", "--no-verify", "-m", subject, "-m", body); err != nil {
+	commitArgs := []string{"commit", "--no-verify"}
+	if len(deletes) > 0 {
+		commitArgs = append(commitArgs, "--allow-empty")
+	}
+	commitArgs = append(commitArgs, "-m", subject, "-m", body)
+	if _, stderr, err = runGit(ctx, c.root, env, commitArgs...); err != nil {
 		return "", fmt.Errorf("commit operation: %s: %w", strings.TrimSpace(string(stderr)), err)
 	}
 	resetArgs := append([]string{"reset", "-q", "HEAD", "--"}, paths...)

@@ -21,6 +21,12 @@ type DocumentStorageSession interface {
 	Close()
 }
 
+// DocumentStorageScope 可选地限定恢复岛；仅完全范围外的操作可以暂缓，部分范围必须拒绝。
+// 范围外的未完成操作仍参与全局新写门禁，InScope 不替代 Allow 的安全校验。
+type DocumentStorageScope interface {
+	InScope(path string) bool
+}
+
 type plainDocumentStorage struct{ root string }
 type plainDocumentSession struct{ root string }
 
