@@ -528,6 +528,73 @@ func TestMixedTooNewDocumentsRemainAddressableAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestClaimProvenanceEditPreservesRetainedExtraByIdentity(t *testing.T) {
+	registry := DefaultRegistry()
+	envelope := claimEnvelope("k-provenance", KnowledgeKind, KnowledgeKindSchema, json.RawMessage(`{}`))
+	envelope.Provenance = []Provenance{
+		{
+			SourceID: "s-one", NoteID: "n-one", SegmentRefs: []LogicalID{"seg-one"}, Reason: "One",
+			Extra: RawObject{"third_party": json.RawMessage(`{"counter":9007199254740993,"values":[null,{"kept":true}]}`)},
+		},
+		{
+			SourceID: "s-two", NoteID: "n-two", SegmentRefs: []LogicalID{"seg-two"}, Reason: "Two",
+			Extra: RawObject{"third_party": json.RawMessage(`{"counter":9007199254740992}`)},
+		},
+		{
+			SourceID: "s-delete", NoteID: "n-delete", SegmentRefs: []LogicalID{"seg-delete"}, Reason: "Delete",
+			Extra: RawObject{"third_party": json.RawMessage(`{"owner":"deleted"}`)},
+		},
+	}
+	raw, err := EncodeSY(emptySY("20261010120000-provenance"), envelope, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := []Provenance{
+		{SourceID: "s-two", NoteID: "n-two", SegmentRefs: []LogicalID{"seg-two", "seg-two-new"}, Reason: "Two edited"},
+		{SourceID: "s-one", NoteID: "n-one", SegmentRefs: []LogicalID{"seg-one"}, Reason: "One edited"},
+		{
+			SourceID: "s-renamed", NoteID: "n-delete", SegmentRefs: []LogicalID{"seg-renamed"}, Reason: "Renamed identity",
+			Extra: RawObject{"forged": json.RawMessage(`{"counter":9007199254740994}`)},
+		},
+		{
+			SourceID: "s-added", NoteID: "n-added", SegmentRefs: []LogicalID{"seg-added"}, Reason: "Added",
+			Extra: RawObject{"forged": json.RawMessage(`true`)},
+		},
+	}
+	afterRaw, err := editClaimDocument(raw, ClaimEdit{Provenance: &edited}, Principal{Type: PrincipalUser, ID: "u"}, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := DecodeSY(afterRaw, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := after.Envelope.Provenance
+	if len(got) != 4 || got[0].SourceID != "s-two" || got[1].SourceID != "s-one" ||
+		got[2].SourceID != "s-renamed" || got[3].SourceID != "s-added" {
+		t.Fatalf("provenance order/identity = %+v", got)
+	}
+	if string(got[0].Extra["third_party"]) != `{"counter":9007199254740992}` ||
+		string(got[1].Extra["third_party"]) != `{"counter":9007199254740993,"values":[null,{"kept":true}]}` {
+		t.Fatalf("retained provenance Extra changed: %+v", got)
+	}
+	if len(got[2].Extra) != 0 || len(got[3].Extra) != 0 {
+		t.Fatalf("new identities inherited client or deleted metadata: %+v", got)
+	}
+	if bytes.Contains(afterRaw, []byte(`"owner":"deleted"`)) ||
+		bytes.Contains(afterRaw, []byte(`9007199254740994`)) {
+		t.Fatalf("deleted or client-supplied provenance metadata survived: %s", afterRaw)
+	}
+
+	duplicate := []Provenance{
+		{SourceID: "s-one", NoteID: "n-one", SegmentRefs: []LogicalID{"seg-one"}, Reason: "First"},
+		{SourceID: "s-one", NoteID: "n-one", SegmentRefs: []LogicalID{"seg-other"}, Reason: "Duplicate"},
+	}
+	if _, err = editClaimDocument(raw, ClaimEdit{Provenance: &duplicate}, Principal{Type: PrincipalUser, ID: "u"}, registry); !HasDiagnostic(err, CodeDuplicateID) {
+		t.Fatalf("duplicate provenance identity error = %v", err)
+	}
+}
+
 func TestChangePlanAndHostPorts(t *testing.T) {
 	plan := ChangePlan{
 		OperationID: "op-01JTEST",

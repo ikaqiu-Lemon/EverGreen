@@ -181,13 +181,61 @@ func editClaimDocument(raw []byte, edit ClaimEdit, principal Principal, registry
 		}
 	}
 	if edit.Provenance != nil {
-		after.Envelope.Provenance = append([]Provenance(nil), (*edit.Provenance)...)
+		after.Envelope.Provenance, err = mergeEditedProvenance(before.Envelope.Provenance, *edit.Provenance)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err = AuthorizeClaimChange(principal, before.Envelope, after.Envelope, registry); err != nil {
 		return nil, err
 	}
 	after.Envelope.Entity.SemanticRevision++
 	return EncodeSY(raw, after.Envelope, registry)
+}
+
+type provenanceIdentity struct {
+	sourceID LogicalID
+	noteID   LogicalID
+}
+
+func mergeEditedProvenance(current, edited []Provenance) ([]Provenance, error) {
+	authoritative := make(map[provenanceIdentity]Provenance, len(current))
+	for index, item := range current {
+		identity := provenanceIdentity{sourceID: item.SourceID, noteID: item.NoteID}
+		if _, duplicate := authoritative[identity]; duplicate {
+			return nil, validationError(
+				CodeDuplicateID,
+				fmt.Sprintf("Evergreen.provenance[%d]", index),
+				"authoritative provenance identity is duplicated",
+			)
+		}
+		authoritative[identity] = item
+	}
+
+	result := make([]Provenance, 0, len(edited))
+	seen := make(map[provenanceIdentity]struct{}, len(edited))
+	for index, item := range edited {
+		identity := provenanceIdentity{sourceID: item.SourceID, noteID: item.NoteID}
+		if _, duplicate := seen[identity]; duplicate {
+			return nil, validationError(
+				CodeDuplicateID,
+				fmt.Sprintf("Evergreen.provenance[%d]", index),
+				"edited provenance identity is duplicated",
+			)
+		}
+		seen[identity] = struct{}{}
+		next := Provenance{
+			SourceID:    item.SourceID,
+			NoteID:      item.NoteID,
+			SegmentRefs: append([]LogicalID(nil), item.SegmentRefs...),
+			Reason:      item.Reason,
+		}
+		if retained, ok := authoritative[identity]; ok {
+			next.Extra = cloneRawObject(retained.Extra)
+		}
+		result = append(result, next)
+	}
+	return result, nil
 }
 
 func mergeKindData(base, patch json.RawMessage) (json.RawMessage, error) {

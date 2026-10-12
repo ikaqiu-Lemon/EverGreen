@@ -243,7 +243,7 @@ tests/_staged/internal/version/version_test.go	unit	go	dist-install	unit.interna
 tests/_staged/pkg/evergreencore/authority_validation_test.go	unit	go	core	unit.pkg.evergreencore	6	12852
 tests/_staged/pkg/evergreencore/authorization_lossless_test.go	unit	go	core	unit.pkg.evergreencore	5	11390
 tests/_staged/pkg/evergreencore/claim_kinds_test.go	unit	go	core	unit.pkg.evergreencore	8	17115
-tests/_staged/pkg/evergreencore/core_test.go	unit	go	core	unit.pkg.evergreencore	10	19600
+tests/_staged/pkg/evergreencore/core_test.go	unit	go	core	unit.pkg.evergreencore	11	22671
 tests/_staged/pkg/evergreencore/document_storage_test.go	unit	go	core	unit.pkg.evergreencore	3	10429
 tests/_staged/pkg/evergreencore/git_committer_test.go	unit	go	core	unit.pkg.evergreencore	4	8972
 tests/_staged/pkg/evergreencore/journal_scope_test.go	unit	go	core	unit.pkg.evergreencore	3	10904
