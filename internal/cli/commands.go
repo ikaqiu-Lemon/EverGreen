@@ -72,6 +72,7 @@ func commands() []*Command {
 		noteCommand(),
 		recoverCommand(),
 		doctorCommand(),
+		backupCommand(),
 	}
 }
 

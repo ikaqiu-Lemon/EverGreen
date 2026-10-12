@@ -1168,14 +1168,15 @@ M3 起 `eg` 的顶层命令是 **18** 个：S1 九命令 + M3 新增的 `depreca
 **SiYuan 迁移起是 28 个顶层命令**：再追加 `eg migrate` 与 `eg diff`。
 **Native Note create 起是 29 个顶层命令**：再追加
 `eg note create --request <note-create.json|-> --backend sy`。
-**SiYuan 运维验收起是 31 个顶层命令**：再追加 `eg recover` 与 `eg doctor`。
+**SiYuan 运维验收起是 32 个顶层命令**：再追加 `eg recover`、`eg doctor` 与
+`eg backup`。
 
-**当前 31 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
+**当前 32 命令一览**（与 `eg --help` 命令区逐条对应，供文档一致性判据消费）：
 `eg init`、`eg config`、`eg capture`、`eg context`、`eg apply`、`eg search`、`eg card show`、
 `eg rel`、`eg report --last`、`eg deprecate`、`eg restore`、`eg replaced-by`、`eg proposal`、
 `eg delete`、`eg undelete`、`eg mark-reviewed`、`eg unreviewed`、`eg edit`、`eg reconcile`、`eg check`、
 `eg index`、`eg bench`、`eg opinion`、`eg materialize`、`eg export`、`eg candidate`、`eg migrate`、`eg diff`、`eg note`、
-`eg recover`、`eg doctor`。
+`eg recover`、`eg doctor`、`eg backup`。
 
 ### 8.1 三个正交维度：改一个绝不碰另两个
 
@@ -1586,8 +1587,8 @@ M6（S5）**不新增任何顶层命令**（M6 收口时命令总量为 **22**�
 > **post-M6 / current truth（现态，勿被历史断言误判）**：读路径拆分批次新增了顶层命令 `eg opinion`，
 > Storage v3 又新增 `eg materialize` / `eg export`，candidate review workflow 新增
 > `eg candidate`，SiYuan 迁移新增 `eg migrate` / `eg diff`，Native Note create 新增
-> `eg note`，SiYuan 运维验收新增 `eg recover` / `eg doctor`；**当前顶层命令为 31 个**
->（见 §8 的「当前 31 命令一览」），
+> `eg note`，SiYuan 运维验收新增 `eg recover` / `eg doctor` / `eg backup`；
+> **当前顶层命令为 32 个**（见 §8 的「当前 32 命令一览」），
 > 不再是 M6 收口时的 22。
 > 同时 **`W21` 现已启用**：它是 v2 审阅式 Note 的**非 strict 启发式 warning**（§4.3「来源块数显著少于原文章节数」），
 > **strict 下不升级为 error**，也**不能替代来源保真（§3.8）与「缺漏 = 0」**。历史文档里「M6 命令数 22 / W21 不分配」

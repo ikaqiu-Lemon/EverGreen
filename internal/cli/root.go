@@ -255,6 +255,7 @@ func (r *Root) wireImplemented() {
 	_ = r.Wire("note", r.runNote)
 	_ = r.Wire("recover", r.runSYMaintenanceOnly)
 	_ = r.Wire("doctor", r.runSYMaintenanceOnly)
+	_ = r.Wire("backup", r.runSYMaintenanceOnly)
 }
 
 // Commands 返回注册的命令（顺序即 --help 顺序）。
@@ -497,7 +498,7 @@ func (r *Root) dispatch(cmd *Command, g globalFlags, args []string, out, errw io
 		cmd.Flags(fs)
 	}
 	switch cmd.Name {
-	case "capture", "context", "search", "card", "rel", "materialize", "apply", "note", "recover", "doctor":
+	case "capture", "context", "search", "card", "rel", "materialize", "apply", "note", "recover", "doctor", "backup":
 		fs.String("backend", "markdown", "authority backend: markdown or sy")
 		if cmd.Name == "materialize" {
 			fs.String("request", "", "shared core materialization request JSON")

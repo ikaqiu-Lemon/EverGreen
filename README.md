@@ -766,7 +766,7 @@ content to fill it.
 
 ## Command reference
 
-The CLI exposes 29 top-level commands（顶层命令共 29 个）. Run `eg <command> --help` for the
+The CLI exposes 32 top-level commands（顶层命令共 32 个）. Run `eg <command> --help` for the
 authoritative argument list — every help page documents its own exit codes.
 
 **Setup**
@@ -791,9 +791,10 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg diff --before <archive> --after <archive>` | Read-only entity, field, body, edge, and coverage comparison of canonical exports |
 | `eg recover lease\|journal --backend sy` | Explicitly clear a proven-dead writer lease or resume unfinished operation journals |
 | `eg doctor --backend sy [--rebuild-index]` | Compare authority-derived entity, edge, review, coverage, and query sets; online mode can rebuild host projections |
+| `eg backup create\|restore --backend sy` | Create or restore an offline workspace snapshot with file checksums, Git, journals, assets, configuration, and matching encryption recovery material |
 | `eg report --last` | Read-only replay of the last report-producing write (`eg apply` or `eg capture`) |
 
-The `.sy` backend is selected with `--backend sy`. Online requests use the kernel; offline requests use the same core and workspace lock. `eg export --canonical` produces a read-only archive for review and diff. Migration requires the source vault itself to be a Git worktree root and preserves current file hashes separately from its committed revision.
+The `.sy` backend is selected with `--backend sy`. Online requests use the kernel; offline requests use the same core and workspace lock. Cold backup/restore is offline-only, restores into a new workspace, and never switches the active workspace. `eg export --canonical` produces a read-only archive for review and diff. Migration requires the source vault itself to be a Git worktree root and preserves current file hashes separately from its committed revision.
 
 **Reading**
 

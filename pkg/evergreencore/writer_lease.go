@@ -41,12 +41,94 @@ type WorkspaceWriterLease struct {
 	released bool
 }
 
+// WorkspaceMaintenanceLease excludes every kernel/offline writer without
+// publishing a writer identity. It is used by cold, read-only maintenance
+// that must leave the source workspace byte-for-byte unchanged.
+type WorkspaceMaintenanceLease struct {
+	path          string
+	runtimeDir    string
+	lock          *flock.Flock
+	removeOnClose bool
+
+	mu       sync.Mutex
+	released bool
+}
+
 func AcquireKernelLease(root, holder string) (*WorkspaceWriterLease, error) {
 	return acquireWriterLease(root, "kernel", holder)
 }
 
 func AcquireOfflineLease(root, holder string) (*WorkspaceWriterLease, error) {
 	return acquireWriterLease(root, "offline", holder)
+}
+
+func AcquireWorkspaceMaintenanceLease(root string) (*WorkspaceMaintenanceLease, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, errors.New("workspace root is required")
+	}
+	runtimeDir := filepath.Join(root, filepath.FromSlash(RuntimeDirName))
+	if info, err := os.Lstat(runtimeDir); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, validationError(
+				CodeWorkspaceLeaseCorrupt,
+				"workspace",
+				"the Evergreen runtime directory is not a physical directory",
+			)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	} else if err = os.MkdirAll(runtimeDir, 0o755); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(runtimeDir, WriterLeaseFileName)
+	existed := false
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, validationError(
+				CodeWorkspaceLeaseCorrupt,
+				"workspace",
+				"the writer lease path is not a physical regular file",
+			)
+		}
+		existed = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	fileLock := flock.New(path, flock.SetPermissions(0o644))
+	locked, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !locked {
+		return nil, validationError(
+			CodeWorkspaceWriterActive,
+			"workspace",
+			"cold maintenance requires every workspace writer to stop",
+		)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		_ = fileLock.Unlock()
+		return nil, err
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		_ = fileLock.Unlock()
+		if _, parseErr := parseWriterLeaseRecord(raw); parseErr != nil {
+			return nil, validationError(
+				CodeWorkspaceLeaseCorrupt,
+				"workspace",
+				"the unlocked writer lease record is corrupt; preserve it for operator diagnosis",
+			)
+		}
+		return nil, validationError(
+			CodeWorkspaceLeaseStale,
+			"workspace",
+			"an unlocked writer lease record remains; recover it before cold maintenance",
+		)
+	}
+	return &WorkspaceMaintenanceLease{
+		path: path, runtimeDir: runtimeDir, lock: fileLock, removeOnClose: !existed,
+	}, nil
 }
 
 func acquireWriterLease(root, mode, holder string) (*WorkspaceWriterLease, error) {
@@ -222,6 +304,43 @@ func (l *WorkspaceWriterLease) Release() error {
 		return unlockErr
 	}
 	return syncDir(filepath.Dir(l.path))
+}
+
+func (l *WorkspaceMaintenanceLease) Release() error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.released {
+		return nil
+	}
+	l.released = true
+	var releaseErr error
+	if l.removeOnClose {
+		raw, err := os.ReadFile(l.path)
+		switch {
+		case err == nil && len(raw) == 0:
+			releaseErr = os.Remove(l.path)
+		case err == nil:
+			releaseErr = validationError(
+				CodeWorkspaceLeaseCorrupt,
+				"workspace",
+				"maintenance lease path changed while the lock was held",
+			)
+		case errors.Is(err, os.ErrNotExist):
+		default:
+			releaseErr = err
+		}
+		if releaseErr == nil {
+			releaseErr = syncDir(l.runtimeDir)
+		}
+	}
+	unlockErr := l.lock.Unlock()
+	if releaseErr != nil {
+		return releaseErr
+	}
+	return unlockErr
 }
 
 func writeLeaseRecord(path string, record WriterLeaseRecord) error {

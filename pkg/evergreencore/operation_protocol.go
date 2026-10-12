@@ -24,6 +24,11 @@ const (
 	CodeWorkspaceLeaseCorrupt = "EG_WORKSPACE_LEASE_CORRUPT"
 	CodeGitCommitFailed       = "EG_GIT_COMMIT_FAILED"
 	CodeDerivedStale          = "EG_DERIVED_STALE"
+	CodeBackupInvalid         = "EG_BACKUP_INVALID"
+	CodeBackupChecksum        = "EG_BACKUP_CHECKSUM_MISMATCH"
+	CodeBackupTargetNotEmpty  = "EG_BACKUP_TARGET_NOT_EMPTY"
+	CodeBackupCryptoInvalid   = "EG_BACKUP_CRYPTO_MATERIAL_INVALID"
+	CodeBackupOfflineRequired = "EG_BACKUP_OFFLINE_REQUIRED"
 )
 
 type Capabilities struct {

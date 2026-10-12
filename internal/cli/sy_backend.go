@@ -23,6 +23,14 @@ func usesSYBackend(inv *Invocation) bool {
 }
 
 func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
+	if inv.Cmd.Name == "backup" {
+		if inv.Cmd.Validate != nil {
+			if err := inv.Cmd.Validate(inv); err != nil {
+				return nil, err
+			}
+		}
+		return r.runSYBackup(inv)
+	}
 	if inv.VaultFlag == "" {
 		return nil, &UsageError{Msg: ".sy backend requires explicit --vault <data-dir>"}
 	}

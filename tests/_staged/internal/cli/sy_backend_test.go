@@ -3,14 +3,19 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
@@ -440,4 +445,470 @@ func runSYCLI(t *testing.T, root string, args []string) map[string]any {
 		t.Fatal(err)
 	}
 	return envelope
+}
+
+func TestSYCLIBackupCreateFailsClosedBeforeCopy(t *testing.T) {
+	t.Run("active writer", func(t *testing.T) {
+		workspace, data := backupWorkspaceFixture(t)
+		lease, err := core.AcquireKernelLease(data, "backup-red-writer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lease.Release()
+		before := backupTreeDigest(t, workspace)
+		output := filepath.Join(t.TempDir(), "backup")
+		code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+			"--vault", data, "--output", output)
+		requireBackupCode(t, code, envelope, "EG_WORKSPACE_WRITER_ACTIVE")
+		if backupTreeDigest(t, workspace) != before {
+			t.Fatal("rejected backup changed the source workspace")
+		}
+		if _, err = os.Lstat(output); !os.IsNotExist(err) {
+			t.Fatalf("rejected backup published output: %v", err)
+		}
+	})
+
+	t.Run("unfinished journal", func(t *testing.T) {
+		_, data := backupWorkspaceFixture(t)
+		pending := filepath.Join(data, filepath.FromSlash(core.RuntimeDirName),
+			core.TransactionsDirName, "op-backup-pending")
+		if err := os.MkdirAll(pending, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		output := filepath.Join(t.TempDir(), "backup")
+		code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+			"--vault", data, "--output", output)
+		requireBackupCode(t, code, envelope, "EG_TRANSACTION_BLOCKED")
+		if _, err := os.Lstat(output); !os.IsNotExist(err) {
+			t.Fatalf("journal-blocked backup published output: %v", err)
+		}
+	})
+
+	for _, test := range []struct {
+		name string
+		path func(string, string) string
+	}{
+		{"git", func(_ string, data string) string { return filepath.Join(data, ".git") }},
+		{"journal", func(_ string, data string) string {
+			return filepath.Join(data, filepath.FromSlash(core.RuntimeDirName), core.TransactionsDirName)
+		}},
+		{"assets", func(_ string, data string) string { return filepath.Join(data, "assets") }},
+		{"config", func(workspace, _ string) string { return filepath.Join(workspace, "conf", "conf.json") }},
+	} {
+		t.Run("missing "+test.name, func(t *testing.T) {
+			workspace, data := backupWorkspaceFixture(t)
+			if err := os.RemoveAll(test.path(workspace, data)); err != nil {
+				t.Fatal(err)
+			}
+			output := filepath.Join(t.TempDir(), "backup")
+			code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+				"--vault", data, "--output", output)
+			requireBackupCode(t, code, envelope, "EG_BACKUP_INVALID")
+			if _, err := os.Lstat(output); !os.IsNotExist(err) {
+				t.Fatalf("incomplete backup published output: %v", err)
+			}
+		})
+	}
+
+	t.Run("configured online endpoint never falls back", func(t *testing.T) {
+		workspace, data := backupWorkspaceFixture(t)
+		before := backupTreeDigest(t, workspace)
+		t.Setenv("EG_KERNEL_URL", "http://127.0.0.1:1/unavailable")
+		output := filepath.Join(t.TempDir(), "backup")
+		code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+			"--vault", data, "--output", output)
+		requireBackupCode(t, code, envelope, "EG_BACKUP_OFFLINE_REQUIRED")
+		if backupTreeDigest(t, workspace) != before {
+			t.Fatal("online refusal changed the local workspace")
+		}
+		if _, err := os.Lstat(output); !os.IsNotExist(err) {
+			t.Fatalf("online refusal published output: %v", err)
+		}
+	})
+
+	t.Run("output inside source is zero effect", func(t *testing.T) {
+		workspace, data := backupWorkspaceFixture(t)
+		before := backupTreeDigest(t, workspace)
+		output := filepath.Join(workspace, "nested", "backup")
+		code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+			"--vault", data, "--output", output)
+		requireBackupCode(t, code, envelope, "EG_BACKUP_INVALID")
+		if backupTreeDigest(t, workspace) != before {
+			t.Fatal("unsafe output validation created paths inside the source workspace")
+		}
+	})
+}
+
+func TestSYCLIBackupRejectsMissingOrMismatchedCryptoMaterials(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		mismatched bool
+	}{
+		{name: "missing"},
+		{name: "mismatched", mismatched: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workspace, data := backupWorkspaceFixture(t)
+			addBackupEncryptedNotebook(t, workspace, test.mismatched)
+			output := filepath.Join(t.TempDir(), "backup")
+			code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+				"--vault", data, "--output", output)
+			requireBackupCode(t, code, envelope, "EG_BACKUP_CRYPTO_MATERIAL_INVALID")
+			if _, err := os.Lstat(output); !os.IsNotExist(err) {
+				t.Fatalf("invalid crypto backup published output: %v", err)
+			}
+		})
+	}
+}
+
+func TestSYCLIBackupRestoreRejectsCorruptionAndNonemptyTarget(t *testing.T) {
+	t.Setenv("EG_KERNEL_URL", "")
+	_, data := backupWorkspaceFixture(t)
+	archive := filepath.Join(t.TempDir(), "backup")
+	code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+		"--vault", data, "--output", archive)
+	requireBackupSuccess(t, code, envelope)
+
+	t.Run("checksum mismatch", func(t *testing.T) {
+		asset := filepath.Join(archive, "data", "assets", "evidence.txt")
+		if err := os.WriteFile(asset, []byte("tampered\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(t.TempDir(), "restored")
+		code, envelope := runBackupCLI(t, "backup", "restore", "--backend", "sy",
+			"--input", archive, "--target", target)
+		requireBackupCode(t, code, envelope, "EG_BACKUP_CHECKSUM_MISMATCH")
+		if _, err := os.Lstat(target); !os.IsNotExist(err) {
+			t.Fatalf("corrupt restore published target: %v", err)
+		}
+	})
+
+	t.Run("nonempty target", func(t *testing.T) {
+		_, cleanData := backupWorkspaceFixture(t)
+		cleanArchive := filepath.Join(t.TempDir(), "backup")
+		code, envelope := runBackupCLI(t, "backup", "create", "--backend", "sy",
+			"--vault", cleanData, "--output", cleanArchive)
+		requireBackupSuccess(t, code, envelope)
+		target := filepath.Join(t.TempDir(), "restored")
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		keep := filepath.Join(target, "keep.txt")
+		if err := os.WriteFile(keep, []byte("owner data\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		code, envelope = runBackupCLI(t, "backup", "restore", "--backend", "sy",
+			"--input", cleanArchive, "--target", target)
+		requireBackupCode(t, code, envelope, "EG_BACKUP_TARGET_NOT_EMPTY")
+		if raw, err := os.ReadFile(keep); err != nil || string(raw) != "owner data\n" {
+			t.Fatalf("nonempty target was changed: %q, %v", raw, err)
+		}
+	})
+}
+
+func TestSYCLIBackupRestorePreservesWorkspaceAndDoctorParity(t *testing.T) {
+	t.Setenv("EG_KERNEL_URL", "")
+	workspace, data := backupWorkspaceFixture(t)
+	sourceBefore := backupTreeDigest(t, workspace)
+	archive := filepath.Join(t.TempDir(), "backup")
+	code, created := runBackupCLI(t, "backup", "create", "--backend", "sy",
+		"--vault", data, "--output", archive)
+	requireBackupSuccess(t, code, created)
+	if backupTreeDigest(t, workspace) != sourceBefore {
+		t.Fatal("successful backup changed the source workspace")
+	}
+	if _, err := os.Stat(filepath.Join(archive, "backup-manifest.json")); err != nil {
+		t.Fatalf("backup manifest missing: %v", err)
+	}
+
+	target := filepath.Join(t.TempDir(), "restored-workspace")
+	code, restored := runBackupCLI(t, "backup", "restore", "--backend", "sy",
+		"--input", archive, "--target", target)
+	requireBackupSuccess(t, code, restored)
+	createData := created["data"].(map[string]any)["backup"].(map[string]any)
+	restoreData := restored["data"].(map[string]any)["restore"].(map[string]any)
+	if restoreData["parity"] != true ||
+		restoreData["doctor_digest"] != createData["doctor_digest"] ||
+		restoreData["archive_digest"] != createData["archive_digest"] ||
+		restoreData["git_head"] != createData["git_head"] {
+		t.Fatalf("restore parity mismatch: create=%#v restore=%#v", createData, restoreData)
+	}
+	for _, rel := range []string{
+		"data/claim.sy",
+		"data/assets/evidence.txt",
+		"data/.git/HEAD",
+		"data/.siyuan/evergreen/transactions/.keep",
+		"conf/conf.json",
+	} {
+		before, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		after, err := os.ReadFile(filepath.Join(target, filepath.FromSlash(rel)))
+		if err != nil || !bytes.Equal(after, before) {
+			t.Fatalf("restored %s differs: err=%v", rel, err)
+		}
+	}
+	if got := strings.TrimSpace(gitOut(t, filepath.Join(target, "data"), "rev-parse", "HEAD")); got != restoreData["git_head"] {
+		t.Fatalf("restored Git HEAD = %q, want %q", got, restoreData["git_head"])
+	}
+}
+
+func TestSYCLIBackupRestorePreservesEncryptedRecoveryMaterialsWithoutFalseParity(t *testing.T) {
+	t.Setenv("EG_KERNEL_URL", "")
+	workspace, data := backupWorkspaceFixture(t)
+	addBackupEncryptedNotebook(t, workspace, true)
+	boxID := "20261012190000-crypt01"
+	boxConfPath := filepath.Join(data, boxID, ".siyuan", "conf.json")
+	var boxConf map[string]json.RawMessage
+	raw, err := os.ReadFile(boxConfPath)
+	if err != nil || json.Unmarshal(raw, &boxConf) != nil {
+		t.Fatalf("read encrypted box fixture: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(data, boxID, ".siyuan", "notebook-crypto-backup.json"),
+		boxConf["boxCrypt"], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := filepath.Join(t.TempDir(), "backup")
+	code, created := runBackupCLI(t, "backup", "create", "--backend", "sy",
+		"--vault", data, "--output", archive)
+	requireBackupSuccess(t, code, created)
+	createData := created["data"].(map[string]any)["backup"].(map[string]any)
+	if createData["requires_host_doctor"] != true ||
+		createData["doctor_digest"] != nil ||
+		!reflect.DeepEqual(createData["encrypted_notebooks"], []any{boxID}) {
+		t.Fatalf("encrypted backup falsely reported offline doctor parity: %#v", createData)
+	}
+
+	target := filepath.Join(t.TempDir(), "restored-workspace")
+	code, restored := runBackupCLI(t, "backup", "restore", "--backend", "sy",
+		"--input", archive, "--target", target)
+	requireBackupSuccess(t, code, restored)
+	restoreData := restored["data"].(map[string]any)["restore"].(map[string]any)
+	if restoreData["requires_host_doctor"] != true || restoreData["parity"] != false ||
+		restoreData["doctor_digest"] != nil {
+		t.Fatalf("encrypted restore fabricated semantic parity: %#v", restoreData)
+	}
+	for _, rel := range []string{
+		"data/.siyuan/data-crypto-backup.json",
+		"data/" + boxID + "/.siyuan/conf.json",
+		"data/" + boxID + "/.siyuan/notebook-crypto-backup.json",
+		"data/" + boxID + "/secret.sy",
+		"conf/conf.json",
+	} {
+		before, readErr := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(rel)))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		after, readErr := os.ReadFile(filepath.Join(target, filepath.FromSlash(rel)))
+		if readErr != nil || !bytes.Equal(after, before) {
+			t.Fatalf("encrypted restore changed %s: %v", rel, readErr)
+		}
+	}
+}
+
+func backupWorkspaceFixture(t *testing.T) (workspace, data string) {
+	t.Helper()
+	setGitIdentity(t)
+	workspace = t.TempDir()
+	data = filepath.Join(workspace, "data")
+	for _, dir := range []string{
+		filepath.Join(data, "assets"),
+		filepath.Join(data, filepath.FromSlash(core.RuntimeDirName), core.TransactionsDirName),
+		filepath.Join(workspace, "conf"),
+	} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(data, "claim.sy"), claimAVFixtureForCLI(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "assets", "evidence.txt"), []byte("asset evidence\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, filepath.FromSlash(core.RuntimeDirName),
+		core.TransactionsDirName, ".keep"), []byte("journal root\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "conf", "conf.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, data, "init", "-q")
+	gitOut(t, data, "add", ".")
+	gitOut(t, data, "commit", "-qm", "backup fixture")
+	return workspace, data
+}
+
+type backupArgon2Fixture struct {
+	Memory      uint32 `json:"memory"`
+	Iterations  uint32 `json:"iterations"`
+	Parallelism uint8  `json:"parallelism"`
+	KeyLength   uint32 `json:"keyLength"`
+}
+
+type backupCryptoFixture struct {
+	Enabled         bool                `json:"enabled"`
+	MasterSalt      []byte              `json:"masterSalt"`
+	KDFParams       backupArgon2Fixture `json:"kdfParams"`
+	KEKVerifier     []byte              `json:"kekVerifier"`
+	VerifierNonce   []byte              `json:"verifierNonce"`
+	AutoLockMinutes int                 `json:"autoLockMinutes"`
+	Spec            int                 `json:"spec"`
+	BackupID        string              `json:"backupID,omitempty"`
+	CreatedAt       int64               `json:"createdAt,omitempty"`
+	Checksum        string              `json:"checksum,omitempty"`
+	KEKMAC          []byte              `json:"kekMAC,omitempty"`
+	HistoryKEKs     [][]byte            `json:"historyKEKs,omitempty"`
+}
+
+type backupBoxCryptoFixture struct {
+	Spec       int    `json:"spec"`
+	WrappedDEK []byte `json:"wrappedDEK"`
+	WrapNonce  []byte `json:"wrapNonce"`
+	Metadata   []byte `json:"metadata,omitempty"`
+	CreatedAt  int64  `json:"createdAt"`
+}
+
+func addBackupEncryptedNotebook(t *testing.T, workspace string, mismatched bool) {
+	t.Helper()
+	data := filepath.Join(workspace, "data")
+	boxID := "20261012190000-crypt01"
+	boxDir := filepath.Join(data, boxID)
+	if err := os.MkdirAll(filepath.Join(boxDir, ".siyuan"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	global := backupCryptoFixture{
+		Enabled: true, MasterSalt: bytes.Repeat([]byte{1}, 16),
+		KDFParams:   backupArgon2Fixture{Memory: 65536, Iterations: 3, Parallelism: 4, KeyLength: 32},
+		KEKVerifier: backupSENCEnvelope(2), VerifierNonce: bytes.Repeat([]byte{2}, 12),
+		AutoLockMinutes: 5, Spec: 1, BackupID: "backup-crypto-fixture", CreatedAt: 1,
+		KEKMAC: bytes.Repeat([]byte{3}, 32),
+	}
+	global.Checksum = backupCryptoChecksum(global)
+	globalRaw, _ := json.Marshal(global)
+	if err := os.WriteFile(filepath.Join(data, ".siyuan", "data-crypto-backup.json"), globalRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rootConf, _ := json.Marshal(map[string]any{"notebookCrypto": global})
+	if err := os.WriteFile(filepath.Join(workspace, "conf", "conf.json"), rootConf, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	box := backupBoxCryptoFixture{
+		Spec: 1, WrappedDEK: backupSENCEnvelope(4), WrapNonce: bytes.Repeat([]byte{4}, 12),
+		Metadata: backupSENCEnvelope(5), CreatedAt: 1,
+	}
+	boxConf, _ := json.Marshal(map[string]any{"encrypted": true, "boxCrypt": box})
+	if err := os.WriteFile(filepath.Join(boxDir, ".siyuan", "conf.json"), boxConf, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backupBox := box
+	if mismatched {
+		backupBox.CreatedAt++
+	}
+	boxBackup, _ := json.Marshal(backupBox)
+	if err := os.WriteFile(filepath.Join(boxDir, ".siyuan", "notebook-crypto-backup.json"), boxBackup, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(boxDir, "secret.sy"), backupSENCEnvelope(6), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !mismatched {
+		if err := os.Remove(filepath.Join(data, ".siyuan", "data-crypto-backup.json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func backupCryptoChecksum(value backupCryptoFixture) string {
+	value.AutoLockMinutes = 0
+	value.Checksum = ""
+	value.KEKMAC = nil
+	raw, _ := json.Marshal(value)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func backupSENCEnvelope(marker byte) []byte {
+	nonce := bytes.Repeat([]byte{marker}, 12)
+	ret := []byte{'S', 'E', 'N', 'C', 1, 1, byte(len(nonce))}
+	ret = append(ret, nonce...)
+	return append(ret, bytes.Repeat([]byte{marker + 1}, 16)...)
+}
+
+func runBackupCLI(t *testing.T, args ...string) (int, map[string]any) {
+	t.Helper()
+	args = append(append([]string{}, args...), "--json")
+	var output bytes.Buffer
+	code := New().Run(args, &output, &output)
+	var envelope map[string]any
+	if err := json.Unmarshal(output.Bytes(), &envelope); err != nil {
+		t.Fatalf("backup CLI %v produced invalid JSON (%d): %s", args, code, output.String())
+	}
+	return code, envelope
+}
+
+func requireBackupSuccess(t *testing.T, code int, envelope map[string]any) {
+	t.Helper()
+	if code != 0 || envelope["ok"] != true {
+		t.Fatalf("backup command failed: code=%d envelope=%#v", code, envelope)
+	}
+}
+
+func requireBackupCode(t *testing.T, code int, envelope map[string]any, want string) {
+	t.Helper()
+	if code == 0 {
+		t.Fatalf("backup command unexpectedly succeeded: %#v", envelope)
+	}
+	data, ok := envelope["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("backup error envelope has no data object: code=%d envelope=%#v", code, envelope)
+	}
+	items, ok := data["errors"].([]any)
+	if !ok {
+		t.Fatalf("backup error envelope has no errors array: code=%d envelope=%#v", code, envelope)
+	}
+	for _, item := range items {
+		diagnostic, ok := item.(map[string]any)
+		if ok && diagnostic["code"] == want {
+			return
+		}
+	}
+	t.Fatalf("backup error code = %#v, want %s", items, want)
+}
+
+func backupTreeDigest(t *testing.T, root string) string {
+	t.Helper()
+	var rows []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		row := filepath.ToSlash(rel) + "\x00" + info.Mode().String()
+		if !entry.IsDir() {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			sum := sha256.Sum256(raw)
+			row += "\x00" + hex.EncodeToString(sum[:])
+		}
+		rows = append(rows, row)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(rows)
+	sum := sha256.Sum256([]byte(strings.Join(rows, "\n")))
+	return hex.EncodeToString(sum[:])
 }

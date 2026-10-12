@@ -132,6 +132,12 @@ compatibility/validation digest):
   plans and applies a managed Note through the shared core. The request supplies
   native segment/Candidate payloads and complete coverage; the core owns hashes,
   initial draft state, Source binding, and materialized output.
+- **Cold workspace backup.** Stop the SiYuan kernel and every other writer, then
+  use `eg backup create --backend sy --vault <workspace/data> --output <new-dir>`.
+  Restore with `eg backup restore --backend sy --input <backup-dir> --target
+  <new-workspace-dir>`. Restore refuses a nonempty target, validates every file
+  checksum and matching encryption recovery material, and never switches the
+  active workspace.
 - **Candidate review.** `eg candidate show --note <n-id> --json` exports the
   complete editable draft state. Apply the edited `.data` object with
   `eg candidate apply --note <n-id> --file <review.json> --user-request`.
