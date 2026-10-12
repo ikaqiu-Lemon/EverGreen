@@ -20,6 +20,53 @@ type SYDocument struct {
 	Diagnostics []Diagnostic
 }
 
+type documentIdentity struct {
+	LogicalID  LogicalID
+	EntityType EntityType
+	DocumentID string
+}
+
+// inspectDocumentIdentity reads only stable routing fields. Callers must not
+// treat the result as proof that an unsupported envelope is semantically valid.
+func inspectDocumentIdentity(data []byte) (documentIdentity, error) {
+	root, err := decodeRawObject(data)
+	if err != nil {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "$", fmt.Sprintf("invalid .sy JSON: %v", err))
+	}
+	if err = validateSYRoot(root); err != nil {
+		return documentIdentity{}, err
+	}
+	var identity documentIdentity
+	if err = decodeRequired(root, "ID", &identity.DocumentID); err != nil {
+		return documentIdentity{}, err
+	}
+	envelopeRaw, ok := root[evergreenJSONKey]
+	if !ok {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "Evergreen", "document envelope is required")
+	}
+	envelope, err := decodeRawObject(envelopeRaw)
+	if err != nil {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "Evergreen", err.Error())
+	}
+	entityRaw, ok := envelope["entity"]
+	if !ok {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "Evergreen.entity", "entity identity is required")
+	}
+	entity, err := decodeRawObject(entityRaw)
+	if err != nil {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "Evergreen.entity", err.Error())
+	}
+	if err = decodeRequired(entity, "logical_id", &identity.LogicalID); err != nil ||
+		strings.TrimSpace(string(identity.LogicalID)) == "" {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "Evergreen.entity.logical_id", "logical ID is required")
+	}
+	if err = decodeRequired(entity, "entity_type", &identity.EntityType); err != nil ||
+		strings.TrimSpace(string(identity.EntityType)) == "" {
+		return documentIdentity{}, validationError(CodeInvalidEnvelope, "Evergreen.entity.entity_type", "entity type is required")
+	}
+	return identity, nil
+}
+
 func DecodeSY(data []byte, registry *Registry) (*SYDocument, error) {
 	root, err := decodeRawObject(data)
 	if err != nil {

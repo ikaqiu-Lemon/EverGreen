@@ -417,6 +417,117 @@ func TestScanFSBuildsDocumentAndBlockMap(t *testing.T) {
 	}
 }
 
+func TestMixedTooNewDocumentsRemainAddressableAndReadOnly(t *testing.T) {
+	registry := DefaultRegistry()
+	supported, err := EncodeSY(
+		emptySY("20261010120000-supported"),
+		claimEnvelope("k-supported", KnowledgeKind, KnowledgeKindSchema, json.RawMessage(`{}`)),
+		registry,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future, err := EncodeSY(
+		emptySY("20261010120000-future"),
+		claimEnvelope("k-future", KnowledgeKind, KnowledgeKindSchema, json.RawMessage(`{}`)),
+		registry,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]json.RawMessage
+	if err = json.Unmarshal(future, &root); err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]json.RawMessage
+	if err = json.Unmarshal(root["Evergreen"], &envelope); err != nil {
+		t.Fatal(err)
+	}
+	envelope["spec"] = json.RawMessage(`"evergreen.sy/v99"`)
+	root["Evergreen"], _ = json.Marshal(envelope)
+	future, _ = json.Marshal(root)
+
+	index, err := ScanFS(fstest.MapFS{
+		"claims/supported.sy": &fstest.MapFile{Data: supported, Mode: 0o644},
+		"claims/future.sy":    &fstest.MapFile{Data: future, Mode: 0o644},
+	}, registry)
+	if err != nil {
+		t.Fatalf("mixed supported/too-new scan failed: %v", err)
+	}
+	for _, id := range []LogicalID{"k-supported", "k-future"} {
+		if _, ok := index.Locations[id]; !ok {
+			t.Fatalf("logical location missing for %s: %+v", id, index.Locations)
+		}
+	}
+
+	repository := documentMapRepository{
+		"k-supported": supported,
+		"k-future":    future,
+	}
+	items, err := QueryWorkspace(context.Background(), repository, registry, "")
+	if err != nil {
+		t.Fatalf("mixed workspace query failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("workspace items = %d, want 2", len(items))
+	}
+	var opaque WorkspaceEntity
+	for _, item := range items {
+		if item.ID == "k-future" {
+			opaque = item
+		}
+	}
+	if opaque.ID == "" || opaque.Envelope != nil || !opaque.ReadOnly ||
+		!hasDiagnostic(opaque.Diagnostics, CodeSchemaTooNew) ||
+		!bytes.Equal(opaque.Raw, future) || len(opaque.Body) == 0 {
+		t.Fatalf("too-new workspace entity was not returned as opaque content: %+v", opaque)
+	}
+
+	provider := NewClaimsAVProvider(repository, staticPlanner{}, registry)
+	projection, err := provider.Rebuild(context.Background())
+	if err != nil {
+		t.Fatalf("mixed Claims rebuild failed: %v", err)
+	}
+	if projection.ClaimCount != 2 {
+		t.Fatalf("projected claim count = %d, want 2", projection.ClaimCount)
+	}
+	page, err := provider.Query(context.Background(), ClaimsViewID, AVQuery{})
+	if err != nil {
+		t.Fatalf("mixed Claims query failed: %v", err)
+	}
+	var futureRow AVRow
+	for _, row := range page.Rows {
+		if row.Ref.LogicalID == "k-future" {
+			futureRow = row
+		}
+	}
+	if futureRow.Ref.LogicalID == "" || !futureRow.ReadOnly ||
+		!hasDiagnostic(futureRow.Diagnostics, CodeSchemaTooNew) {
+		t.Fatalf("too-new Claim row must be present and read-only: %+v", futureRow)
+	}
+	_, err = provider.PlanPatch(context.Background(), Principal{Type: PrincipalUser, ID: "u"}, AVPatch{
+		OperationID: "op-too-new-mixed",
+		RowID:       "k-future",
+		Base:        BaseRef{LogicalID: futureRow.Ref.LogicalID, SemanticHash: futureRow.Ref.SemanticHash},
+		Column:      AVColumnBinding{Field: "claim.status"},
+		Value:       &AVCellValue{Kind: "text", Text: "deprecated"},
+	})
+	if !HasDiagnostic(err, CodeSchemaTooNew) {
+		t.Fatalf("too-new patch error = %v", err)
+	}
+	if got, loadErr := repository.Load(context.Background(), "k-future"); loadErr != nil || !bytes.Equal(got, future) {
+		t.Fatalf("too-new patch changed authority: err=%v got=%s want=%s", loadErr, got, future)
+	}
+
+	_, err = ScanFS(fstest.MapFS{
+		"a.sy": &fstest.MapFile{Data: future, Mode: 0o644},
+		"b.sy": &fstest.MapFile{Data: future, Mode: 0o644},
+	}, registry)
+	if !HasDiagnostic(err, CodeDuplicateID) {
+		t.Fatalf("duplicate too-new logical id error = %v", err)
+	}
+}
+
 func TestChangePlanAndHostPorts(t *testing.T) {
 	plan := ChangePlan{
 		OperationID: "op-01JTEST",
@@ -512,6 +623,30 @@ type memoryIndexSink struct{}
 
 func (*memoryIndexSink) Invalidate(context.Context, []LogicalID) error {
 	return nil
+}
+
+type documentMapRepository map[LogicalID][]byte
+
+func (r documentMapRepository) Load(_ context.Context, id LogicalID) ([]byte, error) {
+	raw, ok := r[id]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return append([]byte(nil), raw...), nil
+}
+
+func (r documentMapRepository) List(context.Context) ([]LogicalID, error) {
+	ids := make([]LogicalID, 0, len(r))
+	for id := range r {
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+type staticPlanner struct{}
+
+func (staticPlanner) Plan(context.Context, Principal, PlanRequest) (PlannedOperation, error) {
+	return PlannedOperation{}, nil
 }
 
 func TestLogicalIDKindIsNotDerivedFromPrefix(t *testing.T) {

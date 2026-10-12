@@ -22,6 +22,9 @@ func SearchSY(ctx context.Context, repository core.Repository, registry *core.Re
 	}
 	entries := []CardEntry{}
 	for _, item := range items {
+		if item.Envelope == nil {
+			continue
+		}
 		claim := item.Envelope.Claim
 		if claim == nil {
 			continue
@@ -54,6 +57,9 @@ func SearchSY(ctx context.Context, repository core.Repository, registry *core.Re
 
 func syMetadata(item core.WorkspaceEntity) map[string]any {
 	var metadata map[string]any
+	if item.Envelope == nil {
+		return metadata
+	}
 	_ = json.Unmarshal(item.Envelope.Extra["legacy_metadata"], &metadata)
 	return metadata
 }

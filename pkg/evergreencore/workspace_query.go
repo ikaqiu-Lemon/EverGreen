@@ -8,11 +8,14 @@ import (
 )
 
 type WorkspaceEntity struct {
-	ID       LogicalID         `json:"id"`
-	Title    string            `json:"title"`
-	Envelope *DocumentEnvelope `json:"envelope"`
-	Body     json.RawMessage   `json:"body"`
-	Hash     string            `json:"semantic_hash"`
+	ID          LogicalID         `json:"id"`
+	Title       string            `json:"title"`
+	Envelope    *DocumentEnvelope `json:"envelope,omitempty"`
+	Body        json.RawMessage   `json:"body"`
+	Raw         json.RawMessage   `json:"raw,omitempty"`
+	Hash        string            `json:"semantic_hash"`
+	ReadOnly    bool              `json:"read_only,omitempty"`
+	Diagnostics []Diagnostic      `json:"diagnostics,omitempty"`
 }
 
 // QueryWorkspace 只读取文档权威，块身份和派生缓存不会被误计为实体。
@@ -31,9 +34,19 @@ func QueryWorkspace(ctx context.Context, repository Repository, registry *Regist
 		if query != "" && !strings.Contains(strings.ToLower(string(entity.Document)), query) {
 			continue
 		}
-		root, _ := decodeRawObject(entity.Document)
-		items = append(items, WorkspaceEntity{ID: entity.LogicalID, Title: claimTitle(entity.Document, entity.LogicalID),
-			Envelope: document.Envelope, Body: nonNilArrayRaw(root["Children"]), Hash: entity.Hash})
+		root, rootErr := decodeRawObject(entity.Document)
+		if rootErr != nil {
+			return nil, rootErr
+		}
+		item := WorkspaceEntity{
+			ID: entity.LogicalID, Title: claimTitle(entity.Document, entity.LogicalID),
+			Envelope: document.Envelope, Body: nonNilArrayRaw(root["Children"]), Hash: entity.Hash,
+			ReadOnly: document.ReadOnly, Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
+		}
+		if document.Envelope == nil {
+			item.Raw = append(json.RawMessage(nil), entity.Document...)
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -60,6 +73,10 @@ func ContextWorkspace(ctx context.Context, repository Repository, registry *Regi
 	if result.Entity.ID == "" {
 		return result, validationError(CodeInvalidEnvelope, "logical_id", "entity does not exist")
 	}
+	result.Base[id] = result.Entity.Hash
+	if result.Entity.Envelope == nil {
+		return result, nil
+	}
 	source := id
 	if result.Entity.Envelope.Entity.EntityType == EntityNote {
 		var metadata map[string]any
@@ -68,8 +85,10 @@ func ContextWorkspace(ctx context.Context, repository Repository, registry *Regi
 			source = LogicalID(value)
 		}
 	}
-	result.Base[id] = result.Entity.Hash
 	for _, item := range items {
+		if item.Envelope == nil {
+			continue
+		}
 		if item.Envelope.Entity.EntityType == EntityNote {
 			var metadata map[string]any
 			_ = json.Unmarshal(item.Envelope.Extra["legacy_metadata"], &metadata)
@@ -107,6 +126,9 @@ func RelationsWorkspace(ctx context.Context, repository Repository, registry *Re
 	}
 	edges := []AVEdgeValue{}
 	for _, item := range items {
+		if item.Envelope == nil {
+			continue
+		}
 		for _, edge := range item.Envelope.Relations.Outgoing {
 			switch {
 			case item.ID == id:

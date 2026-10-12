@@ -111,10 +111,11 @@ type AVRowRef struct {
 }
 
 type AVRow struct {
-	Ref      AVRowRef               `json:"ref"`
-	Revision uint64                 `json:"revision"`
-	ReadOnly bool                   `json:"read_only,omitempty"`
-	Cells    map[string]AVCellValue `json:"cells"`
+	Ref         AVRowRef               `json:"ref"`
+	Revision    uint64                 `json:"revision"`
+	ReadOnly    bool                   `json:"read_only,omitempty"`
+	Diagnostics []Diagnostic           `json:"diagnostics,omitempty"`
+	Cells       map[string]AVCellValue `json:"cells"`
 }
 
 type AVCellValue struct {
@@ -259,6 +260,9 @@ func (p *ClaimsAVProvider) Query(ctx context.Context, viewID string, query AVQue
 		return AVPage{}, err
 	}
 	for _, record := range snapshot.claims {
+		if record.document.Envelope == nil {
+			continue
+		}
 		_, available := p.registry.Descriptor(record.document.Envelope.Claim.ClaimKind)
 		if (!available && !record.document.ReadOnly) ||
 			(available && record.document.ReadOnly && onlyKindUnavailable(record.document.Diagnostics)) {
@@ -286,6 +290,12 @@ func (p *ClaimsAVProvider) Query(ctx context.Context, viewID string, query AVQue
 
 	ids := make([]LogicalID, 0, len(snapshot.claims))
 	for id, record := range snapshot.claims {
+		if record.document.Envelope == nil {
+			if definition.Provider.Query.ClaimKind == "" {
+				ids = append(ids, id)
+			}
+			continue
+		}
 		if definition.Provider.Query.ClaimKind != "" &&
 			record.document.Envelope.Claim.ClaimKind != definition.Provider.Query.ClaimKind {
 			continue
@@ -296,8 +306,10 @@ func (p *ClaimsAVProvider) Query(ctx context.Context, viewID string, query AVQue
 	rows := make([]AVRow, 0, len(ids))
 	for _, id := range ids {
 		row := projectClaimRow(snapshot, id)
-		if _, available := p.registry.Descriptor(snapshot.claims[id].document.Envelope.Claim.ClaimKind); !available {
-			row.ReadOnly = true
+		if envelope := snapshot.claims[id].document.Envelope; envelope != nil {
+			if _, available := p.registry.Descriptor(envelope.Claim.ClaimKind); !available {
+				row.ReadOnly = true
+			}
 		}
 		for _, column := range definition.Columns {
 			if strings.HasPrefix(column.Binding.Field, "claim.kind_data.") {
@@ -734,7 +746,16 @@ func (p *ClaimsAVProvider) Rebuild(ctx context.Context) (AVProjectionSnapshot, e
 		if decodeErr != nil {
 			return AVProjectionSnapshot{}, decodeErr
 		}
-		if document.Envelope == nil || document.Envelope.Entity.EntityType != EntityClaim || document.Envelope.Claim == nil {
+		identity, identityErr := inspectDocumentIdentity(raw)
+		if identityErr != nil {
+			return AVProjectionSnapshot{}, identityErr
+		}
+		if document.Envelope == nil {
+			if !document.ReadOnly || !hasDiagnosticCode(document.Diagnostics, CodeSchemaTooNew) ||
+				identity.EntityType != EntityClaim {
+				continue
+			}
+		} else if document.Envelope.Entity.EntityType != EntityClaim || document.Envelope.Claim == nil {
 			continue
 		}
 		hash, hashErr := SemanticHash(raw)
@@ -746,6 +767,10 @@ func (p *ClaimsAVProvider) Rebuild(ctx context.Context) (AVProjectionSnapshot, e
 		}
 		snapshot.claims[id] = record
 		digestItem := digestClaim{ID: id, Hash: hash}
+		if document.Envelope == nil {
+			digestClaims = append(digestClaims, digestItem)
+			continue
+		}
 		for _, edge := range document.Envelope.Relations.Outgoing {
 			digestItem.Edges = append(digestItem.Edges, edge.ID)
 			projected := projectEdge(edge, id, hash, EdgeDirectionIncoming)
@@ -819,6 +844,17 @@ func (p *ClaimsAVProvider) snapshotStale(ctx context.Context, snapshot *claimsAV
 		}
 		if document.Envelope != nil && document.Envelope.Entity.EntityType == EntityClaim && document.Envelope.Claim != nil {
 			currentClaimIDs = append(currentClaimIDs, id)
+			continue
+		}
+		if document.Envelope == nil && document.ReadOnly &&
+			hasDiagnosticCode(document.Diagnostics, CodeSchemaTooNew) {
+			identity, identityErr := inspectDocumentIdentity(raw)
+			if identityErr != nil {
+				return false, identityErr
+			}
+			if identity.EntityType == EntityClaim {
+				currentClaimIDs = append(currentClaimIDs, id)
+			}
 		}
 	}
 	sort.Slice(currentClaimIDs, func(i, j int) bool { return currentClaimIDs[i] < currentClaimIDs[j] })
@@ -856,12 +892,32 @@ func equalLogicalIDs(left, right []LogicalID) bool {
 func projectClaimRow(snapshot *claimsAVSnapshot, id LogicalID) AVRow {
 	record := snapshot.claims[id]
 	envelope := record.document.Envelope
+	if envelope == nil {
+		return AVRow{
+			Ref:         AVRowRef{LogicalID: id, SemanticHash: record.hash},
+			ReadOnly:    true,
+			Diagnostics: append([]Diagnostic(nil), record.document.Diagnostics...),
+			Cells: map[string]AVCellValue{
+				"title":              {Kind: "text", Text: record.title},
+				"logical_id":         {Kind: "text", Text: string(id)},
+				"claim_kind":         {Kind: "text", Text: "unsupported"},
+				"status":             {Kind: "text"},
+				"tags":               {Kind: "tags", Texts: []string{}},
+				"validation":         {Kind: "json", JSON: json.RawMessage(`null`)},
+				"kind_data":          {Kind: "json", JSON: json.RawMessage(`null`)},
+				"provenance":         {Kind: "provenance", Provenance: []Provenance{}},
+				"arguments_outgoing": relationCell([]AVEdgeValue{}),
+				"arguments_incoming": relationCell([]AVEdgeValue{}),
+			},
+		}
+	}
 	claim := envelope.Claim
 	validationJSON, validationStatus := claimValidation(claim.KindData)
 	row := AVRow{
-		Ref:      AVRowRef{LogicalID: id, SemanticHash: record.hash},
-		Revision: envelope.Entity.SemanticRevision,
-		ReadOnly: record.document.ReadOnly,
+		Ref:         AVRowRef{LogicalID: id, SemanticHash: record.hash},
+		Revision:    envelope.Entity.SemanticRevision,
+		ReadOnly:    record.document.ReadOnly,
+		Diagnostics: append([]Diagnostic(nil), record.document.Diagnostics...),
 		Cells: map[string]AVCellValue{
 			"title":      {Kind: "text", Text: record.title},
 			"logical_id": {Kind: "text", Text: string(id)},

@@ -68,7 +68,13 @@ func (s *AuthorityService) InspectClaim(ctx context.Context, id LogicalID) (Clai
 	if err != nil {
 		return ClaimSnapshot{}, err
 	}
-	if document.Envelope == nil || document.Envelope.Claim == nil {
+	if document.Envelope == nil {
+		if document.ReadOnly {
+			return ClaimSnapshot{}, &DiagnosticError{Diagnostics: document.Diagnostics}
+		}
+		return ClaimSnapshot{}, validationError(CodeInvalidClaim, "logical_id", "document is not a Claim")
+	}
+	if document.Envelope.Claim == nil {
 		return ClaimSnapshot{}, validationError(CodeInvalidClaim, "logical_id", "document is not a Claim")
 	}
 	root, _ := decodeRawObject(raw)

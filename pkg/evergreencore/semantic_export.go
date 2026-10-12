@@ -39,29 +39,36 @@ func CanonicalExport(ctx context.Context, repository Repository, registry *Regis
 		if decodeErr != nil {
 			return CanonicalArchive{}, decodeErr
 		}
-		if document.Envelope == nil {
-			return CanonicalArchive{}, validationError(CodeSchemaTooNew, string(id), "canonical export cannot interpret this document")
+		identity, identityErr := inspectDocumentIdentity(raw)
+		if identityErr != nil {
+			return CanonicalArchive{}, identityErr
 		}
-		if document.Envelope.Entity.LogicalID != id {
+		if identity.LogicalID != id {
 			continue
 		}
-		var value any
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		if err = decoder.Decode(&value); err != nil {
-			return CanonicalArchive{}, err
-		}
-		normalizeSemanticValue(value, false)
-		canonical, marshalErr := json.Marshal(value)
-		if marshalErr != nil {
-			return CanonicalArchive{}, marshalErr
+		canonical := append(json.RawMessage(nil), raw...)
+		if document.Envelope != nil {
+			var value any
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			decoder.UseNumber()
+			if err = decoder.Decode(&value); err != nil {
+				return CanonicalArchive{}, err
+			}
+			normalizeSemanticValue(value, false)
+			var marshalErr error
+			canonical, marshalErr = json.Marshal(value)
+			if marshalErr != nil {
+				return CanonicalArchive{}, marshalErr
+			}
+		} else if !document.ReadOnly || !hasDiagnosticCode(document.Diagnostics, CodeSchemaTooNew) {
+			return CanonicalArchive{}, validationError(CodeInvalidEnvelope, string(id), "canonical export cannot identify this document")
 		}
 		hash, hashErr := SemanticHash(canonical)
 		if hashErr != nil {
 			return CanonicalArchive{}, hashErr
 		}
 		archive.Entities = append(archive.Entities, CanonicalEntity{
-			LogicalID: id, Type: document.Envelope.Entity.EntityType, Hash: hash, Document: canonical,
+			LogicalID: id, Type: identity.EntityType, Hash: hash, Document: canonical,
 		})
 	}
 	return archive, nil

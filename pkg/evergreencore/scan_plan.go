@@ -12,11 +12,13 @@ import (
 )
 
 type LogicalLocation struct {
-	LogicalID  LogicalID `json:"logical_id"`
-	EntityType string    `json:"entity_type"`
-	DocumentID string    `json:"document_id"`
-	BlockID    string    `json:"block_id,omitempty"`
-	Path       string    `json:"path"`
+	LogicalID   LogicalID    `json:"logical_id"`
+	EntityType  string       `json:"entity_type"`
+	DocumentID  string       `json:"document_id"`
+	BlockID     string       `json:"block_id,omitempty"`
+	Path        string       `json:"path"`
+	ReadOnly    bool         `json:"read_only,omitempty"`
+	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
 }
 
 type LogicalIndex struct {
@@ -40,26 +42,43 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		if document.ReadOnly && (document.Envelope == nil ||
-			!onlyKindUnavailable(document.Diagnostics)) {
+		if document.ReadOnly && !readOnlyDiagnosticsSupported(document.Diagnostics) {
 			return fmt.Errorf("%s: %w", path, &DiagnosticError{Diagnostics: document.Diagnostics})
 		}
+		identity, identityErr := inspectDocumentIdentity(raw)
 		if document.Envelope == nil {
+			if !document.ReadOnly || !hasDiagnosticCode(document.Diagnostics, CodeSchemaTooNew) {
+				return nil
+			}
+			if identityErr != nil {
+				return fmt.Errorf("%s: %w", path, identityErr)
+			}
+			if err = addLogicalLocation(index, LogicalLocation{
+				LogicalID:   identity.LogicalID,
+				EntityType:  string(identity.EntityType),
+				DocumentID:  identity.DocumentID,
+				Path:        filepath.ToSlash(path),
+				ReadOnly:    true,
+				Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
+			}); err != nil {
+				return err
+			}
 			return nil
+		}
+		if identityErr != nil {
+			return fmt.Errorf("%s: %w", path, identityErr)
 		}
 		root, err := decodeRawObject(raw)
 		if err != nil {
 			return err
 		}
-		var documentID string
-		if err = decodeRequired(root, "ID", &documentID); err != nil {
-			return err
-		}
 		if err = addLogicalLocation(index, LogicalLocation{
-			LogicalID:  document.Envelope.Entity.LogicalID,
-			EntityType: string(document.Envelope.Entity.EntityType),
-			DocumentID: documentID,
-			Path:       filepath.ToSlash(path),
+			LogicalID:   document.Envelope.Entity.LogicalID,
+			EntityType:  string(document.Envelope.Entity.EntityType),
+			DocumentID:  identity.DocumentID,
+			Path:        filepath.ToSlash(path),
+			ReadOnly:    document.ReadOnly,
+			Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
 		}); err != nil {
 			return err
 		}
@@ -68,7 +87,7 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 			if err = json.Unmarshal(childrenRaw, &children); err != nil {
 				return err
 			}
-			if err = scanBlocks(index, children, documentID, filepath.ToSlash(path), registry); err != nil {
+			if err = scanBlocks(index, children, identity.DocumentID, filepath.ToSlash(path), registry); err != nil {
 				return err
 			}
 		}
@@ -78,6 +97,27 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 		return nil, err
 	}
 	return index, nil
+}
+
+func readOnlyDiagnosticsSupported(diagnostics []Diagnostic) bool {
+	if len(diagnostics) == 0 {
+		return false
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code != CodeSchemaTooNew && diagnostic.Code != CodeClaimKindUnavailable {
+			return false
+		}
+	}
+	return true
+}
+
+func hasDiagnosticCode(diagnostics []Diagnostic, code string) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func onlyKindUnavailable(diagnostics []Diagnostic) bool {
@@ -123,34 +163,45 @@ func scanBlocks(
 			}
 		}
 		if envelopeRaw, ok := node[evergreenJSONKey]; ok {
-			envelope, decodeErr := UnmarshalBlockEnvelope(envelopeRaw)
-			if decodeErr != nil {
-				return decodeErr
+			spec, specErr := envelopeSpec(envelopeRaw)
+			if specErr != nil {
+				return specErr
 			}
-			if validateErr := ValidateBlock(envelope, registry); validateErr != nil &&
-				!HasDiagnostic(validateErr, CodeClaimKindUnavailable) {
-				return validateErr
+			major, majorErr := schemaMajor(spec)
+			if majorErr != nil {
+				return validationError(CodeInvalidBlock, "Evergreen.spec", majorErr.Error())
 			}
-			switch envelope.Role {
-			case "note_segment", "agent_annotation":
-				err = addLogicalLocation(index, LogicalLocation{
-					LogicalID:  envelope.Segment.SegmentID,
-					EntityType: "segment",
-					DocumentID: documentID,
-					BlockID:    blockID,
-					Path:       path,
-				})
-			case "candidate":
-				err = addLogicalLocation(index, LogicalLocation{
-					LogicalID:  envelope.Candidate.CandidateID,
-					EntityType: "candidate",
-					DocumentID: documentID,
-					BlockID:    blockID,
-					Path:       path,
-				})
-			}
-			if err != nil {
-				return err
+			currentMajor, _ := schemaMajor(BlockSpec)
+			if major <= currentMajor {
+				envelope, decodeErr := UnmarshalBlockEnvelope(envelopeRaw)
+				if decodeErr != nil {
+					return decodeErr
+				}
+				if validateErr := ValidateBlock(envelope, registry); validateErr != nil &&
+					!HasDiagnostic(validateErr, CodeClaimKindUnavailable) {
+					return validateErr
+				}
+				switch envelope.Role {
+				case "note_segment", "agent_annotation":
+					err = addLogicalLocation(index, LogicalLocation{
+						LogicalID:  envelope.Segment.SegmentID,
+						EntityType: "segment",
+						DocumentID: documentID,
+						BlockID:    blockID,
+						Path:       path,
+					})
+				case "candidate":
+					err = addLogicalLocation(index, LogicalLocation{
+						LogicalID:  envelope.Candidate.CandidateID,
+						EntityType: "candidate",
+						DocumentID: documentID,
+						BlockID:    blockID,
+						Path:       path,
+					})
+				}
+				if err != nil {
+					return err
+				}
 			}
 		}
 		if childrenRaw, ok := node["Children"]; ok {

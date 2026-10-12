@@ -109,7 +109,7 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 			return nil, syError(err)
 		}
 		for _, item := range items {
-			if item.ID == core.LogicalID(inv.Args[0]) && item.Envelope.Claim != nil {
+			if item.ID == core.LogicalID(inv.Args[0]) && item.Envelope != nil && item.Envelope.Claim != nil {
 				edges, err := core.RelationsWorkspace(ctx, repository, registry, item.ID)
 				if err != nil {
 					return nil, syError(err)

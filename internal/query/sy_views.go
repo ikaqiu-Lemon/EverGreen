@@ -24,7 +24,7 @@ func ContextSY(ctx context.Context, repository core.Repository, registry *core.R
 	for _, item := range items {
 		if item.ID == id {
 			found = true
-			if item.Envelope.Entity.EntityType == core.EntityNote {
+			if item.Envelope != nil && item.Envelope.Entity.EntityType == core.EntityNote {
 				sourceID = syText(syMetadata(item), "source")
 				if domain == "" {
 					result.Domain = syText(syMetadata(item), "domain")
@@ -37,6 +37,9 @@ func ContextSY(ctx context.Context, repository core.Repository, registry *core.R
 	}
 	var knowledge, opinions []CardEntry
 	for _, item := range items {
+		if item.Envelope == nil {
+			continue
+		}
 		metadata := syMetadata(item)
 		if string(item.ID) == sourceID && item.Envelope.Entity.EntityType == core.EntitySource {
 			body, err := core.MarkdownText(item.Body)
@@ -128,7 +131,7 @@ func RelSY(ctx context.Context, repository core.Repository, registry *core.Regis
 		schema = core.ReplacementSchema
 	}
 	for _, item := range items {
-		if item.Envelope.Claim == nil {
+		if item.Envelope == nil || item.Envelope.Claim == nil {
 			continue
 		}
 		entry, err := syCardEntry(item)
