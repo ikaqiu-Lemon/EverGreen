@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"os"
 	"os/user"
+	"strconv"
 	"strings"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/client"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/migrate"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/query"
+	"github.com/ikaqiu-Lemon/EverGreen/internal/txn"
 	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
 )
 
@@ -35,14 +37,13 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 		return nil, &UsageError{Msg: ".sy apply requires --plan <operation.json>"}
 	}
 	ctx := context.Background()
-	var repository core.Repository
 	var online *client.Client
+	var err error
 	if strings.TrimSpace(os.Getenv(client.KernelURLEnv)) != "" {
 		caller := client.CallerAgent
 		if inv.UserRequest {
 			caller = client.CallerCLI
 		}
-		var err error
 		online, err = client.FromEnvironment(caller)
 		if err != nil {
 			return nil, syError(err)
@@ -50,22 +51,79 @@ func (r *Root) runSYBackend(inv *Invocation) (*Result, error) {
 		if _, err = online.Capabilities(ctx); err != nil {
 			return nil, syError(err)
 		}
-		archive, err := online.CanonicalExport(ctx)
-		if err != nil {
-			return nil, syError(err)
-		}
-		repository, err = core.NewArchiveRepository(archive)
-		if err != nil {
-			return nil, syError(err)
-		}
-	} else {
-		var err error
-		repository, err = core.NewSYReadRepository(inv.VaultFlag, core.ApplicationRegistry())
-		if err != nil {
-			return nil, syError(err)
-		}
 	}
 	registry := core.ApplicationRegistry()
+	switch inv.Cmd.Name {
+	case "recover":
+		if inv.Cmd.Validate != nil {
+			if err = inv.Cmd.Validate(inv); err != nil {
+				return nil, err
+			}
+		}
+		if inv.Sub == "lease" {
+			if online != nil {
+				return nil, syError(&core.DiagnosticError{Diagnostics: []core.Diagnostic{{
+					Code: core.CodeWorkspaceWriterActive, Level: "error", Path: "workspace",
+					Message: "stale lease recovery is offline-only; the configured kernel endpoint disables local fallback",
+				}}})
+			}
+			pid, _ := strconv.Atoi(inv.String("expected-pid"))
+			record, recoverErr := txn.RecoverOfflineWriterLease(inv.VaultFlag, core.LeaseRecoveryEvidence{
+				ExpectedPID: pid, ExpectedNonce: inv.String("expected-nonce"),
+			})
+			if recoverErr != nil {
+				return nil, syError(recoverErr)
+			}
+			return &Result{Data: map[string]interface{}{"lease": record}}, nil
+		}
+		var records []core.OperationRecord
+		if online != nil {
+			records, err = online.Recover(ctx)
+		} else {
+			records, err = txn.RecoverOfflineSYOperations(ctx, txn.OfflineSYRuntimeOptions{
+				Root: inv.VaultFlag, Holder: "eg-cli-recover",
+				Registry: registry, Authorizer: core.CommandPolicy{},
+			})
+		}
+		if err != nil {
+			return &Result{Data: map[string]interface{}{"operations": records}}, syError(err)
+		}
+		return &Result{Data: map[string]interface{}{"operations": records}}, nil
+	case "doctor":
+		if inv.Cmd.Validate != nil {
+			if err = inv.Cmd.Validate(inv); err != nil {
+				return nil, err
+			}
+		}
+		rebuild := inv.String("rebuild-index") == "true"
+		var report core.WorkspaceDoctorReport
+		if online != nil {
+			report, err = online.Doctor(ctx, rebuild)
+		} else {
+			if rebuild {
+				return nil, &UsageError{Msg: "eg doctor --rebuild-index requires an online SiYuan kernel"}
+			}
+			report, err = txn.InspectOfflineSYWorkspace(ctx, inv.VaultFlag, "eg-cli-doctor", registry)
+		}
+		if err != nil {
+			return nil, syError(err)
+		}
+		return &Result{Data: map[string]interface{}{"doctor": report}}, nil
+	}
+
+	var repository core.Repository
+	if online != nil {
+		archive, exportErr := online.CanonicalExport(ctx)
+		if exportErr != nil {
+			return nil, syError(exportErr)
+		}
+		repository, err = core.NewArchiveRepository(archive)
+	} else {
+		repository, err = core.NewSYReadRepository(inv.VaultFlag, registry)
+	}
+	if err != nil {
+		return nil, syError(err)
+	}
 	switch inv.Cmd.Name {
 	case "capture":
 		if inv.Cmd.Validate != nil {

@@ -21,6 +21,7 @@ const (
 	CodeTransactionBlocked    = "EG_TRANSACTION_BLOCKED"
 	CodeWorkspaceWriterActive = "EG_WORKSPACE_WRITER_ACTIVE"
 	CodeWorkspaceLeaseStale   = "EG_WORKSPACE_LEASE_STALE"
+	CodeWorkspaceLeaseCorrupt = "EG_WORKSPACE_LEASE_CORRUPT"
 	CodeGitCommitFailed       = "EG_GIT_COMMIT_FAILED"
 	CodeDerivedStale          = "EG_DERIVED_STALE"
 )

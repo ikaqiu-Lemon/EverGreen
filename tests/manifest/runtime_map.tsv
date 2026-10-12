@@ -244,6 +244,7 @@ tests/_staged/pkg/evergreencore/authority_validation_test.go	pkg/evergreencore/a
 tests/_staged/pkg/evergreencore/authorization_lossless_test.go	pkg/evergreencore/authorization_lossless_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/claim_kinds_test.go	pkg/evergreencore/claim_kinds_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/core_test.go	pkg/evergreencore/core_test.go	evergreen	unit	go
+tests/_staged/pkg/evergreencore/doctor_test.go	pkg/evergreencore/doctor_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/document_storage_test.go	pkg/evergreencore/document_storage_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/git_committer_test.go	pkg/evergreencore/git_committer_test.go	evergreen	unit	go
 tests/_staged/pkg/evergreencore/journal_scope_test.go	pkg/evergreencore/journal_scope_test.go	evergreen	unit	go

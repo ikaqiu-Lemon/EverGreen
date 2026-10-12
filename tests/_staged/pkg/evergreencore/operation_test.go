@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -437,18 +438,80 @@ func TestWorkspaceWriterLeaseRejectsOnlineOfflineOverlap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	writeFile(t, root, filepath.ToSlash(filepath.Join(RuntimeDirName, WriterLeaseFileName)), []byte(`{"mode":"kernel","nonce":"stale"}`))
+	process := exec.Command("sh", "-c", "exit 0")
+	if err = process.Run(); err != nil {
+		t.Fatal(err)
+	}
+	stale := WriterLeaseRecord{
+		Mode: "kernel", Nonce: "0123456789abcdef0123456789abcdef",
+		Holder: "crashed-kernel", PID: process.ProcessState.Pid(),
+		AcquiredAt: "2000-01-01T00:00:00Z",
+	}
+	staleRaw, _ := json.Marshal(stale)
+	writeFile(t, root, filepath.ToSlash(filepath.Join(RuntimeDirName, WriterLeaseFileName)), staleRaw)
 	if _, err = AcquireOfflineLease(root, "offline-test"); !HasDiagnostic(err, CodeWorkspaceLeaseStale) {
 		t.Fatalf("stale lease error = %v", err)
 	}
-	if err = RecoverStaleLease(root); err != nil {
+	if _, err = AcquireKernelLease(root, "kernel-test"); !HasDiagnostic(err, CodeWorkspaceLeaseStale) {
+		t.Fatalf("kernel silently replaced stale lease: %v", err)
+	}
+	if _, err = RecoverStaleLease(root, LeaseRecoveryEvidence{
+		ExpectedPID: stale.PID, ExpectedNonce: "wrong-nonce",
+	}); !HasDiagnostic(err, CodeWorkspaceLeaseStale) {
+		t.Fatalf("nonce mismatch recovery error = %v", err)
+	}
+	if _, err = RecoverStaleLease(root, LeaseRecoveryEvidence{
+		ExpectedPID: stale.PID + 1, ExpectedNonce: stale.Nonce,
+	}); !HasDiagnostic(err, CodeWorkspaceLeaseStale) {
+		t.Fatalf("pid mismatch recovery error = %v", err)
+	}
+	recovered, err := RecoverStaleLease(root, LeaseRecoveryEvidence{
+		ExpectedPID: stale.PID, ExpectedNonce: stale.Nonce,
+	})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if recovered != stale {
+		t.Fatalf("recovered lease = %+v, want %+v", recovered, stale)
 	}
 	offline, err = AcquireOfflineLease(root, "offline-test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = offline.Release()
+}
+
+func TestRecoverStaleLeaseRejectsLiveProcessAndCorruptRecord(t *testing.T) {
+	root := t.TempDir()
+	active := WriterLeaseRecord{
+		Mode: "offline", Nonce: "fedcba9876543210fedcba9876543210",
+		Holder: "detached-live-process", PID: os.Getpid(),
+		AcquiredAt: "2000-01-01T00:00:00Z",
+	}
+	raw, _ := json.Marshal(active)
+	path := filepath.ToSlash(filepath.Join(RuntimeDirName, WriterLeaseFileName))
+	writeFile(t, root, path, raw)
+	if _, err := RecoverStaleLease(root, LeaseRecoveryEvidence{
+		ExpectedPID: active.PID, ExpectedNonce: active.Nonce,
+	}); !HasDiagnostic(err, CodeWorkspaceWriterActive) {
+		t.Fatalf("live process recovery error = %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil || !reflect.DeepEqual(after, raw) {
+		t.Fatalf("live process lease changed: err=%v before=%s after=%s", err, raw, after)
+	}
+
+	corrupt := []byte(`{"mode":"kernel","nonce":`)
+	writeFile(t, root, path, corrupt)
+	if _, err = RecoverStaleLease(root, LeaseRecoveryEvidence{
+		ExpectedPID: active.PID, ExpectedNonce: active.Nonce,
+	}); !HasDiagnostic(err, CodeWorkspaceLeaseCorrupt) {
+		t.Fatalf("corrupt lease recovery error = %v", err)
+	}
+	after, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil || !reflect.DeepEqual(after, corrupt) {
+		t.Fatalf("corrupt lease changed: err=%v before=%s after=%s", err, corrupt, after)
+	}
 }
 
 type allowAllAuthorizer struct{}

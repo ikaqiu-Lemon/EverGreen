@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 
 	core "github.com/ikaqiu-Lemon/EverGreen/pkg/evergreencore"
@@ -326,6 +328,104 @@ func TestSYCLINoteCreateUsesSharedCoreOfflineAndOnlinePlanning(t *testing.T) {
 		transported.Candidates[0].CandidateID != "cand-note-cli" {
 		t.Fatalf("online Note request = %+v result=%#v", transported, planned)
 	}
+}
+
+func TestSYCLIMaintenanceRequiresEvidenceAndNeverFallsBackFromOnline(t *testing.T) {
+	root := t.TempDir()
+	raw := claimAVFixtureForCLI(t)
+	if err := os.WriteFile(filepath.Join(root, "claim.sy"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	process := exec.Command("sh", "-c", "exit 0")
+	if err := process.Run(); err != nil {
+		t.Fatal(err)
+	}
+	record := core.WriterLeaseRecord{
+		Mode: "kernel", Nonce: "0123456789abcdef0123456789abcdef",
+		Holder: "crashed-kernel", PID: process.ProcessState.Pid(),
+		AcquiredAt: "2000-01-01T00:00:00Z",
+	}
+	leasePath := filepath.Join(root, filepath.FromSlash(core.RuntimeDirName), core.WriterLeaseFileName)
+	if err := os.MkdirAll(filepath.Dir(leasePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	leaseRaw, _ := json.Marshal(record)
+	if err := os.WriteFile(leasePath, leaseRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EG_KERNEL_URL", "")
+	var output bytes.Buffer
+	code := New().Run([]string{
+		"recover", "lease", "--backend", "sy", "--vault", root, "--json",
+		"--expected-pid", strconv.Itoa(record.PID), "--expected-nonce", "wrong",
+	}, &output, &output)
+	if code == 0 {
+		t.Fatalf("mismatched lease evidence succeeded: %s", output.String())
+	}
+	after, err := os.ReadFile(leasePath)
+	if err != nil || !reflect.DeepEqual(after, leaseRaw) {
+		t.Fatalf("mismatched evidence changed lease: err=%v before=%s after=%s", err, leaseRaw, after)
+	}
+	recovered := runSYCLI(t, root, []string{
+		"recover", "lease", "--expected-pid", strconv.Itoa(record.PID),
+		"--expected-nonce", record.Nonce,
+	})
+	if recovered["ok"] != true {
+		t.Fatalf("lease recovery = %#v", recovered)
+	}
+	doctor := runSYCLI(t, root, []string{"doctor"})
+	report := doctor["data"].(map[string]any)["doctor"].(map[string]any)
+	if report["parity"] != true || report["rebuild_index"] != false {
+		t.Fatalf("offline doctor = %#v", report)
+	}
+
+	staleOnline := append([]byte(nil), leaseRaw...)
+	if err = os.WriteFile(leasePath, staleOnline, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/evergreen/v1/capabilities" {
+			_ = json.NewEncoder(w).Encode(core.APIResponse[core.Capabilities]{
+				OK: true, Data: core.CurrentCapabilities(),
+			})
+			return
+		}
+		http.Error(w, "offline", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	t.Setenv("EG_KERNEL_URL", server.URL)
+	output.Reset()
+	code = New().Run([]string{
+		"recover", "journal", "--backend", "sy", "--vault", root, "--json",
+	}, &output, &output)
+	if code == 0 {
+		t.Fatalf("failed online recovery fell back offline: %s", output.String())
+	}
+	after, err = os.ReadFile(leasePath)
+	if err != nil || !reflect.DeepEqual(after, staleOnline) {
+		t.Fatalf("online transport failure touched local lease: err=%v before=%s after=%s", err, staleOnline, after)
+	}
+}
+
+func claimAVFixtureForCLI(t *testing.T) []byte {
+	t.Helper()
+	envelope := &core.DocumentEnvelope{
+		Spec: core.DocumentSpec,
+		Entity: core.Entity{
+			LogicalID: "k-doctor", EntityType: core.EntityClaim,
+			Schema: core.ClaimSchema, SemanticRevision: 1,
+		},
+		Claim: &core.Claim{
+			ClaimKind: core.KnowledgeKind, KindSchema: core.KnowledgeKindSchema,
+			Status: "active", KindData: json.RawMessage(`{}`),
+		},
+		Relations: core.Relations{Outgoing: []core.TypedEdge{}},
+	}
+	raw, err := core.NewMarkdownDocument("k-doctor", "Doctor", []byte("Doctor authority.\n"), envelope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 func runSYCLI(t *testing.T, root string, args []string) map[string]any {

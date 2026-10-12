@@ -789,6 +789,8 @@ authoritative argument list — every help page documents its own exit codes.
 | `eg export --plain` | Export data Markdown without Evergreen-specific protocol syntax |
 | `eg migrate inventory\|import\|parity` | Bind a frozen Git worktree to a stable manifest, import into a new `.sy` workspace, and verify semantic parity |
 | `eg diff --before <archive> --after <archive>` | Read-only entity, field, body, edge, and coverage comparison of canonical exports |
+| `eg recover lease\|journal --backend sy` | Explicitly clear a proven-dead writer lease or resume unfinished operation journals |
+| `eg doctor --backend sy [--rebuild-index]` | Compare authority-derived entity, edge, review, coverage, and query sets; online mode can rebuild host projections |
 | `eg report --last` | Read-only replay of the last report-producing write (`eg apply` or `eg capture`) |
 
 The `.sy` backend is selected with `--backend sy`. Online requests use the kernel; offline requests use the same core and workspace lock. `eg export --canonical` produces a read-only archive for review and diff. Migration requires the source vault itself to be a Git worktree root and preserves current file hashes separately from its committed revision.

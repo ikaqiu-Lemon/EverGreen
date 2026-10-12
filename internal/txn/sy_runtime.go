@@ -100,6 +100,68 @@ func (r *OfflineSYRuntime) ensureOpen() error {
 	return nil
 }
 
-func RecoverOfflineWriterLease(root string) error {
-	return evergreencore.RecoverStaleLease(root)
+func RecoverOfflineSYOperations(
+	ctx context.Context,
+	options OfflineSYRuntimeOptions,
+) ([]evergreencore.OperationRecord, error) {
+	if options.Authorizer == nil {
+		return nil, errors.New("offline Evergreen runtime requires an authorizer")
+	}
+	lease, err := evergreencore.AcquireOfflineLease(options.Root, options.Holder)
+	if err != nil {
+		return nil, err
+	}
+	defer lease.Release()
+	committer, err := evergreencore.NewLocalGitCommitter(options.Root)
+	if err != nil {
+		return nil, err
+	}
+	authority, err := evergreencore.NewFilesystemAuthority(evergreencore.FilesystemAuthorityOptions{
+		Root: options.Root, Registry: options.Registry, Committer: committer, IndexSink: options.IndexSink,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return evergreencore.NewAuthorityService(authority, options.Authorizer, options.Registry).Recover(ctx)
+}
+
+func InspectOfflineSYWorkspace(
+	ctx context.Context,
+	root string,
+	holder string,
+	registry *evergreencore.Registry,
+) (evergreencore.WorkspaceDoctorReport, error) {
+	lease, err := evergreencore.AcquireOfflineLease(root, holder)
+	if err != nil {
+		return evergreencore.WorkspaceDoctorReport{}, err
+	}
+	defer lease.Release()
+	authority, err := evergreencore.NewFilesystemAuthority(evergreencore.FilesystemAuthorityOptions{
+		Root: root, Registry: registry,
+	})
+	if err != nil {
+		return evergreencore.WorkspaceDoctorReport{}, err
+	}
+	if err = authority.CheckBackgroundWrite(ctx); err != nil {
+		return evergreencore.WorkspaceDoctorReport{}, err
+	}
+	repository, err := evergreencore.NewSYReadRepository(root, registry)
+	if err != nil {
+		return evergreencore.WorkspaceDoctorReport{}, err
+	}
+	snapshot, err := evergreencore.InspectWorkspaceDoctor(ctx, repository, registry)
+	if err != nil {
+		return evergreencore.WorkspaceDoctorReport{}, err
+	}
+	return evergreencore.WorkspaceDoctorReport{
+		Spec: evergreencore.WorkspaceDoctorSpec, Parity: true,
+		Before: snapshot, After: snapshot,
+	}, nil
+}
+
+func RecoverOfflineWriterLease(
+	root string,
+	evidence evergreencore.LeaseRecoveryEvidence,
+) (evergreencore.WriterLeaseRecord, error) {
+	return evergreencore.RecoverStaleLease(root, evidence)
 }

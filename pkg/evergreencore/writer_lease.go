@@ -1,11 +1,13 @@
 package evergreencore
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +27,11 @@ type WriterLeaseRecord struct {
 	AcquiredAt string `json:"acquired_at"`
 }
 
+type LeaseRecoveryEvidence struct {
+	ExpectedPID   int    `json:"expected_pid"`
+	ExpectedNonce string `json:"expected_nonce"`
+}
+
 type WorkspaceWriterLease struct {
 	path   string
 	lock   *flock.Flock
@@ -35,14 +42,14 @@ type WorkspaceWriterLease struct {
 }
 
 func AcquireKernelLease(root, holder string) (*WorkspaceWriterLease, error) {
-	return acquireWriterLease(root, "kernel", holder, true)
+	return acquireWriterLease(root, "kernel", holder)
 }
 
 func AcquireOfflineLease(root, holder string) (*WorkspaceWriterLease, error) {
-	return acquireWriterLease(root, "offline", holder, false)
+	return acquireWriterLease(root, "offline", holder)
 }
 
-func acquireWriterLease(root, mode, holder string, replaceStale bool) (*WorkspaceWriterLease, error) {
+func acquireWriterLease(root, mode, holder string) (*WorkspaceWriterLease, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, errors.New("workspace root is required")
 	}
@@ -69,8 +76,15 @@ func acquireWriterLease(root, mode, holder string, replaceStale bool) (*Workspac
 		_ = fileLock.Unlock()
 		return nil, readErr
 	}
-	if !replaceStale && len(strings.TrimSpace(string(existing))) > 0 {
+	if len(strings.TrimSpace(string(existing))) > 0 {
 		_ = fileLock.Unlock()
+		if _, err = parseWriterLeaseRecord(existing); err != nil {
+			return nil, validationError(
+				CodeWorkspaceLeaseCorrupt,
+				"workspace",
+				"the unlocked writer lease record is corrupt; preserve it for operator diagnosis",
+			)
+		}
 		return nil, validationError(
 			CodeWorkspaceLeaseStale,
 			"workspace",
@@ -88,36 +102,90 @@ func acquireWriterLease(root, mode, holder string, replaceStale bool) (*Workspac
 	return &WorkspaceWriterLease{path: path, lock: fileLock, record: record}, nil
 }
 
-func RecoverStaleLease(root string) error {
+func RecoverStaleLease(root string, evidence LeaseRecoveryEvidence) (WriterLeaseRecord, error) {
+	if strings.TrimSpace(root) == "" {
+		return WriterLeaseRecord{}, errors.New("workspace root is required")
+	}
 	path := filepath.Join(root, filepath.FromSlash(RuntimeDirName), WriterLeaseFileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return WriterLeaseRecord{}, err
 	}
 	fileLock := flock.New(path, flock.SetPermissions(0o644))
 	locked, err := fileLock.TryLock()
 	if err != nil {
-		return err
+		return WriterLeaseRecord{}, err
 	}
 	if !locked {
-		return validationError(
+		return WriterLeaseRecord{}, validationError(
 			CodeWorkspaceWriterActive,
 			"workspace",
 			"cannot recover a lease while a writer still holds it",
 		)
 	}
 	defer fileLock.Unlock()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return WriterLeaseRecord{}, err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return WriterLeaseRecord{}, validationError(
+			CodeWorkspaceLeaseStale,
+			"workspace",
+			"there is no stale writer lease record to recover",
+		)
+	}
+	record, err := parseWriterLeaseRecord(raw)
+	if err != nil {
+		return WriterLeaseRecord{}, validationError(
+			CodeWorkspaceLeaseCorrupt,
+			"workspace",
+			"the writer lease record is corrupt; preserve it for operator diagnosis",
+		)
+	}
+	if evidence.ExpectedPID <= 0 || strings.TrimSpace(evidence.ExpectedNonce) == "" {
+		return WriterLeaseRecord{}, validationError(
+			CodeWorkspaceLeaseStale,
+			"workspace",
+			"stale lease recovery requires the recorded PID and nonce",
+		)
+	}
+	if evidence.ExpectedPID != record.PID || evidence.ExpectedNonce != record.Nonce {
+		return WriterLeaseRecord{}, validationError(
+			CodeWorkspaceLeaseStale,
+			"workspace",
+			"stale lease recovery evidence does not match the current record",
+		)
+	}
+	alive, err := writerProcessAlive(record.PID)
+	if err != nil {
+		return WriterLeaseRecord{}, validationError(
+			CodeWorkspaceWriterActive,
+			"workspace",
+			fmt.Sprintf("cannot prove writer process %d has exited: %v", record.PID, err),
+		)
+	}
+	if alive {
+		return WriterLeaseRecord{}, validationError(
+			CodeWorkspaceWriterActive,
+			"workspace",
+			fmt.Sprintf("writer process %d is still active; lease age cannot authorize recovery", record.PID),
+		)
+	}
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return err
+		return WriterLeaseRecord{}, err
 	}
 	if err = file.Sync(); err != nil {
 		_ = file.Close()
-		return err
+		return WriterLeaseRecord{}, err
 	}
 	if err = file.Close(); err != nil {
-		return err
+		return WriterLeaseRecord{}, err
 	}
-	return syncDir(filepath.Dir(path))
+	if err = syncDir(filepath.Dir(path)); err != nil {
+		return WriterLeaseRecord{}, err
+	}
+	return record, nil
 }
 
 func (l *WorkspaceWriterLease) Record() WriterLeaseRecord {
@@ -178,6 +246,31 @@ func writeLeaseRecord(path string, record WriterLeaseRecord) error {
 		return err
 	}
 	return syncDir(filepath.Dir(path))
+}
+
+func parseWriterLeaseRecord(raw []byte) (WriterLeaseRecord, error) {
+	var record WriterLeaseRecord
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&record); err != nil {
+		return WriterLeaseRecord{}, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("writer lease contains trailing JSON")
+		}
+		return WriterLeaseRecord{}, err
+	}
+	if record.Mode != "kernel" && record.Mode != "offline" {
+		return WriterLeaseRecord{}, errors.New("writer lease mode is invalid")
+	}
+	if strings.TrimSpace(record.Nonce) == "" || strings.TrimSpace(record.Holder) == "" || record.PID <= 0 {
+		return WriterLeaseRecord{}, errors.New("writer lease identity is incomplete")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, record.AcquiredAt); err != nil {
+		return WriterLeaseRecord{}, errors.New("writer lease acquired_at is invalid")
+	}
+	return record, nil
 }
 
 func randomNonce() string {

@@ -168,6 +168,17 @@ func (c *Client) Recover(ctx context.Context) ([]evergreencore.OperationRecord, 
 	return response.Data, nil
 }
 
+func (c *Client) Doctor(ctx context.Context, rebuildIndex bool) (evergreencore.WorkspaceDoctorReport, error) {
+	var response evergreencore.APIResponse[evergreencore.WorkspaceDoctorReport]
+	request := struct {
+		RebuildIndex bool `json:"rebuild_index"`
+	}{RebuildIndex: rebuildIndex}
+	if err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/doctor", request, &response); err != nil {
+		return response.Data, err
+	}
+	return response.Data, nil
+}
+
 func (c *Client) CanonicalExport(ctx context.Context) (evergreencore.CanonicalArchive, error) {
 	var response evergreencore.APIResponse[evergreencore.CanonicalArchive]
 	err := c.do(ctx, http.MethodPost, "/api/evergreen/v1/workspace/export", struct{}{}, &response)

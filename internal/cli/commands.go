@@ -70,6 +70,8 @@ func commands() []*Command {
 		migrateCommand(),
 		diffCommand(),
 		noteCommand(),
+		recoverCommand(),
+		doctorCommand(),
 	}
 }
 
