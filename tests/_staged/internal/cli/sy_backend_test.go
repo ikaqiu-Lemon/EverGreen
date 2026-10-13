@@ -742,6 +742,49 @@ func TestSYCLIBackupCreateFailsClosedBeforeCopy(t *testing.T) {
 	})
 }
 
+func TestSYCLIBackupPreservesPlainNotebookFileMetadata(t *testing.T) {
+	t.Setenv("EG_KERNEL_URL", "")
+	workspace, data := backupWorkspaceFixture(t)
+	const boxID = "20261013120000-plain01"
+	boxDir := filepath.Join(data, boxID)
+	if err := os.MkdirAll(boxDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	documentPath := filepath.Join(boxDir, "20261013120001-claim01.sy")
+	if err := os.Rename(filepath.Join(data, "claim.sy"), documentPath); err != nil {
+		t.Fatal(err)
+	}
+	metadata := []byte(`{"name":"Plain notebook","closed":false}`)
+	if err := os.WriteFile(filepath.Join(boxDir, ".siyuan"), metadata, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitOut(t, data, "add", "--all")
+	gitOut(t, data, "commit", "-qm", "move fixture into plain notebook")
+
+	archive := filepath.Join(t.TempDir(), "backup")
+	code, created := runBackupCLI(t, "backup", "create", "--backend", "sy",
+		"--vault", data, "--output", archive)
+	requireBackupSuccess(t, code, created)
+	target := filepath.Join(t.TempDir(), "restored-workspace")
+	code, restored := runBackupCLI(t, "backup", "restore", "--backend", "sy",
+		"--input", archive, "--target", target)
+	requireBackupSuccess(t, code, restored)
+	restoreData := restored["data"].(map[string]any)["restore"].(map[string]any)
+	if restoreData["parity"] != true || restoreData["requires_host_doctor"] != false {
+		t.Fatalf("plain notebook restore = %#v", restoreData)
+	}
+	actual, err := os.ReadFile(filepath.Join(target, "data", boxID, ".siyuan"))
+	if err != nil || !bytes.Equal(actual, metadata) {
+		t.Fatalf("plain notebook metadata changed: %q, %v", actual, err)
+	}
+	if _, err = os.Stat(filepath.Join(target, "data", boxID, filepath.Base(documentPath))); err != nil {
+		t.Fatalf("plain notebook document missing after restore: %v", err)
+	}
+	if backupTreeDigest(t, workspace) == "" {
+		t.Fatal("source workspace digest is empty")
+	}
+}
+
 func TestSYCLIBackupRejectsMissingOrMismatchedCryptoMaterials(t *testing.T) {
 	for _, test := range []struct {
 		name       string

@@ -883,24 +883,24 @@ func validateCryptoMaterials(dataDir, confDir string) ([]string, error) {
 		confPath := filepath.Join(boxDir, ".siyuan", "conf.json")
 		backupPath := filepath.Join(boxDir, ".siyuan", "notebook-crypto-backup.json")
 		var config boxConfig
-		confExists := false
-		if raw, readErr := os.ReadFile(confPath); readErr == nil {
-			confExists = true
+		raw, confExists, readErr := readNotebookCryptoSidecar(boxDir, confPath)
+		if readErr != nil {
+			return nil, cryptoError(entry.Name(), readErr.Error())
+		}
+		if confExists {
 			if err = json.Unmarshal(raw, &config); err != nil {
 				return nil, cryptoError(entry.Name(), "notebook conf is invalid: "+err.Error())
 			}
-		} else if !errors.Is(readErr, os.ErrNotExist) {
-			return nil, cryptoError(entry.Name(), readErr.Error())
 		}
 		var backup boxCrypto
-		backupExists := false
-		if raw, readErr := os.ReadFile(backupPath); readErr == nil {
-			backupExists = true
+		raw, backupExists, readErr := readNotebookCryptoSidecar(boxDir, backupPath)
+		if readErr != nil {
+			return nil, cryptoError(entry.Name(), readErr.Error())
+		}
+		if backupExists {
 			if err = decodeStrict(raw, &backup); err != nil {
 				return nil, cryptoError(entry.Name(), "notebook recovery backup is invalid: "+err.Error())
 			}
-		} else if !errors.Is(readErr, os.ErrNotExist) {
-			return nil, cryptoError(entry.Name(), readErr.Error())
 		}
 		ciphertext, scanErr := containsCiphertext(boxDir)
 		if scanErr != nil {
@@ -955,6 +955,34 @@ func validateCryptoMaterials(dataDir, confDir string) ([]string, error) {
 		return nil, cryptoError("crypto", "conf and data crypto recovery backups identify different key histories")
 	}
 	return encrypted, nil
+}
+
+func readNotebookCryptoSidecar(boxDir, target string) ([]byte, bool, error) {
+	metadata := filepath.Join(boxDir, ".siyuan")
+	info, err := os.Lstat(metadata)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, false, errors.New("notebook metadata path is a symbolic link")
+	}
+	if info.Mode().IsRegular() {
+		return nil, false, nil
+	}
+	if !info.IsDir() {
+		return nil, false, errors.New("notebook metadata path is not a regular file or directory")
+	}
+	raw, err := os.ReadFile(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return raw, true, nil
 }
 
 func notebookCryptoHasIdentity(value *notebookCrypto) bool {
