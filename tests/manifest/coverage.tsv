@@ -17,7 +17,7 @@ lifecycle	0	2	8	0	0	10
 migration	1	0	0	0	0	1
 note-review	0	0	3	0	0	3
 ops-diagnostics	4	1	5	0	0	10
-perf	0	0	0	0	3	3
+perf	0	0	0	0	5	5
 proposal	32	0	4	0	0	36
 queryset	1	0	0	0	0	1
 reconcile-takeover	12	4	6	0	0	22

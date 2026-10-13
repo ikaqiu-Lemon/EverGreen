@@ -1666,6 +1666,22 @@ suites:
   platform_required: linux/amd64
   not_run_when: null
   issue: null
+- id: perf.sy_bench
+  layer: perf
+  capability: perf
+  kind: shell
+  target: tests/perf/sy_bench.sh
+  source: tests/perf/sy_bench.sh
+  origin: inventory
+  owner_task: T-evergreen.siyuan_full_stack_rearchitecture-158614-008
+  profiles:
+  - perf
+  timeout_s: 5400
+  min_cases: 1
+  required: true
+  platform_required: linux/amd64
+  not_run_when: null
+  issue: null
 - id: unit.cmd.eg
   layer: unit
   capability: cli-core

@@ -1,0 +1,59 @@
+{
+  "schema": "evergreen.sy-perf/v1",
+  "corpus": {
+    "read": {
+      "claims": 10000,
+      "relations": 30000
+    },
+    "write": {
+      "claims": 500,
+      "relations": 1500
+    },
+    "write_capacity_probes": {
+      "intermediate": {
+        "claims": 1000,
+        "relations": 3000
+      },
+      "release": {
+        "claims": 10000,
+        "relations": 30000
+      }
+    }
+  },
+  "sampling": {
+    "warmup": 3,
+    "samples": 50
+  },
+  "thresholds": {
+    "startup_scan": {
+      "p95_ms": 5000,
+      "p99_ms": 7500,
+      "max_rss_mib": 1024
+    },
+    "claims_query": {
+      "p95_ms": 1000,
+      "p99_ms": 2000,
+      "max_rss_mib": 2048
+    },
+    "relation_query": {
+      "p95_ms": 1000,
+      "p99_ms": 2000,
+      "max_rss_mib": 2048
+    },
+    "note_edit": {
+      "p95_ms": 100,
+      "p99_ms": 250,
+      "max_rss_mib": 512
+    },
+    "plan_apply": {
+      "p95_ms": 5000,
+      "p99_ms": 8000,
+      "max_rss_mib": 2048
+    },
+    "index_rebuild": {
+      "p95_ms": 10000,
+      "p99_ms": 15000,
+      "max_rss_mib": 2048
+    }
+  }
+}

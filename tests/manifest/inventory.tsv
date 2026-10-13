@@ -474,6 +474,9 @@ tests/fixtures/e2e/verification-key-to-ai.txt	fixtures	data	capture-ingest	-	0	4
 tests/fuzz/run_fuzz.sh	fuzz	shell	-	-	5	5059
 tests/lib/common.sh	lib	shell	-	-	1	11223
 tests/lib/sleep_scan.py	lib	python	-	-	0	11173
+tests/lib/sybench/main.go	lib	go	-	-	0	19591
+tests/lib/sybench/rss_other.go	lib	go	-	-	0	84
+tests/lib/sybench/rss_unix.go	lib	go	-	-	0	320
 tests/lib/txnctl/commit.go	lib	go	txn-atomicity	integration.txnctl	0	10959
 tests/lib/txnctl/main.go	lib	go	txn-atomicity	integration.txnctl	0	10759
 tests/manifest/baseline_assets.tsv	manifest	data	-	-	0	12267
@@ -486,6 +489,8 @@ tests/mutation/mutants.yaml	mutation	data	-	-	0	12072
 tests/mutation/run_mutation.py	mutation	python	-	-	0	16176
 tests/perf/bench_p95.sh	perf	shell	perf	perf.bench-p95	46	15568
 tests/perf/corpus_gen.go	perf	go	perf	perf.bench-p95	0	10652
+tests/perf/sy_bench.sh	perf	shell	perf	perf.sy_bench	0	7959
+tests/perf/sy_thresholds.json	perf	data	perf	-	0	1062
 tests/perf/thresholds.yaml	perf	data	perf	-	0	2620
 tests/run.sh	-	shell	-	-	0	2535
 tests/runner/materialize.py	runner	python	-	-	0	26774
