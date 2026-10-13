@@ -58,7 +58,7 @@ step "构建 txnctl（test-only helper）"
 ok "helper 就绪"
 
 # ---------------------------------------------------------------- 2. txn_id 格式 + 单调递增
-step "txn_id：格式 ^t[0-9a-f]{16}$、连续分配严格单调递增"
+step 'txn_id：格式 ^t[0-9a-f]{16}$、连续分配严格单调递增'
 V="$(new_vault)"
 ID1="$(ctl alloc-id --vault "${V}" | sed -n 's/^txn_id=//p')"
 ID2="$(ctl alloc-id --vault "${V}" | sed -n 's/^txn_id=//p')"
