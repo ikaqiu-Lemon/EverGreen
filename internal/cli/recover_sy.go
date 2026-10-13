@@ -21,6 +21,9 @@ lease 仅用于 kernel 已停止且 flock 空闲的残留 writer.lease。必须�
 nonce，并确认该 PID 已退出；lease 年龄不能授权恢复。损坏记录保持原字节并 fail closed。
 journal 在线时只调用 kernel recovery API；离线时取得 writer lease 后调用同一 shared core。
 配置了 EG_KERNEL_URL 后 transport 失败不会回退本地文件。
+
+退出码：0 恢复完成 / 无待恢复 journal | 1 参数非法 |
+        2 恢复证据、授权、lease、journal 或 transport 校验失败（零未授权写入）
 `,
 		Flags: func(fs *flagSet) {
 			fs.Int("expected-pid", 0, "writer.lease 中记录的 PID")

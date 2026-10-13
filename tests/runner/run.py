@@ -266,13 +266,14 @@ def run_cmd(cmd: list[str], cwd: Path, env: dict, timeout: int, log: Path) -> tu
         try:
             p = subprocess.run(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               text=True, timeout=timeout)
+                               text=True, encoding="utf-8", errors="backslashreplace",
+                               timeout=timeout)
             fh.write(p.stdout)
             return p.returncode, p.stdout
         except subprocess.TimeoutExpired as e:
             partial = e.output or ""
             if isinstance(partial, bytes):
-                partial = partial.decode("utf-8", "replace")
+                partial = partial.decode("utf-8", "backslashreplace")
             fh.write(partial)
             fh.write(f"\n[TIMEOUT] 超过 {timeout}s（D7 单 suite 超时）\n")
             return 124, partial

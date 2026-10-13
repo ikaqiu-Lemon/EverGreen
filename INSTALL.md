@@ -234,7 +234,7 @@ transaction journal（事务日志）. `W21` remains unassigned（不分配）.
 
 ## Command roster
 
-Evergreen exposes 29 top-level commands（顶层命令共 29 条）. Run `eg <command> --help`
+Evergreen exposes 32 top-level commands（顶层命令共 32 条）. Run `eg <command> --help`
 for the authoritative flags and exit codes; the table below is the post-install
 roster you can verify against `eg --help`.
 
@@ -269,6 +269,9 @@ roster you can verify against `eg --help`.
 | `eg opinion` | Opinion subsystem: `search`/`show` (read-only) + `validate`/`reject` (user-initiated validation lifecycle, `--user-request` mandatory, single-file `verb=process` commit) |
 | `eg materialize` | User-initiated deterministic Note candidate materialization |
 | `eg export` | `eg export --plain`: plain Markdown egress outside the vault |
+| `eg recover` | `lease`/`journal --backend sy`: explicit writer-lease and operation-journal recovery |
+| `eg doctor` | Verify `.sy` authority against derived indexes and optionally rebuild them |
+| `eg backup` | `create`/`restore --backend sy`: offline cold backup with checksums, Git, journals, configuration, and encryption recovery material |
 
 ## Runtime directories
 

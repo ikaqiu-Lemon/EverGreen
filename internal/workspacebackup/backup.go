@@ -134,16 +134,11 @@ func Create(ctx context.Context, options CreateOptions) (CreateResult, error) {
 	if err = os.MkdirAll(parent, 0o700); err != nil {
 		return CreateResult{}, backupError(core.CodeBackupInvalid, "output", err.Error())
 	}
+	// A failed staging tree is retained as evidence; only the publish rename consumes it.
 	stage, err := os.MkdirTemp(parent, "."+filepath.Base(output)+".tmp-")
 	if err != nil {
 		return CreateResult{}, backupError(core.CodeBackupInvalid, "output", err.Error())
 	}
-	published := false
-	defer func() {
-		if !published {
-			_ = os.RemoveAll(stage)
-		}
-	}()
 
 	entries, err := collectWorkspace(dataDir, confDir, stage)
 	if err != nil {
@@ -195,7 +190,6 @@ func Create(ctx context.Context, options CreateOptions) (CreateResult, error) {
 	if err = os.Rename(stage, output); err != nil {
 		return CreateResult{}, backupError(core.CodeBackupInvalid, "output", err.Error())
 	}
-	published = true
 	if err = syncDirectory(parent); err != nil {
 		return CreateResult{}, backupError(core.CodeBackupInvalid, "output", err.Error())
 	}
@@ -239,16 +233,11 @@ func Restore(ctx context.Context, options RestoreOptions) (RestoreResult, error)
 	if err = os.MkdirAll(parent, 0o700); err != nil {
 		return RestoreResult{}, backupError(core.CodeBackupInvalid, "target", err.Error())
 	}
+	// A failed staging tree is retained as evidence; only the publish rename consumes it.
 	stage, err := os.MkdirTemp(parent, "."+filepath.Base(target)+".restore-")
 	if err != nil {
 		return RestoreResult{}, backupError(core.CodeBackupInvalid, "target", err.Error())
 	}
-	published := false
-	defer func() {
-		if !published {
-			_ = os.RemoveAll(stage)
-		}
-	}()
 	entries, err := collectWorkspace(dataDir, confDir, stage)
 	if err != nil {
 		return RestoreResult{}, err
@@ -312,7 +301,6 @@ func Restore(ctx context.Context, options RestoreOptions) (RestoreResult, error)
 		}
 		return RestoreResult{}, backupError(core.CodeBackupInvalid, "target", err.Error())
 	}
-	published = true
 	if err = syncDirectory(parent); err != nil {
 		return RestoreResult{}, backupError(core.CodeBackupInvalid, "target", err.Error())
 	}

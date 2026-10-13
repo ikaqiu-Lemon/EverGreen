@@ -245,18 +245,20 @@ var txnForbiddenDeps = []string{"cli", "query", "index", "report", "reconcile"}
 var stage5Consumers = map[string]bool{"cli": true}
 
 // Frozen .sy 合同引入的 host adapter 集合，必须逐名登记并维持单向依赖。
-var syPackages = []string{"client", "segment", "migrate"}
+var syPackages = []string{"client", "segment", "migrate", "workspacebackup"}
 
 func syAdapterAllowed(pkg, dep string) bool {
-	return pkg == "cli" && (dep == "client" || dep == "segment" || dep == "migrate")
+	return pkg == "cli" &&
+		(dep == "client" || dep == "segment" || dep == "migrate" || dep == "workspacebackup")
 }
 
 func TestSYAdapterDependencyBoundary(t *testing.T) {
 	allowed := map[string]map[string]bool{
 		"client": {},
 		// 单次迁移读取旧 NoteSegmentation 类型；新 runtime 语义仍只由 shared core 解释。
-		"segment": {"mdfile": true, "store": true, "model": true},
-		"migrate": {"mdfile": true, "segment": true},
+		"segment":         {"mdfile": true, "store": true, "model": true},
+		"migrate":         {"mdfile": true, "segment": true},
+		"workspacebackup": {},
 	}
 	for pkg, dependencies := range allowed {
 		direct, ok := directDeps(t, pkg)

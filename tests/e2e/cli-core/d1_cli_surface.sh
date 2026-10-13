@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# D1 审计：23 个 `eg` 命令的表面合同与用户工作流边界（system_assurance · T-…-009）。
+# D1 审计：32 个 `eg` 命令的表面合同与用户工作流边界（system_assurance · T-…-009）。
 # 总量口径：M5 历史基线 22 + T-006 opinion 1 = 当前 23（M5 合同文档一字不改，见下）。
 #
 # 判据来源（声明面）：
@@ -18,9 +18,9 @@
 #
 # 本 suite 锁死的判据（每条都在真实临时 vault 上驱动真实二进制，事实只回读文件字节 /
 # git 自己 / eg 自己的 `--json` 信封，不看实现自报）：
-#   A 命令注册面：顶层 `--help` 命令区条目数恰 23（M5 22 + opinion 1）；23 个命令名逐一在册；
+#   A 命令注册面：顶层 `--help` 命令区条目数恰 32；32 个命令名逐一在册；
 #     每个 `eg <cmd> --help` 退 0（`--help` 合同）。
-#   B `--json` 信封面：23 个命令的裸调用输出恰含 `ok/data/warnings/exit_code/status`
+#   B `--json` 信封面：32 个命令的裸调用输出恰含 `ok/data/warnings/exit_code/status`
 #     五键（无论退出码），信封不因命令而缺键。
 #   C 只读零副作用：10 条只读读路径（context/search/card show/rel/report/unreviewed/
 #     check/index status/bench/opinion search）前后 `git status --porcelain`、commit 数、
@@ -76,10 +76,11 @@ command -v python3 >/dev/null || die "本脚本用 python3 做 --json 信封键�
 # 而不是「工作树必须干净」—— 后者会把「新文件还没提交」误判成越界。
 BEFORE_REPO_STATUS="$(git -C "${REPO_ROOT}" status --porcelain | sort)"
 
-# 顶层命令注册表（M5 基线 22 条 + 后续 review、migration 与 semantic diff = 恰 28 条）
+# 顶层命令注册表（M5 基线 22 条 + 后续 review/migration/maintenance = 恰 32 条）
 CMDS=(init config capture context apply search card rel report deprecate restore
       replaced-by proposal delete undelete mark-reviewed unreviewed edit reconcile
-      check index bench opinion materialize export candidate migrate diff)
+      check index bench opinion materialize export candidate migrate diff
+      note recover doctor backup)
 
 # envelope_keys <json文件>：回显缺失的信封键（空 = 五键齐全）
 envelope_missing() {
@@ -121,7 +122,7 @@ step "构建 eg（CGO_ENABLED=0，与发布口径一致）"
 ok "二进制就绪：$("${EG}" --version </dev/null | head -1)"
 
 # ---------------------------------------------------------------- 1. A 命令注册面
-step "A 命令注册面：顶层 --help 命令区恰 28 条，且逐条 --help 退 0"
+step "A 命令注册面：顶层 --help 命令区恰 32 条，且逐条 --help 退 0"
 eg --help >"${WORK}/help.txt" 2>&1 || die "eg --help 应退 0"
 python3 - "${WORK}/help.txt" >"${WORK}/listed.txt" <<'PY'
 import re, sys
@@ -135,17 +136,17 @@ for l in lines[start + 1:end]:
 PY
 LISTED="$(sort -u "${WORK}/listed.txt")"
 LISTED_N="$(printf '%s\n' "${LISTED}" | grep -c . || true)"
-[ "${LISTED_N}" = "28" ] ||
-  die "顶层 --help 命令区应恰列 28 条命令，实际 ${LISTED_N} 条：$(printf '%s' "${LISTED}" | tr '\n' ' ')"
-[ "$(printf '%s\n' "${CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "28" ] ||
-  die "当前命令清单必须恰含 28 个不同命令"
+[ "${LISTED_N}" = "32" ] ||
+  die "顶层 --help 命令区应恰列 32 条命令，实际 ${LISTED_N} 条：$(printf '%s' "${LISTED}" | tr '\n' ' ')"
+[ "$(printf '%s\n' "${CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "32" ] ||
+  die "当前命令清单必须恰含 32 个不同命令"
 for c in "${CMDS[@]}"; do
   printf '%s\n' "${LISTED}" | grep -qx "${c}" || die "顶层 --help 未列出命令 ${c}"
 done
 for c in "${CMDS[@]}"; do
   [ "$(code "${c}" --help)" = "0" ] || { cat "${WORK}/out.txt"; die "eg ${c} --help 应退 0"; }
 done
-ok "命令区恰 28 条且与注册表逐一对应；28 个 <cmd> --help 全部退 0"
+ok "命令区恰 32 条且与注册表逐一对应；32 个 <cmd> --help 全部退 0"
 
 # ---------------------------------------------------------------- 2. seed vault
 step "seed：走真实主链路 init → config → capture → context → apply（不手工造盘面）"
@@ -190,13 +191,13 @@ PLAN
 ok "vault 就绪：1 篇原文 + 1 篇笔记 + 2 张卡，索引 healthy，工作区干净（commit 数 $(log_count)）"
 
 # ---------------------------------------------------------------- 3. B 信封五键
-step "B --json 信封面：23 个命令的裸调用恰含 ok/data/warnings/exit_code/status 五键"
+step "B --json 信封面：32 个命令的裸调用恰含 ok/data/warnings/exit_code/status 五键"
 for c in "${CMDS[@]}"; do
   code "${c}" --json >/dev/null || true
   miss="$(envelope_missing "${WORK}/out.txt")"
   [ -z "${miss}" ] || { cat "${WORK}/out.txt"; die "eg ${c} --json 信封缺键：${miss}"; }
 done
-ok "23 个命令的 --json 信封五键齐全（含参数非法/校验失败等非零路径）"
+ok "32 个命令的 --json 信封五键齐全（含参数非法/校验失败等非零路径）"
 
 # ---------------------------------------------------------------- 4. C 只读零副作用
 step "C 只读零副作用：10 条读路径前后权威面逐字相等（M2 §6）"

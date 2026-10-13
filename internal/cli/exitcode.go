@@ -102,10 +102,11 @@ func ExitCode5Enabled() bool { return true }
 // 路径逃逸、seq 溢出、reserved 类型违规等写前安全阻断）。注意 opinion 的 E15 **不来自** plan 的
 // `--strict` 预检——opinionLifecycleCritical 不调用 plan.Precheck；其 S4 单文件原子域守卫是防御性
 // 兜底，走 blockedError(…, nil) → E21 → 退出码 1，**不进** 5。故按同一「代码路径」口径新增入列 ——
-// 当前白名单共 16 条，opinion 是 post-I-012 的新增项。本 addendum 只同步 help 分类，不改 ExitCodeFor 映射。
+// 当前白名单共 19 条；opinion 与 .sy note 是 post-I-012 的新增项。本 addendum 只同步 help
+// 分类，不改 ExitCodeFor 映射。
 var precheckOrLockHelpCommands = []string{
 	"apply", "candidate", "capture", "config", "delete", "deprecate", "edit", "index", "init",
-	"mark-reviewed", "materialize", "opinion", "proposal", "reconcile", "rel",
+	"mark-reviewed", "materialize", "note", "opinion", "proposal", "reconcile", "rel",
 	"replaced-by", "restore", "undelete",
 }
 

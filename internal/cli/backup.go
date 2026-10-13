@@ -28,6 +28,9 @@ journal、缺 Git/assets/config/crypto recovery material 均 fail closed。输�
 identity；目标必须不存在或为空。明文 authority 必须通过 shared doctor/canonical parity
 才发布目标；加密 authority 明确标记 requires_host_doctor，不会伪造离线语义 PASS。
 restore 不切换当前 workspace。
+
+退出码：0 cold backup / restore 完成 | 1 参数非法 |
+        2 writer、journal、checksum、Git、crypto、目标或离线前置校验失败
 `,
 		Flags: func(fs *flagSet) {
 			fs.String("output", "", "新的 backup 目录")

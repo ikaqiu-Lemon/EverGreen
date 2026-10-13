@@ -1,5 +1,5 @@
 path	layer	kind	capability	suite_id	cases	bytes
-tests/_staged/cmd/eg/arch_test.go	unit	go	cli-core	unit.cmd.eg	9	46407
+tests/_staged/cmd/eg/arch_test.go	unit	go	cli-core	unit.cmd.eg	9	46497
 tests/_staged/cmd/eg/main_test.go	unit	go	cli-core	unit.cmd.eg	3	1723
 tests/_staged/internal/cli/apply_inplan_test.go	unit	go	cli-core	unit.internal.cli	2	4340
 tests/_staged/internal/cli/apply_opinion_transaction_test.go	unit	go	cli-core	unit.internal.cli	1	7252
@@ -267,7 +267,7 @@ tests/_staged/skill/skill_test.go	unit	go	docs-cli	unit.skill	2	2325
 tests/_staged/test/e2e/index_symbol_judge_test.go	e2e	go	arch-boundary	integration.e2e-go	1	15534
 tests/_staged/test/e2e/layout_test.go	e2e	go	arch-boundary	integration.e2e-go	0	3328
 tests/_staged/test/e2e/m1_test.go	integration	go	capture-ingest	integration.e2e-go	5	65119
-tests/_staged/test/e2e/m2_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	4	20919
+tests/_staged/test/e2e/m2_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	4	20992
 tests/_staged/test/e2e/m3_acceptance_test.go	integration	go	arch-boundary	integration.e2e-go	6	44115
 tests/_staged/test/e2e/m4_r1_takeover_test.go	integration	go	reconcile-takeover	integration.e2e-go	1	5243
 tests/_staged/test/e2e/m4_r2_reviewed_test.go	integration	go	lifecycle	integration.e2e-go	1	8612
@@ -295,7 +295,7 @@ tests/contract/dep-direction/dep_gate_double_sided.sh	contract	shell	arch-bounda
 tests/contract/e2e-hygiene/hygiene.sh	contract	shell	arch-boundary	contract.e2e-hygiene.hygiene	12	11621
 tests/contract/release-hygiene/platform_and_workspace.sh	contract	shell	arch-boundary	contract.release-hygiene.platform_and_workspace	22	5458
 tests/contract/resource-limits/limits.sh	contract	shell	arch-boundary	contract.resource-limits.limits	51	17216
-tests/contract/runner-semantics/runner_negatives.sh	contract	shell	arch-boundary	contract.runner-semantics.runner_negatives	45	21604
+tests/contract/runner-semantics/runner_negatives.sh	contract	shell	arch-boundary	contract.runner-semantics.runner_negatives	46	21988
 tests/contract/scale-ratchet/negatives.sh	contract	shell	arch-boundary	contract.scale-ratchet.negatives	36	11042
 tests/contract/staging-isolation/isolation.sh	contract	shell	arch-boundary	contract.staging-isolation.isolation	0	7560
 tests/contract/staging-isolation/materialize_safety.sh	contract	shell	arch-boundary	contract.staging-isolation.materialize_safety	4	18112
@@ -312,17 +312,17 @@ tests/e2e/card-query/card_show.sh	e2e	shell	card-query	e2e.card-query.card_show	
 tests/e2e/card-query/context_polish.sh	e2e	shell	card-query	e2e.card-query.context_polish	40	10966
 tests/e2e/card-query/search.sh	e2e	shell	card-query	e2e.card-query.search	49	8964
 tests/e2e/cli-core/c2_error_code_numbered.sh	e2e	shell	cli-core	e2e.cli-core.c2_error_code_numbered	20	17846
-tests/e2e/cli-core/c2_json_envelope_parse_failure.sh	e2e	shell	cli-core	e2e.cli-core.c2_json_envelope_parse_failure	32	14702
+tests/e2e/cli-core/c2_json_envelope_parse_failure.sh	e2e	shell	cli-core	e2e.cli-core.c2_json_envelope_parse_failure	32	14829
 tests/e2e/cli-core/c2_readonly_exit_closed_set.sh	e2e	shell	cli-core	e2e.cli-core.c2_readonly_exit_closed_set	23	12030
 tests/e2e/cli-core/c2_warning_bucket_split.sh	e2e	shell	cli-core	e2e.cli-core.c2_warning_bucket_split	19	15913
-tests/e2e/cli-core/d1_cli_surface.sh	e2e	shell	cli-core	e2e.cli-core.d1_cli_surface	55	19949
+tests/e2e/cli-core/d1_cli_surface.sh	e2e	shell	cli-core	e2e.cli-core.d1_cli_surface	55	19951
 tests/e2e/cli-core/d2_error_authority.sh	e2e	shell	cli-core	e2e.cli-core.d2_error_authority	101	27900
 tests/e2e/docs-cli/d4_dist_docs_platform.sh	e2e	shell	docs-cli	e2e.docs-cli.d4_dist_docs_platform	124	29218
 tests/e2e/docs-cli/docs_cli_authorization_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_authorization_and_limits	61	22404
 tests/e2e/docs-cli/docs_cli_contract_and_exitcodes.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_contract_and_exitcodes	60	18323
-tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_current_state_and_limits	96	33124
-tests/e2e/docs-cli/docs_cli_roster_and_dist_provenance.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_dist_provenance	41	17290
-tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_embedded_skill	51	19068
+tests/e2e/docs-cli/docs_cli_current_state_and_limits.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_current_state_and_limits	96	32920
+tests/e2e/docs-cli/docs_cli_roster_and_dist_provenance.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_dist_provenance	41	17051
+tests/e2e/docs-cli/docs_cli_roster_and_embedded_skill.sh	e2e	shell	docs-cli	e2e.docs-cli.docs_cli_roster_and_embedded_skill	51	18831
 tests/e2e/edit/block_merge.sh	e2e	shell	edit	e2e.edit.block_merge	39	14988
 tests/e2e/edit/edit.sh	e2e	shell	edit	e2e.edit.edit	66	16290
 tests/e2e/index-search/degrade_fallback.sh	e2e	shell	index-search	e2e.index-search.degrade_fallback	48	16035
@@ -335,7 +335,7 @@ tests/e2e/index-search/rel_index_equivalence.sh	e2e	shell	index-search	e2e.index
 tests/e2e/index-search/replaced_by_reverse.sh	e2e	shell	index-search	e2e.index-search.replaced_by_reverse	64	16045
 tests/e2e/index-search/sort_page.sh	e2e	shell	index-search	e2e.index-search.sort_page	65	17563
 tests/e2e/lifecycle/c2_updated_at_refresh.sh	e2e	shell	lifecycle	e2e.lifecycle.c2_updated_at_refresh	65	21620
-tests/e2e/lifecycle/lifecycle_state.sh	e2e	shell	lifecycle	e2e.lifecycle.lifecycle_state	48	14120
+tests/e2e/lifecycle/lifecycle_state.sh	e2e	shell	lifecycle	e2e.lifecycle.lifecycle_state	48	14349
 tests/e2e/lifecycle/logical_delete.sh	e2e	shell	lifecycle	e2e.lifecycle.logical_delete	109	29062
 tests/e2e/lifecycle/markers.sh	e2e	shell	lifecycle	e2e.lifecycle.markers	50	14248
 tests/e2e/lifecycle/recap_stale.sh	e2e	shell	lifecycle	e2e.lifecycle.recap_stale	124	37766
@@ -494,7 +494,7 @@ tests/perf/sy_thresholds.json	perf	data	perf	-	0	1062
 tests/perf/thresholds.yaml	perf	data	perf	-	0	2620
 tests/run.sh	-	shell	-	-	0	2535
 tests/runner/materialize.py	runner	python	-	-	0	26774
-tests/runner/run.py	runner	python	-	-	0	27602
+tests/runner/run.py	runner	python	-	-	0	27687
 tests/tools/check_migration.py	tools	python	-	-	0	6977
 tests/tools/inventory.py	tools	python	-	-	0	13263
 tests/tools/legacy_gates.py	tools	python	-	-	0	13312

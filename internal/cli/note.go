@@ -22,6 +22,10 @@ func noteCommand() *Command {
 请求只提供原生 segment/payload、Candidate 意图和 coverage。segment hash、Candidate
 payload/ref hash、draft state、Source binding 与物理容器身份由 shared core 生成并在
 plan/apply 两次复核；请求不能指定 materialized output。
+
+退出码：0 成功 / 幂等 no-op | 1 参数非法 | 2 授权、spec 或结构校验失败（零写入） |
+        4 Git 提交失败（.sy 已生效并保留） |
+        5 writer lease、journal recovery 或写前复核失败（零权威写入）
 `,
 		Validate: func(inv *Invocation) error {
 			if err := noPositionalArgs(inv); err != nil {

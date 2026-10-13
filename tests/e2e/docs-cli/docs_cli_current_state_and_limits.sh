@@ -56,12 +56,11 @@ CANON_CMDS=(
   reconcile check index bench
 )
 
-# 读路径拆分批次（**post-M5 / post-M6**）在 M6 收口清单之上**追加**的顶层命令：观点子系统
-# `eg opinion`。它不属于任何历史里程碑（M4=20 / M5=22 / M6=22 均在它之前收口），因此如实登记为
-# 「后续新增项」并在复算历史结论时**摘掉**：M6 的历史结论「恰 22 条」一个字不放宽，当前真实顶层
-# 命令集合抬为 23（= 22 + opinion）。追加项必须真在 `eg --help` 里（登记了没注册 = 名单造假）。
-POST_M6_ADDED_CMDS=(opinion materialize export candidate migrate diff)
-# 当前真实顶层命令集合（28 条）= M6 收口 22 + 后续追加的六条命令。
+# post-M6 批次追加 opinion/materialize/export/candidate/migrate/diff，以及 T-008 的原生
+# Note、recovery、doctor 与 cold backup。它们不属于历史里程碑 M6=22，因此在复算历史
+# 结论时整体摘掉；追加项必须真在 `eg --help` 里（登记了没注册 = 名单造假）。
+POST_M6_ADDED_CMDS=(opinion materialize export candidate migrate diff note recover doctor backup)
+# 当前真实顶层命令集合（32 条）= M6 收口 22 + 后续追加的十条命令。
 CURRENT_CMDS=("${CANON_CMDS[@]}" "${POST_M6_ADDED_CMDS[@]}")
 WANT_COMMANDS_NOW=$((WANT_COMMANDS + ${#POST_M6_ADDED_CMDS[@]}))
 
@@ -90,7 +89,7 @@ step "从源码构建 eg 到沙箱（不落 bin/ dist/）"
 ok "eg 已构建：${EG}"
 
 # ---------------------------------------------------------------- 2. 顶层命令集合与当前 23 条清单双向恰等
-step "eg --help 顶层命令名集合与当前清单双向恰等（恰 ${WANT_COMMANDS_NOW} 条 = M6 收口 ${WANT_COMMANDS} + 读路径拆分追加 ${#POST_M6_ADDED_CMDS[@]}）"
+step "eg --help 顶层命令名集合与当前清单双向恰等（恰 ${WANT_COMMANDS_NOW} 条 = M6 收口 ${WANT_COMMANDS} + post-M6 追加 ${#POST_M6_ADDED_CMDS[@]}）"
 ACTUAL="$("${EG}" --help </dev/null 2>/dev/null | awk '
   /^命令/ {inblk=1; next}
   /^全局 flag/ {inblk=0}
@@ -106,17 +105,17 @@ if [ "${ACTUAL}" != "${WANT}" ]; then
     "$(comm -13 <(printf '%s\n' "${ACTUAL}") <(printf '%s\n' "${WANT}"))" >&2
   die "顶层命令集合与当前清单不恰等"
 fi
-# 历史结论复算：摘掉读路径拆分批次追加的命令后，恰是 M6 收口清单（22 条）——历史结论不放宽、不篡改。
+# 历史结论复算：摘掉 post-M6 追加命令后，恰是 M6 收口清单（22 条）——历史结论不放宽、不篡改。
 HIST="$(comm -23 <(printf '%s\n' "${ACTUAL}") <(printf '%s\n' "${POST_M6_ADDED_CMDS[@]}" | sort -u))"
 HIST_WANT="$(printf '%s\n' "${CANON_CMDS[@]}" | sort -u)"
 N_HIST="$(printf '%s\n' "${HIST}" | grep -c .)"
-[ "${N_HIST}" = "${WANT_COMMANDS}" ] || die "摘掉读路径拆分追加后 = ${N_HIST}，期望 M6 收口值 ${WANT_COMMANDS}"
-[ "${HIST}" = "${HIST_WANT}" ] || die "摘掉读路径拆分追加后与 M6 收口清单不恰等（历史结论被篡改）"
+[ "${N_HIST}" = "${WANT_COMMANDS}" ] || die "摘掉 post-M6 追加后 = ${N_HIST}，期望 M6 收口值 ${WANT_COMMANDS}"
+[ "${HIST}" = "${HIST_WANT}" ] || die "摘掉 post-M6 追加后与 M6 收口清单不恰等（历史结论被篡改）"
 # 追加项必须真在 --help 命令区（登记了却没注册 = 名单造假）。
 for c in "${POST_M6_ADDED_CMDS[@]}"; do
-  printf '%s\n' "${ACTUAL}" | grep -qx "${c}" || die "读路径拆分登记的命令 ${c} 不在 --help 命令区"
+  printf '%s\n' "${ACTUAL}" | grep -qx "${c}" || die "post-M6 登记的命令 ${c} 不在 --help 命令区"
 done
-ok "顶层命令集合 == 当前清单，恰 ${WANT_COMMANDS_NOW} 条（双向恰等）；摘掉 opinion 后 = ${WANT_COMMANDS}（M6 收口值，历史保真）"
+ok "顶层命令集合 == 当前清单，恰 ${WANT_COMMANDS_NOW} 条（双向恰等）；摘掉 post-M6 追加后 = ${WANT_COMMANDS}（M6 收口值，历史保真）"
 
 # ---------------------------------------------------------------- 3. 四份文档各自与当前 23 条双向恰等 + 逐条覆盖 + 登记总数
 step "README / README.zh-CN / INSTALL / SKILL 各自覆盖全部 ${WANT_COMMANDS_NOW} 条命令并登记当前总数（杜绝聚合互相补漏）"

@@ -18,6 +18,7 @@
 #   N8 单仓 full 语义：full 计划里"允许 NOT_RUN"的 suite 恰好只有 contract-live-drift 一条；
 #   N9 收尾标记合同（done_re）：历史脚本的收尾文案不在默认族里时必须能**按 suite 声明**，
 #      且声明本身不是旁路 —— 声明与实际输出不符仍判红、非法正则在清单自检阶段就非零。
+#   N10 非 UTF-8 输出：原始字节必须转义保留，runner 不得在汇总前崩溃。
 #
 # 全部反例都在**工作树的只读快照副本**里注入（探针包、坏清单都只落副本），真实仓库
 # 一个字节都不碰（末尾自查）。离线、零交互、可重复。
@@ -71,6 +72,7 @@ mkdir -p "${SB}/tests/_neg"
 cat >"${SB}/tests/_neg/probe_pass.sh" <<'SH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+printf '\377invalid-byte\n'
 echo "  [ok] 探针断言 1"
 echo "  [ok] 探针断言 2"
 echo "[PASS] 探针全部 2 组断言通过"
@@ -201,7 +203,7 @@ C="$(run_in_sb "${NEG_EXEC}" contract)"
 want_out "PASS 1 / FAIL 6"
 S="$(ls -d "${SB}"/tests/_report/*/ | tail -1)"
 python3 - "${S}/summary.json" <<'PY'
-import json, sys
+import json, pathlib, sys
 d = json.load(open(sys.argv[1]))
 st = {s["id"]: s for s in d["suites"]}
 exp = {"neg.shell-pass": "PASS", "neg.shell-fail": "FAIL", "neg.shell-zero": "FAIL",
@@ -227,8 +229,12 @@ for s in d["suites"]:
     for k in ("status", "duration", "duration_s", "case_count", "log_path"):
         assert k in s, (s["id"], k)
 assert st["neg.shell-pass"]["case_count"] >= 2, st["neg.shell-pass"]
+root = pathlib.Path(sys.argv[1]).parents[3]
+pass_log = (root / st["neg.shell-pass"]["log_path"]).read_text()
+assert "\\xffinvalid-byte" in pass_log, pass_log
 print("  [ok] summary.json：7 支状态逐条符合预期，诊断点名根因")
 print("  [ok] 失败传播：failed=6 / passed=1 / gate_a.pass=false，退出码非 0")
+print("  [ok] 非 UTF-8 原始字节以 \\\\xff 转义保留，runner 未在汇总前崩溃")
 PY
 PASS=$((PASS + 2))
 ok "N1 失败传播三连 + N2 零执行 + N3 隐式 skip：6 个反例全部判红"

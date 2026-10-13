@@ -11,6 +11,9 @@ func doctorCommand() *Command {
 默认只读扫描 .sy authority 并输出完整语义与查询集合 digest。
 --rebuild-index 必须连接在线 SiYuan kernel，由宿主在 writer gate 内先检查 journal，
 再重建实际派生投影并复扫；before/after 不一致即失败。离线模式不伪造宿主 SQLite/FTS 重建。
+
+退出码：0 authority 与派生投影健康 / 重建后健康 | 1 参数非法 |
+        2 authority、journal 或派生投影校验失败（未授权时零写入）
 `,
 		Flags: func(fs *flagSet) {
 			fs.Bool("rebuild-index", false, "由在线 SiYuan kernel 重建实际派生投影")

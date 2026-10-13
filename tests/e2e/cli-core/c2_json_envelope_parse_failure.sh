@@ -167,11 +167,12 @@ mkdir -p "${VAULT}"
 "${EG}" --vault "${VAULT}" init >/dev/null 2>&1 || die "init 失败"
 ok "二进制就绪：$("${EG}" --version </dev/null | head -1)"
 
-# 命令表面（M5 基线 22 条 + 后续 review、migration 与 semantic diff = 恰 28 条）；
+# 命令表面（M5 基线 22 条 + 后续 review、migration、Note 与运维 = 恰 32 条）；
 # SubRequired 的几条（config / card / rel / proposal / index / opinion）连带一个合法子动词一起打。
 CMDS=(init config capture context apply search card rel report deprecate restore
       replaced-by proposal delete undelete mark-reviewed unreviewed edit reconcile
-      check index bench opinion materialize export candidate migrate diff)
+      check index bench opinion materialize export candidate migrate diff
+      note recover doctor backup)
 # SUBS：命令 → 需要一起给出的子动词（其余为空）
 sub_of() {
   case "$1" in
@@ -185,17 +186,20 @@ sub_of() {
     opinion)  echo "show" ;;
     candidate) echo "show" ;;
     migrate)  echo "inventory" ;;
+    note)      echo "create" ;;
+    recover)   echo "lease" ;;
+    backup)    echo "create" ;;
     *)        echo "" ;;
   esac
 }
-[ "${#CMDS[@]}" = "28" ] || die "命令表面应恰 28 条，实得 ${#CMDS[@]}"
-[ "$(printf '%s\n' "${CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "28" ] ||
-  die "当前命令表面必须恰含 28 个不同命令"
+[ "${#CMDS[@]}" = "32" ] || die "命令表面应恰 32 条，实得 ${#CMDS[@]}"
+[ "$(printf '%s\n' "${CMDS[@]}" | sort -u | wc -l | tr -d ' ')" = "32" ] ||
+  die "当前命令表面必须恰含 32 个不同命令"
 
 BEFORE_VAULT="$(snapshot)"
 
 # ---------------------------------------------------------------- 1. A 段
-step "A 28 条命令 × 子命令位 --json + 未知 flag：退 1 且五键信封在场"
+step "A 32 条命令 × 子命令位 --json + 未知 flag：退 1 且五键信封在场"
 A_FAIL=0
 for c in "${CMDS[@]}"; do
   s="$(sub_of "${c}")"
@@ -208,7 +212,7 @@ for c in "${CMDS[@]}"; do
   envelope_check "${RC}" "eg ${c} ${s} --bogus-flag-xyz --json" || A_FAIL=1
 done
 [ "${A_FAIL}" = "0" ] || die "A 段：子命令位 --json 在参数解析失败时丢了信封（合同 §3 五键必有）"
-ok "28 条命令表面在解析失败时全部输出五键信封（退 1、status=failed、errors[] 带编号）"
+ok "32 条命令表面在解析失败时全部输出五键信封（退 1、status=failed、errors[] 带编号）"
 
 # ---------------------------------------------------------------- 2. B 段
 step "B 反证：去掉 --json 时不得输出 JSON 信封（不许修成恒 JSON）"
@@ -225,7 +229,7 @@ for c in "${CMDS[@]}"; do
     die "eg ${c} ${s} 未带 --json 却输出了 JSON 信封 —— 修法错了（应按输出格式意图分流，不是恒 JSON）"
   fi
 done
-ok "28 条命令在不带 --json 时保持人类可读面（stdout 无信封）"
+ok "32 条命令在不带 --json 时保持人类可读面（stdout 无信封）"
 
 # ---------------------------------------------------------------- 3. C 段
 step "C 两个位置等价：全局位与子命令位的信封在 ok/exit_code/status 上逐字一致"

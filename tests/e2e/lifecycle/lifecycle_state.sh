@@ -195,12 +195,14 @@ N="$( { cd "${REPO_ROOT}" && grep -rn 'os.Exit(5)\|os.Exit(6)' internal/ || true
 #   internal/cli/proposal_approve.go —— approve 的确认门与 U-12 守卫（T-…-040 第三层）
 #   internal/cli/delete.go        —— eg delete 的确认门（T-…-041；退出码 6 白名单本就恰两条命令
 #                                    proposal approve / delete，见 exitcode.go 的 needConfirmCommands）
+#   internal/cli/candidate.go     —— T-008 的 Candidate confirm 人工确认语义；它要求
+#                                    --user-request，但不进入退出码 6 白名单
 # 判据本体不变：deprecate.go / restore / replaced_by.go 这三条状态命令一次都不许出现。
 CONFIRM_FILES="$( { cd "${REPO_ROOT}" && grep -rln 'con''firm' internal/cli/ || true; } |
   { grep -v '_test\.go' || true; } | LC_ALL=C sort | tr '\n' ' ')"
 # LC_ALL=C：文件名排序不受本机 locale 影响（'.' < '_'），判据在任何机器上逐字相同。
-[ "${CONFIRM_FILES}" = "internal/cli/delete.go internal/cli/exitcode.go internal/cli/proposal.go internal/cli/proposal_approve.go internal/cli/proposal_cmd.go " ] ||
-  die "确认流程只应出现在 delete.go / proposal.go / proposal_approve.go / exitcode.go / proposal_cmd.go，实际：${CONFIRM_FILES}"
+[ "${CONFIRM_FILES}" = "internal/cli/candidate.go internal/cli/delete.go internal/cli/exitcode.go internal/cli/proposal.go internal/cli/proposal_approve.go internal/cli/proposal_cmd.go " ] ||
+  die "确认流程只应出现在 candidate.go / delete.go / proposal.go / proposal_approve.go / exitcode.go / proposal_cmd.go，实际：${CONFIRM_FILES}"
 # 「材料支持不足」在 internal/ 里只以**阶段说明注释**形态存在（M2 起 query / search 里
 # 各有一条「本阶段不输出」的负向说明）；本 task 新增的三个文件里必须**一次都不出现**，
 # 且运行期输出（上一步已查）也不得含它。

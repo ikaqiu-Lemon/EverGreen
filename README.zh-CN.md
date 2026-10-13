@@ -716,7 +716,7 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 
 ## 命令参考
 
-顶层命令共 28 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
+顶层命令共 32 条。权威参数表请跑 `eg <command> --help` —— 每页 help 都自带退出码说明。
 
 **初始化**
 
@@ -732,6 +732,7 @@ agent 自己遗漏的地方，agent 也不得编造内容去填它。
 | `eg capture` | 收录原文并登记收件区 |
 | `eg context` | 只读：`draft_candidates` + `knowledge_candidates` + `opinion_candidates` + `base` content hash |
 | `eg apply --plan <file\|->` | 校验并应用 ChangePlan |
+| `eg note create --request <file\|-> --backend sy` | 从原生 segment、Candidate 与完整 coverage 创建受管 Note |
 | `eg candidate show\|apply` | 导出或原子应用完整 candidate review spec |
 | `eg materialize` | 用户显式触发的 Note candidate 确定性物化 |
 | `eg export --plain` | 导出不含 Evergreen 专有协议的纯 Markdown |
@@ -801,6 +802,9 @@ incoming `supports` 边**（本观点自己发出的 **outgoing** `supports` 不
 | `eg reconcile [--dry-run]` | 全库对账 R1–R7，含补写 |
 | `eg index build\|rebuild\|status\|sync` | 管理派生索引 |
 | `eg bench` | 只读采样五个性能指标 |
+| `eg recover lease\|journal --backend sy` | 显式恢复失效 writer lease 或未完成 operation journal |
+| `eg doctor --backend sy [--rebuild-index]` | 对账 `.sy` authority 与派生索引，并按需重建 |
+| `eg backup create\|restore --backend sy` | 离线创建或恢复带 checksum、Git、journal、配置与加密恢复材料的冷备份 |
 
 ### 全局 flag
 
