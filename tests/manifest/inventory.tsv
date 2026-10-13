@@ -256,7 +256,7 @@ tests/_staged/pkg/evergreencore/native_files_test.go	unit	go	core	unit.pkg.everg
 tests/_staged/pkg/evergreencore/note_create_test.go	unit	go	core	unit.pkg.evergreencore	5	14044
 tests/_staged/pkg/evergreencore/operation_authorization_test.go	unit	go	core	unit.pkg.evergreencore	5	15368
 tests/_staged/pkg/evergreencore/operation_test.go	unit	go	core	unit.pkg.evergreencore	10	25001
-tests/_staged/pkg/evergreencore/provider_test.go	unit	go	core	unit.pkg.evergreencore	8	20870
+tests/_staged/pkg/evergreencore/provider_test.go	unit	go	core	unit.pkg.evergreencore	11	26552
 tests/_staged/pkg/evergreencore/review_payload_test.go	unit	go	core	unit.pkg.evergreencore	1	2128
 tests/_staged/pkg/evergreencore/review_test.go	unit	go	core	unit.pkg.evergreencore	6	18609
 tests/_staged/pkg/evergreencore/semantic_export_test.go	unit	go	core	unit.pkg.evergreencore	3	4166

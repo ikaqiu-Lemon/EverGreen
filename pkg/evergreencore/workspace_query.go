@@ -120,6 +120,11 @@ func ContextWorkspace(ctx context.Context, repository Repository, registry *Regi
 }
 
 func RelationsWorkspace(ctx context.Context, repository Repository, registry *Registry, id LogicalID) ([]AVEdgeValue, error) {
+	if projector, ok := repository.(interface {
+		ProjectRelations(context.Context, LogicalID) ([]AVEdgeValue, error)
+	}); ok {
+		return projector.ProjectRelations(ctx, id)
+	}
 	items, err := QueryWorkspace(ctx, repository, registry, "")
 	if err != nil {
 		return nil, err

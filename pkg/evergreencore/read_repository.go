@@ -3,16 +3,19 @@ package evergreencore
 import (
 	"context"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // SYReadRepository 是一次请求的只读扫描快照；计划与提交必须重新校验权威。
 type SYReadRepository struct {
-	root      string
-	storage   DocumentStorage
-	locations map[LogicalID]LogicalLocation
+	locations  map[LogicalID]LogicalLocation
+	documents  map[LogicalID][]byte
+	generation string
+	registry   *Registry
+
+	relationsOnce     sync.Once
+	relationsProvider *ClaimsAVProvider
 }
 
 func NewSYReadRepository(root string, registry *Registry) (*SYReadRepository, error) {
@@ -30,21 +33,21 @@ func (r *SYReadRepository) List(_ context.Context) ([]LogicalID, error) {
 	return ids, nil
 }
 
-func (r *SYReadRepository) Load(ctx context.Context, id LogicalID) ([]byte, error) {
-	location, exists := r.locations[id]
+func (r *SYReadRepository) Load(_ context.Context, id LogicalID) ([]byte, error) {
+	raw, exists := r.documents[id]
 	if !exists {
 		return nil, fs.ErrNotExist
 	}
-	if r.storage != nil {
-		session, err := r.storage.Open(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defer session.Close()
-		if err = session.Allow(location.Path); err != nil {
-			return nil, err
-		}
-		return fs.ReadFile(session.Filesystem(), location.Path)
-	}
-	return os.ReadFile(filepath.Join(r.root, filepath.FromSlash(location.Path)))
+	return append([]byte(nil), raw...), nil
+}
+
+func (r *SYReadRepository) RepositoryGeneration(context.Context) (string, bool, error) {
+	return r.generation, true, nil
+}
+
+func (r *SYReadRepository) ProjectRelations(ctx context.Context, id LogicalID) ([]AVEdgeValue, error) {
+	r.relationsOnce.Do(func() {
+		r.relationsProvider = NewClaimsAVProvider(r, nil, r.registry)
+	})
+	return r.relationsProvider.Relations(ctx, id)
 }

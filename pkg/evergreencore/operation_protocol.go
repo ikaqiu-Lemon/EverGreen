@@ -217,6 +217,11 @@ type AuthorityHost interface {
 	RecoverOperations(context.Context, OperationValidator) ([]OperationRecord, error)
 }
 
+type authoritySnapshotHost interface {
+	openAuthoritySnapshot(context.Context) (context.Context, func(), error)
+	retainLocationSnapshot(context.Context, string)
+}
+
 type AuthorityService struct {
 	host       AuthorityHost
 	authorizer Authorizer
@@ -239,6 +244,16 @@ func (s *AuthorityService) Schemas() SchemaCatalog {
 }
 
 func (s *AuthorityService) Plan(ctx context.Context, principal Principal, request PlanRequest) (PlannedOperation, error) {
+	return withAuthoritySnapshot(ctx, s.host, func(snapshotCtx context.Context) (PlannedOperation, error) {
+		planned, err := s.plan(snapshotCtx, principal, request)
+		if err == nil {
+			retainAuthoritySnapshot(snapshotCtx, s.host, planned.PlanHash)
+		}
+		return planned, err
+	})
+}
+
+func (s *AuthorityService) plan(ctx context.Context, principal Principal, request PlanRequest) (PlannedOperation, error) {
 	if request.Protocol != ChangePlanProtocol {
 		return PlannedOperation{}, validationError(
 			CodeProtocolUnsupported,
@@ -396,6 +411,30 @@ func (s *AuthorityService) Plan(ctx context.Context, principal Principal, reques
 		return PlannedOperation{}, err
 	}
 	return planned, nil
+}
+
+func withAuthoritySnapshot[T any](
+	ctx context.Context,
+	host AuthorityHost,
+	run func(context.Context) (T, error),
+) (T, error) {
+	var zero T
+	snapshotHost, ok := host.(authoritySnapshotHost)
+	if !ok {
+		return run(ctx)
+	}
+	snapshotCtx, close, err := snapshotHost.openAuthoritySnapshot(ctx)
+	if err != nil {
+		return zero, err
+	}
+	defer close()
+	return run(snapshotCtx)
+}
+
+func retainAuthoritySnapshot(ctx context.Context, host AuthorityHost, planHash string) {
+	if snapshotHost, ok := host.(authoritySnapshotHost); ok {
+		snapshotHost.retainLocationSnapshot(ctx, planHash)
+	}
 }
 
 func (s *AuthorityService) Apply(ctx context.Context, principal Principal, request ApplyRequest) (OperationRecord, error) {

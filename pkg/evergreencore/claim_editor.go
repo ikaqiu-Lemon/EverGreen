@@ -92,18 +92,24 @@ func (s *AuthorityService) InspectClaim(ctx context.Context, id LogicalID) (Clai
 }
 
 func (s *AuthorityService) PlanClaimEdit(ctx context.Context, principal Principal, request ClaimEditRequest) (PlannedOperation, error) {
-	raw, err := s.host.Load(ctx, request.LogicalID)
-	if err != nil {
-		return PlannedOperation{}, err
-	}
-	after, err := editClaimDocument(raw, request.Edit, principal, s.registry)
-	if err != nil {
-		return PlannedOperation{}, err
-	}
-	return s.Plan(ctx, principal, PlanRequest{
-		Protocol: ChangePlanProtocol, OperationID: request.OperationID, Command: "claim.update",
-		Base:   []BaseRef{{LogicalID: request.LogicalID, SemanticHash: request.Base}},
-		Writes: []WriteInput{{LogicalID: request.LogicalID, After: after}},
+	return withAuthoritySnapshot(ctx, s.host, func(snapshotCtx context.Context) (PlannedOperation, error) {
+		raw, err := s.host.Load(snapshotCtx, request.LogicalID)
+		if err != nil {
+			return PlannedOperation{}, err
+		}
+		after, err := editClaimDocument(raw, request.Edit, principal, s.registry)
+		if err != nil {
+			return PlannedOperation{}, err
+		}
+		planned, err := s.plan(snapshotCtx, principal, PlanRequest{
+			Protocol: ChangePlanProtocol, OperationID: request.OperationID, Command: "claim.update",
+			Base:   []BaseRef{{LogicalID: request.LogicalID, SemanticHash: request.Base}},
+			Writes: []WriteInput{{LogicalID: request.LogicalID, After: after}},
+		})
+		if err == nil {
+			retainAuthoritySnapshot(snapshotCtx, s.host, planned.PlanHash)
+		}
+		return planned, err
 	})
 }
 

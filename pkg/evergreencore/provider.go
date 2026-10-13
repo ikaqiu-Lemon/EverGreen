@@ -179,9 +179,11 @@ type claimsAVRecord struct {
 }
 
 type claimsAVSnapshot struct {
-	public  AVProjectionSnapshot
-	claims  map[LogicalID]*claimsAVRecord
-	reverse map[LogicalID][]AVEdgeValue
+	public               AVProjectionSnapshot
+	claims               map[LogicalID]*claimsAVRecord
+	reverse              map[LogicalID][]AVEdgeValue
+	repositoryGeneration string
+	hasGeneration        bool
 }
 
 type ClaimsAVProvider struct {
@@ -255,37 +257,9 @@ func (p *ClaimsAVProvider) Query(ctx context.Context, viewID string, query AVQue
 	if err != nil {
 		return AVPage{}, err
 	}
-	snapshot, err := p.currentSnapshot(ctx)
+	snapshot, err := p.verifiedSnapshot(ctx)
 	if err != nil {
 		return AVPage{}, err
-	}
-	for _, record := range snapshot.claims {
-		if record.document.Envelope == nil {
-			continue
-		}
-		_, available := p.registry.Descriptor(record.document.Envelope.Claim.ClaimKind)
-		if (!available && !record.document.ReadOnly) ||
-			(available && record.document.ReadOnly && onlyKindUnavailable(record.document.Diagnostics)) {
-			if _, err = p.Rebuild(ctx); err != nil {
-				return AVPage{}, err
-			}
-			snapshot, err = p.currentSnapshot(ctx)
-			if err != nil {
-				return AVPage{}, err
-			}
-			break
-		}
-	}
-	if stale, verifyErr := p.snapshotStale(ctx, snapshot); verifyErr != nil {
-		return AVPage{}, verifyErr
-	} else if stale {
-		if _, err = p.Rebuild(ctx); err != nil {
-			return AVPage{}, err
-		}
-		snapshot, err = p.currentSnapshot(ctx)
-		if err != nil {
-			return AVPage{}, err
-		}
 	}
 
 	ids := make([]LogicalID, 0, len(snapshot.claims))
@@ -722,6 +696,10 @@ func (p *ClaimsAVProvider) Rebuild(ctx context.Context) (AVProjectionSnapshot, e
 	if p.repository == nil {
 		return AVProjectionSnapshot{}, validationError(CodeInvalidPlan, "repository", "Claims repository is unavailable")
 	}
+	generation, hasGeneration, err := currentRepositoryGeneration(ctx, p.repository)
+	if err != nil {
+		return AVProjectionSnapshot{}, err
+	}
 	ids, err := p.repository.List(ctx)
 	if err != nil {
 		return AVProjectionSnapshot{}, err
@@ -794,6 +772,20 @@ func (p *ClaimsAVProvider) Rebuild(ctx context.Context) (AVProjectionSnapshot, e
 	digestBytes, _ := json.Marshal(digestClaims)
 	sum := sha256.Sum256(digestBytes)
 	snapshot.public.Digest = "sha256:" + hex.EncodeToString(sum[:])
+	if hasGeneration {
+		current, supported, generationErr := currentRepositoryGeneration(ctx, p.repository)
+		if generationErr != nil {
+			return AVProjectionSnapshot{}, generationErr
+		}
+		if !supported || current != generation {
+			return AVProjectionSnapshot{}, validationError(
+				CodeBaseMismatch, "repository",
+				"authority generation changed while rebuilding the Claims projection",
+			)
+		}
+		snapshot.repositoryGeneration = generation
+		snapshot.hasGeneration = true
+	}
 
 	p.mu.Lock()
 	p.snapshot = snapshot
@@ -822,7 +814,86 @@ func (p *ClaimsAVProvider) currentSnapshot(ctx context.Context) (*claimsAVSnapsh
 	return p.snapshot, nil
 }
 
+func (p *ClaimsAVProvider) verifiedSnapshot(ctx context.Context) (*claimsAVSnapshot, error) {
+	snapshot, err := p.currentSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range snapshot.claims {
+		if record.document.Envelope == nil {
+			continue
+		}
+		_, available := p.registry.Descriptor(record.document.Envelope.Claim.ClaimKind)
+		if (!available && !record.document.ReadOnly) ||
+			(available && record.document.ReadOnly && onlyKindUnavailable(record.document.Diagnostics)) {
+			if _, err = p.Rebuild(ctx); err != nil {
+				return nil, err
+			}
+			snapshot, err = p.currentSnapshot(ctx)
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+	if stale, verifyErr := p.snapshotStale(ctx, snapshot); verifyErr != nil {
+		return nil, verifyErr
+	} else if stale {
+		if _, err = p.Rebuild(ctx); err != nil {
+			return nil, err
+		}
+		return p.currentSnapshot(ctx)
+	}
+	return snapshot, nil
+}
+
+func (p *ClaimsAVProvider) Relations(ctx context.Context, id LogicalID) ([]AVEdgeValue, error) {
+	snapshot, err := p.verifiedSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	edges := []AVEdgeValue{}
+	if record := snapshot.claims[id]; record != nil && record.document.Envelope != nil {
+		for _, edge := range record.document.Envelope.Relations.Outgoing {
+			edges = append(edges, projectEdge(edge, id, record.hash, EdgeDirectionOutgoing))
+		}
+	}
+	for _, edge := range snapshot.reverse[id] {
+		if edge.OwnerID != id {
+			edges = append(edges, edge)
+		}
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].OwnerID == edges[j].OwnerID {
+			return edges[i].ID < edges[j].ID
+		}
+		return edges[i].OwnerID < edges[j].OwnerID
+	})
+	return edges, nil
+}
+
+type repositoryGenerationSource interface {
+	RepositoryGeneration(context.Context) (string, bool, error)
+}
+
+func currentRepositoryGeneration(ctx context.Context, repository Repository) (string, bool, error) {
+	source, ok := repository.(repositoryGenerationSource)
+	if !ok {
+		return "", false, nil
+	}
+	return source.RepositoryGeneration(ctx)
+}
+
 func (p *ClaimsAVProvider) snapshotStale(ctx context.Context, snapshot *claimsAVSnapshot) (bool, error) {
+	if snapshot.hasGeneration {
+		generation, supported, err := currentRepositoryGeneration(ctx, p.repository)
+		if err != nil {
+			return false, err
+		}
+		if supported {
+			return generation != snapshot.repositoryGeneration, nil
+		}
+	}
 	ids, err := p.repository.List(ctx)
 	if err != nil {
 		return false, err

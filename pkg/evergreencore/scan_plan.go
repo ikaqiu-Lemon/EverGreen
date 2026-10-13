@@ -2,6 +2,8 @@ package evergreencore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -23,10 +25,21 @@ type LogicalLocation struct {
 
 type LogicalIndex struct {
 	Locations map[LogicalID]LogicalLocation
+
+	documents  map[LogicalID][]byte
+	generation string
 }
 
 func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
+	return scanFS(filesystem, registry, false)
+}
+
+func scanFS(filesystem fs.FS, registry *Registry, captureDocuments bool) (*LogicalIndex, error) {
 	index := &LogicalIndex{Locations: map[LogicalID]LogicalLocation{}}
+	if captureDocuments {
+		index.documents = map[LogicalID][]byte{}
+	}
+	generation := sha256.New()
 	err := fs.WalkDir(filesystem, ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -37,6 +50,12 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 		raw, err := fs.ReadFile(filesystem, path)
 		if err != nil {
 			return err
+		}
+		if captureDocuments {
+			_, _ = generation.Write([]byte(filepath.ToSlash(path)))
+			_, _ = generation.Write([]byte{0})
+			_, _ = generation.Write(raw)
+			_, _ = generation.Write([]byte{0})
 		}
 		document, err := DecodeSY(raw, registry)
 		if err != nil {
@@ -63,6 +82,9 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 			}); err != nil {
 				return err
 			}
+			if captureDocuments {
+				index.documents[identity.LogicalID] = append([]byte(nil), raw...)
+			}
 			return nil
 		}
 		if identityErr != nil {
@@ -82,6 +104,9 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 		}); err != nil {
 			return err
 		}
+		if captureDocuments {
+			index.documents[document.Envelope.Entity.LogicalID] = append([]byte(nil), raw...)
+		}
 		if childrenRaw, ok := root["Children"]; ok {
 			var children []json.RawMessage
 			if err = json.Unmarshal(childrenRaw, &children); err != nil {
@@ -95,6 +120,9 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if captureDocuments {
+		index.generation = "sha256:" + hex.EncodeToString(generation.Sum(nil))
 	}
 	return index, nil
 }

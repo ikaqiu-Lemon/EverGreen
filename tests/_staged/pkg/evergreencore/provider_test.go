@@ -1,10 +1,13 @@
 package evergreencore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -417,6 +420,148 @@ func TestClaimsAVProviderRebuildIsSourceCompleteAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestClaimsAVProviderUsesGenerationAndRebuildsAfterManagedWrite(t *testing.T) {
+	ctx := context.Background()
+	repository := &generationClaimsAVRepository{
+		claimsAVRepositoryStub: claimsAVRepositoryStub{documents: map[LogicalID][]byte{
+			"k-generation": claimAVFixture(
+				t, "k-generation", KnowledgeKind, "Generation", "active",
+				json.RawMessage(`{}`), nil, nil, nil,
+			),
+		}},
+		generation: "generation:1",
+	}
+	provider := NewClaimsAVProvider(repository, nil, nil)
+	first, err := provider.Query(ctx, ClaimsViewID, AVQuery{})
+	if err != nil || first.Rows[0].Cells["status"].Text != "active" {
+		t.Fatalf("initial generation query = %+v %v", first, err)
+	}
+	repository.loads = 0
+	if _, err = provider.Query(ctx, ClaimsViewID, AVQuery{}); err != nil || repository.loads != 0 {
+		t.Fatalf("unchanged generation reloaded %d documents: %v", repository.loads, err)
+	}
+	repository.documents["k-generation"] = claimAVFixture(
+		t, "k-generation", KnowledgeKind, "Generation", "deprecated",
+		json.RawMessage(`{}`), nil, nil, nil,
+	)
+	repository.generation = "generation:2"
+	updated, err := provider.Query(ctx, ClaimsViewID, AVQuery{})
+	if err != nil || repository.loads == 0 || updated.Rows[0].Cells["status"].Text != "deprecated" {
+		t.Fatalf("changed generation did not rebuild: page=%+v loads=%d err=%v", updated, repository.loads, err)
+	}
+}
+
+func TestSYReadRepositoryIsImmutableAndProjectsCompleteRelations(t *testing.T) {
+	root := t.TempDir()
+	alpha := claimAVFixture(
+		t, "k-alpha", KnowledgeKind, "Alpha", "active", json.RawMessage(`{}`), nil, nil,
+		[]TypedEdge{
+			{
+				ID: "edge-out", Schema: ArgumentSchema,
+				Target: EntityRef{EntityType: EntityClaim, LogicalID: "o-beta"},
+				Type:   "supports", Reason: "Alpha supports beta.",
+			},
+			{
+				ID: "edge-self", Schema: ArgumentSchema,
+				Target: EntityRef{EntityType: EntityClaim, LogicalID: "k-alpha"},
+				Type:   "supports", Reason: "Self evidence remains outgoing only.",
+			},
+		},
+	)
+	beta := claimAVFixture(
+		t, "o-beta", OpinionKind, "Beta", "active",
+		json.RawMessage(`{"validation":{"status":"pending"}}`), nil, nil,
+		[]TypedEdge{{
+			ID: "edge-in", Schema: ArgumentSchema,
+			Target: EntityRef{EntityType: EntityClaim, LogicalID: "k-alpha"},
+			Type:   "limits", Reason: "Beta limits alpha.",
+		}},
+	)
+	writeFile(t, root, "claims/alpha.sy", alpha)
+	writeFile(t, root, "claims/beta.sy", beta)
+	repository, err := NewSYReadRepository(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation, supported, err := repository.RepositoryGeneration(context.Background())
+	if err != nil || !supported || generation == "" {
+		t.Fatalf("snapshot generation = %q supported=%v err=%v", generation, supported, err)
+	}
+
+	changedDocument, err := DecodeSY(alpha, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedDocument.Envelope.Claim.Status = "deprecated"
+	changed, err := EncodeSY(alpha, changedDocument.Envelope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "claims", "alpha.sy"), changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := repository.Load(context.Background(), "k-alpha")
+	if err != nil || !bytes.Equal(loaded, alpha) {
+		t.Fatalf("read snapshot changed with disk: loaded=%s err=%v", loaded, err)
+	}
+	edges, err := RelationsWorkspace(context.Background(), repository, nil, "k-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edges) != 3 {
+		t.Fatalf("relation projection = %#v", edges)
+	}
+	directions := map[EdgeID]string{}
+	for _, edge := range edges {
+		directions[edge.ID] = edge.Direction
+	}
+	if directions["edge-out"] != EdgeDirectionOutgoing ||
+		directions["edge-self"] != EdgeDirectionOutgoing ||
+		directions["edge-in"] != EdgeDirectionIncoming {
+		t.Fatalf("relation directions = %#v", directions)
+	}
+}
+
+func TestClaimsAVProviderRebuildsFromAuthorityGeneration(t *testing.T) {
+	root := t.TempDir()
+	writeSYFixture(t, root, "box/a.sy", "c-a", "before")
+	authority, err := NewFilesystemAuthority(FilesystemAuthorityOptions{
+		Root: root, Committer: newRecordingCommitter(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewAuthorityService(authority, allowAllAuthorizer{}, nil)
+	provider := NewClaimsAVProvider(authority, service, nil)
+	ctx := context.Background()
+	before, err := provider.Query(ctx, ClaimsViewID, AVQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags := []string{"generation-updated"}
+	principal := Principal{Type: PrincipalUser, ID: "generation-owner"}
+	planned, err := service.PlanClaimEdit(ctx, principal, ClaimEditRequest{
+		OperationID: "op-generation", LogicalID: "c-a",
+		Base: before.Rows[0].Ref.SemanticHash, Edit: ClaimEdit{Tags: &tags},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority.retainedSnapshotMu.Lock()
+	retained := authority.retainedSnapshot
+	authority.retainedSnapshotMu.Unlock()
+	if retained == nil || retained.documents != nil {
+		t.Fatal("retained authority snapshot must contain locations without plaintext documents")
+	}
+	if _, err = service.Apply(ctx, principal, ApplyRequest{Operation: planned}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := provider.Query(ctx, ClaimsViewID, AVQuery{})
+	if err != nil || !reflect.DeepEqual(after.Rows[0].Cells["tags"].Texts, tags) {
+		t.Fatalf("authority generation did not refresh projection: %+v %v", after, err)
+	}
+}
+
 type claimsAVPlannerStub struct {
 	lastRequest PlanRequest
 }
@@ -475,6 +620,21 @@ func (s *claimsAVRepositoryStub) List(context.Context) ([]LogicalID, error) {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids, nil
+}
+
+type generationClaimsAVRepository struct {
+	claimsAVRepositoryStub
+	generation string
+	loads      int
+}
+
+func (s *generationClaimsAVRepository) Load(ctx context.Context, id LogicalID) ([]byte, error) {
+	s.loads++
+	return s.claimsAVRepositoryStub.Load(ctx, id)
+}
+
+func (s *generationClaimsAVRepository) RepositoryGeneration(context.Context) (string, bool, error) {
+	return s.generation, true, nil
 }
 
 func newClaimsAVProviderFixture(t *testing.T) (*ClaimsAVProvider, *claimsAVPlannerStub) {

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -50,6 +51,13 @@ type FilesystemAuthority struct {
 	faults    FaultInjector
 
 	writeGate sync.Mutex
+
+	authorityGeneration atomic.Uint64
+	retainedSnapshotMu  sync.Mutex
+	retainedSnapshot    *LogicalIndex
+	retainedPlanHash    string
+	retainedScope       string
+	retainedGeneration  uint64
 }
 
 type operationManifest struct {
@@ -150,12 +158,12 @@ func (a *FilesystemAuthority) Load(ctx context.Context, logicalID LogicalID) ([]
 }
 
 func (a *FilesystemAuthority) List(ctx context.Context) ([]LogicalID, error) {
-	_, session, close, err := a.openStorage(ctx)
+	ctx, session, close, err := a.openStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer close()
-	index, err := ScanFS(session.Filesystem(), a.registry)
+	index, err := a.locationIndex(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -163,12 +171,12 @@ func (a *FilesystemAuthority) List(ctx context.Context) ([]LogicalID, error) {
 }
 
 func (a *FilesystemAuthority) Resolve(ctx context.Context, logicalID LogicalID) (LogicalLocation, error) {
-	_, session, close, err := a.openStorage(ctx)
+	ctx, session, close, err := a.openStorage(ctx)
 	if err != nil {
 		return LogicalLocation{}, err
 	}
 	defer close()
-	index, err := ScanFS(session.Filesystem(), a.registry)
+	index, err := a.locationIndex(ctx, session)
 	if err != nil {
 		return LogicalLocation{}, err
 	}
@@ -191,6 +199,7 @@ func (a *FilesystemAuthority) ApplyOperation(ctx context.Context, operation Plan
 		return OperationRecord{}, err
 	}
 	defer close()
+	a.consumeLocationSnapshot(ctx, operation.PlanHash)
 	if err := ValidatePlannedOperation(operation, a.registry); err != nil {
 		return OperationRecord{}, err
 	}
@@ -251,6 +260,7 @@ func (a *FilesystemAuthority) Operation(ctx context.Context, operationID string)
 func (a *FilesystemAuthority) RecoverOperations(ctx context.Context, validate OperationValidator) ([]OperationRecord, error) {
 	a.writeGate.Lock()
 	defer a.writeGate.Unlock()
+	a.discardRetainedSnapshot()
 
 	if validate == nil {
 		return nil, validationError(CodeUnauthorized, "validator", "authority recovery requires a validator")
@@ -412,7 +422,7 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 				return manifest.Record, err
 			}
 		case OperationPrepared:
-			if err := a.applyAfterImages(manifest); err != nil {
+			if err := a.applyAfterImages(ctx, manifest); err != nil {
 				return manifest.Record, err
 			}
 			manifest.Record.State = OperationFilesApplied
@@ -469,7 +479,7 @@ func (a *FilesystemAuthority) resume(ctx context.Context, manifest *operationMan
 				return manifest.Record, &DiagnosticError{Diagnostics: manifest.Record.Diagnostics}
 			}
 			// Git 从 journal after-image 建树；提交后再次覆盖可能绕过门禁的旧异步写。
-			if err = a.applyAfterImages(manifest); err != nil {
+			if err = a.applyAfterImages(ctx, manifest); err != nil {
 				return manifest.Record, err
 			}
 			if err = a.verifyAllAfter(manifest); err != nil {
@@ -719,7 +729,7 @@ type stagedAuthorityFile struct {
 	delete bool
 }
 
-func (a *FilesystemAuthority) applyAfterImages(manifest *operationManifest) error {
+func (a *FilesystemAuthority) applyAfterImages(ctx context.Context, manifest *operationManifest) error {
 	staged := make([]stagedAuthorityFile, 0, len(manifest.Files))
 	for index, file := range manifest.Files {
 		if err := a.verifyAuthorityLocation(file.Path); err != nil {
@@ -787,6 +797,9 @@ func (a *FilesystemAuthority) applyAfterImages(manifest *operationManifest) erro
 		if err != nil {
 			return err
 		}
+		a.invalidateLocationSnapshot(ctx)
+		a.authorityGeneration.Add(1)
+		a.discardRetainedSnapshot()
 		if err := syncDir(stagedFile.dir); err != nil {
 			return err
 		}
