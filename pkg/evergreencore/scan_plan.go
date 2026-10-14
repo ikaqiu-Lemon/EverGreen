@@ -39,7 +39,6 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 type scanDocumentJob struct {
 	position int
 	path     string
-	raw      []byte
 }
 
 type scanDocumentResult struct {
@@ -85,9 +84,14 @@ func scanFS(filesystem fs.FS, registry *Registry, captureDocuments bool) (*Logic
 			go func() {
 				defer workers.Done()
 				for job := range jobs {
-					result := scanDocument(job.path, job.raw, registry)
+					raw, readErr := fs.ReadFile(filesystem, job.path)
+					if readErr != nil {
+						results[job.position].err = readErr
+						continue
+					}
+					result := scanDocument(job.path, raw, registry)
 					if captureDocuments {
-						result.raw = job.raw
+						result.raw = raw
 					}
 					results[job.position] = result
 				}
@@ -95,26 +99,21 @@ func scanFS(filesystem fs.FS, registry *Registry, captureDocuments bool) (*Logic
 		}
 
 		for position, path := range paths {
-			raw, readErr := fs.ReadFile(filesystem, path)
-			if readErr != nil {
-				results[position].err = readErr
-				break
-			}
-			if captureDocuments {
-				_, _ = generation.Write([]byte(filepath.ToSlash(path)))
-				_, _ = generation.Write([]byte{0})
-				_, _ = generation.Write(raw)
-				_, _ = generation.Write([]byte{0})
-			}
-			jobs <- scanDocumentJob{position: position, path: path, raw: raw}
+			jobs <- scanDocumentJob{position: position, path: path}
 		}
 		close(jobs)
 		workers.Wait()
 	}
 
-	for _, result := range results {
+	for position, result := range results {
 		if result.err != nil {
 			return nil, result.err
+		}
+		if captureDocuments {
+			_, _ = generation.Write([]byte(filepath.ToSlash(paths[position])))
+			_, _ = generation.Write([]byte{0})
+			_, _ = generation.Write(result.raw)
+			_, _ = generation.Write([]byte{0})
 		}
 		for _, location := range result.locations {
 			if err = addLogicalLocation(index, location); err != nil {
