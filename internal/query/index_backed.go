@@ -41,8 +41,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ikaqiu-Lemon/EverGreen/internal/index"
 	"github.com/ikaqiu-Lemon/EverGreen/internal/model"
@@ -77,6 +79,11 @@ type indexProbe struct {
 	// Markdown 读不动）；unverifiableWhy 是逐字原因。此时 con 为零值。
 	unverifiable    bool
 	unverifiableWhy string
+	// authorityCards / authorityOpinions are the exact entries parsed while assembling
+	// the row-level consistency projection. Reusing them keeps one command invocation
+	// to one authority read without weakening Check's full row-level validation.
+	authorityCards    map[string]CardEntry
+	authorityOpinions map[string]OpinionEntry
 }
 
 // freshnessUnknown 是「新鲜度未判定」的内部取值（空串）。
@@ -131,15 +138,19 @@ func probeIndex(root string, deps IndexDeps) indexProbe {
 	// （含 Body / content_hash），交给 index.Check 做**行级**核对（I-…-024）。没有它，
 	// Check 只能比水位线与表间自洽，会漏掉「删 cards_fts 行 / 翻转 deleted·deprecated /
 	// 等行数替换 id·content_hash」这类**库结构合法但对权威撒谎**的行级损坏。
-	cards, err := currentCardsInput(root, deps, present)
+	projection, err := currentAuthorityInput(root, deps, present)
 	if err != nil {
 		return p.unverifiableBecause(fmt.Sprintf("权威 Markdown 读不动，无法算权威卡投影：%v", err))
 	}
+	p.authorityCards = projection.cards
+	p.authorityOpinions = projection.opinions
 	// 三态结论**只从这一处来**：与 `eg index status`（默认快路径）同一个 index.Check。
 	// Check 自身完整执行 Inspect（含 SQLite / FTS integrity_check），因此这里不先
 	// 重复体检。无法组装现态的路径由 unverifiableBecause 完整体检一次；每条路径仍
 	// 检查目录、reserved entries、schema、integrity 和水位线，健康度从未沿用缓存。
-	p.con = index.Check(p.dir, index.Current{Head: deps.Head(), Files: files, Cards: cards})
+	p.con = index.Check(p.dir, index.Current{
+		Head: deps.Head(), Files: files, Cards: projection.indexCards,
+	})
 	p.diag = p.con.Diagnosis
 	if p.con.Unusable() {
 		// 行级核对把一个「结构合法、水位线一致」的库判成了不可用（W24 /
@@ -218,46 +229,116 @@ func currentWatermarkInput(root string, deps IndexDeps, indexed map[string]index
 // 解析不动的文件不进投影（与扫描后端的 Q1 / skipped 口径一致：它们本就不该在 cards 表里）。
 // 返回 error 只有一种情形：**权威 Markdown 读不动**（磁盘 / 权限）——调用方据此判为
 // 「新鲜度证不出来」并走扫描，由扫描后端把同一个错误如实上抛。
-func currentCardsInput(root string, deps IndexDeps, present []index.File) ([]index.Card, error) {
-	cards := make([]index.Card, 0, len(present))
-	for _, cur := range present {
-		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(cur.Path)))
-		if err != nil {
-			return nil, err
-		}
-		// 按分区分流解析器（与写入侧快照逐字对称）：观点走 OpinionEntryFrom 折出
-		// kind=opinion、validation 取真值的投影；知识卡走 CardEntryFrom、kind=knowledge、
-		// validation 恒空。两侧都用全包唯一的映射与注入的 B3 hash，绝不自造第二套。
-		if isOpinionPath(cur.Path) {
-			entry, _, ok := OpinionEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
-			if !ok {
-				continue // 解析不动 ⇒ 不进权威投影（与 cards 表的收录口径一致）
+type authorityProjection struct {
+	indexCards []index.Card
+	cards      map[string]CardEntry
+	opinions   map[string]OpinionEntry
+}
+
+type authorityProjectionResult struct {
+	indexCard index.Card
+	card      CardEntry
+	opinion   OpinionEntry
+	ok        bool
+	isOpinion bool
+	err       error
+}
+
+func currentAuthorityInput(
+	root string, deps IndexDeps, present []index.File,
+) (authorityProjection, error) {
+	projection := authorityProjection{
+		indexCards: make([]index.Card, 0, len(present)),
+		cards:      make(map[string]CardEntry, len(present)),
+		opinions:   make(map[string]OpinionEntry),
+	}
+	if len(present) == 0 {
+		return projection, nil
+	}
+
+	// YAML/Markdown decoding is CPU-heavy and every file is independent. A bounded
+	// worker set reduces wall time while result assembly below preserves path order.
+	workerCount := runtime.GOMAXPROCS(0)
+	if workerCount > 16 {
+		workerCount = 16
+	}
+	if workerCount > len(present) {
+		workerCount = len(present)
+	}
+	results := make([]authorityProjectionResult, len(present))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for worker := 0; worker < workerCount; worker++ {
+		go func() {
+			defer workers.Done()
+			for position := range jobs {
+				cur := present[position]
+				raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(cur.Path)))
+				if err != nil {
+					results[position].err = err
+					continue
+				}
+				// 按分区分流解析器（与写入侧快照逐字对称）：观点走 OpinionEntryFrom 折出
+				// kind=opinion、validation 取真值的投影；知识卡走 CardEntryFrom、
+				// kind=knowledge、validation 恒空。
+				if isOpinionPath(cur.Path) {
+					entry, _, ok := OpinionEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
+					if !ok {
+						continue
+					}
+					results[position] = authorityProjectionResult{
+						indexCard: index.Card{
+							ID: entry.ID, Path: entry.Path, Domain: entry.Domain, Title: entry.Title,
+							Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
+							ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
+							ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
+							Kind: index.CardKindOpinion, Validation: entry.Validation,
+						},
+						opinion: entry, ok: true, isOpinion: true,
+					}
+					continue
+				}
+				entry, _, ok := CardEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
+				if !ok {
+					continue
+				}
+				results[position] = authorityProjectionResult{
+					indexCard: index.Card{
+						ID: entry.ID, Path: entry.Path, Domain: entry.Domain, Title: entry.Title,
+						Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
+						ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
+						ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
+						// 分型显式给值（Schema v2）：知识卡面逐张 knowledge、validation 恒空。
+						Kind: index.CardKindKnowledge, Validation: "",
+					},
+					card: entry, ok: true,
+				}
 			}
-			cards = append(cards, index.Card{
-				ID: entry.ID, Path: entry.Path, Domain: entry.Domain, Title: entry.Title,
-				Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
-				ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
-				ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
-				Kind: index.CardKindOpinion, Validation: entry.Validation,
-			})
-			continue
+		}()
+	}
+	for position := range present {
+		jobs <- position
+	}
+	close(jobs)
+	workers.Wait()
+
+	for position, result := range results {
+		if result.err != nil {
+			return authorityProjection{}, result.err
 		}
-		entry, _, ok := CardEntryFrom(cur.Path, domainOfPath(cur.Path), raw)
-		if !ok {
+		if !result.ok {
 			continue // 解析不动 ⇒ 不进权威投影（与 cards 表的收录口径一致）
 		}
-		cards = append(cards, index.Card{
-			ID: entry.ID, Path: entry.Path, Domain: entry.Domain, Title: entry.Title,
-			Status: entry.Status, Deprecated: entry.Deprecated, Deleted: entry.Deleted,
-			ReplacedBy: entry.ReplacedByTarget, Body: entry.Body(),
-			ContentHash: deps.Hash(raw), MTimeUnix: cur.MTimeUnix,
-			// 分型显式给值（Schema v2）：知识卡面逐张 knowledge、validation 恒空。行级核对会把
-			// 这两列也逐列对账，因此这里**必须**与写入侧同口径 —— 留空会让每一行都被判成
-			// 「判别列对权威撒谎」。
-			Kind: index.CardKindKnowledge, Validation: "",
-		})
+		projection.indexCards = append(projection.indexCards, result.indexCard)
+		path := present[position].Path
+		if result.isOpinion {
+			projection.opinions[path] = result.opinion
+		} else {
+			projection.cards[path] = result.card
+		}
 	}
-	return cards, nil
+	return projection, nil
 }
 
 // statCardFiles 走查**索引对象扫描面**上的全部 `.md`（只 stat 不读字节），按 path 升序。
@@ -455,6 +536,10 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 				continue // 已记 Q1（跳过）：口径与扫描后端一致
 			}
 			if opinionPaths[f.Path] {
+				if full, ok := p.authorityOpinions[f.Path]; ok {
+					parsedOpinions[f.Path] = full
+					continue
+				}
 				// 观点行：回权威解析成与 VaultScan 逐字同构的 OpinionEntry（同一 OpinionEntryFrom）。
 				oe, _, ok := parseOpinionAt(root, f.Path)
 				if !ok {
@@ -463,6 +548,10 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 					return nil, fmt.Errorf("索引记录的观点文件 %s 现在解析不了", f.Path)
 				}
 				parsedOpinions[f.Path] = oe
+				continue
+			}
+			if full, ok := p.authorityCards[f.Path]; ok {
+				parsed[f.Path] = full
 				continue
 			}
 			need[f.Path] = true
@@ -516,6 +605,10 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 		if _, done := parsed[rel]; done {
 			continue
 		}
+		if full, ok := p.authorityCards[rel]; ok {
+			parsed[rel] = full
+			continue
+		}
 		entry, _, ok := parseCardAt(root, rel)
 		if !ok {
 			// 索引说这里有一张可解析的卡，现在解析不了 ⇒ 索引与权威已经不一致。
@@ -529,6 +622,10 @@ func indexVault(root string, p indexProbe, plan parsePlan) (*ScanResult, error) 
 	// 下面的覆盖循环据此把观点 stub 换成权威条目，o→k 反向边的 reason 便与扫描后端逐字一致）。
 	for rel := range needOpinion {
 		if _, done := parsedOpinions[rel]; done {
+			continue
+		}
+		if full, ok := p.authorityOpinions[rel]; ok {
+			parsedOpinions[rel] = full
 			continue
 		}
 		oe, _, ok := parseOpinionAt(root, rel)

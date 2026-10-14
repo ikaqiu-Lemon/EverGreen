@@ -13,7 +13,7 @@ package query
 //
 // 与 internal/index 的行级单测（consistency_rowlevel_test.go）分工：那边钉「index.Check
 // 拿到权威投影后判 W24」，这边钉「读路径真的把权威投影喂进去了、并据此降级 + 等价」——
-// 缺了 currentCardsInput 这一步，读路径只做 DB 表间自洽，本文件立刻红。
+// 缺了 currentAuthorityInput 这一步，读路径只做 DB 表间自洽，本文件立刻红。
 
 import (
 	"database/sql"
