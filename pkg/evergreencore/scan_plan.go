@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,97 +36,171 @@ func ScanFS(filesystem fs.FS, registry *Registry) (*LogicalIndex, error) {
 	return scanFS(filesystem, registry, false)
 }
 
+type scanDocumentJob struct {
+	position int
+	path     string
+	raw      []byte
+}
+
+type scanDocumentResult struct {
+	documentID LogicalID
+	locations  []LogicalLocation
+	raw        []byte
+	err        error
+}
+
 func scanFS(filesystem fs.FS, registry *Registry, captureDocuments bool) (*LogicalIndex, error) {
 	index := &LogicalIndex{Locations: map[LogicalID]LogicalLocation{}}
 	if captureDocuments {
 		index.documents = map[LogicalID][]byte{}
 	}
 	generation := sha256.New()
+	var paths []string
 	err := fs.WalkDir(filesystem, ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".sy") {
-			return nil
-		}
-		raw, err := fs.ReadFile(filesystem, path)
-		if err != nil {
-			return err
-		}
-		if captureDocuments {
-			_, _ = generation.Write([]byte(filepath.ToSlash(path)))
-			_, _ = generation.Write([]byte{0})
-			_, _ = generation.Write(raw)
-			_, _ = generation.Write([]byte{0})
-		}
-		document, err := DecodeSY(raw, registry)
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		if document.ReadOnly && !readOnlyDiagnosticsSupported(document.Diagnostics) {
-			return fmt.Errorf("%s: %w", path, &DiagnosticError{Diagnostics: document.Diagnostics})
-		}
-		identity, identityErr := inspectDocumentIdentity(raw)
-		if document.Envelope == nil {
-			if !document.ReadOnly || !hasDiagnosticCode(document.Diagnostics, CodeSchemaTooNew) {
-				return nil
-			}
-			if identityErr != nil {
-				return fmt.Errorf("%s: %w", path, identityErr)
-			}
-			if err = addLogicalLocation(index, LogicalLocation{
-				LogicalID:   identity.LogicalID,
-				EntityType:  string(identity.EntityType),
-				DocumentID:  identity.DocumentID,
-				Path:        filepath.ToSlash(path),
-				ReadOnly:    true,
-				Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
-			}); err != nil {
-				return err
-			}
-			if captureDocuments {
-				index.documents[identity.LogicalID] = append([]byte(nil), raw...)
-			}
-			return nil
-		}
-		if identityErr != nil {
-			return fmt.Errorf("%s: %w", path, identityErr)
-		}
-		root, err := decodeRawObject(raw)
-		if err != nil {
-			return err
-		}
-		if err = addLogicalLocation(index, LogicalLocation{
-			LogicalID:   document.Envelope.Entity.LogicalID,
-			EntityType:  string(document.Envelope.Entity.EntityType),
-			DocumentID:  identity.DocumentID,
-			Path:        filepath.ToSlash(path),
-			ReadOnly:    document.ReadOnly,
-			Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
-		}); err != nil {
-			return err
-		}
-		if captureDocuments {
-			index.documents[document.Envelope.Entity.LogicalID] = append([]byte(nil), raw...)
-		}
-		if childrenRaw, ok := root["Children"]; ok {
-			var children []json.RawMessage
-			if err = json.Unmarshal(childrenRaw, &children); err != nil {
-				return err
-			}
-			if err = scanBlocks(index, children, identity.DocumentID, filepath.ToSlash(path), registry); err != nil {
-				return err
-			}
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(path), ".sy") {
+			paths = append(paths, path)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	results := make([]scanDocumentResult, len(paths))
+	if len(paths) > 0 {
+		workerCount := runtime.GOMAXPROCS(0)
+		if workerCount > 16 {
+			workerCount = 16
+		}
+		if workerCount > len(paths) {
+			workerCount = len(paths)
+		}
+		jobs := make(chan scanDocumentJob)
+		var workers sync.WaitGroup
+		workers.Add(workerCount)
+		for worker := 0; worker < workerCount; worker++ {
+			go func() {
+				defer workers.Done()
+				for job := range jobs {
+					result := scanDocument(job.path, job.raw, registry)
+					if captureDocuments {
+						result.raw = job.raw
+					}
+					results[job.position] = result
+				}
+			}()
+		}
+
+		for position, path := range paths {
+			raw, readErr := fs.ReadFile(filesystem, path)
+			if readErr != nil {
+				results[position].err = readErr
+				break
+			}
+			if captureDocuments {
+				_, _ = generation.Write([]byte(filepath.ToSlash(path)))
+				_, _ = generation.Write([]byte{0})
+				_, _ = generation.Write(raw)
+				_, _ = generation.Write([]byte{0})
+			}
+			jobs <- scanDocumentJob{position: position, path: path, raw: raw}
+		}
+		close(jobs)
+		workers.Wait()
+	}
+
+	for _, result := range results {
+		if result.err != nil {
+			return nil, result.err
+		}
+		for _, location := range result.locations {
+			if err = addLogicalLocation(index, location); err != nil {
+				return nil, err
+			}
+		}
+		if captureDocuments && result.documentID != "" {
+			index.documents[result.documentID] = append([]byte(nil), result.raw...)
+		}
+	}
 	if captureDocuments {
 		index.generation = "sha256:" + hex.EncodeToString(generation.Sum(nil))
 	}
 	return index, nil
+}
+
+func scanDocument(path string, raw []byte, registry *Registry) scanDocumentResult {
+	result := scanDocumentResult{}
+	local := &LogicalIndex{Locations: map[LogicalID]LogicalLocation{}}
+	add := func(location LogicalLocation) error {
+		if err := addLogicalLocation(local, location); err != nil {
+			return err
+		}
+		result.locations = append(result.locations, location)
+		return nil
+	}
+
+	document, err := DecodeSY(raw, registry)
+	if err != nil {
+		result.err = fmt.Errorf("%s: %w", path, err)
+		return result
+	}
+	if document.ReadOnly && !readOnlyDiagnosticsSupported(document.Diagnostics) {
+		result.err = fmt.Errorf("%s: %w", path, &DiagnosticError{Diagnostics: document.Diagnostics})
+		return result
+	}
+	identity, identityErr := inspectDocumentIdentity(raw)
+	if document.Envelope == nil {
+		if !document.ReadOnly || !hasDiagnosticCode(document.Diagnostics, CodeSchemaTooNew) {
+			return result
+		}
+		if identityErr != nil {
+			result.err = fmt.Errorf("%s: %w", path, identityErr)
+			return result
+		}
+		result.documentID = identity.LogicalID
+		result.err = add(LogicalLocation{
+			LogicalID:   identity.LogicalID,
+			EntityType:  string(identity.EntityType),
+			DocumentID:  identity.DocumentID,
+			Path:        filepath.ToSlash(path),
+			ReadOnly:    true,
+			Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
+		})
+		return result
+	}
+	if identityErr != nil {
+		result.err = fmt.Errorf("%s: %w", path, identityErr)
+		return result
+	}
+	root, err := decodeRawObject(raw)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	result.documentID = document.Envelope.Entity.LogicalID
+	if err = add(LogicalLocation{
+		LogicalID:   document.Envelope.Entity.LogicalID,
+		EntityType:  string(document.Envelope.Entity.EntityType),
+		DocumentID:  identity.DocumentID,
+		Path:        filepath.ToSlash(path),
+		ReadOnly:    document.ReadOnly,
+		Diagnostics: append([]Diagnostic(nil), document.Diagnostics...),
+	}); err != nil {
+		result.err = err
+		return result
+	}
+	if childrenRaw, ok := root["Children"]; ok {
+		var children []json.RawMessage
+		if err = json.Unmarshal(childrenRaw, &children); err != nil {
+			result.err = err
+			return result
+		}
+		result.err = scanBlocks(add, children, identity.DocumentID, filepath.ToSlash(path), registry)
+	}
+	return result
 }
 
 func readOnlyDiagnosticsSupported(diagnostics []Diagnostic) bool {
@@ -173,7 +249,7 @@ func addLogicalLocation(index *LogicalIndex, location LogicalLocation) error {
 }
 
 func scanBlocks(
-	index *LogicalIndex,
+	add func(LogicalLocation) error,
 	nodes []json.RawMessage,
 	documentID string,
 	path string,
@@ -213,7 +289,7 @@ func scanBlocks(
 				}
 				switch envelope.Role {
 				case "note_segment", "agent_annotation":
-					err = addLogicalLocation(index, LogicalLocation{
+					err = add(LogicalLocation{
 						LogicalID:  envelope.Segment.SegmentID,
 						EntityType: "segment",
 						DocumentID: documentID,
@@ -221,7 +297,7 @@ func scanBlocks(
 						Path:       path,
 					})
 				case "candidate":
-					err = addLogicalLocation(index, LogicalLocation{
+					err = add(LogicalLocation{
 						LogicalID:  envelope.Candidate.CandidateID,
 						EntityType: "candidate",
 						DocumentID: documentID,
@@ -239,7 +315,7 @@ func scanBlocks(
 			if err = json.Unmarshal(childrenRaw, &children); err != nil {
 				return err
 			}
-			if err = scanBlocks(index, children, documentID, path, registry); err != nil {
+			if err = scanBlocks(add, children, documentID, path, registry); err != nil {
 				return err
 			}
 		}

@@ -11,6 +11,19 @@ import (
 	"testing/fstest"
 )
 
+type scanReadErrorFS struct {
+	fs.FS
+	path string
+	err  error
+}
+
+func (f scanReadErrorFS) Open(name string) (fs.File, error) {
+	if name == f.path {
+		return nil, f.err
+	}
+	return f.FS.Open(name)
+}
+
 func TestClaimsRoundTripAcrossKinds(t *testing.T) {
 	registry := DefaultRegistry()
 	if err := registry.Register(KindDescriptor{
@@ -414,6 +427,25 @@ func TestScanFSBuildsDocumentAndBlockMap(t *testing.T) {
 	}, registry)
 	if !HasDiagnostic(err, CodeDuplicateID) {
 		t.Fatalf("duplicate logical id error = %v", err)
+	}
+}
+
+func TestScanFSReturnsFirstErrorInPathOrder(t *testing.T) {
+	filesystem := scanReadErrorFS{
+		FS: fstest.MapFS{
+			"a.sy": &fstest.MapFile{Data: []byte("{"), Mode: 0o644},
+			"b.sy": &fstest.MapFile{Data: []byte("{}"), Mode: 0o644},
+		},
+		path: "b.sy",
+		err:  fs.ErrPermission,
+	}
+
+	_, err := ScanFS(filesystem, DefaultRegistry())
+	if err == nil || !strings.Contains(err.Error(), "a.sy") {
+		t.Fatalf("scan error = %v, want earlier a.sy decode error", err)
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("later b.sy read error won over earlier a.sy decode error: %v", err)
 	}
 }
 
