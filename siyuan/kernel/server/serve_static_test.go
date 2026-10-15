@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,76 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/model"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
+
+func TestRootRoutesOnlyNativeSiYuanElectronToApp(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set(model.RoleContextKey, model.RoleAdministrator)
+		c.Next()
+	})
+	serveAppearance(engine)
+
+	for _, test := range []struct {
+		name      string
+		userAgent string
+		cookie    string
+		wantPath  string
+	}{
+		{"browser", "Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36", "", "/stage/build/desktop/"},
+		{"embedded Electron", "Mozilla/5.0 Chrome/149.0.0.0 Electron/40.0.0 Safari/537.36", "", "/stage/build/desktop/"},
+		{"embedded Electron desktop cookie", "Mozilla/5.0 Electron/40.0.0", "true", "/stage/build/desktop/"},
+		{"native SiYuan Electron", "SiYuan/3.8.6 https://b3log.org/siyuan Electron Mozilla/5.0", "", "/stage/build/app/"},
+		{"native SiYuan Electron desktop cookie", "SiYuan/3.8.6 Electron Mozilla/5.0", "true", "/stage/build/app/"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/?source=test", nil)
+			request.Header.Set("User-Agent", test.userAgent)
+			if test.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: "siyuan-desktop-mode", Value: test.cookie})
+			}
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusFound {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusFound)
+			}
+			location, err := url.Parse(recorder.Header().Get("Location"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if location.Path != test.wantPath || location.Query().Get("source") != "test" ||
+				location.Query().Get("r") == "" {
+				t.Fatalf("redirect = %q, want path %q with preserved query and cache buster",
+					location.String(), test.wantPath)
+			}
+		})
+	}
+}
+
+func TestBrowserRequestAtNativeAppEntryRedirectsToDesktop(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set(model.RoleContextKey, model.RoleAdministrator)
+		c.Next()
+	})
+	serveAppearance(engine)
+
+	for _, requestPath := range []string{
+		"/stage/build/app/?source=preview",
+		"/stage/build/app/index.html?source=preview",
+	} {
+		request := httptest.NewRequest(http.MethodGet, requestPath, nil)
+		request.Header.Set("User-Agent", "Mozilla/5.0 Chrome/149.0.0.0 Electron/40.0.0 Safari/537.36")
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusFound ||
+			recorder.Header().Get("Location") != "/stage/build/desktop/?source=preview" {
+			t.Fatalf("redirect for %q = %d %q", requestPath, recorder.Code,
+				recorder.Header().Get("Location"))
+		}
+	}
+}
 
 func TestCleanStaticRelativePath(t *testing.T) {
 	if relativePath, ok := cleanStaticRelativePath("/package/index.js"); !ok ||

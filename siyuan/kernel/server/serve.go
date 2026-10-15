@@ -740,10 +740,22 @@ func serveCustomFonts(ginServer *gin.Engine) {
 
 func serveAppearance(ginServer *gin.Engine) {
 	siyuan := ginServer.Group("", model.CheckAuth)
+	siyuan.Use(func(c *gin.Context) {
+		if util.IsBrowserRequest(c) &&
+			(c.Request.URL.Path == "/stage/build/app/" ||
+				c.Request.URL.Path == "/stage/build/app/index.html") {
+			location := url.URL{Path: "/stage/build/desktop/", RawQuery: c.Request.URL.RawQuery}
+			c.Redirect(http.StatusFound, location.String())
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 
 	siyuan.Handle("GET", "/", func(c *gin.Context) {
 		userAgentHeader := c.GetHeader("User-Agent")
 		logging.LogInfof("serving [/] for user-agent [%s]", userAgentHeader)
+		nativeElectron := strings.Contains(userAgentHeader, "Electron") && !util.IsBrowserRequest(c)
 
 		// Carry query parameters when redirecting
 		location := url.URL{}
@@ -754,7 +766,7 @@ func serveAppearance(ginServer *gin.Engine) {
 		siyuanDesktopMode, desktopCookieErr := c.Request.Cookie("siyuan-desktop-mode")
 		if nil == desktopCookieErr {
 			if "true" == siyuanDesktopMode.Value {
-				if strings.Contains(userAgentHeader, "Electron") {
+				if nativeElectron {
 					location.Path = "/stage/build/app/"
 				} else {
 					location.Path = "/stage/build/desktop/"
@@ -768,7 +780,7 @@ func serveAppearance(ginServer *gin.Engine) {
 			}
 		}
 
-		if strings.Contains(userAgentHeader, "Electron") {
+		if nativeElectron {
 			location.Path = "/stage/build/app/"
 		} else if strings.Contains(userAgentHeader, "Pad") ||
 			(strings.ContainsAny(userAgentHeader, "Android") && !strings.Contains(userAgentHeader, "Mobile")) {
