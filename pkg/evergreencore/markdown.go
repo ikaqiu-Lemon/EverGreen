@@ -55,9 +55,11 @@ func NewMarkdownDocument(id LogicalID, title string, body []byte, envelope *Docu
 	if err != nil {
 		return nil, err
 	}
+	documentID := StablePhysicalID(string(id) + "/document")
 	base, err := json.Marshal(map[string]any{
-		"ID": StablePhysicalID(string(id) + "/document"), "Type": "NodeDocument", "Spec": "5",
-		"Properties": map[string]string{"title": title}, "Children": children,
+		"ID": documentID, "Type": "NodeDocument", "Spec": "5",
+		"Properties": map[string]string{"id": documentID, "title": title, "updated": documentID[:14]},
+		"Children":   children,
 	})
 	if err != nil {
 		return nil, err

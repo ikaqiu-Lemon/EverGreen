@@ -51,6 +51,45 @@ func TestColdImportDeterministicManifestParityAndFailClosed(t *testing.T) {
 	if err = ColdImport(source, target, first.Manifest); err != nil {
 		t.Fatal(err)
 	}
+	boxConfPath := filepath.Join(
+		target, "20000101000000-egvault", ".siyuan", "conf.json")
+	boxConfRaw, err := os.ReadFile(boxConfPath)
+	if err != nil {
+		t.Fatalf("cold import did not create SiYuan notebook conf: %v", err)
+	}
+	var boxConf struct {
+		Name   string `json:"name"`
+		Closed bool   `json:"closed"`
+	}
+	if err = json.Unmarshal(boxConfRaw, &boxConf); err != nil ||
+		boxConf.Name != "Evergreen" || boxConf.Closed {
+		t.Fatalf("cold import notebook conf = %q, %+v, %v",
+			boxConfRaw, boxConf, err)
+	}
+	if info, statErr := os.Stat(filepath.Dir(boxConfPath)); statErr != nil ||
+		!info.IsDir() {
+		t.Fatalf("notebook .siyuan must be a directory: %+v, %v",
+			info, statErr)
+	}
+	for _, entity := range first.Manifest.Entities {
+		raw, readErr := os.ReadFile(filepath.Join(target, entity.Path))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		var root struct {
+			ID         string            `json:"ID"`
+			Properties map[string]string `json:"Properties"`
+		}
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			t.Fatal(unmarshalErr)
+		}
+		if got := root.Properties["id"]; got != root.ID {
+			t.Fatalf("cold import document id property = %q, want %q", got, root.ID)
+		}
+		if got, want := root.Properties["updated"], root.ID[:14]; got != want {
+			t.Fatalf("cold import document updated = %q, want %q", got, want)
+		}
+	}
 	assetRaw, err := os.ReadFile(filepath.Join(target, first.Manifest.Assets[0].TargetPath))
 	if err != nil || string(assetRaw) != "fixture image bytes" {
 		t.Fatal("asset blob did not survive cold import")
@@ -150,6 +189,37 @@ func TestMissingEdgeReasonQuarantinesAndBlocksAllImport(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "data")
 	if err = ColdImport(source, target, prepared.Manifest); err == nil || !strings.Contains(err.Error(), "EG_MIGRATION_QUARANTINE") {
 		t.Fatalf("unsafe import permitted: %v", err)
+	}
+}
+
+func TestEnsureSiYuanRootPropertiesPreservesExistingProperties(t *testing.T) {
+	raw := []byte(`{"ID":"20261015123456-abcdefg","Type":"NodeDocument","Spec":"5","Properties":{"title":"Title","future":{"enabled":true}},"Children":[]}`)
+	updated, err := ensureSiYuanRootProperties(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root struct {
+		Properties map[string]json.RawMessage `json:"Properties"`
+	}
+	if err = json.Unmarshal(updated, &root); err != nil {
+		t.Fatal(err)
+	}
+	var timestamp string
+	if err = json.Unmarshal(root.Properties["updated"], &timestamp); err != nil ||
+		timestamp != "20261015123456" {
+		t.Fatalf("updated = %q, %v", timestamp, err)
+	}
+	var id string
+	if err = json.Unmarshal(root.Properties["id"], &id); err != nil ||
+		id != "20261015123456-abcdefg" {
+		t.Fatalf("id = %q, %v", id, err)
+	}
+	if string(root.Properties["future"]) != `{"enabled":true}` {
+		t.Fatalf("future property changed: %s", root.Properties["future"])
+	}
+	again, err := ensureSiYuanRootProperties(updated)
+	if err != nil || string(again) != string(updated) {
+		t.Fatalf("metadata completion is not idempotent: %v", err)
 	}
 }
 

@@ -441,6 +441,11 @@ func Inventory(root string) (Prepared, error) {
 		if !exists {
 			continue
 		}
+		raw, err = ensureSiYuanRootProperties(raw)
+		if err != nil {
+			return result, err
+		}
+		documents[id] = raw
 		item := legacy[id]
 		decoded, decodeErr := core.DecodeSY(raw, nil)
 		if decodeErr != nil {
@@ -483,6 +488,39 @@ func Inventory(root string) (Prepared, error) {
 	}
 	result.Manifest.Hash = manifestHash(result.Manifest)
 	return result, nil
+}
+
+func ensureSiYuanRootProperties(raw []byte) ([]byte, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, err
+	}
+	var id string
+	if err := json.Unmarshal(root["ID"], &id); err != nil || len(id) < 14 {
+		return nil, fmt.Errorf("EG_MIGRATION_DOCUMENT: invalid SiYuan document ID")
+	}
+	properties := map[string]json.RawMessage{}
+	if encoded := root["Properties"]; len(encoded) > 0 {
+		if err := json.Unmarshal(encoded, &properties); err != nil {
+			return nil, err
+		}
+	}
+	var existingID, updated string
+	if encoded := properties["id"]; len(encoded) > 0 {
+		_ = json.Unmarshal(encoded, &existingID)
+	}
+	if encoded := properties["updated"]; len(encoded) > 0 {
+		_ = json.Unmarshal(encoded, &updated)
+	}
+	if existingID == id && strings.TrimSpace(updated) != "" {
+		return raw, nil
+	}
+	properties["id"], _ = json.Marshal(id)
+	if strings.TrimSpace(updated) == "" {
+		properties["updated"], _ = json.Marshal(id[:14])
+	}
+	root["Properties"], _ = json.Marshal(properties)
+	return json.Marshal(root)
 }
 
 func sourceGit(root string, args ...string) ([]byte, error) {
