@@ -115,7 +115,7 @@ tests/_staged/internal/mdfile/note_review_roundtrip_test.go	unit	go	storage-mark
 tests/_staged/internal/mdfile/opinion_sections_test.go	unit	go	storage-markdown	unit.internal.mdfile	7	13802
 tests/_staged/internal/mdfile/plain_export_test.go	unit	go	storage-markdown	unit.internal.mdfile	4	3007
 tests/_staged/internal/migrate/assets_review_test.go	unit	go	inventory	unit.internal.migrate	1	4145
-tests/_staged/internal/migrate/inventory_test.go	unit	go	inventory	unit.internal.migrate	3	9110
+tests/_staged/internal/migrate/inventory_test.go	unit	go	inventory	unit.internal.migrate	4	11579
 tests/_staged/internal/model/frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	1	4202
 tests/_staged/internal/model/model_test.go	unit	go	storage-markdown	unit.internal.model	20	19030
 tests/_staged/internal/model/opinion_frontmatter_test.go	unit	go	storage-markdown	unit.internal.model	4	5158

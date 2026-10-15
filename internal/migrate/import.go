@@ -86,7 +86,11 @@ func coldImportWithPublisher(source, target string, manifest Manifest, publish f
 	if err = os.MkdirAll(box, 0o700); err != nil {
 		return err
 	}
-	if err = writeSynced(filepath.Join(box, ".siyuan"), []byte(`{"name":"Evergreen","closed":false}`)); err != nil {
+	boxConfDir := filepath.Join(box, ".siyuan")
+	if err = os.MkdirAll(boxConfDir, 0o700); err != nil {
+		return err
+	}
+	if err = writeSynced(filepath.Join(boxConfDir, "conf.json"), []byte(`{"name":"Evergreen","closed":false}`)); err != nil {
 		return err
 	}
 	if _, err = core.ScanFS(os.DirFS(stage), core.ApplicationRegistry()); err != nil {
