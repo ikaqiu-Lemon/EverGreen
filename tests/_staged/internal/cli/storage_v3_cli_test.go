@@ -535,6 +535,99 @@ func TestCandidateWorkspaceApplyAndExplicitRebase(t *testing.T) {
 	}
 }
 
+func TestCandidateWorkspaceRebaseNormalizesEscapedAgentMarkerAtomically(t *testing.T) {
+	dir, noteRel, workspaceRel := materializeCanonicalWorkspaceFixture(t)
+	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
+	workspacePath := filepath.Join(dir, filepath.FromSlash(workspaceRel))
+	noteBefore := mustRead(t, notePath)
+	changedNote := bytes.Replace(noteBefore,
+		[]byte("知识来源。"), []byte(`字面 \*\*来源\*\*。`), 1)
+	changedNote = bytes.Replace(changedNote,
+		[]byte("> **[Agent 补充]** 观点批注。"),
+		[]byte("> **\\[Agent 补充]** 观点批注。"), 1)
+	if bytes.Equal(changedNote, noteBefore) {
+		t.Fatal("fixture 未制造 SiYuan Agent marker 转义")
+	}
+	if err := os.WriteFile(notePath, changedNote, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	headBefore := strings.TrimSpace(gitOut(t, dir, "rev-parse", "HEAD"))
+
+	root := newTestRoot(t, dir)
+	root.Now = func() time.Time {
+		return time.Date(2026, 9, 29, 11, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	code, shown, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json",
+		"--note", "n-20260922-workspace")
+	if code != ExitOK || shown.Data["stale"] != true {
+		t.Fatalf("escaped marker workspace 应 stale：code=%d err=%s data=%+v",
+			code, errOut, shown.Data)
+	}
+	shownRaw, _ := json.Marshal(shown.Data)
+	var spec candidateReviewSpec
+	if err := json.Unmarshal(shownRaw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	spec.NoteBlocks = []candidateReviewNoteBlock{
+		{
+			Role: store.NoteBlockSource, Body: `字面 \*\*来源\*\*。`,
+			SourceRef: "L1-L1",
+		},
+		{
+			Role: store.NoteBlockAgent, Body: "观点批注。",
+			Annotation: "supplement",
+		},
+	}
+	spec.Omissions = []candidateReviewOmission{}
+	reviewPath := filepath.Join(t.TempDir(), "escaped-review.json")
+	reviewRaw, _ := json.Marshal(spec)
+	if err := os.WriteFile(reviewPath, reviewRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, applied, errOut := runStorageV3CLI(t, root,
+		"candidate", "apply", "--vault", dir, "--json",
+		"--note", spec.Note, "--file", reviewPath, "--rebase", "--user-request")
+	if code != ExitOK {
+		t.Fatalf("escaped marker rebase 失败：%d %s %+v", code, errOut, applied)
+	}
+	if applied.Data["note_normalized"] != true {
+		t.Fatalf("rebase 未报告 Note 规范化：%+v", applied.Data)
+	}
+	noteAfter := mustRead(t, notePath)
+	if bytes.Contains(noteAfter, []byte("> **\\[Agent ")) ||
+		!bytes.Contains(noteAfter, []byte("> **[Agent 补充]** 观点批注。")) {
+		t.Fatalf("Agent marker 未规范化：\n%s", noteAfter)
+	}
+	if !bytes.Contains(noteAfter, []byte(`字面 \*\*来源\*\*。`)) {
+		t.Fatal("非 marker 的 Markdown 转义被错误改写")
+	}
+	workspaceAfter := mustRead(t, workspacePath)
+	_, workspace, err := mdfile.ParseNoteSegmentation(workspaceAfter)
+	if err != nil || workspace.NoteHash != store.ContentHash(noteAfter) {
+		t.Fatalf("workspace 未绑定规范化后的 Note：err=%v workspace=%+v",
+			err, workspace)
+	}
+	code, fresh, errOut := runStorageV3CLI(t, root,
+		"candidate", "show", "--vault", dir, "--json", "--note", spec.Note)
+	if code != ExitOK || fresh.Data["stale"] != false {
+		t.Fatalf("规范化 rebase 后 workspace 应 fresh：code=%d err=%s data=%+v",
+			code, errOut, fresh.Data)
+	}
+	if headAfter := strings.TrimSpace(gitOut(t, dir, "rev-parse", "HEAD")); headAfter == headBefore {
+		t.Fatal("规范化 rebase 未产生审计 commit")
+	}
+	names := strings.Fields(gitOut(t, dir, "show", "--format=", "--name-only", "HEAD"))
+	nameSet := map[string]bool{}
+	for _, name := range names {
+		nameSet[name] = true
+	}
+	if len(names) != 2 || !nameSet[noteRel] || !nameSet[workspaceRel] {
+		t.Fatalf("规范化 rebase 应在一个 commit 中恰写 n/ns：%v", names)
+	}
+}
+
 func TestCandidateMigrateSplitsLegacyNoteAtomically(t *testing.T) {
 	dir, noteRel := materializeTxnFixture(t)
 	notePath := filepath.Join(dir, filepath.FromSlash(noteRel))
