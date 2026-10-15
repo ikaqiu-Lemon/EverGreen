@@ -399,12 +399,13 @@ func (r *Root) runCandidateApply(inv *Invocation) (*Result, error) {
 	res.Data = map[string]interface{}{
 		"note": noteText, "note_path": spec.NotePath,
 		"workspace": spec.Workspace, "workspace_path": spec.WorkspacePath,
-		"candidates": len(spec.Candidates), "coverage": len(spec.Coverage),
+		"note_normalized": out.NoteNormalized,
+		"candidates":      len(spec.Candidates), "coverage": len(spec.Coverage),
 		"txn_id": out.TxnID, "commit": candidateApplyCommitData(out.Commit),
 	}
 	res.DataOrder = []string{
 		"note", "note_path", "workspace", "workspace_path",
-		"candidates", "coverage", "txn_id", "commit",
+		"note_normalized", "candidates", "coverage", "txn_id", "commit",
 	}
 	switch {
 	case out.RolledBack:
@@ -426,6 +427,11 @@ func (r *Root) runCandidateApply(inv *Invocation) (*Result, error) {
 		res.Summary = []string{fmt.Sprintf(
 			"candidate apply：Note %s 已与 review spec 一致，幂等 no-op；零写入、零 commit",
 			noteText)}
+	case out.NoteNormalized:
+		res.Summary = []string{fmt.Sprintf(
+			"candidate apply：Note %s 的等价 Agent 标记转义已规范化，workspace 已原子替换为 "+
+				"%d 个 candidate、%d 条 coverage",
+			noteText, len(spec.Candidates), len(spec.Coverage))}
 	default:
 		res.Summary = []string{fmt.Sprintf(
 			"candidate apply：Note %s 已原子替换为 %d 个 candidate、%d 条 coverage",
@@ -638,13 +644,14 @@ func reviewOmissions(spec candidateReviewSpec) []store.Omission {
 }
 
 type candidateApplyOutcome struct {
-	TxnID       string
-	Commit      git.CommitInfo
-	Changed     bool
-	RolledBack  bool
-	RollbackErr error
-	Blocked     error
-	GitErr      error
+	TxnID          string
+	Commit         git.CommitInfo
+	Changed        bool
+	NoteNormalized bool
+	RolledBack     bool
+	RollbackErr    error
+	Blocked        error
+	GitErr         error
 }
 
 func (r *Root) candidateApplyCritical(
@@ -687,6 +694,8 @@ func (r *Root) candidateApplyCritical(
 	rebase := inv.String("rebase") == "true"
 	targetPath := notePath
 	targetFile := file
+	targetNote := file.Bytes
+	noteNormalized := false
 	var target []byte
 
 	if spec.SchemaVersion == 2 {
@@ -753,13 +762,16 @@ func (r *Root) candidateApplyCritical(
 					"rebase 必须提交当前 Note 的完整 note_blocks[] 与 omissions[]，" +
 						"以重建 block manifest 和 coverage")
 			}
-			target, err = store.RebaseCandidateWorkspaceBytes(
+			rebased, rebaseErr := store.RebaseCandidateWorkspace(
 				file.Bytes, workspaceFile.Bytes,
 				reviewNoteBlocks(spec), reviewOmissions(spec),
 				drafts, coverage, model.NewStamp(r.now()))
-			if err != nil {
-				return nil, err
+			if rebaseErr != nil {
+				return nil, rebaseErr
 			}
+			target = rebased.WorkspaceBytes
+			targetNote = rebased.NoteBytes
+			noteNormalized = rebased.NoteNormalized
 		} else {
 			if err := store.ValidateNoteSegmentation(drafts, coverage, noteRefs); err != nil {
 				return nil, err
@@ -778,7 +790,7 @@ func (r *Root) candidateApplyCritical(
 			}
 		}
 		if _, _, _, _, _, err := store.ParseMaterializationWorkspace(
-			file.Bytes, target); err != nil {
+			targetNote, target); err != nil {
 			return nil, fmt.Errorf("review spec 应用后 ns-* 自检失败：%w", err)
 		}
 		targetPath = workspacePath
@@ -819,15 +831,29 @@ func (r *Root) candidateApplyCritical(
 	}
 	fireTxnStep(TxnStepExecuted, "")
 
-	out := &candidateApplyOutcome{}
-	if bytes.Equal(target, targetFile.Bytes) {
+	out := &candidateApplyOutcome{NoteNormalized: noteNormalized}
+	var ws []store.AtomicFileSpec
+	var written []string
+	if noteNormalized {
+		ws = append(ws, store.AtomicFileSpec{
+			Path: notePath, TargetBytes: targetNote,
+			TargetHash: store.ContentHash(targetNote),
+			IsNew:      false, PreBytes: file.Bytes, PreHash: file.Hash,
+		})
+		written = append(written, notePath)
+	}
+	if !bytes.Equal(target, targetFile.Bytes) {
+		ws = append(ws, store.AtomicFileSpec{
+			Path: targetPath, TargetBytes: target,
+			TargetHash: store.ContentHash(target),
+			IsNew:      false, PreBytes: targetFile.Bytes, PreHash: targetFile.Hash,
+		})
+		written = append(written, targetPath)
+	}
+	if len(ws) == 0 {
 		return out, nil
 	}
 	out.Changed = true
-	ws := []store.AtomicFileSpec{{
-		Path: targetPath, TargetBytes: target, TargetHash: store.ContentHash(target),
-		IsNew: false, PreBytes: targetFile.Bytes, PreHash: targetFile.Hash,
-	}}
 	txnID, err := sess.openTxn(
 		inv, intentFilesOf(ws), nil, r.Now, func(id string) { out.TxnID = id })
 	if err != nil {
@@ -852,7 +878,7 @@ func (r *Root) candidateApplyCritical(
 	fireTxnStep(TxnStepCommitted, txnID)
 
 	repo := r.repo(inv.VaultRoot)
-	noteExistingChangesInResult(res, repo, []string{targetPath})
+	noteExistingChangesInResult(res, repo, written)
 	info, gitErr := repo.Commit(git.Message{
 		Verb: string(model.VerbProcess), Domain: store.DomainOf(targetPath),
 		Subject: "审阅 candidates " + spec.Note,
@@ -863,7 +889,7 @@ func (r *Root) candidateApplyCritical(
 	out.GitErr = gitErr
 	fireTxnStep(TxnStepGit, txnID)
 
-	r.syncResultIndex(res, inv, inv.VaultRoot, []string{targetPath})
+	r.syncResultIndex(res, inv, inv.VaultRoot, written)
 	fireTxnStep(TxnStepIndexSync, txnID)
 	return out, nil
 }
