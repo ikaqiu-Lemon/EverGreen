@@ -1,0 +1,162 @@
+import {Constants} from "../constants";
+/// #if !BROWSER
+import {ipcRenderer} from "electron";
+/// #endif
+import {processMessage} from "./processMessage";
+import {kernelError} from "./kernelFault";
+import {withFetchTimeout} from "./fetchTimeout";
+import type {FetchGet, FetchPost, FetchSyncPost} from "../types/api";
+
+export const fetchPost = ((
+    url: string,
+    data?: any,
+    cb?: (response: IWebSocketData) => void,
+    headers?: Record<string, string>,
+    failCallback?: (response: IWebSocketData) => void,
+    signal?: AbortSignal,
+    timeout = url === "/api/system/exit" || url === "/api/system/setWorkspaceDir" ||
+        (url === "/api/system/setUILayout" && data?.errorExit) ? 30000 : 0) => {
+    const init: RequestInit = {
+        method: "POST",
+    };
+    if (data) {
+        if (["/api/search/searchRefBlock", "/api/graph/getGraph", "/api/graph/getLocalGraph"].includes(url)) {
+            window.siyuan.reqIds[url] = Date.now();
+            if (data.type === "local" && url === "/api/graph/getLocalGraph") {
+                // 当打开文档A的关系图、关系图、文档A后刷新，由于防止请求重复处理，文档A关系图无法渲染。
+            } else {
+                data.reqId = window.siyuan.reqIds[url];
+            }
+        }
+        // 并发导出后端接受顺序不一致
+        if (url === "/api/transactions") {
+            data.reqId = Date.now();
+        }
+        if (data instanceof FormData) {
+            init.body = data;
+        } else {
+            init.body = JSON.stringify(data);
+        }
+    }
+    if (headers) {
+        init.headers = headers;
+    }
+    if (signal) {
+        init.signal = signal;
+    }
+    let isGetFile202 = false;
+    return withFetchTimeout((requestSignal) => fetch(url, {...init, signal: requestSignal}).then((response) => {
+        switch (response.status) {
+            case 403:
+            case 404:
+                return {
+                    data: null,
+                    msg: response.statusText,
+                    code: -response.status,
+                };
+            case 401:
+                // 返回鉴权失败的话直接刷新页面，避免用户在当前页面操作 https://github.com/siyuan-note/siyuan/issues/15163
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+                return {
+                    data: null,
+                    msg: response.statusText,
+                    code: -response.status,
+                };
+            default:
+                // /api/file/getFile 接口返回202时表示文件没有正常读取
+                if (response.status === 202 && url === "/api/file/getFile") {
+                    isGetFile202 = true;
+                }
+                if (response.headers.get("content-type")?.indexOf("application/json") > -1) {
+                    return response.json();
+                } else {
+                    return response.text();
+                }
+        }
+    }), signal, timeout).then((response: IWebSocketData) => {
+        if (failCallback && url === "/api/file/getFile" && isGetFile202) {
+            failCallback(response);
+            return;
+        }
+        if (typeof response === "string") {
+            if (cb) {
+                cb(response);
+            }
+            return;
+        }
+        if (["/api/search/searchRefBlock", "/api/graph/getGraph", "/api/graph/getLocalGraph"].includes(url)) {
+            if (response.data.reqId && window.siyuan.reqIds[url] && window.siyuan.reqIds[url] > response.data.reqId) {
+                return;
+            }
+        }
+        if (typeof response === "object" && typeof response.msg === "string" && typeof response.code === "number") {
+            if (processMessage(response) && cb) {
+                cb(response);
+            }
+        } else if (cb) {
+            cb(response);
+        }
+    }).catch((e) => {
+        if (e?.name === "AbortError") {
+            return;
+        }
+        if (failCallback) {
+            failCallback({
+                data: null,
+                msg: e.message,
+                code: 400,
+            });
+            return;
+        }
+        console.warn("fetch post failed [" + e + "], url [" + url + "]");
+        if (url === "/api/transactions" && (e.message === "Failed to fetch" || e.message === "Unexpected end of JSON input")) {
+            kernelError();
+            return;
+        }
+        /// #if !BROWSER
+        if (url === "/api/system/exit" || url === "/api/system/setWorkspaceDir" || (
+            ["/api/system/setUILayout"].includes(url) && data.errorExit // 内核中断，点关闭处理
+        )) {
+            ipcRenderer.send(Constants.SIYUAN_QUIT, location.port);
+        }
+        /// #endif
+    });
+}) as FetchPost<IWebSocketData>;
+
+export const fetchSyncPost = (async (url: string, data?: any, headers?: Record<string, string>, process = true,
+                                    signal?: AbortSignal) => {
+    const init: RequestInit = {
+        method: "POST",
+        signal,
+    };
+    if (headers) {
+        init.headers = headers;
+    }
+    if (data) {
+        if (data instanceof FormData) {
+            init.body = data;
+        } else {
+            init.body = JSON.stringify(data);
+        }
+    }
+    const res = await fetch(url, init);
+    const res2 = await res.json() as IWebSocketData;
+    if (process) {
+        processMessage(res2);
+    }
+    return res2;
+}) as FetchSyncPost<IWebSocketData>;
+
+export const fetchGet = ((url: string, cb: (response: IWebSocketData | IObject | string) => void) => {
+    fetch(url, {cache: "no-store"}).then((response) => {
+        if (response.headers.get("content-type")?.indexOf("application/json") > -1) {
+            return response.json();
+        } else {
+            return response.text();
+        }
+    }).then((response) => {
+        cb(response);
+    });
+}) as FetchGet<IWebSocketData | IObject | string>;

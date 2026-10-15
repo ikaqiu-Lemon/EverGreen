@@ -1,0 +1,372 @@
+{
+	"ID": "20240530101000-hnu6o79",
+	"Spec": "2",
+	"Type": "NodeDocument",
+	"Properties": {
+		"ID": "20240530101000-5cy3xru",
+		"icon": "1f371",
+		"id": "20240530101000-hnu6o79",
+		"title": "エディタ",
+		"type": "doc",
+		"updated": "20260920102915"
+	},
+	"Children": [
+		{
+			"ID": "20240530101000-hx763vk",
+			"Type": "NodeList",
+			"ListData": {},
+			"Properties": {
+				"ID": "20240530101000-ymnekuv",
+				"id": "20240530101000-hx763vk",
+				"updated": "20260809232000"
+			},
+			"Children": [
+				{
+					"ID": "20240530101000-mafk7cf",
+					"Type": "NodeListItem",
+					"ListData": {
+						"BulletChar": 42,
+						"Marker": "Kg=="
+					},
+					"Properties": {
+						"ID": "20240530101000-m2p4v1t",
+						"id": "20240530101000-mafk7cf",
+						"updated": "20240530101000"
+					},
+					"Children": [
+						{
+							"ID": "20240530101000-3q0sxeh",
+							"Type": "NodeParagraph",
+							"Properties": {
+								"ID": "20240530101000-fvn6mp2",
+								"id": "20240530101000-3q0sxeh",
+								"updated": "20240530101000"
+							},
+							"Children": [
+								{
+									"Type": "NodeText",
+									"Data": "あらゆる要素をブロックとして自由に操る編集機能"
+								}
+							]
+						}
+					]
+				},
+				{
+					"ID": "20240530101000-fuwivvt",
+					"Type": "NodeListItem",
+					"ListData": {
+						"BulletChar": 42,
+						"Marker": "Kg=="
+					},
+					"Properties": {
+						"ID": "20240530101000-y10tq5t",
+						"id": "20240530101000-fuwivvt",
+						"updated": "20240530101000"
+					},
+					"Children": [
+						{
+							"ID": "20240530101000-mxb4585",
+							"Type": "NodeParagraph",
+							"Properties": {
+								"ID": "20240530101000-yoegjnl",
+								"id": "20240530101000-mxb4585",
+								"updated": "20240530101000"
+							},
+							"Children": [
+								{
+									"Type": "NodeText",
+									"Data": "アウトラインと子階層のインデントの有無をサポートするリスト機能"
+								}
+							]
+						}
+					]
+				},
+				{
+					"ID": "20240530101000-k48srqh",
+					"Type": "NodeListItem",
+					"ListData": {
+						"BulletChar": 42,
+						"Marker": "Kg=="
+					},
+					"Properties": {
+						"ID": "20240530101000-fsmcqt6",
+						"id": "20240530101000-k48srqh",
+						"updated": "20260809232000"
+					},
+					"Children": [
+						{
+							"ID": "20240530101000-yji6o2e",
+							"Type": "NodeParagraph",
+							"Properties": {
+								"ID": "20240530101000-8b4h0yg",
+								"id": "20240530101000-yji6o2e",
+								"updated": "20260809232000"
+							},
+							"Children": [
+								{
+									"Type": "NodeText",
+									"Data": "個々のコンテンツブロックに編集対象を絞り込むフォーカス機能"
+								}
+							]
+						}
+					]
+				},
+				{
+					"ID": "20240530101000-e2vekun",
+					"Type": "NodeListItem",
+					"ListData": {
+						"BulletChar": 42,
+						"Marker": "Kg=="
+					},
+					"Properties": {
+						"ID": "20240530101000-wjxh8if",
+						"id": "20240530101000-e2vekun",
+						"updated": "20240530101000"
+					},
+					"Children": [
+						{
+							"ID": "20240530101000-ici6fky",
+							"Type": "NodeParagraph",
+							"Properties": {
+								"ID": "20240530101000-mh8x6j9",
+								"id": "20240530101000-ici6fky",
+								"updated": "20240530101000"
+							},
+							"Children": [
+								{
+									"Type": "NodeText",
+									"Data": "大規模なドキュメントでもストレスなく閲覧できる動的読み込み"
+								}
+							]
+						}
+					]
+				},
+				{
+					"ID": "20240530101000-lz2mwev",
+					"Type": "NodeListItem",
+					"ListData": {
+						"BulletChar": 42,
+						"Marker": "Kg=="
+					},
+					"Properties": {
+						"ID": "20240530101000-rxblt32",
+						"id": "20240530101000-lz2mwev",
+						"updated": "20240530101000"
+					},
+					"Children": [
+						{
+							"ID": "20240530101000-1n6fion",
+							"Type": "NodeParagraph",
+							"Properties": {
+								"ID": "20240530101000-kci7tue",
+								"id": "20240530101000-1n6fion",
+								"updated": "20240530101000"
+							},
+							"Children": [
+								{
+									"Type": "NodeText",
+									"Data": "ブロックアイコンをドラッグするだけで自由に変更できるレイアウト"
+								}
+							]
+						}
+					]
+				}
+			]
+		},
+		{
+			"ID": "20240530101000-nsk2raj",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"ID": "20240530101000-0qvec9m",
+				"id": "20240530101000-nsk2raj",
+				"updated": "20240530101000"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "block-ref",
+					"TextMarkBlockRefID": "20240530101000-3qhz7br",
+					"TextMarkBlockRefSubtype": "d",
+					"TextMarkTextContent": "書式要素"
+				}
+			]
+		},
+		{
+			"ID": "20260830213256-frho5s0",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20260830213256-frho5s0",
+				"updated": "20260830213256"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "block-ref",
+					"TextMarkBlockRefID": "20260830213256-014vk79",
+					"TextMarkBlockRefSubtype": "d",
+					"TextMarkTextContent": "ブロックの選択と操作"
+				}
+			]
+		},
+		{
+			"ID": "20240530101000-tzn0itl",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"ID": "20240530101000-rvtxwys",
+				"id": "20240530101000-tzn0itl",
+				"updated": "20240530101000"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "block-ref",
+					"TextMarkBlockRefID": "20240530101000-3ourzoa",
+					"TextMarkBlockRefSubtype": "d",
+					"TextMarkTextContent": "タイポグラフィの最適化"
+				}
+			]
+		},
+		{
+			"ID": "20240530101000-4ex2qdj",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"ID": "20240530101000-m2fedjt",
+				"id": "20240530101000-4ex2qdj",
+				"updated": "20260809232000"
+			},
+			"Children": [
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "block-ref",
+					"TextMarkBlockRefID": "20240530101000-gcdp3gl",
+					"TextMarkBlockRefSubtype": "d",
+					"TextMarkTextContent": "見出しとリストを組み合わせたレイアウト"
+				}
+			]
+		},
+		{
+			"ID": "20240530101000-48icsc4",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"ID": "20240530101000-1wyq56l",
+				"id": "20240530101000-48icsc4"
+			}
+		},
+		{
+			"ID": "20260920102915-j2vppoi",
+			"Type": "NodeHeading",
+			"HeadingLevel": 2,
+			"Properties": {
+				"id": "20260920102915-j2vppoi",
+				"updated": "20260920102915"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "スペルチェック"
+				}
+			]
+		},
+		{
+			"ID": "20260920102915-bqpxzto",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20260920102915-bqpxzto",
+				"updated": "20260920102915"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "この機能は "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "設定"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " - "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "エディタ"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " - "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "スペルチェック"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " で有効にできます。スペルミスのある単語には波線が表示されます。"
+				}
+			]
+		},
+		{
+			"ID": "20260920102915-bwh61nt",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20260920102915-bwh61nt",
+				"updated": "20260920102915"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "デスクトップ版：波線のある単語を右クリックし、思源のメニューから修正候補を選択します。正しい単語を辞書に追加することもできます。通常の右クリックを使用し、"
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "Shift"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " キーを押す必要はありません。"
+				}
+			]
+		},
+		{
+			"ID": "20260920102915-jffww3e",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20260920102915-jffww3e",
+				"updated": "20260920102915"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "ブラウザ版：ブラウザの設定でスペルチェックを有効にし、チェックする言語を選択してください。Chrome では、"
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "Shift"
+				},
+				{
+					"Type": "NodeText",
+					"Data": " キーを押しながら波線のある単語を右クリックすると、ブラウザ標準のスペル修正メニューが開きます。"
+				}
+			]
+		},
+		{
+			"ID": "20260920102915-5z2g0ww",
+			"Type": "NodeParagraph",
+			"Properties": {
+				"id": "20260920102915-5z2g0ww",
+				"updated": "20260920102915"
+			},
+			"Children": [
+				{
+					"Type": "NodeText",
+					"Data": "スペルチェックが始まるタイミングは実行環境によって異なります。ドキュメントを開いてカーソル位置が復元されても、波線が表示されるまで本文をクリックして少し待つ必要がある場合があります。"
+				}
+			]
+		}
+	]
+}

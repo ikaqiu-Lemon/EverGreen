@@ -1,0 +1,214 @@
+import * as assert from "node:assert/strict";
+import test from "node:test";
+import {readFileSync} from "node:fs";
+import {resolve} from "node:path";
+import {getEntryCatalogCustomDefaultVisibility, getEntryCatalogDefaultVisibility, getEntryCatalogNode} from "./catalog";
+import {TOOLBAR_ENTRY_ROOT_PATH} from "../../protyle/toolbar/defaults";
+import {
+    getBuiltinProfileEntryVisibility,
+    getProfileEntryVisibility,
+    isEntryVisibilityImportVersionSupported,
+    normalizeEntryVisibilityImportProfile,
+} from "./profile";
+
+test("chart height migration retains shared visibility and plugin order", () => {
+    for (const existing of [undefined, true, false]) {
+        const entries: Record<string, boolean> = {"gutter.single.chart.height": false};
+        if (existing !== undefined) {
+            entries["gutter.single.height"] = existing;
+        }
+        const profile = normalizeEntryVisibilityImportProfile({name: "Custom", entries, orders: {
+            "gutter.single": ["pluginBefore", "width", "height", "pluginAfter"],
+            "gutter.single.chart": ["pluginBefore", "height", "update", "pluginAfter"],
+        }}, 6, {});
+        assert.deepEqual(profile.entries, {"gutter.single.height": existing ?? false});
+        assert.deepEqual(profile.orders, {
+            "gutter.single": ["pluginBefore", "width", "height", "pluginAfter"],
+            "gutter.single.chart": ["pluginBefore", "update", "pluginAfter"],
+        });
+        assert.deepEqual(normalizeEntryVisibilityImportProfile(profile, 6, {}), profile);
+    }
+});
+
+test("task state imports match kernel migrations and remain stable on reimport", () => {
+    const fixtures = JSON.parse(readFileSync(resolve(process.cwd(), "../kernel/conf/testdata/task_status_menu.json"), "utf8"));
+    for (const fixture of fixtures) {
+        const profile = normalizeEntryVisibilityImportProfile({name: "Custom", ...fixture.input}, 5, {});
+        assert.deepEqual(profile, {name: "Custom", ...fixture.expected}, fixture.name);
+        assert.deepEqual(normalizeEntryVisibilityImportProfile(profile, 6, {}), profile);
+        assert.deepEqual(normalizeEntryVisibilityImportProfile(profile, 5, {}), profile);
+    }
+});
+
+test("database submenu migration preserves visibility, order and plugin slots", () => {
+    const profile = normalizeEntryVisibilityImportProfile({
+        name: "Custom",
+        entries: {"gutter.single.exportCSV": false, "gutter.single.showDatabaseInFolder": true},
+        orders: {"gutter.single": ["pluginBefore", "separator_exportCSV", "showDatabaseInFolder", "pluginMiddle", "exportCSV", "pluginAfter"]},
+    }, 4, {});
+    assert.deepEqual(profile.entries, {
+        "gutter.single.database.exportCSV": false,
+        "gutter.single.database.showDatabaseInFolder": true,
+    });
+    assert.deepEqual(profile.orders, {
+        "gutter.single": ["pluginBefore", "separator_exportCSV", "database", "pluginMiddle", "pluginAfter"],
+        "gutter.single.database": ["showDatabaseInFolder", "exportCSV"],
+    });
+    assert.deepEqual(normalizeEntryVisibilityImportProfile(profile, 5, {}), profile);
+});
+
+test("font toolbar entries are visible in Full, hidden in Simple and preserve explicit profile choices", () => {
+    for (const key of ["font-family", "font-size"]) {
+        const path = `${TOOLBAR_ENTRY_ROOT_PATH}.${key}`;
+        const defaultVisible = getEntryCatalogDefaultVisibility(path);
+        const entry = getEntryCatalogNode(path);
+        assert.equal(defaultVisible, true);
+        assert.equal(getBuiltinProfileEntryVisibility("full", entry.simple, defaultVisible), true);
+        assert.equal(getBuiltinProfileEntryVisibility("simple", entry.simple, defaultVisible), false);
+        const customDefaultVisible = getEntryCatalogCustomDefaultVisibility(path);
+        assert.equal(customDefaultVisible, false);
+        assert.equal(getProfileEntryVisibility({entries: {}}, path, customDefaultVisible), false);
+        assert.equal(getProfileEntryVisibility({entries: {[path]: true}}, path, customDefaultVisible), true);
+        assert.equal(getProfileEntryVisibility({entries: {[path]: false}}, path, customDefaultVisible), false);
+    }
+    assert.equal(getEntryCatalogDefaultVisibility(`${TOOLBAR_ENTRY_ROOT_PATH}.text`), true);
+    assert.equal(getEntryCatalogCustomDefaultVisibility(`${TOOLBAR_ENTRY_ROOT_PATH}.text`), true);
+});
+
+test("mobile font entries default to hidden and preserve explicit profile choices", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Object.defineProperty(globalThis, "window", {configurable: true, value: {siyuan: {mobile: {}}}});
+    try {
+        for (const key of ["font-family", "font-size"]) {
+            const path = `${TOOLBAR_ENTRY_ROOT_PATH}.${key}`;
+            const defaultVisible = getEntryCatalogDefaultVisibility(path);
+            const entry = getEntryCatalogNode(path);
+            assert.equal(defaultVisible, false);
+            assert.equal(getBuiltinProfileEntryVisibility("full", entry.simple, defaultVisible), false);
+            assert.equal(getBuiltinProfileEntryVisibility("simple", entry.simple, defaultVisible), false);
+            const customDefaultVisible = getEntryCatalogCustomDefaultVisibility(path);
+            assert.equal(getProfileEntryVisibility({entries: {}}, path, customDefaultVisible), false);
+            assert.equal(getProfileEntryVisibility({entries: {[path]: true}}, path, customDefaultVisible), true);
+            assert.equal(getProfileEntryVisibility({entries: {[path]: false}}, path, customDefaultVisible), false);
+        }
+        assert.equal(getEntryCatalogDefaultVisibility(`${TOOLBAR_ENTRY_ROOT_PATH}.text`), true);
+    } finally {
+        if (descriptor) {
+            Object.defineProperty(globalThis, "window", descriptor);
+        } else {
+            Reflect.deleteProperty(globalThis, "window");
+        }
+    }
+});
+
+test("built-in profiles honor entry defaults", () => {
+    assert.equal(getBuiltinProfileEntryVisibility("full", false, true), true);
+    assert.equal(getBuiltinProfileEntryVisibility("full", true, false), false);
+    assert.equal(getBuiltinProfileEntryVisibility("simple", true, true), true);
+    assert.equal(getBuiltinProfileEntryVisibility("simple", false, true), false);
+    assert.equal(getBuiltinProfileEntryVisibility("simple", true, false), false);
+    assert.equal(getBuiltinProfileEntryVisibility("simple", true, false, true), true);
+    assert.equal(getBuiltinProfileEntryVisibility("full", true, false, true), false);
+    assert.equal(getBuiltinProfileEntryVisibility("simple", true, true, false), false);
+});
+
+test("custom entry visibility preserves saved values", () => {
+    const profile = {entries: {visible: true, hidden: false}};
+    assert.equal(getProfileEntryVisibility(profile, "visible"), true);
+    assert.equal(getProfileEntryVisibility(profile, "hidden"), false);
+});
+
+test("custom entry visibility shows missing entries", () => {
+    assert.equal(getProfileEntryVisibility({entries: {}}, "new-entry"), true);
+    assert.equal(getProfileEntryVisibility(undefined, "new-entry"), true);
+});
+
+test("custom entry visibility uses a caller-provided default only when the entry is missing", () => {
+    const profile = {entries: {visible: true, hidden: false}};
+    assert.equal(getProfileEntryVisibility(profile, "missing", false), false);
+    assert.equal(getProfileEntryVisibility(profile, "visible", false), true);
+    assert.equal(getProfileEntryVisibility(profile, "hidden", true), false);
+});
+
+test("entry visibility import supports versions 1 through 6", () => {
+    for (const version of [1, 2, 3, 4, 5, 6]) {
+        assert.equal(isEntryVisibilityImportVersionSupported(version, 6), true);
+    }
+    assert.equal(isEntryVisibilityImportVersionSupported(7, 6), false);
+});
+
+test("legacy entry visibility imports require base without persisting it", () => {
+    const profile = normalizeEntryVisibilityImportProfile({
+        name: "Legacy",
+        base: "simple",
+        entries: {visible: true, hidden: false, invalid: "false"},
+        orders: {menu: ["known", 1, "plugin"]},
+    }, 2, {});
+    assert.deepEqual(profile, {
+        name: "Legacy",
+        entries: {visible: true, hidden: false},
+        orders: {menu: ["known", "plugin"]},
+    });
+    assert.equal(normalizeEntryVisibilityImportProfile({
+        name: "Legacy",
+        entries: {},
+    }, 2, {}), undefined);
+});
+
+test("current entry visibility imports do not require base", () => {
+    const defaultOrders = {menu: ["default"]};
+    assert.deepEqual(normalizeEntryVisibilityImportProfile({
+        name: "Current",
+        entries: {},
+    }, 4, defaultOrders), {
+        name: "Current",
+        entries: {},
+        orders: defaultOrders,
+    });
+});
+
+test("version 1 entry visibility imports use default orders", () => {
+    const defaultOrders = {menu: ["default"]};
+    assert.deepEqual(normalizeEntryVisibilityImportProfile({
+        name: "Version 1",
+        base: "full",
+        entries: {},
+    }, 1, defaultOrders), {
+        name: "Version 1",
+        entries: {},
+        orders: defaultOrders,
+    });
+});
+
+test("version 3 entry visibility imports migrate the edit mode submenu", () => {
+    assert.deepEqual(normalizeEntryVisibilityImportProfile({
+        name: "Legacy edit mode",
+        entries: {
+            "document.more.editMode": true,
+            "document.more.editMode.wysiwyg": false,
+            "document.more.editMode.preview": false,
+        },
+        orders: {
+            "document.more.editMode": ["preview", "wysiwyg"],
+        },
+    }, 3, {}), {
+        name: "Legacy edit mode",
+        entries: {"document.more.editMode": false},
+        orders: {},
+    });
+});
+
+test("version 3 entry visibility imports keep the merged mode entry when a legacy child is visible", () => {
+    assert.deepEqual(normalizeEntryVisibilityImportProfile({
+        name: "Partially visible edit mode",
+        entries: {
+            "document.more.editMode": true,
+            "document.more.editMode.wysiwyg": false,
+            "document.more.editMode.preview": true,
+        },
+    }, 3, {}), {
+        name: "Partially visible edit mode",
+        entries: {"document.more.editMode": true},
+        orders: {},
+    });
+});

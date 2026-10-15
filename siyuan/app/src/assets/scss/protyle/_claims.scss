@@ -1,0 +1,326 @@
+.evergreen-claims {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+
+  &-dialog {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .b3-dialog__header {
+      flex: none;
+    }
+
+    .b3-dialog__body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: none;
+    min-width: 0;
+
+    > select,
+    > input {
+      min-width: 0;
+      max-width: 100%;
+    }
+  }
+
+  &__workspace {
+    display: grid;
+    grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__list {
+    overflow: auto;
+    min-width: 0;
+    padding: 8px;
+  }
+
+  &__main {
+    min-width: 0;
+    overflow: auto;
+  }
+
+  &__editor {
+    display: grid;
+    gap: 20px;
+    padding: 16px;
+    min-width: 0;
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      min-width: 0;
+    }
+  }
+
+  &__fields,
+  &__source {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-width: 0;
+  }
+
+  &__source {
+    margin-top: 12px;
+  }
+
+  &__field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    align-content: start;
+
+    > input,
+    > textarea,
+    > select {
+      width: 100%;
+      min-width: 0;
+    }
+
+    > textarea {
+      resize: vertical;
+    }
+  }
+
+  &__fieldset {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-width: 0;
+  }
+
+  &__title,
+  &__reason,
+  &__error {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  &__error {
+    white-space: pre-wrap;
+  }
+
+  &__relation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    min-width: 0;
+
+    > .evergreen-claims__reason {
+      flex: 1;
+    }
+  }
+
+  &__target {
+    min-width: 0;
+    max-width: 100%;
+
+    > span {
+      min-width: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__edge-form {
+    margin-top: 12px;
+
+    > .evergreen-claims__fields {
+      margin: 12px 0;
+    }
+  }
+}
+
+.av__evergreen-relation {
+  min-width: 0;
+
+  .av__evergreen-edge {
+    display: flex;
+    gap: 8px;
+    margin: 12px 8px;
+    min-width: 0;
+
+    input,
+    textarea,
+    select,
+    .fn__flex {
+      min-width: 0;
+      max-width: 100%;
+    }
+  }
+}
+
+.evergreen-ingest {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+
+  &-dialog {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    .b3-dialog__header {
+      flex: none;
+    }
+
+    .b3-dialog__body {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+
+  &__tabs,
+  &__actions,
+  &__section-header,
+  &__row-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__tabs {
+    flex: none;
+    padding: 12px 16px 8px;
+    border-bottom: 1px solid var(--b3-border-color);
+
+    > button {
+      min-width: 112px;
+    }
+  }
+
+  &__content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  &__error {
+    flex: none;
+    padding: 8px 16px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  &__form {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+    min-width: 0;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-width: 0;
+  }
+
+  &__field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+
+    > input,
+    > textarea,
+    > select {
+      width: 100%;
+      min-width: 0;
+    }
+
+    > textarea {
+      resize: vertical;
+    }
+  }
+
+  &__section-header {
+    padding-top: 4px;
+  }
+
+  &__row {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 12px 0 16px;
+    border-top: 1px solid var(--b3-border-color);
+  }
+
+  &__row-header {
+    > strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
+@media (max-width: 700px) {
+  .evergreen-claims {
+    &__workspace {
+      display: flex;
+      flex-direction: column;
+    }
+
+    &__list {
+      flex: none;
+      max-height: 112px;
+    }
+
+    &__main {
+      flex: 1;
+      min-height: 0;
+    }
+
+    &__fields,
+    &__source,
+    &__fieldset {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    &__editor {
+      padding: 12px;
+    }
+  }
+
+  .av__evergreen-edge {
+    flex-direction: column;
+  }
+
+  .evergreen-ingest {
+    &__tabs {
+      padding: 10px 12px 8px;
+
+      > button {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+
+    &__form {
+      padding: 12px;
+    }
+
+    &__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

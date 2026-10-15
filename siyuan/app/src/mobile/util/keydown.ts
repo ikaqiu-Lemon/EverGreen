@@ -1,0 +1,37 @@
+import type {App} from "../../index";
+import {execByCommand} from "../../command/executor";
+import {matchHotKey} from "../../protyle/util/hotKey";
+import {getCurrentEditor} from "../editor";
+import {filterHotkey} from "../../boot/globalEvent/commonHotkey";
+import {captureShortcutContext, dispatchPluginShortcut} from "../../command/shortcutRuntime";
+
+export const mobileKeydown = (app: App, event: KeyboardEvent) => {
+    // 移动端输入框默认填充无 event.key
+    if (!event.key || event.defaultPrevented || filterHotkey(event, app)) {
+        return;
+    }
+    const matchGeneral = Object.keys(window.siyuan.config.keymap.general).sort().find((key) => {
+        // 上下文菜单由当前编辑器或数据库处理，未处理时继续分发快捷键。
+        if (key === "openContextMenu") {
+            return false;
+        }
+        // 桌面页签菜单不拦截移动端的键盘输入。
+        if (key === "switchTab") {
+            return false;
+        }
+        if (matchHotKey(window.siyuan.config.keymap.general[key], event)) {
+            const protyle = getCurrentEditor()?.protyle;
+            if (protyle) {
+                execByCommand({command: key, app, protyle, previousRange: protyle.toolbar.range});
+            }
+            return true;
+        }
+    });
+
+    if (matchGeneral) {
+        event.preventDefault();
+        return;
+    }
+
+    return dispatchPluginShortcut(app, event, "shortcut", () => captureShortcutContext(app, event));
+};
