@@ -1,18 +1,23 @@
-<!-- release-version: 3.8.6 -->
-# Corresponding Source for SiYuan 3.8.6
+# Corresponding Source for Evergreen's Embedded SiYuan
 
-SiYuan is distributed under the GNU Affero General Public License, version 3
-or later. The complete corresponding source for this binary release, including
-the build scripts and dependency manifests, is available at no charge:
+This SiYuan frontend, kernel, runtime, and build tooling are maintained as the
+`siyuan/` subtree of the Evergreen repository. SiYuan is distributed under the
+GNU Affero General Public License, version 3 or later.
 
-- Source archive: https://github.com/siyuan-note/siyuan/releases/download/v3.8.6/siyuan-3.8.6-source.tar.gz
-- Browsable source tag: https://github.com/siyuan-note/siyuan/tree/v3.8.6
+The complete corresponding source is the same Evergreen revision that produced
+the local build or package. It includes:
 
-The source archive is generated from the same release revision as the binary
-artifacts and is listed in the release `SHA256SUMS.txt`. If that archive is not
-available alongside the binary artifacts, the release is incomplete and must
-not be redistributed as an official SiYuan release.
+- this `siyuan/` subtree;
+- the Evergreen module at the repository root;
+- `go.work`, dependency manifests, and build scripts; and
+- the original licenses and third-party notices.
 
-Exact versions and source locations for bundled third-party components,
-including the embedded Evergreen core, are recorded in
-`THIRD_PARTY_NOTICES.md`.
+The historical SiYuan snapshot commit and tree are recorded in
+`.evergreen-source.json`. An upstream SiYuan tag or release does not represent
+the additional Evergreen integration changes and must not be used as the
+corresponding source for this combined work.
+
+This development branch does not publish an official binary release. A future
+Evergreen release must ship or link an exact source archive generated from the
+same Evergreen release commit as its binary artifacts and list both in that
+release's checksums and provenance.

@@ -1,0 +1,30 @@
+{
+  "schema": "evergreen.siyuan-source/v1",
+  "component_path": "siyuan",
+  "source": {
+    "project": "SiYuan",
+    "historical_repository": "https://github.com/siyuan-note/siyuan",
+    "commit": "dd67e7c98a2b4cf39d3029d50e8d1a069f7326bd",
+    "tree": "5fcc6ba8f4b422b879ff477642f4cbf883fc1436",
+    "committed_at": "2026-10-14T12:42:39+08:00",
+    "subject": "test(evergreen): pin final manifest candidate",
+    "license": "AGPL-3.0-or-later"
+  },
+  "materialization": {
+    "method": "git archive --format=tar <source-commit>",
+    "tracked_entries": 4935,
+    "ls_tree_sha256": "e0e81065b1203db31ca3968f496f7fbfd4cf704dfe9031dea547355c956f198f",
+    "path_list_sha256": "ae29a0ed9ce165f5ad75fa3d663ede292d3369395b339e02845f433908a4d5ce",
+    "evergreen_import_commit": "83cf949fcde5293eba8c6e7423fe3baa2242301c",
+    "evergreen_import_subtree": "5fcc6ba8f4b422b879ff477642f4cbf883fc1436",
+    "excluded": [
+      "source Git metadata, worktree links, and remote configuration",
+      "ignored or untracked caches, dependencies, build outputs, and temporary files",
+      "untracked protected file kernel/api/index.queue"
+    ]
+  },
+  "integration_patches": [
+    "siyuan/.evergreen-source.json",
+    "siyuan/SOURCE_CODE.md"
+  ]
+}

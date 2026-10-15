@@ -10,10 +10,14 @@ COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE       ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Version=$(VERSION) -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Commit=$(COMMIT) -X github.com/ikaqiu-Lemon/EverGreen/internal/version.Date=$(DATE)
 PLATFORMS  := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+SIYUAN_APP := siyuan/app
+PNPM       ?= corepack pnpm
 
 .PHONY: help build dist test test-full test-race test-manifest test-contract test-unit \
         test-e2e test-perf test-fuzz test-mutation test-go lint fmt vet fmt-check guard \
-        dep-gate public-check verify-dist-provenance release clean print-version
+        dep-gate public-check verify-dist-provenance release clean print-version \
+        siyuan-verify siyuan-test-go siyuan-typecheck siyuan-test-frontend \
+        siyuan-build-frontend siyuan-focused
 
 help:
 	@echo "make build    - 编译单二进制到 $(BIN) 并从当期 HEAD 重建四平台 dist/ + SHA256SUMS + PROVENANCE.txt"
@@ -23,6 +27,9 @@ help:
 	@echo "make test-race - bash tests/run.sh --profile race（-race 子集）"
 	@echo "make test-go   - go test ./...（裸工具链逃生口，不是验收口径）"
 	@echo "make lint     - gofmt + go vet + 写路径守卫 + 依赖方向 + 公开仓卫生"
+	@echo "make siyuan-verify - 校验内嵌 SiYuan snapshot、Git hygiene 与单仓 module 解析"
+	@echo "make siyuan-focused - 运行单仓接线影响的 Go 与 frontend 定向校验"
+	@echo "make siyuan-build-frontend - 构建内嵌 SiYuan frontend"
 	@echo "make fmt      - gofmt -w ."
 	@echo "make release  - clean 后 CGO_ENABLED=0 交叉编译四平台到 dist/ + SHA256SUMS"
 	@echo "make clean    - 删除 bin/ dist/"
@@ -110,14 +117,33 @@ test-mutation:
 test-go:
 	go test ./...
 
+siyuan-verify:
+	@bash scripts/verify-siyuan-monorepo.sh
+
+siyuan-test-go:
+	@bash scripts/verify-siyuan-monorepo.sh --go
+
+siyuan-typecheck:
+	$(PNPM) --dir $(SIYUAN_APP) run typecheck
+
+siyuan-test-frontend:
+	$(PNPM) --dir $(SIYUAN_APP) test
+
+siyuan-build-frontend:
+	$(PNPM) --dir $(SIYUAN_APP) run /build:.*/
+
+siyuan-focused:
+	@bash scripts/verify-siyuan-monorepo.sh --focused
+
 lint: fmt-check vet guard dep-gate public-check
 
 # 测试体系外置（合同 ADR-T1 / D3）配套：`.tests-staging/` 是 materializer 的**生成物**
 # （产品源码 + 测试文件的副本），不是仓库源码。gofmt 是纯文件遍历，会走进该目录，
 # 于是「一个旧 run 里的历史副本」会让 fmt-check 无故变红（实测发生）。
 # go vet ./... 不受影响（go 工具链本就忽略以 . / _ 开头的目录）。
-# 判据不放宽：仓库内**全部** .go（含测试权威位 tests/_staged/）仍逐个检查，只排除生成物目录。
-GOFILES = $(shell find . -name '*.go' -not -path './.tests-staging/*' | sort)
+# 判据不放宽：Evergreen root module 的全部 .go（含 tests/_staged/）仍逐个检查；内嵌
+# SiYuan module 由 siyuan-test-go/focused 入口独立检查，避免两个 module 的规则互相污染。
+GOFILES = $(shell find . -name '*.go' -not -path './.tests-staging/*' -not -path './siyuan/*' | sort)
 
 fmt:
 	gofmt -w $(GOFILES)

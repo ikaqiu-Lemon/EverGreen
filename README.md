@@ -2,14 +2,15 @@
 
 # Evergreen
 
-**A deterministic, local-first knowledge base for humans and coding agents — shipped as a single binary.**
+**A deterministic, local-first knowledge system for humans and coding agents, with an embedded
+SiYuan frontend and a shared semantic core.**
 
-Your notes stay as plain Markdown in your own Git repository. Every change is a reviewable commit.
-No model calls. No network requests. No telemetry.
+The customized SiYuan frontend, kernel, Evergreen core, CLI, and agent surface live in this one
+repository. Semantic writes remain validated and auditable. No model calls or telemetry.
 
 [![Release](https://img.shields.io/github/v/release/ikaqiu-Lemon/EverGreen?include_prereleases&sort=semver)](https://github.com/ikaqiu-Lemon/EverGreen/releases)
 [![CI](https://github.com/ikaqiu-Lemon/EverGreen/actions/workflows/ci.yml/badge.svg)](https://github.com/ikaqiu-Lemon/EverGreen/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-multi--license-blue.svg)](LICENSING.md)
 [![Go](https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
 [![Offline](https://img.shields.io/badge/network-zero%20requests-success)](PRIVACY.md)
 
@@ -1090,12 +1091,21 @@ sampling a degraded path and comparing against thresholds built for a different 
 
 ## Development
 
+The repository is a monorepo. Evergreen core and CLI remain at the root; the customized SiYuan
+frontend, kernel, and runtime live under `siyuan/`. The root `go.work` binds both Go modules so a
+kernel build uses the Evergreen source from the same checkout.
+
 ```bash
 make build        # native binary + cross-compiled dist/
 make test         # core profile (the acceptance entry point)
 make test-full    # every suite, once
 make test-race    # -race subset
 make lint         # gofmt + vet + write-path guard + dependency direction + public hygiene
+
+make siyuan-verify          # snapshot provenance, Git hygiene, and module resolution
+corepack pnpm --dir siyuan/app install --frozen-lockfile
+make siyuan-focused         # affected Go and frontend checks
+make siyuan-build-frontend  # production frontend assets
 ```
 
 `make release` produces a clean four-platform build plus `SHA256SUMS` and `PROVENANCE.txt`.
@@ -1185,4 +1195,5 @@ from two machines at once — the lock is local-only.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+This is a multi-license repository. Evergreen root code is Apache-2.0; the embedded `siyuan/`
+component remains AGPL-3.0-or-later. See [LICENSING.md](LICENSING.md).

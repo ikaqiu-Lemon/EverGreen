@@ -2,14 +2,14 @@
 
 # Evergreen
 
-**面向人与 coding agent 的确定性本地知识库 —— 单二进制交付。**
+**面向人与 coding agent 的确定性本地知识系统，内嵌 SiYuan 前端并复用同一语义内核。**
 
-笔记以纯 Markdown 存放在你自己的 Git 仓库里，每一次改动都是一个可评审的 commit。
-不调用模型、不发网络请求、无遥测。
+定制 SiYuan 前端、kernel、Evergreen core、CLI 与 Agent 控制面都在同一个仓库中。
+语义写入继续经过校验并保留 Git 审计。不调用模型、无遥测。
 
 [![Release](https://img.shields.io/github/v/release/ikaqiu-Lemon/EverGreen?include_prereleases&sort=semver)](https://github.com/ikaqiu-Lemon/EverGreen/releases)
 [![CI](https://github.com/ikaqiu-Lemon/EverGreen/actions/workflows/ci.yml/badge.svg)](https://github.com/ikaqiu-Lemon/EverGreen/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-multi--license-blue.svg)](LICENSING.md)
 [![Go](https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
 [![Offline](https://img.shields.io/badge/网络请求-零-success)](PRIVACY.md)
 
@@ -985,12 +985,21 @@ commit。关键词与 id 采样集写死在代码里、不随机，因此同一�
 
 ## 开发
 
+本项目现在是单仓：Evergreen core 与 CLI 位于仓库根目录，定制 SiYuan 前端、kernel 和 runtime
+位于 `siyuan/`。根 `go.work` 绑定两个 Go module，确保 kernel 构建使用同一 checkout 内的
+Evergreen 源码。
+
 ```bash
 make build        # 本机二进制 + 交叉编译 dist/
 make test         # core profile（验收入口）
 make test-full    # 全量套件遍历一次
 make test-race    # -race 子集
 make lint         # gofmt + vet + 写路径守卫 + 依赖方向 + 公开仓卫生
+
+make siyuan-verify          # snapshot provenance、Git hygiene 与 module 解析
+corepack pnpm --dir siyuan/app install --frozen-lockfile
+make siyuan-focused         # 单仓接线影响的 Go 与 frontend 定向校验
+make siyuan-build-frontend  # 构建 production frontend assets
 ```
 
 `make release` 产出干净的四平台构建，附带 `SHA256SUMS` 与 `PROVENANCE.txt`；
@@ -1069,4 +1078,5 @@ make lint         # gofmt + vet + 写路径守卫 + 依赖方向 + 公开仓卫�
 
 ## 许可
 
-基于 [Apache License 2.0](LICENSE) 授权。
+本仓库包含多种许可证：Evergreen 根源码为 Apache-2.0，内嵌 `siyuan/` 组件继续使用
+AGPL-3.0-or-later。详见 [LICENSING.md](LICENSING.md)。
