@@ -2,6 +2,12 @@
 /bin/
 /dist/
 
+# 本地运行日志（testdata 中的回放夹具仍纳入版本控制）
+/log/
+/logs/
+/*.log
+/*.log.*
+
 # Go 测试与分析产物
 *.test
 *.out
